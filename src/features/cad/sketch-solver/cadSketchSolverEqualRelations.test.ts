@@ -11,7 +11,7 @@ import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
 const runtime = createCadSketchTestSolver();
 
-describe('real PlaneGCS scalar-free size equality', () => {
+describe('scalar-free size equality', () => {
   it('solves shared reversed line lengths without changing exact coordinate drivers or relation tuples', async () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'v', position: [' 0 ', '0'] }, { id: 'a', position: [' size ', '0'] }, { id: 'b', position: ['0', 6] }],
       entities: [{ id: 'reference', kind: 'line', construction: true, startPointId: 'a', endPointId: 'v' },

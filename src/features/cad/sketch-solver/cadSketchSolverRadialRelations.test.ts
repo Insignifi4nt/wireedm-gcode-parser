@@ -12,7 +12,7 @@ import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
 const runtime = createCadSketchTestSolver();
 
-describe('real PlaneGCS explicit radial dimensions', () => {
+describe('explicit radial dimensions', () => {
   it('solves a displayed diameter into free numeric circle radius while retaining its exact driver text', async () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'center', position: [' 0 ', '0'] }],
       entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: 6 }],

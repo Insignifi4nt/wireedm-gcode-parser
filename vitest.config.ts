@@ -10,7 +10,7 @@ const pureDomainTests = [
   'src/domain/cad/__tests__/**/*.{test,spec}.{ts,tsx}'
 ];
 
-// Suites that solve sketches with the real PlaneGCS runtime or the application runtime.
+// Suites that solve sketches with the PlaneGCS runtime or the application runtime.
 const nativeDifferentialTests = [
   'src/features/cad/sketch-solver/{cadSketchMidpointRuntime,cadSketchSolver*Relations,cadSketchSolverAxisDistance,cadSketchSolverCorners,cadSketchSolverRuntime,cadSketchSolveContracts}.test.ts',
   'src/features/cad/cad*Preparation.test.ts'
@@ -33,7 +33,7 @@ export default defineConfig({
         test: { name: 'pure-domain', environment: 'node', include: pureDomainTests, setupFiles: [] }
       },
       {
-        // Repeats the real PlaneGCS sketch suites through the native solver; see the setup file.
+        // Compares the sketch suites' solves with PlaneGCS alone; see the setup file.
         extends: true,
         test: {
           name: 'native-differential',

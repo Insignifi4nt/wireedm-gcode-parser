@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`solver workload fixtures against real PlaneGCS > conflicting-distances pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > conflicting-distances pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [
@@ -18,7 +18,7 @@ exports[`solver workload fixtures against real PlaneGCS > conflicting-distances 
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > conflicting-triangle pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > conflicting-triangle pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [
@@ -36,7 +36,7 @@ exports[`solver workload fixtures against real PlaneGCS > conflicting-triangle p
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > connected-60 pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > connected-60 pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -51,7 +51,7 @@ exports[`solver workload fixtures against real PlaneGCS > connected-60 pins acce
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > connected-88 pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > connected-88 pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -66,7 +66,7 @@ exports[`solver workload fixtures against real PlaneGCS > connected-88 pins acce
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > die-constrained pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > die-constrained pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -81,7 +81,7 @@ exports[`solver workload fixtures against real PlaneGCS > die-constrained pins a
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > die-free pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > die-free pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -96,7 +96,7 @@ exports[`solver workload fixtures against real PlaneGCS > die-free pins acceptan
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > fixed-point-vs-dimension pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > fixed-point-vs-dimension pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [
@@ -115,7 +115,7 @@ exports[`solver workload fixtures against real PlaneGCS > fixed-point-vs-dimensi
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > fully-fixed-conflict pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > fully-fixed-conflict pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [
@@ -132,7 +132,7 @@ exports[`solver workload fixtures against real PlaneGCS > fully-fixed-conflict p
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > fully-fixed-conflict-with-free pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > fully-fixed-conflict-with-free pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [
@@ -149,7 +149,7 @@ exports[`solver workload fixtures against real PlaneGCS > fully-fixed-conflict-w
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > fully-fixed-satisfied pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > fully-fixed-satisfied pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -164,7 +164,7 @@ exports[`solver workload fixtures against real PlaneGCS > fully-fixed-satisfied 
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > fully-fixed-satisfied-with-free pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > fully-fixed-satisfied-with-free pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -181,7 +181,7 @@ exports[`solver workload fixtures against real PlaneGCS > fully-fixed-satisfied-
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > impossible-triangle pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > impossible-triangle pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -196,7 +196,7 @@ exports[`solver workload fixtures against real PlaneGCS > impossible-triangle pi
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > numeric-far-origin pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > numeric-far-origin pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -211,7 +211,7 @@ exports[`solver workload fixtures against real PlaneGCS > numeric-far-origin pin
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > numeric-mixed-scales pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > numeric-mixed-scales pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -226,7 +226,7 @@ exports[`solver workload fixtures against real PlaneGCS > numeric-mixed-scales p
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > numeric-tiny pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > numeric-tiny pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -241,7 +241,7 @@ exports[`solver workload fixtures against real PlaneGCS > numeric-tiny pins acce
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > overlapping-conflicts pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > overlapping-conflicts pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [
@@ -260,7 +260,7 @@ exports[`solver workload fixtures against real PlaneGCS > overlapping-conflicts 
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > overlapping-conflicts-repeated pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > overlapping-conflicts-repeated pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [
@@ -281,7 +281,7 @@ exports[`solver workload fixtures against real PlaneGCS > overlapping-conflicts-
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > partial-coincident-horizontal pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > partial-coincident-horizontal pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -298,7 +298,7 @@ exports[`solver workload fixtures against real PlaneGCS > partial-coincident-hor
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > partial-symmetry-midpoint pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > partial-symmetry-midpoint pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -315,7 +315,7 @@ exports[`solver workload fixtures against real PlaneGCS > partial-symmetry-midpo
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > rectangles-10 pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > rectangles-10 pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -330,7 +330,7 @@ exports[`solver workload fixtures against real PlaneGCS > rectangles-10 pins acc
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > rectangles-60 pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > rectangles-60 pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -345,7 +345,7 @@ exports[`solver workload fixtures against real PlaneGCS > rectangles-60 pins acc
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > rectangles-200 pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > rectangles-200 pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -360,7 +360,7 @@ exports[`solver workload fixtures against real PlaneGCS > rectangles-200 pins ac
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > redundant-distances pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > redundant-distances pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -377,7 +377,7 @@ exports[`solver workload fixtures against real PlaneGCS > redundant-distances pi
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > tangency-exact pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > tangency-exact pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -392,7 +392,7 @@ exports[`solver workload fixtures against real PlaneGCS > tangency-exact pins ac
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > tangency-near pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > tangency-near pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -407,7 +407,7 @@ exports[`solver workload fixtures against real PlaneGCS > tangency-near pins acc
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > topology-branch pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > topology-branch pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -422,7 +422,7 @@ exports[`solver workload fixtures against real PlaneGCS > topology-branch pins a
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > topology-hub pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > topology-hub pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -437,7 +437,7 @@ exports[`solver workload fixtures against real PlaneGCS > topology-hub pins acce
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > topology-hub-shuffled pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > topology-hub-shuffled pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -452,7 +452,7 @@ exports[`solver workload fixtures against real PlaneGCS > topology-hub-shuffled 
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > topology-loop pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > topology-loop pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],
@@ -467,7 +467,7 @@ exports[`solver workload fixtures against real PlaneGCS > topology-loop pins acc
 }
 `;
 
-exports[`solver workload fixtures against real PlaneGCS > topology-open pins acceptance, freedom and source diagnostics 1`] = `
+exports[`solver workload fixtures > topology-open pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
     "conflictingIds": [],

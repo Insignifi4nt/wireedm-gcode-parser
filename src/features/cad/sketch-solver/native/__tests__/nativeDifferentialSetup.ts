@@ -83,10 +83,10 @@ const reviewedRescues = new Map<string, string>();
  */
 const directionConflict = (...conflictingIds: string[]) => JSON.stringify({ degreesOfFreedom: null, conflictingIds, redundantIds: [], partiallyRedundantIds: [] });
 const reviewedDiagnoses = new Map([
-  ['real PlaneGCS explicit line angles > updates an exact degree expression through preparation and rejects an incompatible complete session batch atomically', directionConflict('angle', 'opposite')],
-  ['real PlaneGCS line pair relations > rejects opposite or duplicate parallel relations with source IDs and no accepted document mutation', directionConflict('opposite')],
-  ['real PlaneGCS line pair relations > rejects opposite or duplicate perpendicular relations with source IDs and no accepted document mutation', directionConflict('opposite')],
-  ['real PlaneGCS collinear support > keeps redundancy IDs source-owned and rejects a fixed parallel offset atomically',
+  ['explicit line angles > updates an exact degree expression through preparation and rejects an incompatible complete session batch atomically', directionConflict('angle', 'opposite')],
+  ['line pair relations > rejects opposite or duplicate parallel relations with source IDs and no accepted document mutation', directionConflict('opposite')],
+  ['line pair relations > rejects opposite or duplicate perpendicular relations with source IDs and no accepted document mutation', directionConflict('opposite')],
+  ['collinear support > keeps redundancy IDs source-owned and rejects a fixed parallel offset atomically',
     JSON.stringify({ degreesOfFreedom: 6, conflictingIds: [], redundantIds: ['duplicate'], partiallyRedundantIds: [] })]
 ]);
 let solver: Promise<CadSketchNativeSolver> | undefined;

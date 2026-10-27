@@ -18,7 +18,7 @@ function corner(degrees: number, sense: 'cw' | 'ccw' = 'ccw') {
   ] });
 }
 
-describe('real PlaneGCS explicit line angles', () => {
+describe('explicit line angles', () => {
   it.each([[30, 'ccw'], [120, 'ccw'], [30, 'cw']] as const)('solves the visible %s-degree %s ray sector with exact source drivers', async (degrees, sense) => {
     const graph = corner(degrees, sense), before = JSON.stringify(graph), solved = await runtime.solve({ graph, parameters: {} });
     expect(solved.kind).toBe('solved'); if (solved.kind !== 'solved') throw new Error(JSON.stringify(solved));

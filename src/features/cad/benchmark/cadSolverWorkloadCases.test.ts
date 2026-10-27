@@ -7,7 +7,7 @@ import { createCadSolverDieInput, createCadSolverFreeDieInput, createCadSolverWo
 
 const solver = createCadSketchTestSolver();
 
-describe('solver workload fixtures against real PlaneGCS', () => {
+describe('solver workload fixtures', () => {
   it.each(createCadSolverWorkloadCases().map(testCase => [testCase.id, testCase.input] as const))('%s pins acceptance, freedom and source diagnostics', async (_id, input) => {
     expect(parseCadSketchGraph(input.graph)).toEqual(input.graph);
     const before = structuredClone(input), result = await solver.solve(input);

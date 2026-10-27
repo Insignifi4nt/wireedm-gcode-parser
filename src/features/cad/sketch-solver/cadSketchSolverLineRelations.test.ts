@@ -28,7 +28,7 @@ function rotatedPair(kind: 'parallel' | 'perpendicular', sizeA: number, sizeB: n
     relations: [{ id: 'length', kind: 'distance', pointIds: ['c', 'd'], value: ' span ' }, { id: 'direction', kind, lineIds: ['reference', 'moving'] }] });
 }
 
-describe('real PlaneGCS line pair relations', () => {
+describe('line pair relations', () => {
   it.each(['parallel', 'perpendicular'] as const)('solves %s lines with exact drivers and one independent angular degree of freedom', async kind => {
     const graph = pair(kind, kind === 'perpendicular', kind === 'parallel'), original = JSON.stringify(graph);
     const baseline = await runtime.solve({ graph: parseCadSketchGraph({ ...graph, relations: graph.relations.slice(0, 1) }), parameters: { span: 17 } });

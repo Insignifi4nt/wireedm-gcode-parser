@@ -11,7 +11,7 @@ function driven(fixed?: readonly [string, string]) {
       { id: 'bore', kind: 'circle', construction: false, centerPointId: 'm', radius: fixed ? '2' : 2 }
     ], relations: [{ id: 'mid', kind: 'midpoint', pointId: 'm', lineId: 'line' }] });
 }
-describe('real PlaneGCS line midpoint', () => {
+describe('line midpoint', () => {
   it('propagates a source parameter to a free bore center while preserving endpoint strings and radius', async () => {
     const graph = driven(), before = JSON.stringify(graph), first = await runtime.solve({ graph, parameters: { width: 40 } });
     expect(first.kind).toBe('solved'); if (first.kind !== 'solved') throw Error(first.message);

@@ -10,7 +10,7 @@ import { circleReferencePart } from '@/domain/cad/__tests__/cadSketchExternalRef
 import { createCadSketchTestSolver, loadCadSketchTestNativeSolver } from './__tests__/cadSketchTestSolver';
 import type { CadSketchNativeSolver } from './native/cadSketchNativeSolver';
 
-describe('real PlaneGCS sketch solving', () => {
+describe('sketch solving', () => {
   it('preserves scalar-free measurements without native equations or a change in freedom', async () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [20, 0] }, { id: 'center', position: [50, 0] }],
       entities: [{ id: 'line', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' },
