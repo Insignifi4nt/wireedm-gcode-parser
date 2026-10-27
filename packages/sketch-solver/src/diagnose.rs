@@ -25,15 +25,15 @@
 //! Near a singular configuration, as a point a little off where its circle touches its line, rank
 //! at `TAU` is unclear for a solved sketch too. A row whose insertion or witness cannot be decided
 //! is left out, which leaves the factor as it was, so later rows are decided as before; the
-//! diagnosis is then not `certain`, and neither is one whose smallest singular value estimate is
-//! below `CERTAIN`. Its witnesses are dependencies found, but more may exist, so freedom is
+//! diagnosis is then not `certain`, and neither is one whose independent rows are not shown to
+//! have a smallest singular value of at least `CERTAIN`. Its witnesses are dependencies found, but more may exist, so freedom is
 //! unknown.
 
 use crate::sparse::SparseRow;
 
 /// Distance from the span of earlier rows, for rows of unit norm, below which a row is dependent.
 pub const TAU: f64 = 1e-10;
-/// Smallest singular value estimate of the independent rows below which rank is not certain.
+/// Smallest singular value the independent rows must be shown to reach for rank to be certain.
 const CERTAIN: f64 = 1e3 * TAU;
 /// Dependence distance for a group that stalled short of the nearest point of a conflict: about
 /// seven times the largest distance seen there, so that independent pairs held near-singular
@@ -56,7 +56,7 @@ pub struct Row {
 pub struct Diagnosis {
     pub rank: usize,
     pub witnesses: Vec<Witness>,
-    /// Every row was decided and the independent rows' smallest singular value estimate passed
+    /// Every row was decided and the independent rows' smallest singular value was shown to reach
     /// `CERTAIN`. Otherwise rank is unclear: the witnesses found are dependencies within
     /// `distance`, but more may exist, so freedom is unknown.
     pub certain: bool,
@@ -76,9 +76,9 @@ pub struct Witness {
 /// fit would hold more than `fill`, is left out and leaves the diagnosis uncertain: the factor is
 /// then as it was, so the rows after it are decided as before.
 pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize, fill: usize) -> (Option<Diagnosis>, usize) {
-    let mut work = Work { done: 0, budget, fill };
+    let mut work = Work { done: 0, budget, fill, out: false };
     let found = diagnose_within(n, rows, distance, &mut work);
-    (found, work.done)
+    (found, work.spent())
 }
 
 fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Option<Diagnosis> {
@@ -99,11 +99,11 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
             None => false,
         };
         if !decided {
-            if work.done > work.budget { return None; }
+            if work.run_out() { return None; }
             certain = false;
         }
     }
-    if rank > 0 && smallest_singular_value(&r, work)? < CERTAIN { certain = false; }
+    if rank > 0 && !clear_of_dependence(&r, work)? { certain = false; }
     // A unit row's residual, or the residual itself for a row without unknowns.
     let scaled = |i: usize, value: f64| if norms[i] > 0.0 { value / norms[i] } else { value };
     let witnesses = witnesses.into_iter().map(|(j, support)| {
@@ -118,7 +118,7 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
 /// normalized, and the work spent; no singular value gate applies. `None` when a row's dependence
 /// cannot be decided or the work would pass `budget`.
 pub fn dependent_count(n: usize, rows: &[SparseRow], distance: f64, budget: usize) -> (Option<usize>, usize) {
-    let mut work = Work { done: 0, budget, fill: usize::MAX };
+    let mut work = Work { done: 0, budget, fill: usize::MAX, out: false };
     let found = (|| {
         let (mut r, mut count) = (vec![Vec::new(); n], 0);
         for row in rows {
@@ -129,40 +129,52 @@ pub fn dependent_count(n: usize, rows: &[SparseRow], distance: f64, budget: usiz
         }
         Some(count)
     })();
-    (found, work.done)
+    (found, work.spent())
 }
 
 /// Indices of the nonzero `rows` within `TAU` of the span of earlier ones once normalized, and
-/// the work spent; `None` when rank cannot be decided reliably or the work would pass `budget`.
-pub fn dependent(n: usize, rows: &[SparseRow], budget: usize) -> (Option<Vec<usize>>, usize) {
-    let mut work = Work { done: 0, budget, fill: usize::MAX };
+/// the work spent; `None` when some are and rank cannot be decided reliably, or the work would
+/// pass `budget`. A factor that rank is checked through holds at most `fill` entries.
+pub fn dependent(n: usize, rows: &[SparseRow], budget: usize, fill: usize) -> (Option<Vec<usize>>, usize) {
+    let mut work = Work { done: 0, budget, fill, out: false };
     let found = (|| {
-        let (mut r, mut rank, mut dependent) = (vec![Vec::new(); n], 0, Vec::new());
+        let (mut r, mut dependent) = (vec![Vec::new(); n], Vec::new());
         for (index, row) in rows.iter().enumerate() {
             let norm = row.iter().map(|e| e.1 * e.1).sum::<f64>().sqrt();
             if !norm.is_finite() { return None; }
             if norm == 0.0 { continue; }
             match insert(&mut r, row.iter().map(|&(k, x)| (k, x / norm)).collect(), TAU, &mut work)? {
-                Insertion::Independent => rank += 1,
+                Insertion::Independent => {}
                 Insertion::Dependent => dependent.push(index),
             }
         }
-        if rank > 0 && smallest_singular_value(&r, &mut work)? < CERTAIN { return None; }
+        // Rank matters only for rows set aside; none leaves nothing to check.
+        if !dependent.is_empty() && !clear_of_dependence(&r, &mut work)? { return None; }
         Some(dependent)
     })();
-    (found, work.done)
+    (found, work.spent())
 }
 
 fn unit(row: &Row, norm: f64) -> SparseRow { row.entries.iter().map(|&(k, x)| (k, x / norm)).collect() }
 
-/// Entries written so far against `budget`, and the entries a witness fit's factor may hold.
-struct Work { done: usize, budget: usize, fill: usize }
+/// Entries written so far against `budget`, and the entries a witness fit's factor may hold;
+/// `out` once a step was refused because it could pass `budget`.
+struct Work { done: usize, budget: usize, fill: usize, out: bool }
 
 impl Work {
     fn spend(&mut self, entries: usize) -> Option<()> {
         self.done = self.done.saturating_add(entries);
         (self.done <= self.budget).then_some(())
     }
+    /// Whether `entries` more fit before they are spent; when they do not, the work has run out
+    /// without them.
+    fn afford(&mut self, entries: usize) -> Option<()> {
+        self.out |= self.done.saturating_add(entries) > self.budget;
+        (!self.out).then_some(())
+    }
+    fn run_out(&self) -> bool { self.out || self.done > self.budget }
+    /// The work spent, past `budget` when it ran out, which callers read as running out.
+    fn spent(&self) -> usize { if self.out { self.done.max(self.budget.saturating_add(1)) } else { self.done } }
 }
 
 enum Insertion { Independent, Dependent }
@@ -192,8 +204,11 @@ fn insert(r: &mut [SparseRow], mut v: SparseRow, distance: f64, work: &mut Work)
 }
 
 /// The Givens rotation of `v` against `row`, whose lead is in the column of the lead of `v`:
-/// the rotated row and what is left of `v`; `None` when the work runs out.
+/// the rotated row and what is left of `v`; `None` when the work could run out, which is checked
+/// before rotating.
 fn rotate(row: &SparseRow, v: &SparseRow, work: &mut Work) -> Option<(SparseRow, SparseRow)> {
+    // Each holds at most the lead and every column of either.
+    work.afford(2 * (row.len() + v.len()))?;
     let (k, pivot, lead) = (row[0].0, row[0].1, v[0].1);
     let big = pivot.abs().max(lead.abs());
     let radius = big * ((pivot / big).powi(2) + (lead / big).powi(2)).sqrt();
@@ -288,7 +303,7 @@ fn nearest(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize
     for &i in subset {
         match insert(&mut r, unit(&rows[i], norms[i]), distance, work) {
             Some(Insertion::Independent) => {}
-            _ if work.done > work.budget => return None,
+            _ if work.run_out() => return None,
             _ => { factored = false; break; }
         }
     }
@@ -325,12 +340,35 @@ fn through(r: &[SparseRow], v: &SparseRow, rows: &[Row], norms: &[f64], subset: 
 /// entries. `Some(None)` when the rows are dependent; `None` when the work runs out or the
 /// factor would hold more than that.
 fn fit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], distance: f64, work: &mut Work) -> Option<Option<Fitted>> {
-    let m = subset.len();
     let mut columns: Vec<SparseRow> = vec![Vec::new(); n];
     for (j, &i) in subset.iter().enumerate() {
         for &(k, x) in &rows[i].entries { columns[k].push((j, x / norms[i])); }
     }
     work.spend(n + subset.iter().map(|&i| rows[i].entries.len()).sum::<usize>())?;
+    let s = match transposed(columns, subset.len(), work)? {
+        Transposed::Factor(s) => s,
+        Transposed::Dependent => return Some(None),
+        Transposed::Full => return None,
+    };
+    let step = |missing: &[f64], work: &mut Work| -> Option<Vec<f64>> {
+        let b: Vec<f64> = subset.iter().map(|&i| rows[i].entries.iter().map(|&(k, x)| x / norms[i] * missing[k]).sum()).collect();
+        seminormal(&s, b, work)
+    };
+    refine(n, v, rows, norms, subset, distance, work, &step).map(Some)
+}
+
+enum Transposed {
+    Factor(Vec<SparseRow>),
+    /// A row of `S` is empty: the rows are dependent.
+    Dependent,
+    /// `S` would hold more than `work.fill` entries.
+    Full,
+}
+
+/// `S` of `A^T = Q S` by rotations, for `m` rows of `A` given by their `columns`: per column of
+/// `A`, its `(row, entry)` pairs in increasing row order. A column shared by many rows fills `S`
+/// densely, so it is held to `work.fill` entries. `None` when the work runs out.
+fn transposed(mut columns: Vec<SparseRow>, m: usize, work: &mut Work) -> Option<Transposed> {
     // In order of their leads, which keeps the rows rotated in short.
     let mut leading: Vec<Vec<usize>> = vec![Vec::new(); m];
     for (k, column) in columns.iter().enumerate() {
@@ -340,7 +378,7 @@ fn fit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], d
     for &k in leading.iter().flatten() {
         let mut rest = std::mem::take(&mut columns[k]);
         while let Some(&(j, _)) = rest.first() {
-            if held.saturating_add(rest.len()) > work.fill { return None; }
+            if held.saturating_add(rest.len()) > work.fill { return Some(Transposed::Full); }
             if s[j].is_empty() { held += rest.len(); s[j] = rest; break; }
             let kept;
             (kept, rest) = rotate(&s[j], &rest, work)?;
@@ -348,12 +386,7 @@ fn fit(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize], d
             s[j] = kept;
         }
     }
-    if s.iter().any(|row| row.is_empty()) { return Some(None); }
-    let step = |missing: &[f64], work: &mut Work| -> Option<Vec<f64>> {
-        let b: Vec<f64> = subset.iter().map(|&i| rows[i].entries.iter().map(|&(k, x)| x / norms[i] * missing[k]).sum()).collect();
-        seminormal(&s, b, work)
-    };
-    refine(n, v, rows, norms, subset, distance, work, &step).map(Some)
+    Some(if s.iter().any(|row| row.is_empty()) { Transposed::Dependent } else { Transposed::Factor(s) })
 }
 
 /// Coefficients of the unit rows `subset` for `v` from corrections by `step`, which turns what
@@ -425,24 +458,130 @@ fn two_product(a: f64, b: f64) -> (f64, f64) {
     (product, ((ah * bh - product) + ah * bl + al * bh) + al * bl)
 }
 
-/// Estimate of the smallest singular value of `R` over the columns with pivots, by four inverse
-/// iterations on `R^T R` from a fixed start. Inverse iteration approaches it from above, so this
-/// is an estimate, not a certificate. Leaving out the columns without pivots can only lower the
-/// value, so a row whose lead is small beside its entries in free columns, between `TAU` and
-/// `CERTAIN` of its norm, makes rank look unclear although it is not.
-fn smallest_singular_value(r: &[SparseRow], work: &mut Work) -> Option<f64> {
-    let mut x: Vec<f64> = (0..r.len()).map(|k| if r[k].is_empty() { 0.0 } else if k % 2 == 0 { 1.0 } else { -0.7 }).collect();
-    let mut estimate = f64::INFINITY;
-    for _ in 0..4 {
-        let norm = x.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if norm == 0.0 || !norm.is_finite() { return Some(0.0); }
-        for v in &mut x { *v /= norm; }
-        let z = seminormal(r, x, work)?;
-        let grown = z.iter().map(|v| v * v).sum::<f64>().sqrt();
-        estimate = if grown > 0.0 { grown.sqrt().recip() } else { f64::INFINITY };
-        x = z;
+/// Most independent rows whose singular values are computed densely when the bound over the pivot
+/// columns leaves rank unclear; with more, rank stays unclear.
+const DENSE_RANK: usize = 32;
+
+/// Most counted entries the checks past the linear bound may take, and the share of the work left
+/// they may take at most: they only decide whether rank is clear, so they leave the rest to the
+/// solve and the diagnosis around them. Past it, rank stays unclear.
+const CHECK_WORK: usize = 64_000_000;
+/// Most counted entries of those the rows of `T^-1` may take.
+const INVERSE_WORK: usize = 20_000_000;
+
+/// Whether the independent unit rows that `r` factors are clear of dependence: their smallest
+/// singular value is at least `CERTAIN`. Leaving out the columns without pivots can only lower it,
+/// so a lower bound over the pivot columns that reaches `CERTAIN` decides: first one in work
+/// linear in their entries, then one from the rows of their inverse. A row whose lead is small
+/// beside its entries in columns without pivots, as a nearly straight arm's, leaves the pivot
+/// columns ill conditioned though the rows are not, so below both the rows' singular values are
+/// computed: those of `S` in `R^T = Q S`, taken densely for at most `DENSE_RANK` rows and with an
+/// absolute accuracy of about `epsilon`. More rows, an `S` that would hold more than `work.fill`
+/// entries, or checks past the linear bound that would take more than `CHECK_WORK` or half the work
+/// left, leave rank unclear. No estimate decides, since one from above can miss a weak direction
+/// and call it clear. `None` when the linear bound runs out of work.
+fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
+    if comparison_floor(r, work)? >= CERTAIN { return Some(true); }
+    let mut check = Work { done: 0, budget: CHECK_WORK.min(work.budget.saturating_sub(work.done) / 2), fill: work.fill, out: false };
+    let clear = beyond_comparison(r, &mut check);
+    work.done = work.done.saturating_add(check.done);
+    Some(clear == Some(true))
+}
+
+/// Whether rank is clear by the rows of `T^-1` or by the rows' own singular values; `None` when
+/// the work runs out. Each step is checked before it is taken, so the work spent stays within
+/// `work.budget`.
+fn beyond_comparison(r: &[SparseRow], work: &mut Work) -> Option<bool> {
+    if inverse_floor(r, work)? >= CERTAIN { return Some(true); }
+    let pivots: Vec<usize> = (0..r.len()).filter(|&k| !r[k].is_empty()).collect();
+    let m = pivots.len();
+    if m > DENSE_RANK { return Some(false); }
+    let entries = r.len() + r.iter().map(|row| row.len()).sum::<usize>();
+    work.afford(entries)?;
+    let mut columns: Vec<SparseRow> = vec![Vec::new(); r.len()];
+    for (j, &k) in pivots.iter().enumerate() {
+        for &(c, x) in &r[k] { columns[c].push((j, x)); }
     }
-    Some(estimate)
+    work.spend(entries)?;
+    let Transposed::Factor(s) = transposed(columns, m, work)? else { return Some(false) };
+    let mut dense = vec![vec![0.0; m]; m];
+    for (j, row) in s.iter().enumerate() {
+        for &(k, x) in row { dense[k][j] = x; }
+    }
+    // A decomposition that runs out used at most what it was allowed.
+    let Some((values, _, spent)) = crate::dense::singular(&dense, work.budget.saturating_sub(work.done)) else {
+        work.done = work.done.max(work.budget);
+        return None;
+    };
+    work.spend(spent)?;
+    Some(values.last().is_some_and(|&least| least >= CERTAIN))
+}
+
+/// `1 / sqrt(||C^-1||_1 ||C^-1||_inf)` for the comparison matrix `C` of `T`, the upper triangle of
+/// `R` over the columns with pivots, with `|T_ii|` on its diagonal and `-|T_ij|` off it:
+/// `|T^-1| <= C^-1` entrywise, so this bounds `1 / ||T^-1||_2`. `C^-1` is not negative, so its
+/// norms are the largest entries of `C^-1 1` and `C^-T 1`, sums without cancellation, and the bound
+/// allows for their rounding. It is far below the true value when entries of `T^-1` cancel, as
+/// along a chain whose links alternate in sign.
+fn comparison_floor(r: &[SparseRow], work: &mut Work) -> Option<f64> {
+    let n = r.len();
+    // `C z = 1` from the last pivot back, and `C^T w = 1` by rows of `C` from the first.
+    let mut z = vec![0.0; n];
+    for k in (0..n).rev() {
+        let Some(&(_, pivot)) = r[k].first() else { continue };
+        z[k] = (1.0 + r[k][1..].iter().map(|&(c, x)| x.abs() * z[c]).sum::<f64>()) / pivot.abs();
+    }
+    let mut w = vec![1.0; n];
+    for k in 0..n {
+        let Some(&(_, pivot)) = r[k].first() else { continue };
+        w[k] /= pivot.abs();
+        for &(c, x) in &r[k][1..] { w[c] += x.abs() * w[k]; }
+    }
+    let entries: usize = r.iter().map(|row| row.len()).sum();
+    work.spend(2 * entries)?;
+    // Columns without pivots take no part: `z` is zero there and `w` is not read.
+    let largest = |v: &[f64]| (0..n).filter(|&k| !r[k].is_empty()).map(|k| v[k]).fold(0.0, f64::max);
+    let widest = r.iter().map(|row| row.len()).max().unwrap_or(0);
+    // Each computed sum solves `C` with entries moved by a relative `(widest + 2) epsilon`, which
+    // can grow along `n` pivots.
+    let slack = 1.0 + 4.0 * n as f64 * (widest + 2) as f64 * f64::EPSILON;
+    let product = largest(&z) * largest(&w);
+    Some(if product.is_finite() && slack < 1.01 { (product * slack * slack).sqrt().recip() } else { 0.0 })
+}
+
+/// `1 / ||T^-1||_F`, since `||T^-1||_2 <= ||T^-1||_F`, which is at most `sqrt(rank)` times larger.
+/// Each row of `T^-1` comes from a triangular solve, backward stable, that visits only the pivots
+/// it reaches, so a chain costs the square of its length. Zero once the bound falls below
+/// `CERTAIN`; `None` when a row of `T` would pass `INVERSE_WORK` or the work allowance.
+fn inverse_floor(r: &[SparseRow], work: &mut Work) -> Option<f64> {
+    use std::{cmp::Reverse, collections::BinaryHeap};
+    let n = r.len();
+    let allowed = INVERSE_WORK.min(work.budget.saturating_sub(work.done));
+    let (mut b, mut queued, mut reached) = (vec![0.0; n], vec![false; n], BinaryHeap::new());
+    let (mut total, mut spent, limit) = (0.0, 0usize, (CERTAIN * CERTAIN).recip());
+    for j in (0..n).filter(|&j| !r[j].is_empty()) {
+        // `T^T y = e_j` by columns of `T^T`, the rows of `T`, in increasing pivot order.
+        (b[j], queued[j]) = (1.0, true);
+        reached.push(Reverse(j));
+        while let Some(Reverse(k)) = reached.pop() {
+            if spent + r[k].len() > allowed {
+                work.done += spent;
+                return None;
+            }
+            let y = b[k] / r[k][0].1;
+            (b[k], queued[k]) = (0.0, false);
+            total += y * y;
+            spent += r[k].len();
+            for &(c, x) in &r[k][1..] {
+                if r[c].is_empty() { continue; }
+                b[c] -= x * y;
+                if !queued[c] { queued[c] = true; reached.push(Reverse(c)); }
+            }
+        }
+        if !(total <= limit) { break; }
+    }
+    work.done += spent;
+    Some(if total <= limit { total.sqrt().recip() } else { 0.0 })
 }
 
 /// Labels for equations with constraint `tags`, which never decrease, from the witnesses of all
@@ -450,7 +589,7 @@ fn smallest_singular_value(r: &[SparseRow], work: &mut Work) -> Option<f64> {
 /// constraint can lie in several groups, as with the two axes of a coincidence, so equations are
 /// set aside across all of them.
 pub fn labels(tags: &[usize], witnesses: &[Witness], budget: usize) -> Option<Vec<u8>> {
-    let mut work = Work { done: 0, budget, fill: usize::MAX };
+    let mut work = Work { done: 0, budget, fill: usize::MAX, out: false };
     // Equations of each one's constraint; tags never decrease, so each constraint is one run.
     let mut multiplicity = vec![0; tags.len()];
     let mut first = 0;

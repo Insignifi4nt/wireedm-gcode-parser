@@ -460,7 +460,7 @@ fn solve_group_within(system: &System, values: &mut [f64], limits: Limits, most:
         else { return finish(&rows, progress, 0, true, None, limits.work); };
     if progress.polished || n == 0 { return finish(&rows, progress, 0, false, Some(ordering.position), ordering.work); }
     let (position, mut work, mut iterations) = (ordering.position, ordering.work, 0);
-    let left_out = dependent_at_start(system, &rows, &position, limits.work, &mut work);
+    let left_out = dependent_at_start(system, &rows, &position, limits, &mut work);
     if !left_out.is_empty() {
         let start: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
         // A dependent row has no column of its own, so the ordering still fits.
@@ -480,13 +480,13 @@ fn solve_group_within(system: &System, values: &mut [f64], limits: Limits, most:
 }
 
 /// Lasting rows of `rows` that depend on earlier ones, by index within the group, with the work
-/// added to `work`. None when rank is unclear or the work would pass `limit`, so every row is
+/// added to `work`. None when rank is unclear or the work would pass `limits.work`, so every row is
 /// solved. Temporary targets always stay in the solve.
-fn dependent_at_start(system: &System, rows: &[Row], position: &[usize], limit: usize, work: &mut usize) -> Vec<usize> {
+fn dependent_at_start(system: &System, rows: &[Row], position: &[usize], limits: Limits, work: &mut usize) -> Vec<usize> {
     let jacobian = system.jacobian(rows, position);
     let lasting: Vec<usize> = (0..rows.len()).filter(|&i| !system.problem.equations[system.equations[i]].temporary).collect();
     let entries: Vec<SparseRow> = lasting.iter().map(|&i| jacobian.rows[i].0.clone()).collect();
-    let (dependent, spent) = diagnose::dependent(position.len(), &entries, limit.saturating_sub(*work));
+    let (dependent, spent) = diagnose::dependent(position.len(), &entries, limits.work.saturating_sub(*work), limits.fill);
     *work = work.saturating_add(spent);
     dependent.map_or_else(Vec::new, |dependent| dependent.into_iter().map(|i| lasting[i]).collect())
 }

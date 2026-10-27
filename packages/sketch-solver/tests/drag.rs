@@ -926,7 +926,8 @@ fn a_stalled_group_outranks_a_limited_one() {
 #[test]
 fn every_frame_of_an_arm_stretched_past_its_reach_and_back_is_solved() {
     // Two 10 mm links from a fixed base, the tip pulled along y = 1 past its 20 mm reach and back
-    // inside it, each frame from the start and from the last. Straight, the arm's rank is clear.
+    // inside it, each frame from the start and from the last. Straight, the arm's rank is clear,
+    // though its pivot columns are not: the second link's lead in the joint's columns is tiny.
     let arm = |joint: [f64; 2], tip: [f64; 2], target: Option<[f64; 2]>| {
         let mut builder = Builder::new();
         let b = builder.point(0.0, 0.0, true);
@@ -948,11 +949,22 @@ fn every_frame_of_an_arm_stretched_past_its_reach_and_back_is_solved() {
             let (outcome, j, t) = if chained { arm(joint, tip, Some(target)) } else { arm([6.0, 8.0], [16.0, 8.0], Some(target)) };
             let reached = target[0].hypot(target[1]) <= 20.0;
             assert_eq!((outcome.status, outcome.drag, outcome.labels.clone()), (Status::Converged, Some(if reached { DragOutcome::Reached } else { DragOutcome::Projected }), vec![0; 4]), "{chained} {frame}");
-            assert!(matches!(outcome.diagnosis, Diagnosis::Diagnosed | Diagnosis::Uncertain), "{chained} {frame}: {:?}", outcome.diagnosis);
-            if reached { assert_eq!(outcome.degrees_of_freedom, Some(2), "{chained} {frame}"); }
+            assert_eq!((outcome.diagnosis, outcome.degrees_of_freedom), (Diagnosis::Diagnosed, Some(2)), "{chained} {frame}");
             let (again, ..) = arm(j, t, None);
-            assert_eq!((again.status, again.labels), (Status::Converged, vec![0; 2]), "{chained} {frame}");
+            assert_eq!((again.status, again.diagnosis, again.degrees_of_freedom, again.labels), (Status::Converged, Diagnosis::Diagnosed, Some(2), vec![0; 2]), "{chained} {frame}");
             (joint, tip) = (j, t);
         }
     }
+}
+#[test]
+fn a_drag_that_runs_out_of_work_is_too_large_rather_than_limited() {
+    // A difference held twice, dragged: counting the dependent rows along the way runs out before
+    // a rotation is made, which must read as running out, not as the drag growing more singular.
+    let mut builder = Builder::new();
+    let (x, y) = (builder.parameter(0.0, false), builder.parameter(0.0, false));
+    for _ in 0..2 { builder.equation(Kind::Difference, 0.0, &[x, y]); }
+    builder.temporary(Kind::Value, 1.0, &[x]);
+    let (outcome, _) = builder.outcome_within(Limits { fill: usize::MAX, work: 278 });
+    assert_eq!(outcome.status, Status::TooLarge);
+    assert_ne!(outcome.drag, Some(DragOutcome::Limited));
 }

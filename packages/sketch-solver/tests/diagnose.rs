@@ -1,7 +1,7 @@
 mod common;
 
 use common::Builder;
-use sketch_solver::diagnose::{CONFLICTING, REDUNDANT};
+use sketch_solver::diagnose::{CONFLICTING, REDUNDANT, Row, TAU, dependent};
 use sketch_solver::equations::Kind;
 use sketch_solver::newton::Limits;
 use sketch_solver::problem::{Diagnosis, Status};
@@ -319,4 +319,94 @@ fn a_long_closed_chain_around_a_shared_value_is_diagnosed_within_a_sparse_fill()
     let (outcome, _) = builder.outcome_within(Limits { fill: 20_000, ..sketch_solver::newton::LIMITS });
     assert_eq!(outcome.diagnosis, Diagnosis::Diagnosed);
     assert_eq!(outcome.labels.last(), Some(&REDUNDANT));
+}
+
+#[test]
+fn a_weak_direction_hidden_from_the_pivot_columns_is_still_found() {
+    // Singular values about 1.732, 1.2e-7 and 1e-8: rank is unclear. An inverse iteration from a
+    // fixed start nearly misses the weakest direction here and would call it clear.
+    let rows: Vec<Row> = [[1e-8, -8.616690359875787e-9, 8.03774303312371e-9, 1.0], [1e-8, 8.616690359875787e-9, -8.844220160038482e-8, 1.0], [1e-8, 0.0, 8.04044585672611e-8, 1.0]]
+        .iter().map(|row| Row { entries: row.iter().copied().enumerate().filter(|e| e.1 != 0.0).collect(), residual: 0.0, tolerance: 1e-10 }).collect();
+    let (found, _) = sketch_solver::diagnose::diagnose(4, &rows, TAU, 1_000_000, 1_000);
+    let found = found.expect("diagnosed");
+    assert_eq!((found.rank, found.witnesses.len(), found.certain), (3, 0, false));
+}
+
+#[test]
+fn a_weak_direction_an_estimate_from_above_misses_is_still_found() {
+    // Every lead passes `TAU`, and an inverse iteration from a fixed start estimates the smallest
+    // singular value at about 1.2e-7, yet (0, 1, 0.7) is held only to about 9e-9: rank is unclear.
+    let rows: Vec<Row> = [[1.0, -4.6e-8, 7.21e-8], [1.0, 5.2e-8, -6.79e-8], [1.0, -6e-9, -4.2e-9]]
+        .iter().map(|row| Row { entries: row.iter().copied().enumerate().collect(), residual: 0.0, tolerance: 1e-10 }).collect();
+    let (found, _) = sketch_solver::diagnose::diagnose(3, &rows, TAU, 1_000_000, 1_000);
+    let found = found.expect("diagnosed");
+    assert_eq!((found.rank, found.witnesses.len(), found.certain), (3, 0, false));
+}
+
+#[test]
+fn rows_clear_beyond_their_pivot_columns_are_checked_within_the_fill_limit() {
+    // Row i is 1e-8 in x_i, 1 in y_i and 0.1 in a shared z: each lead is tiny, so the pivot columns
+    // look nearly singular, but the rows are well conditioned. The shared z fills their transposed
+    // factor densely, so a fill limit below it leaves rank unclear. A repeat of the first row is
+    // set aside only when rank is clear.
+    let m = 30;
+    let mut rows: Vec<Vec<(usize, f64)>> = (0..m).map(|i| vec![(i, 1e-8), (m + i, 1.0), (2 * m, 0.1)]).collect();
+    rows.push(rows[0].clone());
+    let (clear, spent) = dependent(2 * m + 1, &rows, 100_000_000, usize::MAX);
+    assert_eq!(clear, Some(vec![m]));
+    // The dense singular values take most of it, about 41 million entries for 30 rows.
+    assert!(spent < 60_000_000, "{spent}");
+    assert_eq!(dependent(2 * m + 1, &rows, 100_000_000, 100).0, None);
+}
+#[test]
+fn rows_whose_inverse_cancels_are_clear_beyond_the_dense_rank() {
+    // Row i is 1 in columns i, i + 1 and i + 2. Its comparison matrix's inverse grows as the
+    // Fibonacci numbers, so the linear bound fails, but the factor's own inverse repeats 1, -1, 0
+    // and its rows bound the smallest singular value well above `CERTAIN`, for more rows than are
+    // computed densely.
+    let m = 80;
+    let rows: Vec<Row> = (0..m).map(|i| Row { entries: vec![(i, 1.0), (i + 1, 1.0), (i + 2, 1.0)], residual: 0.0, tolerance: 1e-10 }).collect();
+    let (found, spent) = sketch_solver::diagnose::diagnose(m + 2, &rows, TAU, 1_000_000, 1_000);
+    let found = found.expect("diagnosed");
+    assert_eq!((found.rank, found.witnesses.len(), found.certain), (m, 0, true));
+    assert!(spent < 100_000, "{spent}");
+}
+
+#[test]
+fn a_rank_check_that_runs_out_of_work_leaves_rank_unclear() {
+    // Twenty rows 1, 2, 2 in consecutive columns: the linear bound fails, and the checks past it
+    // may take only half of what is left, so rank stays unclear rather than the diagnosis
+    // unavailable.
+    // With enough work, their singular values show rank clear.
+    let rows: Vec<Row> = (0..20).map(|i| Row { entries: vec![(i, 1.0), (i + 1, 2.0), (i + 2, 2.0)], residual: 0.0, tolerance: 1e-10 }).collect();
+    let (found, spent) = sketch_solver::diagnose::diagnose(22, &rows, TAU, 140, 1_000);
+    let found = found.expect("diagnosed");
+    assert_eq!((found.rank, found.certain), (20, false));
+    assert!(spent <= 140, "{spent}");
+    assert!(sketch_solver::diagnose::diagnose(22, &rows, TAU, 100_000, 1_000).0.expect("diagnosed").certain);
+    // Before a solve, a repeat is then not set aside, and the work left stays with the solve.
+    let mut entries: Vec<Vec<(usize, f64)>> = rows.iter().map(|row| row.entries.clone()).collect();
+    entries.push(entries[0].clone());
+    let (set_aside, spent) = dependent(22, &entries, 200, 1_000);
+    assert_eq!(set_aside, None);
+    assert!(spent <= 160, "{spent}");
+    assert_eq!(dependent(22, &entries, 100_000, 1_000).0, Some(vec![20]));
+}
+
+#[test]
+fn a_rank_check_spends_no_more_than_its_budget() {
+    // One row with a tiny lead: the bounds over its pivot columns fail and its singular values are
+    // computed when the work allows. Whatever the budget, a diagnosis found was paid for within it.
+    let rows = [Row { entries: vec![(0, 1e-8), (1, 1.0)], residual: 0.0, tolerance: 1e-10 }];
+    for budget in 0..200 {
+        let (found, spent) = sketch_solver::diagnose::diagnose(2, &rows, TAU, budget, 1_000);
+        if let Some(found) = found {
+            assert!(spent <= budget, "{budget}: {spent}");
+            assert_eq!(found.rank, 1);
+        }
+        let repeated = [rows[0].entries.clone(), rows[0].entries.clone()];
+        let (set_aside, spent) = dependent(2, &repeated, budget, 1_000);
+        if set_aside.is_some() { assert!(spent <= budget, "{budget}: {spent}"); }
+    }
+    assert!(sketch_solver::diagnose::diagnose(2, &rows, TAU, 1_000_000, 1_000).0.expect("diagnosed").certain);
 }
