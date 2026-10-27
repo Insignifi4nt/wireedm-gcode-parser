@@ -1,0 +1,24 @@
+{
+  "version": "0.0.765",
+  "previousVersion": "0.0.764",
+  "postCompatibility": "preserved-output-cad-workbench-derived-facts",
+  "summary": "The CAD workbench checks which sketches Pad, Revolve and Sweep can use only while the model toolbar shows those tools, and renders of the same document and parameters reuse the answer; an open sketch or curve skips the checks. The delete dialog's transitive dependents are found only while the dialog is open, in the same history order and with the same cascade. In three profiled 32-sketch drags of each unminified production build, alternating with 0.0.764, the release task spent 1.4, 3.0 and 2.2 ms in source checks with 0.0.764 and none was sampled with 0.0.765; the release task took 60 to 129 ms with 0.0.764 and 56 to 63 ms with 0.0.765, mostly React rendering, so single releases do not show the difference.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Pad, Revolve and Sweep are enabled for the same sketches, and the delete dialog lists the same dependents.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved CAD files are byte for byte the same.",
+    "verification": "CadWorkbench.test.tsx counts source checks: Pad, Revolve and Sweep follow suppress and resume revisions, a selection in the model toolbar checks nothing, a parameter change checks again, revisions while a sketch is open check nothing, and finishing the sketch shows the tools again; checking every render, or with the sketch open, failed it. A second test deletes a sketch whose Pad is the join target of another extrude and checks the listed dependents, their order and the cascade, and a delete without dependents. Three profiled browser drags of each build; the full Vitest suite, lint, ui:check, build, solver:check and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Less work in the CAD workbench while a sketch is open.",
+    "changes": [
+      "The part workbench no longer checks which sketches Pad, Revolve and Sweep can use while a sketch is open, so finishing a sketch drag in a part with many sketches does less work."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

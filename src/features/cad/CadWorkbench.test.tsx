@@ -20,6 +20,7 @@ import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
 import { useCadSketchEditing } from './useCadSketchEditing';
 import { pairedBoreMirrorPart } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
+import { cadSketchSourceAvailability, cadSketchSourceIssue } from '@/domain/cad/cadSketchSources';
 
 let requestViewportMenu: ((request: CadViewportContextMenuRequest) => void) | undefined;
 let pickViewportFeature: ((id: string | null) => void) | undefined;
@@ -49,6 +50,12 @@ vi.mock('./CadViewport', async () => {
     if (hidden) return <div className="cad-viewport" hidden />;
     return <div aria-label="3D model viewport" data-displayed-volumes={meshes.map(mesh => mesh.volume).join(',')} data-navigation-locked={String(navigationLocked)} data-source-reference-pick-ids={sourceReferencePickIds?.join(',') ?? ''} />;
   } };
+});
+
+// The source checks keep their behavior; tests count how often the workbench runs them.
+vi.mock('@/domain/cad/cadSketchSources', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/domain/cad/cadSketchSources')>();
+  return { ...actual, cadSketchSourceAvailability: vi.fn(actual.cadSketchSourceAvailability), cadSketchSourceIssue: vi.fn(actual.cadSketchSourceIssue) };
 });
 
 let container: HTMLDivElement;
@@ -942,6 +949,60 @@ describe('CAD sketch interaction', () => {
     const material = solidDocument().features[0]; if (material.kind !== 'sketch') throw new Error('Expected sketch.');
     await mount({ ...createCadDocument('Suppressed source'), features: [{ ...material, suppressed: true }] });
     expect(button('Pad / Pocket').disabled).toBe(true);
+  });
+
+  it('checks Pad, Revolve and Sweep sources again only for a new document in the model toolbar, and not while a sketch is open', async () => {
+    const material = solidDocument().features[0]; if (material.kind !== 'sketch') throw new Error('Expected material sketch.');
+    const sourceChecks = () => vi.mocked(cadSketchSourceAvailability).mock.calls.length + vi.mocked(cadSketchSourceIssue).mock.calls.length;
+    const clearSourceChecks = () => { vi.mocked(cadSketchSourceAvailability).mockClear(); vi.mocked(cadSketchSourceIssue).mockClear(); };
+    const enabled = () => ['Pad / Pocket', 'Revolve', 'Sweep'].map(label => !button(label).disabled);
+    await mount({ ...createCadDocument('Source checks'), features: [material,
+      { id: 'rail', name: 'Rail', kind: 'curve', suppressed: false, plane: 'XZ', offset: 0, segments: [{ kind: 'line', start: [0, 0], end: [0, 20] }] }] });
+    expect(enabled()).toEqual([true, true, true]);
+    // Selecting renders the workbench again for the same document.
+    clearSourceChecks();
+    await act(async () => viewport().apply({ kind: 'select-feature', featureId: material.id }));
+    expect(enabled()).toEqual([true, true, true]); expect(sourceChecks()).toBe(0);
+    await act(async () => currentSession.edit([{ kind: 'update-feature', feature: { ...material, suppressed: true } }]));
+    expect(enabled()).toEqual([false, false, false]);
+    await act(async () => currentSession.edit([{ kind: 'update-feature', feature: material }]));
+    expect(enabled()).toEqual([true, true, true]);
+    clearSourceChecks();
+    await act(async () => currentSession.edit([{ kind: 'set-parameter', name: 'width', value: 5 }]));
+    expect(sourceChecks()).toBeGreaterThan(0);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: material.id }));
+    expect(button('Finish sketch')).toBeDefined();
+    clearSourceChecks();
+    await act(async () => currentSession.edit([{ kind: 'update-feature', feature: { ...material, suppressed: true } }]));
+    expect(sourceChecks()).toBe(0);
+    await act(async () => currentSession.edit([{ kind: 'update-feature', feature: material }]));
+    await click('Finish sketch');
+    expect(enabled()).toEqual([true, true, true]);
+  });
+
+  it('lists transitive dependents in history order only while the delete dialog is open, and deletes them together', async () => {
+    const solid = solidDocument(), material = solid.features[0]; if (material.kind !== 'sketch') throw new Error('Expected material sketch.');
+    await mount(applyCadEdits(solid, [
+      { kind: 'add-feature', feature: { ...material, id: 'boss_sketch', name: 'Boss sketch', offset: 10 } },
+      { kind: 'add-feature', feature: { id: 'boss', name: 'Boss', kind: 'extrude', suppressed: false, sketchId: 'boss_sketch', distance: 5, symmetric: false, operation: 'join', targetId: 'pad' } },
+    ]));
+    const pressDelete = async (featureId: string) => {
+      await act(async () => viewport().apply({ kind: 'select-feature', featureId }));
+      const row = container.querySelector<HTMLButtonElement>('.cad-tree-row[aria-pressed="true"]'); if (!row) throw new Error('Selected history row missing.');
+      await act(async () => { row.focus(); row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true })); });
+      const dialog = container.querySelector<HTMLDivElement>('[role="dialog"]'); if (!dialog) throw new Error('Delete dialog missing.');
+      return dialog;
+    };
+    const outline = await pressDelete('sketch');
+    expect(outline.textContent).toContain('This also deletes 2 dependent features.');
+    expect([...outline.querySelectorAll('li')].map(item => item.textContent)).toEqual(['Pad 1', 'Boss']);
+    await click('Delete with dependents');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(currentSession.getSnapshot().document.features.map(feature => feature.id)).toEqual(['boss_sketch']);
+    const boss = await pressDelete('boss_sketch');
+    expect(boss.querySelector('li')).toBeNull(); expect(boss.textContent).toContain('You can restore this feature with Undo.');
+    await click('Delete');
+    expect(currentSession.getSnapshot().document.features).toEqual([]);
   });
 
   it.each(['empty', 'guides'])('does not substitute another sketch when the selected %s sketch has no material contours', async selectedId => {
