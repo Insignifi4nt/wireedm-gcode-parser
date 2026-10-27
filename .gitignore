@@ -10,6 +10,8 @@ dist/
 build/
 .vite/
 /.cache/third-party-sources/
+# Scripts bundled for a run by scripts/run-bundled.mjs, left behind only if the run was killed
+scripts/.*.bundled.mjs
 
 # Environment variables
 .env

@@ -1,0 +1,24 @@
+{
+  "version": "0.0.761",
+  "previousVersion": "0.0.760",
+  "postCompatibility": "preserved-output-cad-benchmark-harness",
+  "summary": "Runs npm run cad:benchmark bundled by Vite, as the application is built, instead of through tsx, whose name-keeping wrappers made the medians of the same drag previews 5 to 12% slower in one run against each of two bundled runs. Each report records its runner, and a solver-workloads run directory refuses parts from another runner. A preview group runs only the drag previews, which now also cover 32 sketches, and each preview reports one full parse of a copy of the prepared document and that document's JSON size. The new baseline shows that a preview's preparation grows with the document rather than the edit: at 32 sketches it takes about 52 ms, three 60 Hz frames, and one full parse takes 94 to 95% of that while the solver calls take under 0.5 ms. No application code changes.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Benchmark reports from before 0.0.761 were measured through tsx and are not comparable with bundled reports; compare only reports with the same runner.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Two bundled preview runs of 30 samples and one through tsx at 1, 4, 8 and 32 sketches; a quick bundled run of every group, including the cold solver probes started from the bundle; the full Vitest suite, lint, ui:check, build and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Maintenance release for performance measurement.",
+    "changes": [
+      "No visible change. The CAD performance benchmark now measures the code as the application runs it."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
