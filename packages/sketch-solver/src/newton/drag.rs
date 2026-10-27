@@ -179,9 +179,11 @@ fn norm(values: &[f64]) -> f64 { values.iter().map(|value| value * value).sum::<
 /// is not iterated, so it keeps its values exactly; one that is not accepted is solved as usual.
 /// `held` is a problem-wide column map of `usize::MAX`, left as it was.
 pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, held: &mut [usize]) -> GroupOutcome {
+    // Targets, landings and curvature read one parameter per column.
+    debug_assert!(system.map.is_none(), "a drag is solved with one column per parameter");
     let problem = system.problem;
     let lasting = System { problem, column: system.column,
-        equations: system.equations.iter().copied().filter(|&e| !problem.equations[e].temporary).collect(), unknowns: system.unknowns.clone() };
+        equations: system.equations.iter().copied().filter(|&e| !problem.equations[e].temporary).collect(), unknowns: system.unknowns.clone(), map: system.map };
     let targets: Vec<Target> = system.equations.iter().map(|&e| &problem.equations[e]).filter(|equation| equation.temporary)
         .map(|equation| Target { parameter: equation.operands[0], column: system.column[equation.operands[0]], value: equation.value }).collect();
     let n = system.unknowns.len();
@@ -389,7 +391,7 @@ impl Drag<'_> {
         let unknowns: Vec<usize> = self.lasting.unknowns.iter().copied().filter(|&p| !aimed[self.lasting.column[p]]).collect();
         if unknowns.is_empty() { return Ok(true); }
         for (c, &p) in unknowns.iter().enumerate() { self.held[p] = c; }
-        let held = System { problem: self.lasting.problem, column: &*self.held, equations: self.lasting.equations.clone(), unknowns };
+        let held = System { problem: self.lasting.problem, column: &*self.held, equations: self.lasting.equations.clone(), unknowns, map: None };
         let saved: Vec<f64> = held.unknowns.iter().map(|&p| values[p]).collect();
         let limits = Limits { fill: self.limits.fill, work: self.limits.work.saturating_sub(self.work) };
         let polished = solve_group_within(&held, values, limits, DRAG_ITERATIONS.saturating_sub(self.iterations).min(MAX_ITERATIONS));

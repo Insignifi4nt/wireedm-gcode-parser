@@ -15,6 +15,8 @@ use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
 
 mod drag;
+#[cfg(test)]
+mod tests;
 pub use drag::{DRAG_ITERATIONS, DragOutcome};
 
 pub const MAX_ITERATIONS: usize = 100;
@@ -104,10 +106,32 @@ struct System<'a> {
     /// Column of each parameter within its group, or `usize::MAX` when it is fixed or unused.
     column: &'a [usize],
     equations: Vec<usize>,
+    /// The parameter each column moves.
     unknowns: Vec<usize>,
+    /// How columns move further parameters; `None` when each column moves its parameter alone.
+    map: Option<&'a ColumnMap>,
+}
+
+/// Columns that each move a class of parameters held at fixed offsets from one another. Column `c`
+/// moves `unknowns[c]` by `scale[c]` times its step, and each follower `(p, c, offset)` is then set
+/// to `values[unknowns[c]] + offset`. A follower's `column` entry is its class's column, so a row
+/// over several members of a class sums their derivatives, each times the scale, in that column.
+struct ColumnMap {
+    scale: Vec<f64>,
+    followers: Vec<(usize, usize, f64)>,
 }
 
 impl System<'_> {
+    /// How far a column's parameter moves per unit of its step: one without a map, so a step or
+    /// derivative times it is unchanged.
+    fn scale(&self, column: usize) -> f64 { self.map.map_or(1.0, |map| map.scale[column]) }
+
+    /// Sets each follower from the parameter of its column, once those have moved.
+    fn expand(&self, values: &mut [f64]) {
+        let Some(map) = self.map else { return };
+        for &(p, column, offset) in &map.followers { values[p] = values[self.unknowns[column]] + offset; }
+    }
+
     /// Rows at `values`; `weights` from an earlier evaluation keep one cost function per step.
     fn rows(&self, values: &[f64], weights: Option<&[Row]>) -> Vec<Row> {
         self.equations.iter().enumerate().map(|(index, &equation)| {
@@ -123,12 +147,14 @@ impl System<'_> {
             for (slot, &p) in equation.operands.iter().enumerate() {
                 let column = self.column[p];
                 if column == usize::MAX { continue; }
-                // An operand repeated in one equation has one derivative, the sum of its slots.
+                // Operands one column moves, as one operand repeated in an equation, have one
+                // derivative: the sum of their slots, each times how far the column moves them.
+                let derivative = result.gradient[slot] * self.scale(column);
                 match row.columns[..row.len].iter().position(|&c| c == column) {
-                    Some(existing) => row.derivatives[existing] += result.gradient[slot],
+                    Some(existing) => row.derivatives[existing] += derivative,
                     None => {
                         row.columns[row.len] = column;
-                        row.derivatives[row.len] = result.gradient[slot];
+                        row.derivatives[row.len] = derivative;
                         row.len += 1;
                     }
                 }
@@ -292,7 +318,7 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
     // A column map the drag's landings share, so each costs its own group's size.
     let mut held = if dragging { vec![usize::MAX; problem.values.len()] } else { Vec::new() };
     for (equations, unknowns) in members {
-        let system = System { problem, column: &column, equations, unknowns };
+        let system = System { problem, column: &column, equations, unknowns, map: None };
         let start: Vec<f64> = if dragging { Vec::new() } else { system.unknowns.iter().map(|&p| values[p]).collect() };
         let group = if dragging { drag::solve_group(&system, values, limits, &mut held) } else { solve_group(&system, values, limits) };
         if let Some((kind, squared)) = group.drag {
@@ -406,6 +432,8 @@ struct Correction {
 /// and approaches it otherwise, without proving it. The rounds share `MAX_ITERATIONS`, and work
 /// past `limits.work` keeps the last values that stood.
 fn nearest(system: &System, values: &mut [f64], start: &[f64], position: &[usize], limits: Limits) -> Correction {
+    // Distances and least change are measured per parameter, one per column.
+    debug_assert!(system.map.is_none(), "the nearest solution is found with one column per parameter");
     let distance = |values: &[f64]| system.unknowns.iter().zip(start).map(|(&p, &s)| (values[p] - s).powi(2)).sum::<f64>().sqrt();
     let scale = system.unknowns.iter().zip(start).fold(1.0, |scale: f64, (&p, &s)| scale.max(values[p].abs()).max(s.abs()));
     let mut current = distance(values);
@@ -563,12 +591,13 @@ fn solve_group_within(system: &System, values: &mut [f64], limits: Limits, most:
         let mut out = left_out.iter().peekable();
         let equations = system.equations.iter().enumerate()
             .filter(|&(i, _)| if out.peek() == Some(&&i) { out.next(); false } else { true }).map(|(_, &e)| e).collect();
-        let reduced = System { problem: system.problem, column: system.column, equations, unknowns: system.unknowns.clone() };
+        let reduced = System { problem: system.problem, column: system.column, equations, unknowns: system.unknowns.clone(), map: system.map };
         let exhausted = levenberg(&reduced, values, &position, limits, &mut work, &mut iterations, most);
         let rows = system.rows(values, None);
         let progress = assess(&rows);
         if progress.accepted || exhausted { return finish(&rows, progress, iterations, exhausted, Some(position), work); }
         for (&p, &value) in system.unknowns.iter().zip(&start) { values[p] = value; }
+        system.expand(values);
     }
     let exhausted = levenberg(system, values, &position, limits, &mut work, &mut iterations, most);
     let rows = system.rows(values, None);
@@ -606,9 +635,10 @@ fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Li
         let (mut stepped, mut rejected) = (false, false);
         let Ok(step) = damped_step(&jacobian, position, mu, work, limits.work) else { return true; };
         if let Some(h) = step {
-            if system.unknowns.iter().zip(&h).all(|(&p, step)| values[p] + step == values[p]) { break; }
+            if system.unknowns.iter().zip(&h).enumerate().all(|(column, (&p, step))| values[p] + step * system.scale(column) == values[p]) { break; }
             let saved: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
-            for (column, &p) in system.unknowns.iter().enumerate() { values[p] += h[column]; }
+            for (column, &p) in system.unknowns.iter().enumerate() { values[p] += h[column] * system.scale(column); }
+            system.expand(values);
             let next = system.rows(values, Some(&rows));
             let predicted = 0.5 * h.iter().zip(&jacobian.gradient).map(|(step, gradient)| step * (mu * step - gradient)).sum::<f64>();
             let before = cost(&rows);
@@ -633,6 +663,7 @@ fn levenberg(system: &System, values: &mut [f64], position: &[usize], limits: Li
                 jacobian = system.jacobian(&rows, position);
             } else {
                 for (&p, &value) in system.unknowns.iter().zip(&saved) { values[p] = value; }
+                system.expand(values);
                 rejected = true;
             }
         }

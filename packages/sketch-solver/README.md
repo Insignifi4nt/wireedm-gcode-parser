@@ -3,7 +3,7 @@
 Wire EDM's own 2D sketch constraint solver: a Rust crate with no dependencies, compiled to `wasm/sketch_solver.wasm`. It is the app's only sketch solver since 0.0.757, when PlaneGCS was removed. See "Native sketch solver" in `docs/maintainers/cad-performance.md`.
 
 - `src/equations.rs` holds the twelve scalar equation kinds. Their gradients come from the dual numbers in `src/dual.rs`.
-- `src/newton.rs` solves each connected group of unknowns with damped Gauss-Newton and judges convergence in millimetres. Rows dependent at the start stay out of a first solve. The sketch graph checks still decide whether a result is accepted.
+- `src/newton.rs` solves each connected group of unknowns with damped Gauss-Newton and judges convergence in millimetres. Rows dependent at the start stay out of a first solve. A column map can let one column move a class of parameters held at fixed offsets; nothing uses it yet. The sketch graph checks still decide whether a result is accepted.
 - `src/sparse.rs` computes each step from a sparse Givens QR. Columns follow a minimum-degree order, and its exact fill bounds the memory a group may use.
 - `src/diagnose.rs` finds degrees of freedom and redundant and conflicting constraints from the rank of each group's Jacobian, as PlaneGCS reported them.
 - `src/problem.rs` defines the `f64` wire format (version 5: constraint tags, temporary targets, diagnosis, labels and drag outcomes). `src/lib.rs` exports `buffer_alloc`, `buffer_free` and `solve`.
