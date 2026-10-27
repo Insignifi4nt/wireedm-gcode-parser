@@ -384,7 +384,8 @@ describe('native-first sketch solving', () => {
       entities: [{ id: 'hole', kind: 'circle', construction: false, centerPointId: 'center', radius: 6 }],
       relations: [{ id: 'size', kind: 'radial-size', entityId: 'hole', quantity: typeof value === 'number' ? 'diameter' : 'radius', value }] });
     // A zero diameter and a negative radius parameter, as the CAD journeys enter to see them refused.
-    for (const refused of [{ graph: circle(0), parameters: {} }, { graph: circle(' bend '), parameters: { bend: -1 } }]) {
+    const inputs: CadSketchSolveInput[] = [{ graph: circle(0), parameters: {} }, { graph: circle(' bend '), parameters: { bend: -1 } }];
+    for (const refused of inputs) {
       const { solver, records, loadPlaneGcs } = runtime(loadCadSketchTestNativeSolver, planeGcs);
       const result = await solver.solve(refused);
       expect(result).toMatchObject({ kind: 'rejected', reason: 'invalid-input', message: expect.stringContaining('Driving radius') });
