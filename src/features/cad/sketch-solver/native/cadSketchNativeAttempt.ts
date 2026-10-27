@@ -15,12 +15,13 @@ export type CadSketchNativeFallbackReason = 'compile' | 'too-large' | 'unavailab
  * PlaneGCS does no better: a rejection, the conflicts a stalled sketch's start shows, a solution
  * some group of which was not diagnosed, or for a drag that stalled where its relations are met the
  * solved frame where it stopped. Group counts say how
- * many connected groups native moved and how many of those kept their accepted start values. `drag`
- * is native's drag outcome whenever the input has a drag target.
+ * many connected groups native moved and how many of those kept their accepted start values, for
+ * an answer and for a solution that is native's own. `drag` is native's drag outcome whenever the
+ * input has a drag target.
  */
 export type CadSketchNativeAttempt = (
   | { readonly kind: 'answer'; readonly result: CadSketchSolveResult; readonly movedGroups: number; readonly keptGroups: number }
-  | { readonly kind: 'fallback'; readonly reason: CadSketchNativeFallbackReason; readonly own?: CadSketchSolveResult }
+  | { readonly kind: 'fallback'; readonly reason: CadSketchNativeFallbackReason; readonly own?: CadSketchSolveResult; readonly movedGroups?: number; readonly keptGroups?: number }
 ) & { readonly drag?: CadSketchNativeSolution['drag'] };
 
 const noDiagnostics = (status: CadSketchSolveDiagnostics['status']): CadSketchSolveDiagnostics =>
@@ -57,7 +58,7 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     const solution = solver.solve(model);
     clock.next('mapping');
     const judged = judge(input, model, solution, check), withheld = WITHHELD[solution.diagnosis.kind];
-    const attempt: CadSketchNativeAttempt = withheld && judged.kind === 'answer' ? { kind: 'fallback', reason: withheld, own: judged.result } : judged;
+    const attempt: CadSketchNativeAttempt = withheld && judged.kind === 'answer' ? withhold(withheld, judged) : judged;
     return solution.drag ? { ...attempt, drag: solution.drag } : attempt;
   } finally { clock.stop(); }
 }
@@ -102,7 +103,12 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
   // was not diagnosed, is solved with its freedom unknown.
   if (degreesOfFreedom === null && !uncertain) return unsolved('unknown-freedom');
   const solved = solvedAttempt(input, model, solution, diagnostics, check, !uncertain);
-  return stalled && solved.kind === 'answer' ? { kind: 'fallback', reason: 'stalled', own: solved.result } : solved;
+  return stalled && solved.kind === 'answer' ? withhold('stalled', solved) : solved;
+}
+
+/** An answer that stands only when PlaneGCS does no better, with its group counts. */
+function withhold(reason: CadSketchNativeFallbackReason, { result: own, movedGroups, keptGroups }: Extract<CadSketchNativeAttempt, { kind: 'answer' }>): CadSketchNativeAttempt {
+  return { kind: 'fallback', reason, own, movedGroups, keptGroups };
 }
 
 function answer(result: CadSketchSolveResult): CadSketchNativeAttempt { return { kind: 'answer', result, movedGroups: 0, keptGroups: 0 }; }

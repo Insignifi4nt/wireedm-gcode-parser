@@ -221,3 +221,27 @@ fn a_satisfiable_sketch_held_on_a_saddle_is_not_blamed() {
     builder.equation(Kind::PointOnLine, 0.0, &[q[0], q[1], c[0], c[1], d[0], d[1]]);
     assert_eq!(diagnose(&builder), (Status::NotConverged, Diagnosis::Suspected, None, vec![C; 4]));
 }
+
+#[test]
+fn angles_a_turn_apart_at_the_start_are_not_blamed() {
+    // p 10 from o, at angles a hair either side of 60 degrees from o–r, both met at (-10, 0). It starts
+    // at (10, 0), 180 degrees from both, where their wrapped residuals fall either side of the wrap a
+    // turn apart, held there by q on a nearly vertical line through it. The angles are the same
+    // function of p, but their residuals combine to a turn only where they wrap differently, so they
+    // are not blamed.
+    let mut builder = Builder::new();
+    let o = builder.point(0.0, 0.0, true);
+    let r = builder.point(-0.5, 3f64.sqrt() / 2.0, true);
+    let c = builder.point(10.0, 0.0, true);
+    let d = builder.point(11.0, 5e-8, true);
+    let p = builder.point(10.0, 0.0, false);
+    let q = builder.point(10.0, 0.0, false);
+    distance(&mut builder, 10.0, o, p);
+    for degrees in [60.0 - 1e-12, 60.0 + 1e-12] {
+        builder.equation(Kind::Angle, f64::to_radians(degrees), &[o[0], o[1], r[0], r[1], o[0], o[1], p[0], p[1]]);
+    }
+    builder.equation(Kind::Difference, 0.0, &[p[1], q[1]]);
+    builder.equation(Kind::PointOnLine, 0.0, &[q[0], q[1], c[0], c[1], d[0], d[1]]);
+    let (status, diagnosis, _, _) = diagnose(&builder);
+    assert_eq!((status, diagnosis), (Status::NotConverged, Diagnosis::Suspected));
+}

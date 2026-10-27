@@ -22,7 +22,8 @@
 //! being in it can be blamed too, and a satisfiable sketch stuck at a stationary point is blamed
 //! as conflicting. Where the start shows relations that are the same function of the same values,
 //! as repeated dimensions are, conflicting, the group is blamed for those instead, as PlaneGCS
-//! diagnoses a sketch where it begins: they depend on each other at every point.
+//! diagnoses a sketch where it begins: they depend on each other at every point. Angles, whose
+//! residuals wrap, are left out.
 //!
 //! Near a singular configuration, as a point a little off where its circle touches its line, rank
 //! at `TAU` is unclear for a solved sketch too. A row whose insertion or witness cannot be decided
