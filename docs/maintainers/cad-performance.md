@@ -114,6 +114,12 @@ From 0.0.766 the workbench renders again for sketch freedom only when the freedo
 - Of the 4 left, one renders the accepted document, one the build that starts for it, one the resumed analysis and one the new freedom. About 1,700 of the components in each are the shared buttons and their closed tooltips.
 - `CadWorkbench.test.tsx` counts workbench renders through the viewport mock while a sketch is analyzed, and `CadSketchConstraintStatus.test.tsx` checks the reports.
 
+From 0.0.767 shared help renders only its control while closed. `Tooltip` adds its handlers to the control itself, without a Radix provider, root, trigger and presence around it, and positions open help beside the control with Radix Popper through a virtual anchor.
+
+- In the same probe, each of the 4 full workbench renders of a 32-sketch drag release rendered 414 to 427 components in four releases, against 1,845 to 1,888 with 0.0.766. The commits are the same: 9, with 4 full renders.
+- Drag latency is unchanged: its median was 21.3 to 22.2 ms in six runs of each version.
+- `tooltip.test.tsx` checks the timing and closing rules taken over from Radix, and `e2e/shared-help.spec.ts` checks placement, layering and click-through in Chromium.
+
 ## Native sketch solver
 
 `packages/sketch-solver` is our own Rust constraint solver, compiled to a WebAssembly module with no dependencies (92 kB, 33 kB gzip, at 0.0.739). From 0.0.739 it was built, tested and compared with PlaneGCS; from 0.0.746 the app solved with it first; from 0.0.757 it is the app's only sketch solver.
