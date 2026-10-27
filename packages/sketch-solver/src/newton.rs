@@ -325,23 +325,22 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
             (found, spent > budget)
         };
         // A converged group whose rank is unclear, as near a tangency, keeps the witnesses found
-        // and leaves freedom unknown, and one that ran out of work while diagnosed labels nothing; a
-        // group that did not converge is diagnosed again at `STALLED`, as rank decides whether it
-        // conflicts, and then blamed as its start is diagnosed when that stands where it stopped.
+        // and leaves freedom unknown, and one that ran out of work while diagnosed labels nothing. A
+        // group that did not converge is blamed for relations that repeat each other with values
+        // that cannot agree, which conflict wherever it stopped, even where the stall itself cannot
+        // be diagnosed; otherwise it is diagnosed again at `STALLED`, as rank decides whether it
+        // conflicts.
         let converged = group.status == Status::Converged;
         let diagnosed = match diagnose_at(values, TAU, &mut work) {
             (Some(found), _) if found.2 => Some((found, Diagnosis::Diagnosed)),
             (Some(found), _) if converged => Some((found, Diagnosis::Uncertain)),
             (None, true) if converged => Some(((0, Vec::new(), false), Diagnosis::Incomplete)),
-            _ => (group.status == Status::NotConverged).then(|| diagnose_at(values, STALLED, &mut work).0).flatten()
-                .filter(|found| found.2).map(|stalled| {
-                    // A drag has no start of its own here, and its diagnoses already fall back.
-                    let from_start = (!dragging).then(|| blamed_from_start(&system, values, &start, &position, limits, &mut work)).flatten();
-                    match from_start {
-                        Some(witnesses) => ((0, witnesses, false), Diagnosis::FromStart),
-                        None => (stalled, Diagnosis::Suspected),
-                    }
-                }),
+            // A drag's diagnoses fall back anyway.
+            _ if group.status == Status::NotConverged => match (!dragging).then(|| repeated(&system, values, &start, limits, &mut work)).flatten() {
+                Some(witnesses) => Some(((0, witnesses, false), Diagnosis::FromStart)),
+                None => diagnose_at(values, STALLED, &mut work).0.filter(|found| found.2).map(|stalled| (stalled, Diagnosis::Suspected)),
+            },
+            _ => None,
         };
         match diagnosed {
             Some(((group_rank, group_witnesses, certain), kind)) => {
@@ -459,27 +458,64 @@ fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance:
         rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect(), diagnosis.certain)), spent)
 }
 
-/// The witnesses of a group that did not converge as its `start` diagnoses them at `TAU`, kept only
-/// where every row computes the same function of the same unknowns, up to its value and sign (see
-/// `repeats`). Such rows depend on each other at every point and their residuals combine to the
-/// same constant, so a kept witness that disagrees is a conflict wherever the sketch moves, and one
-/// that agrees a repetition. Other dependencies the start shows can be accidents of where it
-/// begins, as a point held by symmetry on the line between two centres it must be equally far
-/// from, so they are left out, as are those only the stall shows. This blames what PlaneGCS blames
-/// for repeated relations, as it diagnoses the start, where a collapsed stall cannot be diagnosed
-/// exactly. `None` unless some kept witness disagrees, or when the work would pass `limits.work`;
-/// `values` end as they began.
-fn blamed_from_start(system: &System, values: &mut [f64], start: &[f64], position: &[usize], limits: Limits, work: &mut usize) -> Option<Vec<Witness>> {
-    let stopped: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
-    let place = |values: &mut [f64], at: &[f64]| for (&p, &value) in system.unknowns.iter().zip(at) { values[p] = value; };
-    place(values, start);
-    let budget = limits.work.saturating_sub(*work);
-    let (found, spent) = diagnose_group(system, values, position, TAU, budget, limits.fill);
-    *work = work.saturating_add(spent);
-    place(values, &stopped);
-    let (_, witnesses, _) = found?;
-    let kept: Vec<Witness> = witnesses.into_iter().filter(|witness| repeats(system.problem, &witness.rows)).collect();
-    kept.iter().any(|witness| !witness.agrees).then_some(kept)
+/// Witnesses of a group's lasting equations that repeat each other: rows that compute the same
+/// function of the same values, up to the value each is held at and its sign (see `repeats`). Such
+/// rows depend on each other at every point and their residuals combine to the same constant, so a
+/// pair whose held values differ by more than both rows' tolerances at `start`, the group's
+/// unknowns before solving, is a conflict wherever the sketch moves, and one that agrees a
+/// repetition. Each repeat is paired with the earliest row of its function holding a value it
+/// agrees with, or else with the earliest. This blames what PlaneGCS blames for repeated relations,
+/// as it diagnoses the start, where a stall that collapsed or ran off cannot be diagnosed exactly.
+/// Dependencies only some points show are left out: two distances to one point from two others
+/// repeat each other only on their line. `None` unless some pair disagrees, or when the work would
+/// pass `limits.work`.
+fn repeated(system: &System, values: &[f64], start: &[f64], limits: Limits, work: &mut usize) -> Option<Vec<Witness>> {
+    let problem = system.problem;
+    // Each lasting equation's function: its kind and operands, a distance's points or a
+    // difference's values in one order, with the value it is held at read in that order.
+    let mut keyed: Vec<((usize, Vec<usize>), usize)> = system.equations.iter().copied()
+        .filter(|&e| !problem.equations[e].temporary && problem.equations[e].kind != Kind::Angle)
+        .map(|e| {
+            let equation = &problem.equations[e];
+            let operands = &equation.operands;
+            let swapped: Vec<usize> = match equation.kind {
+                Kind::Distance => [&operands[2..], &operands[..2]].concat(),
+                Kind::Difference => vec![operands[1], operands[0]],
+                _ => operands.clone(),
+            };
+            ((equation.kind as usize, operands.clone().min(swapped)), e)
+        }).collect();
+    *work = work.saturating_add(keyed.len().saturating_mul(usize::BITS as usize));
+    if *work > limits.work { return None; }
+    // Stable, so each function's equations stay in order.
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    let at_start = |p: usize| if system.column[p] == usize::MAX { values[p] } else { start[system.column[p]] };
+    // The value an equation is held at; a kind whose residual ignores `value` is held at zero.
+    let target = |e: usize| { let equation = &problem.equations[e]; if equation.kind.reads_value() { equation.value } else { 0.0 } };
+    let tolerance = |e: usize| {
+        let scale = problem.equations[e].operands.iter().fold(target(e).abs().max(1.0), |scale, &p| scale.max(at_start(p).abs()));
+        ACCEPT_MM.max(8.0 * f64::EPSILON * scale)
+    };
+    let mut witnesses = Vec::new();
+    for function in keyed.chunk_by(|a, b| a.0 == b.0) {
+        let first = function[0].1;
+        let held = |e: usize| {
+            let equation = &problem.equations[e];
+            if equation.kind == Kind::Difference && equation.operands != problem.equations[first].operands { -target(e) } else { target(e) }
+        };
+        // The earliest equation of each value held so far.
+        let mut held_values = vec![first];
+        for &(_, equation) in &function[1..] {
+            debug_assert!(repeats(problem, &[first, equation]));
+            *work = work.saturating_add(held_values.len());
+            if *work > limits.work { return None; }
+            let partner = held_values.iter().copied().find(|&e| (held(e) - held(equation)).abs() <= tolerance(e) + tolerance(equation));
+            if partner.is_none() { held_values.push(equation); }
+            let earlier = partner.unwrap_or(first);
+            witnesses.push(Witness { rows: vec![earlier.min(equation), earlier.max(equation)], agrees: partner.is_some() });
+        }
+    }
+    witnesses.iter().any(|witness| !witness.agrees).then_some(witnesses)
 }
 
 /// Whether `rows`, two or more equations, compute the same function of the same values up to the

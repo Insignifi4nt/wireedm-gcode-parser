@@ -38,8 +38,8 @@ const STALLED_DRAG = 'The point could not be moved toward the target from this s
  * at feasible values no more singular than its start, but nothing shows it got as close as it
  * could, so that frame, checked as any solution, and a drag's conflicts and redundancies stand
  * only when PlaneGCS does no better; one that stalled elsewhere is not converged. While PlaneGCS is
- * bundled, it is also asked first when native blames a stalled sketch as its start shows, as
- * PlaneGCS does, and when some converged group was not diagnosed, judged as a rank too close to call:
+ * bundled, it is also asked first when native blames a stalled sketch for repeated relations, which
+ * PlaneGCS sees at its start, and when some converged group was not diagnosed, judged as a rank too close to call:
  * native's answer then stands only when PlaneGCS does no better.
  * Projected means native's first- and second-order necessary conditions for a local minimum of the
  * target distance held up to its resolution. That proves neither a local minimum nor the nearest
