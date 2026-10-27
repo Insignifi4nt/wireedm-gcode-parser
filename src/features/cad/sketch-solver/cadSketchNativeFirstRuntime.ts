@@ -34,12 +34,13 @@ export const CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 /**
  * Solves with the native solver first and asks PlaneGCS only when native cannot answer: compilation
  * it refuses, load failure, a failed instance, too large groups, unavailable or suspected
- * diagnosis, unknown freedom, no convergence, a stalled drag, a drag diagnosed as conflicting or
- * redundant where it ended, or a solution that moves fixed values or fails the graph checks. A
- * converged sketch whose rank is too close to call, as near a tangency, is answered natively with
- * freedom unknown. PlaneGCS loads on first use. When native has its own result, a rejection or the
- * frame where a drag stalled at feasible values, PlaneGCS's answer replaces it only if it solves or
- * names definite conflicts or redundancies; `native-only` returns native's own result.
+ * diagnosis, conflicts blamed as a stalled sketch's start shows, a group not diagnosed, unknown
+ * freedom, no convergence, a stalled drag, a drag diagnosed as conflicting or redundant where it
+ * ended, or a solution that moves fixed values or fails the graph checks. A converged sketch whose
+ * rank is too close to call, as near a tangency, is answered natively with freedom unknown. PlaneGCS
+ * loads on first use. When native has its own result, a rejection, a solution with freedom unknown
+ * or the frame where a drag stalled at feasible values, PlaneGCS's answer replaces it only if it
+ * solves or names definite conflicts or redundancies; `native-only` returns native's own result.
  */
 export function createCadSketchNativeFirstRuntime(options: {
   readonly loadNative: () => Promise<CadSketchNativeSolver>;
@@ -87,22 +88,25 @@ export function createCadSketchNativeFirstRuntime(options: {
       }
       // Compilation is PlaneGCS's to answer outright while both solvers exist.
       const own = attempt?.kind === 'fallback' && attempt.reason !== 'compile' ? attempt.own : undefined;
-      if (mode === 'native-only') {
+      const answerOwn = <T extends CadSketchSolveResult | undefined>(result: T): T => {
         record.answeredBy = 'native';
-        return (attempt?.kind === 'fallback' ? attempt.own : undefined) ?? { kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.',
+        if (result && attempt?.kind === 'fallback' && attempt.movedGroups !== undefined) { record.movedGroups = attempt.movedGroups; record.keptGroups = attempt.keptGroups; }
+        return result;
+      };
+      if (mode === 'native-only') {
+        return answerOwn(attempt?.kind === 'fallback' ? attempt.own : undefined) ?? { kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.',
           diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
       }
       const started = performance.now();
       let result: CadSketchSolveResult;
       try { result = await (await planeGcsBackend()).solve(input); } catch (error) {
         record.planeGcs = 'threw';
-        if (own) { record.answeredBy = 'native'; return own; }
+        if (own) return answerOwn(own);
         throw error;
       } finally { record.planeGcsMs = performance.now() - started; }
       record.planeGcs = result.kind === 'solved' ? 'solved' : result.reason;
       if (!own || result.kind === 'solved' || result.reason === 'conflicting' || result.reason === 'redundant') return result;
-      record.answeredBy = 'native';
-      return own;
+      return answerOwn(own);
     } finally { options.onSolve?.(record); }
   }
 

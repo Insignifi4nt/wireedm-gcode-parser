@@ -9,7 +9,7 @@
 //! that weighting, in millimetres; the sketch graph checks remain the authority on every result.
 
 use crate::dual::{Dual, WIDTH};
-use crate::equations::{is_direction, reach, residual};
+use crate::equations::{Kind, is_direction, reach, residual};
 use crate::diagnose::{self, CONFLICTING, STALLED, TAU, Witness, diagnose};
 use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
@@ -307,26 +307,44 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
         if outcome.status != Status::TooLarge && group.status != Status::Converged { outcome.status = group.status; }
         if outcome.diagnosis == Diagnosis::NoUnknowns { witnesses.extend(unmet(&system, values)); continue; }
         if outcome.diagnosis == Diagnosis::Unavailable { continue; }
-        let Some(position) = group.position else { outcome.diagnosis = Diagnosis::Unavailable; continue; };
+        // A group accepted where it is but out of work, or too large to factor, is not diagnosed:
+        // converged, it labels nothing; otherwise nothing is available.
+        let Some(position) = group.position else {
+            let kind = if group.status == Status::Converged { Diagnosis::Incomplete } else { Diagnosis::Unavailable };
+            if kind.severity() > outcome.diagnosis.severity() { outcome.diagnosis = kind; }
+            continue;
+        };
         // A group that stalled short of a collapsed nearest point is diagnosed again only when its
         // rank was unclear, so a clear diagnosis is never lost to the looser distance.
         let mut work = group.work;
-        let mut diagnose_at = |distance| {
-            let (found, spent) = diagnose_group(&system, values, &position, distance, limits.work.saturating_sub(work), limits.fill);
-            work = work.saturating_add(spent);
-            found
+        // What was found within `distance`, and whether the work ran out first.
+        let diagnose_at = |values: &[f64], distance, work: &mut usize| {
+            let budget = limits.work.saturating_sub(*work);
+            let (found, spent) = diagnose_group(&system, values, &position, distance, budget, limits.fill);
+            *work = work.saturating_add(spent);
+            (found, spent > budget)
         };
         // A converged group whose rank is unclear, as near a tangency, keeps the witnesses found
-        // and leaves freedom unknown; a group that did not converge is diagnosed again at
-        // `STALLED`, as rank decides whether it conflicts.
+        // and leaves freedom unknown, and one that ran out of work while diagnosed labels nothing; a
+        // group that did not converge is diagnosed again at `STALLED`, as rank decides whether it
+        // conflicts, and then blamed as its start is diagnosed when that stands where it stopped.
         let converged = group.status == Status::Converged;
-        let diagnosed = match diagnose_at(TAU) {
-            Some(found) if found.2 || converged => Some((found, false)),
-            _ => (group.status == Status::NotConverged).then(|| diagnose_at(STALLED)).flatten()
-                .filter(|found| found.2).map(|found| (found, true)),
+        let diagnosed = match diagnose_at(values, TAU, &mut work) {
+            (Some(found), _) if found.2 => Some((found, Diagnosis::Diagnosed)),
+            (Some(found), _) if converged => Some((found, Diagnosis::Uncertain)),
+            (None, true) if converged => Some(((0, Vec::new(), false), Diagnosis::Incomplete)),
+            _ => (group.status == Status::NotConverged).then(|| diagnose_at(values, STALLED, &mut work).0).flatten()
+                .filter(|found| found.2).map(|stalled| {
+                    // A drag has no start of its own here, and its diagnoses already fall back.
+                    let from_start = (!dragging).then(|| blamed_from_start(&system, values, &start, &position, limits, &mut work)).flatten();
+                    match from_start {
+                        Some(witnesses) => ((0, witnesses, false), Diagnosis::FromStart),
+                        None => (stalled, Diagnosis::Suspected),
+                    }
+                }),
         };
         match diagnosed {
-            Some(((group_rank, group_witnesses, certain), suspected)) => {
+            Some(((group_rank, group_witnesses, certain), kind)) => {
                 // A solution that stands with freedom left moves toward the one nearest its start.
                 // The move stands only when the group is diagnosed the same where it ends, as a
                 // nearer solution can be singular; otherwise the diagnosed solution is kept.
@@ -347,9 +365,8 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
                 }
                 rank += group_rank;
                 witnesses.extend(group_witnesses);
-                // Unavailable, then Suspected, then Uncertain win over what any other group found.
-                if suspected { outcome.diagnosis = Diagnosis::Suspected; }
-                else if !certain && outcome.diagnosis == Diagnosis::Diagnosed { outcome.diagnosis = Diagnosis::Uncertain; }
+                // The most severe group decides; see `Diagnosis::severity`.
+                if kind.severity() > outcome.diagnosis.severity() { outcome.diagnosis = kind; }
             }
             None => outcome.diagnosis = Diagnosis::Unavailable,
         }
@@ -440,6 +457,49 @@ fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance:
     let (diagnosis, spent) = diagnose(position.len(), &diagnosed, distance, budget, fill);
     (diagnosis.map(|diagnosis| (diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
         rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect(), diagnosis.certain)), spent)
+}
+
+/// The witnesses of a group that did not converge as its `start` diagnoses them at `TAU`, kept only
+/// where every row computes the same function of the same unknowns, up to its value and sign (see
+/// `repeats`). Such rows depend on each other at every point and their residuals combine to the
+/// same constant, so a kept witness that disagrees is a conflict wherever the sketch moves, and one
+/// that agrees a repetition. Other dependencies the start shows can be accidents of where it
+/// begins, as a point held by symmetry on the line between two centres it must be equally far
+/// from, so they are left out, as are those only the stall shows. This blames what PlaneGCS blames
+/// for repeated relations, as it diagnoses the start, where a collapsed stall cannot be diagnosed
+/// exactly. `None` unless some kept witness disagrees, or when the work would pass `limits.work`;
+/// `values` end as they began.
+fn blamed_from_start(system: &System, values: &mut [f64], start: &[f64], position: &[usize], limits: Limits, work: &mut usize) -> Option<Vec<Witness>> {
+    let stopped: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
+    let place = |values: &mut [f64], at: &[f64]| for (&p, &value) in system.unknowns.iter().zip(at) { values[p] = value; };
+    place(values, start);
+    let budget = limits.work.saturating_sub(*work);
+    let (found, spent) = diagnose_group(system, values, position, TAU, budget, limits.fill);
+    *work = work.saturating_add(spent);
+    place(values, &stopped);
+    let (_, witnesses, _) = found?;
+    let kept: Vec<Witness> = witnesses.into_iter().filter(|witness| repeats(system.problem, &witness.rows)).collect();
+    kept.iter().any(|witness| !witness.agrees).then_some(kept)
+}
+
+/// Whether `rows`, two or more equations, compute the same function of the same values up to the
+/// value each is held at and its sign: one kind over the same operands, or a distance or a
+/// difference between the same two values either way round. Angles are left out: their residuals
+/// wrap by a turn, so two of them can combine at the start to nearly a turn and to nothing where
+/// they hold. A zero row depends on nothing, so a witness of rows that vanish where they were
+/// diagnosed is never one of these.
+fn repeats(problem: &Problem, rows: &[usize]) -> bool {
+    let [first, rest @ ..] = rows else { return false };
+    let first = &problem.equations[*first];
+    !rest.is_empty() && rest.iter().all(|&equation| {
+        let equation = &problem.equations[equation];
+        let (a, b) = (&equation.operands, &first.operands);
+        equation.kind == first.kind && first.kind != Kind::Angle && (a == b || match equation.kind {
+            Kind::Distance => a[..2] == b[2..] && a[2..] == b[..2],
+            Kind::Difference => a[0] == b[1] && a[1] == b[0],
+            _ => false,
+        })
+    })
 }
 
 /// Rows that depend on earlier lasting rows at the start stay out of a first solve, as their

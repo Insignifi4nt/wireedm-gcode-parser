@@ -41,22 +41,27 @@ describe('public-boundary solver benchmarks', () => {
     expect(solver.takeRecord()).toBeUndefined();
     const nativeOnly = solver.takeStages();
     expect(nativeOnly).toEqual({ parseCompile: 0, nativeCall: 0, mapping: 0, validation: 0 });
-    // Native suspects these conflicts without naming them, so PlaneGCS is asked and names them.
+    // Native blames these conflicts as their start shows, as PlaneGCS does, but asks PlaneGCS first
+    // while it is bundled.
     const overlapping = createCadSolverWorkloadCases().find(testCase => testCase.id === 'overlapping-conflicts')!.input;
     expect(await solver.solve(overlapping)).toMatchObject({ kind: 'rejected', reason: 'conflicting' });
-    expect(solver.takeRecord()).toMatchObject({ answeredBy: 'planegcs', native: 'suspected', planeGcs: 'conflicting' });
+    expect(solver.takeRecord()).toMatchObject({ answeredBy: 'planegcs', native: 'start-diagnosis', planeGcs: 'conflicting' });
     expect(solver.takeStages().nativeCall).toBeGreaterThan(0);
   });
 
   it('answers every workload through the production runtime as PlaneGCS does, except reviewed differences', async () => {
     const [plane, solver] = pair(), summary = (result: CadSketchSolveResult) => ({ outcome: cadSolverOutcome(result), degreesOfFreedom: result.diagnostics.degreesOfFreedom,
       conflictingIds: result.diagnostics.conflictingIds, redundantIds: result.diagnostics.redundantIds, partiallyRedundantIds: result.diagnostics.partiallyRedundantIds });
-    // Reviewed differences. PlaneGCS stops short of tangency and fails the graph check. Native suspects the overlapping conflicts and the impossible triangle at
-    // the nearest point it reached, without naming relations or freedom; PlaneGCS diagnoses at the
-    // start, naming the overlapping conflicts but counting freedom for the triangle. With nothing
+    // Reviewed differences. PlaneGCS stops short of tangency and fails the graph check. Native
+    // suspects the impossible triangle at the nearest point it reached, without naming relations or
+    // freedom; PlaneGCS diagnoses at the start, counting freedom for the triangle. Native names the
+    // overlapping conflicts as their start shows, as PlaneGCS does, and a repeated 10 there as
+    // redundant: it agrees with the first, and the conflict stands without it. PlaneGCS names it
+    // conflicting too, as the sketch still fails without the relations it set aside. With nothing
     // free, PlaneGCS accepts a relation that is not met and fails the graph check; native names it.
     const suspected = { outcome: 'rejected:failed', degreesOfFreedom: null, conflictingIds: [] };
-    const reviewed: Record<string, object> = { 'tangency-near': { outcome: 'solved' }, 'overlapping-conflicts': suspected, 'impossible-triangle': suspected,
+    const reviewed: Record<string, object> = { 'tangency-near': { outcome: 'solved' }, 'impossible-triangle': suspected,
+      'overlapping-conflicts-repeated': { conflictingIds: ['length', 'other', 'third'], redundantIds: ['repeat'] },
       'fully-fixed-conflict': { outcome: 'rejected:conflicting', degreesOfFreedom: null, conflictingIds: ['fixedSize'] } };
     for (const testCase of createCadSolverWorkloadCases()) {
       const expected = summary(await plane.solve(testCase.input)), result = await solver.solve(testCase.input);

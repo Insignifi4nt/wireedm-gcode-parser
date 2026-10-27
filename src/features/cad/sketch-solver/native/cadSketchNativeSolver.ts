@@ -26,17 +26,25 @@ export interface CadSketchNativeSolution {
 export type CadSketchNativeDragOutcome = 'reached' | 'projected' | 'stalled' | 'limited';
 
 /**
- * Rank diagnosis at the returned values. `suspected`: a group that did not converge stalled short of
- * a collapsed nearest point and was diagnosed with a looser dependence distance, so its conflicts
- * are suspected rather than certain and freedom is unknown. `uncertain`: a converged group's rank
- * was too close to call, as near a tangency, so its labels are the dependencies found but more may
- * exist, and freedom is unknown. `no-unknowns`: nothing can move, so only relations that are not met
- * are labelled, as conflicting. `unavailable`: some group was too large, or one that did not
- * converge could not be diagnosed reliably.
+ * Rank diagnosis at the returned values; when groups are diagnosed differently, the sketch takes the
+ * most severe kind, in the order diagnosed, uncertain, incomplete, from-start, suspected,
+ * no-unknowns, unavailable. `suspected`: a group that did not converge stalled short of a collapsed
+ * nearest point and was diagnosed with a looser dependence distance, so its conflicts are suspected
+ * rather than certain and freedom is unknown. `from-start`: such a group is blamed instead for the
+ * dependencies its start shows, as PlaneGCS diagnoses a sketch, between relations that are the same
+ * function of the same values up to their value and sign, as repeated dimensions are, so they hold
+ * at every point; angles, whose residuals wrap, are left out, and others may exist where the solve
+ * stopped. `uncertain`: a converged
+ * group's rank was too close to call, as near a tangency, so its labels are the dependencies found
+ * but more may exist, and freedom is unknown. `incomplete`: a converged group ran out of work, or
+ * was too large to factor, before it was diagnosed, so it labels nothing and freedom is unknown;
+ * other groups are labelled as usual. `no-unknowns`: nothing can move, so only relations that are
+ * not met are labelled, as conflicting. `unavailable`: some group was too large, or one that did not
+ * converge could not be diagnosed reliably or within its work.
  */
 export type CadSketchNativeDiagnosis =
   | { readonly kind: 'diagnosed'; readonly degreesOfFreedom: number | null; readonly labels: readonly number[] }
-  | { readonly kind: 'suspected' | 'uncertain' | 'no-unknowns'; readonly labels: readonly number[] }
+  | { readonly kind: 'suspected' | 'from-start' | 'uncertain' | 'incomplete' | 'no-unknowns'; readonly labels: readonly number[] }
   | { readonly kind: 'unavailable' };
 
 export interface CadSketchNativeSolver {
@@ -61,7 +69,7 @@ function isExports(value: WebAssembly.Exports): value is WebAssembly.Exports & E
 }
 
 const STATUSES: Readonly<Record<number, CadSketchNativeSolution['status']>> = { 0: 'converged', 1: 'not-converged', 3: 'too-large' };
-const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns', 'suspected', 'uncertain'] as const;
+const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns', 'suspected', 'uncertain', 'from-start', 'incomplete'] as const;
 const DRAG_OUTCOMES = ['reached', 'projected', 'stalled', 'limited'] as const;
 const HEADER = 9;
 
@@ -94,6 +102,8 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
       if (kind === undefined || diagnosis === undefined || length !== HEADER + model.values.length + model.equations.length
         || values.some(value => !Number.isFinite(value)) || labels.some(label => label !== 0 && label !== 1 && label !== 2)
         || !(Number.isNaN(degreesOfFreedom) || diagnosis === 'diagnosed' && Number.isSafeInteger(degreesOfFreedom) && degreesOfFreedom >= 0)
+        // Only a group that did not converge is blamed as its start shows.
+        || diagnosis === 'from-start' && kind !== 'not-converged'
         || !(dragging ? drag !== undefined && Number.isFinite(targetDistance) && targetDistance >= 0 : Number.isNaN(dragged) && Number.isNaN(targetDistance)))
         throw new Error('The native sketch solver returned an invalid result.');
       exports.buffer_free(pointer, input.length);

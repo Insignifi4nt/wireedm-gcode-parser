@@ -268,6 +268,26 @@ exports[`solver workload fixtures against real PlaneGCS > overlapping-conflicts 
 }
 `;
 
+exports[`solver workload fixtures against real PlaneGCS > overlapping-conflicts-repeated pins acceptance, freedom and source diagnostics 1`] = `
+{
+  "diagnostics": {
+    "conflictingIds": [
+      "length",
+      "other",
+      "third",
+      "repeat",
+    ],
+    "degreesOfFreedom": null,
+    "issues": [],
+    "partiallyRedundantIds": [],
+    "redundantIds": [],
+    "status": "failed",
+  },
+  "kind": "rejected",
+  "reason": "conflicting",
+}
+`;
+
 exports[`solver workload fixtures against real PlaneGCS > partial-coincident-horizontal pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {

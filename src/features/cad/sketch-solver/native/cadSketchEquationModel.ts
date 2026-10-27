@@ -49,7 +49,7 @@ export interface CadSketchEquationModel {
   readonly equations: readonly CadSketchEquation[];
 }
 
-export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 4;
+export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 5;
 
 export function encodeCadSketchEquationModel(model: CadSketchEquationModel): Float64Array {
   const length = 3 + 2 * model.values.length + model.equations.reduce((total, equation) => total + 4 + equation.operands.length, 0);

@@ -20,14 +20,18 @@
 //! that did not converge is then diagnosed again with rows within `STALLED` dependent; the
 //! sketch is rejected either way, but this blame is a suspicion: a row near a conflict without
 //! being in it can be blamed too, and a satisfiable sketch stuck at a stationary point is blamed
-//! as conflicting.
+//! as conflicting. Where the start shows relations that are the same function of the same values,
+//! as repeated dimensions are, conflicting, the group is blamed for those instead, as PlaneGCS
+//! diagnoses a sketch where it begins: they depend on each other at every point. Angles, whose
+//! residuals wrap, are left out.
 //!
 //! Near a singular configuration, as a point a little off where its circle touches its line, rank
 //! at `TAU` is unclear for a solved sketch too. A row whose insertion or witness cannot be decided
 //! is left out, which leaves the factor as it was, so later rows are decided as before; the
 //! diagnosis is then not `certain`, and neither is one whose independent rows are not shown to
 //! have a smallest singular value of at least `CERTAIN`. Its witnesses are dependencies found, but more may exist, so freedom is
-//! unknown.
+//! unknown. A row that exactly copies a row left out earlier, or its negation, depends on that row
+//! alone, so a repeated relation is still labelled beside an undecided one.
 
 use crate::sparse::SparseRow;
 
@@ -88,6 +92,8 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
     let mut witnesses: Vec<(usize, Vec<(usize, f64)>)> = Vec::new();
     let norms: Vec<f64> = rows.iter().map(|row| row.entries.iter().map(|e| e.1 * e.1).sum::<f64>().sqrt()).collect();
     let (mut independent, mut certain) = (Vec::new(), true);
+    // Rows left out, each with its unit row, and the entries matching them may still read.
+    let (mut left_out, mut reads): (Vec<(usize, SparseRow)>, usize) = (Vec::new(), rows.iter().map(|row| row.entries.len() + 1).sum());
     for (index, row) in rows.iter().enumerate() {
         if !row.residual.is_finite() || !norms[index].is_finite() { return None; }
         if norms[index] == 0.0 { witnesses.push((index, Vec::new())); continue; }
@@ -101,6 +107,11 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
         if !decided {
             if work.run_out() { return None; }
             certain = false;
+            // An exact copy of a row left out earlier, or its negation, depends on that row alone.
+            match copied(&left_out, &unit, &mut reads) {
+                Some((earlier, sign)) => witnesses.push((index, vec![(earlier, sign)])),
+                None => left_out.push((index, unit)),
+            }
         }
     }
     if rank > 0 && !clear_of_dependence(&r, work)? { certain = false; }
@@ -153,6 +164,23 @@ pub fn dependent(n: usize, rows: &[SparseRow], budget: usize, fill: usize) -> (O
         Some(dependent)
     })();
     (found, work.spent())
+}
+
+/// The earlier left-out row `unit` copies exactly, and `1` or `-1` as it is that row or its
+/// negation; `None` when none is, or once matching would read more than `reads` entries. The
+/// allowance is the rows' own size, so matching stays linear and the work limit is left to the
+/// factor: it never changes what is decided.
+fn copied(left_out: &[(usize, SparseRow)], unit: &SparseRow, reads: &mut usize) -> Option<(usize, f64)> {
+    for (index, earlier) in left_out {
+        let cost = earlier.len().min(unit.len()) + 1;
+        if *reads < cost { *reads = 0; return None; }
+        *reads -= cost;
+        if earlier.len() != unit.len() { continue; }
+        for sign in [1.0, -1.0] {
+            if earlier.iter().zip(unit).all(|(a, b)| a.0 == b.0 && a.1 * sign == b.1) { return Some((*index, sign)); }
+        }
+    }
+    None
 }
 
 fn unit(row: &Row, norm: f64) -> SparseRow { row.entries.iter().map(|&(k, x)| (k, x / norm)).collect() }

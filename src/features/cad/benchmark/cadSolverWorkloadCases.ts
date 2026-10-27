@@ -136,8 +136,10 @@ function diagnosticCases(): CadSolverWorkloadCase[] {
   add('conflicting-triangle', [distance('ab', 10), { id: 'bc', kind: 'distance', pointIds: ['b', 'c'], value: 10 },
     { id: 'ac', kind: 'distance', pointIds: ['a', 'c'], value: 10 }, { id: 'diagonal', kind: 'distance', pointIds: ['a', 'c'], value: 15 }]);
   add('fixed-point-vs-dimension', [{ id: 'fixA', kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { id: 'fixB', kind: 'fixed-point', pointId: 'b', position: [10, 0] }, distance('size', 12)]);
-  add('overlapping-conflicts', [distance('length', 10), distance('other', 12), distance('third', 14),
-    { id: 'vertical', kind: 'axis-distance', axis: 'y', pointIds: ['a', 'b'], value: 20 }]);
+  const overlapping = [distance('length', 10), distance('other', 12), distance('third', 14),
+    { id: 'vertical', kind: 'axis-distance', axis: 'y', pointIds: ['a', 'b'], value: 20 } as const];
+  add('overlapping-conflicts', overlapping);
+  add('overlapping-conflicts-repeated', [...overlapping, distance('repeat', 10)]);
   add('impossible-triangle', [distance('ab', 10), { id: 'bc', kind: 'distance', pointIds: ['b', 'c'], value: 10 }, { id: 'ac', kind: 'distance', pointIds: ['a', 'c'], value: 30 }]);
   for (const free of [false, true]) for (const satisfied of [false, true]) {
     const fixed: CadSketchGraphPoint[] = [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['10', '0'] }];

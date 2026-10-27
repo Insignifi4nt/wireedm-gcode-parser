@@ -351,6 +351,33 @@ describe('native-first sketch solving', () => {
     expect(thrown.records[0]).toMatchObject({ answeredBy: 'native', planeGcs: 'threw' });
   });
 
+  it.each([
+    ['start-diagnosis', { status: 'not-converged', diagnosis: { kind: 'from-start', labels: [2] } },
+      { kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'] } }, 0],
+    ['incomplete', { values: [0, 0, 6, 8], diagnosis: { kind: 'incomplete', labels: [0] } },
+      { kind: 'solved', graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [6, 8] }] }, diagnostics: { status: 'success', degreesOfFreedom: null, conflictingIds: [] } }, 1],
+    ['incomplete', { status: 'not-converged', diagnosis: { kind: 'incomplete', labels: [2] } },
+      { kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'] } }, 0]
+  ] as const)('returns native\'s own answer on %s only when PlaneGCS does no better', async (reason, answer, own, movedGroups) => {
+    // Blame as a stalled start shows it, and a sketch some group of which was not diagnosed, are
+    // native's answers once PlaneGCS is gone; until then PlaneGCS is asked first.
+    const native = async () => fakeNative(() => answer as Partial<CadSketchNativeSolution>);
+    const solvedByPlaneGcs: CadSketchSolveResult = { kind: 'solved', graph, diagnostics: { ...noDiagnostics, status: 'success', degreesOfFreedom: 3 } };
+    const rescued = runtime(native, planeGcsSolved(solvedByPlaneGcs));
+    expect(await rescued.solver.solve(input)).toBe(solvedByPlaneGcs);
+    expect(rescued.records[0]).toMatchObject({ answeredBy: 'planegcs', native: reason, planeGcs: 'solved' });
+    for (const [planeGcs, outcome] of [[planeGcsSolved(failedResult), 'failed'], [{ solve: async () => { throw new Error('PlaneGCS failed.'); } }, 'threw']] as const) {
+      const unhelped = runtime(native, planeGcs);
+      expect(await unhelped.solver.solve(input)).toMatchObject(own);
+      // Native's own solution counts the groups it moved, as an answer does.
+      expect(unhelped.records[0]).toMatchObject({ answeredBy: 'native', native: reason, planeGcs: outcome, movedGroups, keptGroups: 0 });
+    }
+    const nativeOnly = runtime(native, planeGcsSolved(solvedByPlaneGcs), { mode: 'native-only' });
+    expect(await nativeOnly.solver.solve(input)).toMatchObject(own);
+    expect(nativeOnly.records[0]).toMatchObject({ answeredBy: 'native', native: reason, movedGroups, keptGroups: 0 });
+    expect(nativeOnly.loadPlaneGcs).not.toHaveBeenCalled();
+  });
+
   it('answers definite conflicts natively and takes PlaneGCS whole when native cannot run', async () => {
     const conflicting = runtime(async () => fakeNative(model => ({ status: 'not-converged', diagnosis: { kind: 'diagnosed', degreesOfFreedom: null, labels: model.equations.map(() => 2) } })), planeGcsSolved(failedResult));
     expect(await conflicting.solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', conflictingIds: ['length'] } });
@@ -402,9 +429,9 @@ function nativeModule({ alloc, free, solve, data }: { readonly alloc: number[]; 
 
 describe('native solver instances', () => {
   const unreachable = [0, 11], at8 = [65, 8, 11], at1024 = [65, 128, 8, 11], none = [11];
-  // An empty model's reply: length, protocol 4, converged, no iterations or residual, nothing to
+  // An empty model's reply: length, protocol 5, converged, no iterations or residual, nothing to
   // diagnose, no freedom count, no drag outcome or target distance.
-  const reply = new Float64Array([9, 4, 0, 0, 0, 2, NaN, NaN, NaN]);
+  const reply = new Float64Array([9, 5, 0, 0, 0, 2, NaN, NaN, NaN]);
   const empty: CadSketchEquationModel = { values: [], fixed: [], pointParameters: new Map(), radiusParameters: new Map(), equations: [] };
 
   it('reads a reply and frees both buffers', async () => {
@@ -416,14 +443,20 @@ describe('native solver instances', () => {
     // One free value held at 0 and dragged toward 5: projected, 5 mm short, one degree of freedom.
     const dragged: CadSketchEquationModel = { ...empty, values: [0], fixed: [false],
       equations: [{ kind: 'value', operands: [0], value: 5, tag: 0, sourceId: 'drag', temporary: true }] };
-    const drag = (outcome: number, distance: number) => new Float64Array([11, 4, 0, 1, 0, 0, 1, outcome, distance, 0, 0]);
+    const drag = (outcome: number, distance: number) => new Float64Array([11, 5, 0, 1, 0, 0, 1, outcome, distance, 0, 0]);
     const solve = (model: CadSketchEquationModel, data: Float64Array) => loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data })).then(solver => solver.solve(model));
     expect(await solve(dragged, drag(1, 5))).toMatchObject({ values: [0], drag: { outcome: 'projected', targetDistance: 5 } });
     expect(await solve(dragged, drag(3, 5))).toMatchObject({ drag: { outcome: 'limited', targetDistance: 5 } });
     // An uncertain rank keeps its labels and leaves freedom unknown; a count with it is invalid.
-    const uncertain = (freedom: number) => new Float64Array([11, 4, 0, 1, 0, 4, freedom, 1, 5, 0, 0]);
-    expect(await solve(dragged, uncertain(NaN))).toMatchObject({ diagnosis: { kind: 'uncertain', labels: [0] } });
-    await expect(solve(dragged, uncertain(1))).rejects.toThrow('invalid result');
+    const diagnosed = (status: number, diagnosis: number, freedom = NaN) => new Float64Array([11, 5, status, 1, 0, diagnosis, freedom, 1, 5, 0, 0]);
+    expect(await solve(dragged, diagnosed(0, 4))).toMatchObject({ diagnosis: { kind: 'uncertain', labels: [0] } });
+    await expect(solve(dragged, diagnosed(0, 4, 1))).rejects.toThrow('invalid result');
+    // Blame from the start comes only with a group that did not converge; a group not diagnosed
+    // leaves freedom unknown too.
+    expect(await solve(dragged, diagnosed(1, 5))).toMatchObject({ status: 'not-converged', diagnosis: { kind: 'from-start', labels: [0] } });
+    expect(await solve(dragged, diagnosed(0, 6))).toMatchObject({ status: 'converged', diagnosis: { kind: 'incomplete', labels: [0] } });
+    for (const [status, diagnosis, freedom] of [[0, 5, NaN], [0, 6, 1], [0, 7, NaN]])
+      await expect(solve(dragged, diagnosed(status, diagnosis, freedom))).rejects.toThrow('invalid result');
     for (const [outcome, distance] of [[NaN, NaN], [4, 5], [1, NaN], [NaN, 5], [0, -1], [0, Infinity]])
       await expect(solve(dragged, drag(outcome, distance))).rejects.toThrow('invalid result');
     const undragged = { ...dragged, equations: [{ ...dragged.equations[0], temporary: false }] };
