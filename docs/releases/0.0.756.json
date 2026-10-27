@@ -1,0 +1,25 @@
+{
+  "version": "0.0.756",
+  "previousVersion": "0.0.755",
+  "postCompatibility": "preserved-output-native-solver-fuzz",
+  "summary": "The app's own sketch solver now names more conflicts and is checked against generated sketches. A sketch that cannot converge is blamed for relations that repeat each other with values that cannot agree, read from the relations alone before any rank, so a conflict whose solve runs off is named instead of left undiagnosed. A relation compiled to constraints labelled apart, as a fixed point's two axes, is named conflicting when any of them conflicts and no longer also redundant. A seeded fuzz builds 150 sketches whose relations all hold and checks native's answer to each at its start, from a moved start, dragged and with a contradiction added: consistent sketches are solved or redundant and pass the graph checks, contradictions are named, no relation is both conflicting and redundant, inputs are unchanged and a used instance answers as a fresh one. It first found four contradictions native could not diagnose, kept as minimized fixtures. The frozen PlaneGCS corpus now holds the fuzz inputs too, and the 67 on which native differs from PlaneGCS are reviewed: native names smaller conflicts, answers moved starts and drags of a redundant sketch as PlaneGCS does at rest, and names each later repeat of a relation.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Sketch feedback can name different relations: a conflict native could not diagnose is now named natively, though the app still asks PlaneGCS first for conflicts blamed from the start, and a fixed point that conflicts on one axis is listed as conflicting only, no longer also as redundant.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or worker reply change. The native module changes; its wire protocol stays 5. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Rust solver tests and solver:check (the committed module matches its source), the full Vitest suite (564 files, 6,256 tests), the native-differential project (25 files, 174 tests), the seeded fuzz with its four minimized fixtures, the corpus capture against PlaneGCS and its replay (1,647 records: 1,234 solved alike, 279 rejected alike, 16 that PlaneGCS solved to an invalid solution or failed and native solves with the graph checks passing, 2 too large for PlaneGCS, 116 reviewed), lint, ui:check, build and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Sketch conflicts are named in more cases.",
+    "changes": [
+      "Names conflicting repeated dimensions even when the sketch cannot be solved toward them.",
+      "Lists a relation as conflicting or redundant, never both."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

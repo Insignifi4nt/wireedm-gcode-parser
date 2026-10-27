@@ -283,7 +283,7 @@ export function createCadSketchFuzzCase(seed: number): CadSketchFuzzCase {
 /** Adds a relation that cannot hold together with one already there, or a pair that cannot. */
 function contradict(sketch: Builder, witness: CadSketchSolveInput): CadSketchFuzzCase['contradiction'] {
   const relations = [...sketch.relations], kinds = ['axis'] as string[];
-  const of = <K extends CadSketchGraphRelation['kind']>(kind: K) => relations.filter((relation): relation is Extract<CadSketchGraphRelation, { kind: K }> => relation.kind === kind);
+  const of = <K extends CadSketchGraphRelation['kind']>(kind: K) => relations.filter((relation): relation is CadSketchGraphRelation & { kind: K } => relation.kind === kind);
   const numeric = (value: number | string) => typeof value === 'number' ? value : witness.parameters[value];
   if (of('distance').length) kinds.push('distance');
   if (of('radial-size').length) kinds.push('radial');
