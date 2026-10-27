@@ -57,7 +57,7 @@ function corpus(): readonly (readonly [string, CadDocument])[] {
 }
 
 const without = <T,>(items: readonly T[], index: number) => [...items.slice(0, index), ...items.slice(index + 1)];
-const replaced = <T,>(items: readonly T[], index: number, item: T) => items.map((other, at) => at === index ? item : other);
+const replaced = (items: readonly object[], index: number, item: object) => items.map((other, at) => at === index ? item : other);
 /** Documents listing the accepted features of `accepted`, alone or beside changed copies, with an envelope that may no longer hold them. */
 function variants(accepted: CadDocument): readonly (readonly [string, object])[] {
   const { features, parameters } = accepted;

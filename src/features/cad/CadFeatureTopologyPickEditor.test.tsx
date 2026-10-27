@@ -31,7 +31,7 @@ async function mount(kind: 'fillet' | 'chamfer' | 'shell', preview?: (command: C
   ] };
   let command: CadFeatureReferencePickCommand | null = null;
   const apply = vi.fn(), pending = vi.fn();
-  const render = async (version = 'v1') => { await act(async () => root.render(<CadFeatureEditor feature={feature} document={source} documentVersion={version} isNew={false}
+  const render = async (version = 'v1', part = source) => { await act(async () => root.render(<CadFeatureEditor feature={feature} document={part} documentVersion={version} isNew={false}
     topologyPickingEnabled onReferencePick={next => { command = next; }} onFeaturePreview={preview} onPendingChange={pending} onApply={apply} onCancel={vi.fn()} />)); };
   await render();
   const begin = async () => { await click(kind === 'shell' ? 'Choose opening' : 'Choose edges'); const current = command; if (current?.kind !== 'pick-topology') throw new Error('Missing topology picker'); return current; };
@@ -70,8 +70,17 @@ it('clears the candidate before picking and Cancel restores focus without replac
   expect(host.querySelector<HTMLSelectElement>('select[aria-label="Scope"]')?.value).toBe('selected');
 });
 
-it('rejects a retained callback after the source version changes', async () => {
+it('drops a retained callback when a revision that still holds the feature starts the form again', async () => {
   const h = await mount('shell'), picker = await h.begin(); await h.render('v2');
+  await act(async () => picker.onSelect(h.result));
+  expect(h.apply).not.toHaveBeenCalled();
+  expect(host.querySelector('.cad-error')).toBeNull();
+  expect(h.pending).toHaveBeenLastCalledWith(false);
+});
+
+it('rejects a retained callback after a revision that no longer holds the feature', async () => {
+  const h = await mount('shell'), picker = await h.begin();
+  await h.render('v2', { ...h.source, features: h.source.features.map(feature => feature === h.feature ? { ...feature } : feature) });
   await act(async () => picker.onSelect(h.result));
   expect(h.apply).not.toHaveBeenCalled();
   expect(host.querySelector('.cad-error')?.textContent).toContain('part changed');
