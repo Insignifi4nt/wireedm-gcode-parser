@@ -150,6 +150,14 @@ describe('accepted CAD features in a new document', () => {
     expect(parseCadDocument(new Proxy({ ...source, features: [...source.features] }, {}))).toStrictEqual(source);
     expect(parseCadDocument({ ...source, features: new Proxy([...source.features], {}) })).toStrictEqual(source);
     expect(() => parseCadDocument(new Proxy(structuredClone(source), {}))).toThrow(portable);
+    // The copy reads the length through its descriptor, as the import-data walk does, not through `get`.
+    expect(parseCadDocument({ ...source, features: new Proxy([...source.features], { get: (target, key) => key === 'length' ? 1 : Reflect.get(target, key) }) })).toStrictEqual(source);
+    // A list that answers the copy differently from the walk before it is caught by the walk of the copy.
+    let reads = 0;
+    const changing = new Proxy([...source.features], { getOwnPropertyDescriptor: (target, key) => key === '1' && ++reads > 1
+      ? { configurable: true, enumerable: true, get: () => source.features[1] } : Reflect.getOwnPropertyDescriptor(target, key) });
+    expect(() => parseCadDocument({ ...source, features: changing })).toThrow(portable);
+    expect(reads).toBe(2);
     // The schema reads through `get` and the copy through descriptors, so a proxy cannot show them two documents.
     const twoFaced = new Proxy({ ...source, features: [...source.features] }, { get: (target, key) => key === 'name' ? 'Shown' : Reflect.get(target, key) });
     expect(() => parseCadDocument(Object.defineProperty(twoFaced, 'name', { value: 42, enumerable: true, configurable: true, writable: true })))

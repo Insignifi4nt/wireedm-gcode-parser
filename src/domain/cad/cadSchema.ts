@@ -97,17 +97,25 @@ function matchesCadDocumentSchema(value: unknown) {
  * A detached copy of complete own data `value`. A document listing accepted features keeps them and
  * copies only its other parts, reading its fields and features once through their descriptors, so
  * a transparent proxy there is copied rather than rejected. Any other is copied whole, as before.
- * The parts are copied together, so references they share stay shared.
+ * The parts are copied together, so references they share stay shared. Throws when the copy is not
+ * complete own data.
  */
 function detachCadDocument(value: unknown): unknown {
   const fields = cadImportDataFields(value), list = fields?.features;
   if (!fields || !Array.isArray(list)) return structuredClone(value);
-  const items = Array.from({ length: list.length }, (_, index) => Object.getOwnPropertyDescriptor(list, index)?.value);
+  // The length too, as the import-data walk reads it, never through a proxy's `get`.
+  const length: unknown = Object.getOwnPropertyDescriptor(list, 'length')?.value;
+  if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0) return structuredClone(value);
+  const items = Array.from({ length }, (_, index) => Object.getOwnPropertyDescriptor(list, index)?.value);
   if (!items.some(isAcceptedFeature)) return structuredClone(value);
   const [envelope, ...copies] = structuredClone([Object.fromEntries(Object.entries(fields).filter(([name]) => name !== 'features')), ...items.filter(item => !isAcceptedFeature(item))]);
   let next = 0;
   const features = items.map(item => isAcceptedFeature(item) ? item : copies[next++]);
-  return Object.fromEntries(Object.keys(fields).map(name => [name, name === 'features' ? features : envelope[name]]));
+  const copy = Object.fromEntries(Object.keys(fields).map(name => [name, name === 'features' ? features : envelope[name]]));
+  // A proxy can answer these reads differently from the walk before them, so the copy, which every
+  // later check reads, is walked as well: only its envelope and the features that were copied.
+  if (!isCadImportData(copy, isAcceptedFeature)) throw new TypeError('The CAD document copy is not complete own data.');
+  return copy;
 }
 
 /** Provenance for internal geometry reuse; a caller's frozen lookalike is not accepted. */

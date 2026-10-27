@@ -282,7 +282,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
     case 'extrude':
     case 'pocket': {
       if (feature.kind !== 'extrude' && feature.kind !== 'pocket') throw new Error('Extrude editor source changed.');
-      fields = <CadScalarEditContext.Provider value={scalarContext}><CadExtrudeFields feature={draft} initialFeature={feature} document={effectiveDocument} bodies={bodies} sketches={sketches} onChange={update} /></CadScalarEditContext.Provider>; break;
+      fields = <CadScalarEditContext.Provider value={scalarContext}><CadExtrudeFields feature={draft} initialFeature={feature} revision={accepted} document={effectiveDocument} bodies={bodies} sketches={sketches} onChange={update} /></CadScalarEditContext.Provider>; break;
     }
     case 'revolve': {
       fields = <><CadSketchSourceField document={effectiveDocument} sketches={sketches} purpose="revolve" sketchId={draft.sketchId} onChange={sketchId => update({ ...draft, sketchId })} />

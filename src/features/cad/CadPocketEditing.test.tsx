@@ -128,6 +128,14 @@ describe('shared Session distance / Through-all editing', () => {
     await choose('Extent', 'distance'); expect(input('Length').value).toBe('10'); await click('Cancel'); expect(accepted()).toEqual(pocket);
   });
 
+  it('starts the dormant distance again from a revision that keeps the Pocket object', async () => {
+    await mount(part(pocket)); const saved = accepted();
+    await choose('Extent', 'distance'); await type('Length', '25'); await choose('Extent', 'through-all');
+    await act(async () => { session.edit([{ kind: 'set-parameter', name: 'depth', value: 13 }]); });
+    expect(accepted()).toBe(saved);
+    await choose('Extent', 'distance'); expect(input('Length').value).toBe('10');
+  });
+
   it('shows unavailable saved sources without substituting a visible successor until the user chooses it', async () => {
     const replacement = { ...bore(), id: 'replacement', name: 'Repair profile' };
     const otherStock: CadFeature = { ...stock, id: 'other_stock', name: 'Repair stock' };
