@@ -31,10 +31,12 @@ export function CadSketchConstraintStatus({ document, sketch, version, inspect, 
   const analysis = current?.analysis, freedom = analysis?.diagnostics.degreesOfFreedom;
   const message = failure?.document === document && failure.version === version && failure.sketchId === sketch.id ? failure.message : analysis && 'message' in analysis ? readableMessage(analysis.message) : null;
   const unavailable = Boolean(message) && (!analysis || analysis.kind === 'unavailable');
+  const reportFreedom = useRef(onFreedom); reportFreedom.current = onFreedom;
   useLayoutEffect(() => {
     onFreedom?.(enabled && !unavailable && analysis?.kind === 'solved' ? analysis.diagnostics.degreesOfFreedom : null);
-    return () => onFreedom?.(null);
   }, [enabled, unavailable, analysis, onFreedom]);
+  // Each report replaces the last one, so only a removed status reports that no freedom is known.
+  useLayoutEffect(() => () => reportFreedom.current?.(null), []);
   if (!hasGraph) return null;
   const label = !enabled ? 'Editing…' : unavailable || !available ? 'Freedom unavailable'
     : !analysis ? 'Checking freedom…' : analysis.kind === 'rejected' ? analysis.reason === 'redundant' ? 'Redundant relations' : 'Constraint issue'

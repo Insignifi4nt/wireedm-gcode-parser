@@ -399,8 +399,15 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const inspectedRelation = graphSelections.length > 0 && relationInspection && relationInspection.sketchId === sketch?.id ? relationInspection.relation : null;
   const inspectConstraintSubject = useCallback((subject: CadSketchConstraintFeedbackSubject | null) => setDiagnosticInspection(subject && sketchId ? { document, sketchId, subject } : null), [document, sketchId]);
   const inspectedDiagnostic = graphSelections.length > 0 && diagnosticInspection?.document === document && diagnosticInspection.sketchId === sketch?.id ? diagnosticInspection.subject : null;
+  // A report equal to the freedom last set for this document, version and sketch queues no update, so the workbench does
+  // not render again for it.
+  const requestedFreedom = useRef(sketchFreedom);
   const publishSketchFreedom = useCallback((value: number | null) => {
-    if (sketchId) setSketchFreedom({ document, version: props.documentVersion, sketchId, value });
+    const requested = requestedFreedom.current;
+    const shown = requested?.document === document && requested.version === props.documentVersion && requested.sketchId === sketchId ? requested.value : null;
+    if (!sketchId || shown === value) return;
+    requestedFreedom.current = { document, version: props.documentVersion, sketchId, value };
+    setSketchFreedom(requestedFreedom.current);
   }, [document, props.documentVersion, sketchId]);
   const graphFreedom = sketchFreedom?.document === document && sketchFreedom.version === props.documentVersion && sketchFreedom.sketchId === sketch?.id ? sketchFreedom.value : null;
   const configureGraphRelation = useCallback((relation: CadSketchDimensionRelation) => {

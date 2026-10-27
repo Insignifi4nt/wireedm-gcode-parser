@@ -18,6 +18,7 @@ import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './ca
 import type { CadViewportContextMenuRequest } from './CadViewport';
 import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
+import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
 import { useCadSketchEditing } from './useCadSketchEditing';
 import { pairedBoreMirrorPart } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 import { cadSketchSourceAvailability, cadSketchSourceIssue } from '@/domain/cad/cadSketchSources';
@@ -27,11 +28,14 @@ let pickViewportFeature: ((id: string | null) => void) | undefined;
 let pickViewportPlane: ((plane: CadSketchPlane) => void) | undefined;
 let viewportRegions: CadFeatureRegionPickCommand | null = null;
 let viewportDepth: CadExtrudeDepthControl | null = null;
+let workbenchRenders = 0;
 
 // jsdom cannot create a WebGL context. These tests exercise the real UI and domain edits.
 vi.mock('./CadViewport', async () => {
   const { useEffect } = await import('react');
   return { CadViewport: ({ hidden = false, onControlsReady, meshes = [], navigationLocked, onContextMenu, onSelect, onSelectPlane, sourceReferencePickIds, regionSelection, depthControl }: { hidden?: boolean; meshes?: CadBuildResult['meshes']; navigationLocked?: boolean; sourceReferencePickIds?: readonly string[]; regionSelection?: CadFeatureRegionPickCommand | null; depthControl?: CadExtrudeDepthControl | null; onSelect(id: string | null): void; onSelectPlane?(plane: CadSketchPlane): void; onContextMenu?(request: CadViewportContextMenuRequest): void; onControlsReady?(controls: CadRenderedViewControls | null, released?: CadRenderedViewControls): void }) => {
+    // The workbench renders its viewport, hidden or not, every time it renders.
+    workbenchRenders += 1;
     requestViewportMenu = onContextMenu;
     pickViewportFeature = onSelect;
     pickViewportPlane = onSelectPlane;
@@ -1003,6 +1007,56 @@ describe('CAD sketch interaction', () => {
     expect(boss.querySelector('li')).toBeNull(); expect(boss.textContent).toContain('You can restore this feature with Undo.');
     await click('Delete');
     expect(currentSession.getSnapshot().document.features).toEqual([]);
+  });
+
+  it('renders the workbench again for sketch freedom only when the shown value changes', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Plate', 'freedom-plate'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Plate', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+        points: [{ id: 'center', position: [0, 0] }], entities: [{ id: 'bore', kind: 'circle', centerPointId: 'center', radius: 5, construction: false }], relations: [] } }] });
+    const session = new CadSession(source); currentSession = session;
+    const answers: { version?: string; resolve(degreesOfFreedom: number): void }[] = [];
+    const inspect = vi.fn((sketchId: string, version?: string) => new Promise<CadSketchConstraintInspection>(resolve => answers.push({ version, resolve: degreesOfFreedom => resolve({
+      sketchId, pointCount: 1, entityCount: 1, relationCount: 0, legacyProfileCount: 0, legacyDimensionCount: 0, degreesOfFreedomScope: 'graph', graph: null, parameters: {},
+      analysis: { kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } }) })));
+    let setReady: (ready: boolean) => void = () => undefined;
+    function Harness() {
+      const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+      const [ready, setReadyState] = useState(true); setReady = setReadyState; currentDocument = snapshot.document;
+      return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} build={null} buildVersion={null} buildState="idle" dirty={snapshot.dirty}
+        canUndo={snapshot.canUndo} canRedo={snapshot.canRedo} onEdit={edit => { session.edit([edit]); }} onEditMany={edits => session.edit(edits)}
+        sketchAnalysisReady={ready} onInspectSketchConstraints={inspect} onWorkflowChange={open => session.setWorkflowOpen(open)} onUndo={undo} onRedo={vi.fn()}
+        onSave={save} onBack={vi.fn()} onSendToCam={sendToCam} onOpenDocument={vi.fn()} onNewDocument={vi.fn()} onImportDocument={async () => undefined}
+        onExportDocument={vi.fn()} onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onViewportControlsReady={controls => { currentViewport = controls; }} />;
+    }
+    await act(async () => root.render(<Harness />));
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'bore' } }));
+    const status = () => container.querySelector('[aria-label="Sketch constraint status"]')?.textContent;
+    const radiusLocked = () => container.querySelector('[data-cad-sketch-circle-radius="bore"]')?.getAttribute('aria-disabled') === 'true';
+    const renders = async (change: () => void) => { workbenchRenders = 0; await act(async () => change()); return workbenchRenders; };
+    expect(answers.map(answer => answer.version)).toEqual([session.getSnapshot().version]);
+    expect(await renders(() => answers[0].resolve(0))).toBe(1);
+    expect(status()).toBe('Fully constrained'); expect(radiusLocked()).toBe(true);
+
+    // A new document hides the earlier freedom without another render.
+    const moved = currentDocument.features[0]; if (moved.kind !== 'sketch' || !moved.graph) throw new Error('Sketch graph missing.');
+    const move: CadEdit = { kind: 'update-feature', feature: { ...moved, graph: { ...moved.graph, points: [{ id: 'center', position: [1, 0] }] } } };
+    expect(await renders(() => session.edit([move]))).toBe(1);
+    expect(status()).toBe('Checking freedom…'); expect(radiusLocked()).toBe(false);
+    expect(answers.map(answer => answer.version)).toEqual([expect.any(String), session.getSnapshot().version]);
+    // Pausing and resuming the analysis reports no freedom again, which keeps the state.
+    expect(await renders(() => setReady(false))).toBe(1); expect(status()).toBe('Editing…');
+    expect(await renders(() => setReady(true))).toBe(1); expect(status()).toBe('Checking freedom…');
+    expect(answers).toHaveLength(3); expect(answers[2].version).toBe(session.getSnapshot().version);
+    expect(await renders(() => answers[2].resolve(0))).toBe(1);
+    expect(status()).toBe('Fully constrained'); expect(radiusLocked()).toBe(true);
+    expect(await renders(() => answers[1].resolve(4))).toBe(0); expect(radiusLocked()).toBe(true);
+    // A pause hides the answer and resuming shows it again, each a render after the status reports it. The same answer
+    // from the new analysis keeps it.
+    expect(await renders(() => setReady(false))).toBe(2); expect(status()).toBe('Editing…'); expect(radiusLocked()).toBe(false);
+    expect(await renders(() => setReady(true))).toBe(2); expect(status()).toBe('Fully constrained'); expect(radiusLocked()).toBe(true);
+    expect(answers).toHaveLength(4);
+    expect(await renders(() => answers[3].resolve(0))).toBe(0); expect(radiusLocked()).toBe(true);
   });
 
   it.each(['empty', 'guides'])('does not substitute another sketch when the selected %s sketch has no material contours', async selectedId => {

@@ -1,0 +1,24 @@
+{
+  "version": "0.0.766",
+  "previousVersion": "0.0.765",
+  "postCompatibility": "preserved-output-cad-sketch-freedom-renders",
+  "summary": "The CAD workbench renders again for sketch freedom only when the freedom it shows changes. The sketch constraint status reports each answer once, and reports that no freedom is known only when it is removed, where before every new report first reported no freedom. A report equal to the last one for the same document, version and sketch queues no update, where before every report stored a new value and rendered the whole workbench. Releasing a 32-sketch drag in an unminified production build made 9 React commits with both versions; 5 rendered the whole workbench (about 1,850 components each) in two releases with 0.0.765, and 4 in three releases with 0.0.766. The removed render repeated that no freedom was known after the analysis resumed. The freedom shown, the status text and the locks that follow a fully constrained sketch are the same.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Sketch freedom shows the same values at the same times.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved CAD files are byte for byte the same.",
+    "verification": "CadWorkbench.test.tsx counts workbench renders through the viewport mock while a circle sketch is analyzed: an edit and pausing and resuming the analysis before the new answer each render once, the new answer renders once and locks the radius again, a late answer for the earlier document renders nothing, a pause and resume with a known answer hide and show it, and the same answer from the new analysis renders nothing. Storing every report, comparing with the state of an earlier render, or clearing before each report failed it. CadSketchConstraintStatus.test.tsx checks the reports: one per answer, none cleared first, and no freedom after removal. A probe on the React devtools hook counted the components that each release commit of a 32-sketch drag renders. The full Vitest suite, lint, ui:check, build, solver:check and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Less rendering when a sketch drag ends.",
+    "changes": [
+      "Finishing a sketch drag renders the part workbench one time less, because an unchanged sketch freedom no longer renders it again."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
