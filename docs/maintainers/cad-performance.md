@@ -108,6 +108,12 @@ From 0.0.765 the workbench checks which sketches Pad, Revolve and Sweep can use 
 - In three profiled 32-sketch drags of each unminified production build, alternating with 0.0.764, the release task spent 1.4, 3.0 and 2.2 ms in source checks with 0.0.764, and none was sampled with 0.0.765. The workbench body took 21.3, 7.9 and 6.6 ms of the release against 5.5, 3.7 and 6.1 ms. The release task took 60 to 129 ms with 0.0.764 and 56 to 63 ms with 0.0.765, mostly React rendering of the toolbar, history, inspector and their tooltips, so single releases do not show the difference.
 - `CadWorkbench.test.tsx` counts the source checks: a selection in the model toolbar and revisions while a sketch is open check nothing, while a revision or a parameter change in the model toolbar checks again.
 
+From 0.0.766 the workbench renders again for sketch freedom only when the freedom it shows changes. The sketch constraint status reports each answer once and reports that no freedom is known only when it is removed; before, every new report first reported no freedom. A report equal to the last one for the same document, version and sketch queues no update.
+
+- Releasing a 32-sketch drag in an unminified production build makes 9 React commits. A probe on the React devtools hook, which counts the components each commit renders, found 5 that rendered the whole workbench, about 1,850 components each, in two releases with 0.0.765, and 4 in three releases with 0.0.766. The removed render repeated that no freedom was known after the analysis resumed.
+- Of the 4 left, one renders the accepted document, one the build that starts for it, one the resumed analysis and one the new freedom. About 1,700 of the components in each are the shared buttons and their closed tooltips.
+- `CadWorkbench.test.tsx` counts workbench renders through the viewport mock while a sketch is analyzed, and `CadSketchConstraintStatus.test.tsx` checks the reports.
+
 ## Native sketch solver
 
 `packages/sketch-solver` is our own Rust constraint solver, compiled to a WebAssembly module with no dependencies (92 kB, 33 kB gzip, at 0.0.739). From 0.0.739 it was built, tested and compared with PlaneGCS; from 0.0.746 the app solved with it first; from 0.0.757 it is the app's only sketch solver.
