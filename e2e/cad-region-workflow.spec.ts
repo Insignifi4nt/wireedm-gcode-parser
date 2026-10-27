@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import type { CadDocument, CadFeature, CadSketchFeature, CadSketchProfile } from '../src/domain/cad/cadDocument';
 import type { CadSketchCellReference } from '../src/domain/cad/cadSketchRegionSelection';
 import type { CadSketchRegionProposal } from '../src/domain/cad/cadSketchRegionInspection';

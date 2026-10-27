@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('positions a bore by Dimension-first point picks with private editing, exact Undo, agent parity and save/reopen', async ({ page }) => {
