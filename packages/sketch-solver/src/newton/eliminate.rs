@@ -7,17 +7,21 @@
 //! smaller system is solved from the nearest start that meets the eliminated rows, then expanded
 //! and diagnosed whole, where solving the whole group would have diagnosed it.
 //!
-//! Only a group whose rows are all linear, differences, values and midpoints, is solved this way.
-//! Each damped step of either solve lies in the span of its rows' gradients, so where the rows can
-//! hold, both end at the solution nearest the start: the projection is nearest on the eliminated
-//! rows, and the scaling makes the smaller system measure distance as the whole group does. Rows
-//! are weighted by their own gradients in the smaller system, which changes the path but not where
-//! it ends. A group with a bent row can have several separate solutions, and the two solves can
-//! reach different ones, so it is solved whole from its start, as before; so are a drag, a start
-//! already polished, a constant row that is not met, and a smaller solve or diagnosis that falls
-//! short.
+//! Only a group whose rows are all linear, differences, values and midpoints, is solved this way,
+//! and only where its rows are independent but for constant rows that hold exactly. Such rows can
+//! all hold, and each damped step of either solve lies in the span of its rows' gradients, so both
+//! head for the solution nearest the start: the projection is nearest on the eliminated rows, and
+//! the scaling makes the smaller system measure distance as the whole group does. Rows are weighted
+//! by their own gradients in the smaller system, which changes the path but not where it ends. Each
+//! solve stops once its rows are polished, within a tolerance that grows with the coordinates, so
+//! the two can stop that far apart; the classes usually land on the solution. Rows that hold only
+//! nearly would be traded against each other by the whole solve, which can then end elsewhere or
+//! not converge, so a constant row that does not hold exactly, or a dependent row left to solve,
+//! sends the group whole from its start, as before. A group with a bent row can have several
+//! separate solutions, and the two solves can reach different ones, so it is solved whole too; so
+//! are a drag, a start already polished, and a smaller solve or diagnosis that falls short.
 
-use super::{ColumnMap, GroupOutcome, Limits, MAX_ITERATIONS, Row, System, accepted, assess, diagnose_group, solve_group_within, worst};
+use super::{ColumnMap, GroupOutcome, Limits, MAX_ITERATIONS, Row, System, assess, diagnose_group, solve_group_within, worst};
 use crate::diagnose::{TAU, Witness};
 use crate::equations::Kind;
 use crate::problem::Status;
@@ -151,9 +155,11 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, r
         for m in classes.members(root) { values[system.unknowns[m]] = if m == root { base } else { base + classes.offset[m] }; }
     }
     let constant: Vec<usize> = (0..equations.len()).filter(|&i| role[i] == Role::Constant).map(|i| system.equations[i]).collect();
+    let constant_count = constant.len();
     if !constant.is_empty() {
         let check = System { problem, column, equations: constant, unknowns: Vec::new(), map: None };
-        if !check.rows(values, None).iter().all(accepted) { restore(values); return None; }
+        // Exactly: one held only nearly would be weighed against the other rows when solved whole.
+        if !check.rows(values, None).iter().all(|row| row.residual == 0.0) { restore(values); return None; }
     }
 
     let mut followers = Vec::new();
@@ -180,7 +186,8 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, r
     if !assess(&ended).accepted { restore(values); return None; }
     let budget = limits.work.saturating_sub(work);
     match diagnose_group(system, values, &ordering.position, TAU, budget, limits.fill) {
-        (Some((rank, witnesses, true)), spent) if spent <= budget => Some(Eliminated {
+        // Constant rows repeat eliminated ones; any other dependent row could hold only nearly.
+        (Some((rank, witnesses, true)), spent) if spent <= budget && rank + constant_count == equations.len() => Some(Eliminated {
             group: GroupOutcome { status: Status::Converged, iterations: solved.iterations, residual: worst(&ended), position: Some(ordering.position), work, drag: None },
             diagnosis: (rank, witnesses, true), spent }),
         _ => { restore(values); None }

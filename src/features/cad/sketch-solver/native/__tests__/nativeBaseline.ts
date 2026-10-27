@@ -83,12 +83,29 @@ export function nativeAnswerDifferences(baseline: NativeAnswer, current: NativeA
 }
 
 /**
- * Whether the solver may eliminate a simple equality of `model` (from 0.0.760): it is not a drag, and
- * some lasting difference or value reads an unknown.
+ * The unknowns of `model` the solver may solve through classes (from 0.0.760): those of each group,
+ * connected through the unknowns its equations share, whose every equation is a difference, a value
+ * or a midpoint, and at least one a difference or a value. None while a drag is held.
  */
-export function nativeModelEliminates(model: CadSketchEquationModel) {
-  return !model.equations.some(equation => equation.temporary)
-    && model.equations.some(equation => (equation.kind === 'difference' || equation.kind === 'value') && equation.operands.some(p => !model.fixed[p]));
+export function nativeEliminableUnknowns(model: CadSketchEquationModel): ReadonlySet<number> {
+  const eliminable = new Set<number>();
+  if (model.equations.some(equation => equation.temporary)) return eliminable;
+  const parent = model.fixed.map((_, index) => index);
+  const root = (p: number): number => { while (parent[p] !== p) p = parent[p] = parent[parent[p]]; return p; };
+  for (const equation of model.equations) {
+    const unknowns = equation.operands.filter(p => !model.fixed[p]);
+    for (const p of unknowns.slice(1)) parent[root(p)] = root(unknowns[0]);
+  }
+  const simple = new Map<number, boolean>(), linear = new Map<number, boolean>();
+  for (const equation of model.equations) {
+    const unknown = equation.operands.find(p => !model.fixed[p]);
+    if (unknown === undefined) continue;
+    const group = root(unknown);
+    linear.set(group, (linear.get(group) ?? true) && (equation.kind === 'difference' || equation.kind === 'value' || equation.kind === 'midpoint'));
+    if (equation.kind === 'difference' || equation.kind === 'value') simple.set(group, true);
+  }
+  model.fixed.forEach((fixed, p) => { if (!fixed && linear.get(root(p)) && simple.get(root(p))) eliminable.add(p); });
+  return eliminable;
 }
 
 /** How far eliminating simple equalities may move a value: this part of its size, and at least of a millimetre. */
@@ -102,16 +119,20 @@ export function nativeValueMove(baseline: readonly number[], current: readonly n
 
 /**
  * The parts in which two answers to one model differ beyond what eliminating simple equalities
- * allows. A group solved through its classes reaches the solution solving it whole does, to
- * roundoff, so its values may move within `NATIVE_ELIMINATION_TOLERANCE`, and its iterations and
- * largest residual may change. Nothing else may: status, diagnosis, freedom, labels, drag and any
- * error stay the baseline's, and a model the solver cannot eliminate from, or whose every group
- * the baseline took no step in, is answered bit for bit.
+ * allows. A group solved through its classes reaches the solution solving it whole does, within
+ * the solve's stopping tolerance, so the values of `nativeEliminableUnknowns` may move within
+ * `NATIVE_ELIMINATION_TOLERANCE`, and the iterations and largest residual may change. Nothing else
+ * may: every other value, status, diagnosis, freedom, labels, drag and any error stay the
+ * baseline's, and a model without such a group, or whose every group the baseline took no step
+ * in, is answered bit for bit.
  */
 export function nativeEliminationDifferences(model: CadSketchEquationModel, baseline: NativeAnswer, current: NativeAnswer): string[] {
   const found = nativeAnswerDifferences(baseline, current);
-  if (!found.length || 'error' in baseline || 'error' in current || !nativeModelEliminates(model) || baseline.solution.iterations === 0) return found;
+  if (!found.length || 'error' in baseline || 'error' in current || baseline.solution.iterations === 0) return found;
+  const eliminable = nativeEliminableUnknowns(model);
+  if (!eliminable.size) return found;
   const allowed = new Set(['iterations', 'residual']);
-  if (baseline.solution.values.length === current.solution.values.length && nativeValueMove(baseline.solution.values, current.solution.values) <= 1) allowed.add('values');
+  const [before, after] = [baseline.solution.values, current.solution.values];
+  if (before.length === after.length && before.every((value, p) => Object.is(value, after[p]) || eliminable.has(p) && nativeValueMove([value], [after[p]]) <= 1)) allowed.add('values');
   return found.filter(part => !allowed.has(part));
 }

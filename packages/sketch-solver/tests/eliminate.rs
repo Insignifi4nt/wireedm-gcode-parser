@@ -119,23 +119,55 @@ fn a_midpoint_left_over_a_class_is_solved_in_its_column() {
 }
 
 #[test]
-fn a_repeated_midpoint_is_redundant_when_it_agrees_and_solved_whole_when_not() {
+fn a_repeated_midpoint_is_solved_whole() {
+    // Left to solve, a dependent row that holds only nearly would be traded against the others by
+    // the whole solve, so any dependent row but a constant one sends the group whole.
     for (second, agreeing) in [(5.0, true), (6.0, false)] {
         let mut builder = Builder::new();
         let u = builder.parameter(0.0, false);
-        let v = builder.parameter(1.0, false);
+        let v = builder.parameter(10.0, false);
         let m = builder.parameter(5.0, true);
         let n = builder.parameter(second, true);
         builder.equation(Kind::Difference, 4.0, &[u, v]);
         builder.equation(Kind::Midpoint, 0.0, &[u, v, m]);
         builder.equation(Kind::Midpoint, 0.0, &[v, u, n]);
         let (eliminated, whole) = both(&builder);
-        if agreeing {
-            assert!(eliminated.0.labels.contains(&REDUNDANT) && agrees(&eliminated, &whole), "{:?} {:?}", eliminated.0, whole.0);
-        } else {
-            assert!(whole.0.labels.contains(&CONFLICTING) && identical(&eliminated, &whole), "{:?} {:?}", eliminated.0, whole.0);
-        }
+        let label = if agreeing { REDUNDANT } else { CONFLICTING };
+        assert!(whole.0.labels.contains(&label) && identical(&eliminated, &whole), "{:?} {:?}", eliminated.0, whole.0);
     }
+}
+
+#[test]
+fn pins_that_hold_only_nearly_are_solved_whole() {
+    // Within tolerance of each other, but not equal: the classes would hold the first and leave the
+    // others nearly met, where the whole solve spreads what they miss and does not converge.
+    let mut builder = Builder::new();
+    let a = builder.parameter(10.0, false);
+    let b = builder.parameter(10.0, false);
+    builder.equation(Kind::Value, 0.0, &[a]);
+    builder.equation(Kind::Value, 9e-11, &[b]);
+    builder.equation(Kind::Value, 9e-11, &[b]);
+    builder.equation(Kind::Value, -9e-11, &[b]);
+    builder.equation(Kind::Difference, 0.0, &[a, b]);
+    let (eliminated, whole) = both(&builder);
+    assert!(identical(&eliminated, &whole), "{:?} {:?}", eliminated.0, whole.0);
+}
+
+#[test]
+fn far_from_the_origin_the_whole_solve_stops_within_its_tolerance_of_where_the_classes_land() {
+    // Each solve stops once its rows are polished, within a tolerance that grows with the
+    // coordinates: here the whole solve stops about 1.2e-7 mm short of the solution.
+    let mut builder = Builder::new();
+    let f = builder.parameter(-1e9, true);
+    let x = builder.parameter(1e9 + 0.2, false);
+    let y = builder.parameter(0.0, false);
+    builder.equation(Kind::Value, 1e9, &[x]);
+    builder.equation(Kind::Midpoint, 0.0, &[f, x, y]);
+    let (eliminated, whole) = both(&builder);
+    assert_eq!((eliminated.1[x], eliminated.1[y]), (1e9, 0.0));
+    let (e, w) = (&eliminated.0, &whole.0);
+    assert_eq!((e.status, e.diagnosis, e.degrees_of_freedom, &e.labels), (w.status, w.diagnosis, w.degrees_of_freedom, &w.labels));
+    assert!(e.status == Status::Converged && whole.1[y] != 0.0 && whole.1[y].abs() < 1e-6, "{:?} {:?}", whole.0, whole.1);
 }
 
 #[test]

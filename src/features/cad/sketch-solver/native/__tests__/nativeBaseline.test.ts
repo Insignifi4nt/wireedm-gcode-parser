@@ -97,6 +97,16 @@ describe(`native answers against the ${nativeBaselineManifest.appVersion} baseli
     expect(nativeEliminationDifferences(levelled, answer([5, 100], { iterations: 0 }), moved)).toEqual(['values', 'iterations']);
     expect(nativeEliminationDifferences(model([level], [true, true]), baseline, moved)).toEqual(['values']);
     expect(nativeEliminationDifferences(model([{ ...level, kind: 'midpoint', operands: [0, 1, 0] }]), baseline, moved)).toEqual(['values']);
+    // Only a group the solver may solve through its classes may move: one that also holds a
+    // distance is solved whole, so its values stay the baseline's.
+    const spread = (equations: CadSketchEquationModel['equations']): CadSketchEquationModel =>
+      ({ values: [0, 100, 0, 0, 3, 4], fixed: Array<boolean>(6).fill(false), pointParameters: new Map(), radiusParameters: new Map(), equations });
+    const span = { kind: 'distance', operands: [2, 3, 4, 5], value: 5, sourceId: 'span', tag: 1 } as const;
+    const wide = answer([5, 100, 0, 0, 3, 4]);
+    expect(nativeEliminationDifferences(spread([level, span]), wide, answer([5 + 1e-12, 100, 0, 0, 3, 4], { iterations: 1 }))).toEqual([]);
+    expect(nativeEliminationDifferences(spread([level, span]), wide, answer([5, 100, 0, 0, 3, 4 + 1e-12]))).toEqual(['values']);
+    const pinnedSpan = spread([{ kind: 'value', operands: [0], value: 5, sourceId: 'pin', tag: 0 }, { ...span, operands: [0, 1, 4, 5] }]);
+    expect(nativeEliminationDifferences(pinnedSpan, wide, answer([5 + 1e-12, 100, 0, 0, 3, 4], { iterations: 1 }))).toEqual(['values', 'iterations']);
   });
 
   it('records a failure and rethrows it as it was, so the runtime recovers as it would', () => {
