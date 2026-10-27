@@ -1,13 +1,13 @@
 import { expect, test as base, type Request } from '@playwright/test';
 
-/** PlaneGCS's runtime, module and WebAssembly, as built and as served in development. */
+/** PlaneGCS's runtime, module and WebAssembly, as built and as served in development before 0.0.757. */
 const PLANEGCS = /planegcs|cadSketchSolverRuntime|cadSketchSolverModule/i;
 
 /**
- * CAD journeys with every sketch solve answered natively. The app loads PlaneGCS only when native
- * falls back, so a test fails when any page or worker in its context asks for PlaneGCS: each solve
- * then had native's answer, as it will once PlaneGCS is removed. `solverRequests` lists the
- * WebAssembly and PlaneGCS requests seen, for tests that check the native module itself loaded.
+ * CAD journeys with every sketch solve answered by the native solver. PlaneGCS was removed in
+ * 0.0.757; a test fails when any page or worker in its context asks for it, so it cannot return
+ * unnoticed. `solverRequests` lists the WebAssembly and PlaneGCS requests seen, for tests that check
+ * the native module itself loaded.
  */
 export const test = base.extend<{ solverRequests: string[] }>({
   solverRequests: [async ({ context }, use) => {

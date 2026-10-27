@@ -1,27 +1,24 @@
 // @vitest-environment node
-// Replays the frozen PlaneGCS corpus through the production runtime with the native solver alone, and
-// compares each answer with PlaneGCS's on the same input. Needs no PlaneGCS, so it outlives it.
-import { readFileSync } from 'node:fs';
+// Replays the frozen PlaneGCS corpus through the production runtime and compares each answer with
+// PlaneGCS's on the same input, as PlaneGCS 1.3.0 gave it before it was removed in 0.0.757.
 import { describe, expect, it } from 'vitest';
 import { cadSketchGraphWithSolvedValues, cadSketchSolvedValues } from '@/domain/cad/cadSketchGraph';
-import { createCadSketchNativeFirstRuntime, type CadSketchSolveRecord } from '../cadSketchNativeFirstRuntime';
+import { createCadSketchNativeRuntime, type CadSketchSolveRecord } from '../cadSketchNativeRuntime';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations } from '../native/compileCadSketchEquations';
-import { loadCadSketchNativeSolver } from '../native/cadSketchNativeSolver';
 import {
   corpusDragAllowance, corpusDragDistance, corpusModelHash, corpusSolvedGraph, readPlaneGcsCorpus, type PlaneGcsCorpusOutcome
 } from './planeGcsCorpus';
 import { reviewedCorpusDifferences as reviewed, type Difference } from './planeGcsCorpusReviewed';
+import { loadCadSketchTestNativeSolver } from './cadSketchTestSolver';
 
 /** Outcomes that are not differences to review: counted for the record. */
 const newTally = () => ({ replayed: 0, solvedAlike: 0, rejectedAlike: 0, wellConstrained: 0, drags: 0, freeSolutions: 0, nativeSolvesRejected: 0,
   nativeSolvesTooLarge: 0, planeGcsThrew: 0, reviewed: 0, largestFreeDifference: 0 });
 type Tally = ReturnType<typeof newTally>;
 
-const native = loadCadSketchNativeSolver(readFileSync(new URL('../../../../../packages/sketch-solver/wasm/sketch_solver.wasm', import.meta.url)));
 let record: CadSketchSolveRecord | undefined;
-const runtime = createCadSketchNativeFirstRuntime({ mode: 'native-only', loadNative: () => native, onSolve: solved => { record = solved; },
-  loadPlaneGcs: () => Promise.reject(new Error('The corpus replays native alone.')) });
+const runtime = createCadSketchNativeRuntime({ loadNative: loadCadSketchTestNativeSolver, onSolve: solved => { record = solved; } });
 
 /** The app accepts PlaneGCS's converged as it does success, which is all native reports for a met solve. */
 const status = (diagnostics: CadSketchSolveDiagnostics) => diagnostics.status === 'converged' ? 'success' : diagnostics.status;
@@ -108,7 +105,7 @@ describe('the frozen PlaneGCS corpus', () => {
       record = undefined;
       const result = await runtime.solve(input), solved = record as CadSketchSolveRecord | undefined;
       tally.replayed += 1;
-      if (solved?.native === 'failed' || solved?.native === 'load-failed' || solved?.nativeReset === 'failure') problems.push(`${label}: native failed (${JSON.stringify(solved)})`);
+      if (solved?.native === 'failed' || solved?.native === 'load-failed' || solved?.native === 'incompatible' || solved?.nativeReset === 'failure') problems.push(`${label}: native failed (${JSON.stringify(solved)})`);
       const found = problem(frozen.hash, input, frozen.outcome, result, tally, seen);
       if (found) problems.push(`${label}: ${found}`);
     }

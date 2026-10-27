@@ -1571,7 +1571,7 @@ test('solves a saved entity sketch through WebMCP, rejects conflicts and exports
     { kind: 'set-sketch-relation', sketchId: 'outline', relation: { id: 'conflict', kind: 'distance', pointIds: ['a', 'b'], value: 10 } }
   ] });
   expect(conflict.ok).toBe(false); expect((await context(page)).version).toBe(current.version);
-  // The native solver diagnoses the conflict itself, so PlaneGCS is never fetched.
+  // The native solver diagnoses the conflict; its module is the only solver fetched.
   expect(nativeRequests.some(url => url.includes('sketch_solver'))).toBe(true);
   expect(nativeRequests.some(url => url.includes('planegcs'))).toBe(false);
   expect(nativeRequests.some(url => url.includes('replicad_single') || url.includes('occt-import-js'))).toBe(false);

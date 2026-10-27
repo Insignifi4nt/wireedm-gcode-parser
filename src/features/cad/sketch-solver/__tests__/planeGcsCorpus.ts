@@ -1,11 +1,11 @@
-// The frozen PlaneGCS corpus: sketch solve inputs from the test suites with the outcome PlaneGCS gave
-// each one alone, so native answers can still be compared with PlaneGCS once it is gone. Nothing here
-// loads PlaneGCS; `native/__tests__/planeGcsCorpusBuild.ts` captures the outcomes while it is bundled.
+// The frozen PlaneGCS corpus: sketch solve inputs from the test suites with the outcome PlaneGCS 1.3.0
+// gave each one alone, captured before PlaneGCS was removed in 0.0.757, so native answers can still be
+// compared with it. It no longer grows: inputs of later suites are not in it.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
-import { cadSketchGraphWithSolvedValues, cadSketchSolvedValues, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { cadSketchGraphWithSolvedValues, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import type { CadSketchEquationModel } from '../native/cadSketchEquationModel';
 
@@ -75,12 +75,6 @@ export function corpusModelHash(model: CadSketchEquationModel): string {
   return corpusHash(encodeCorpusJson({ values: model.values, fixed: model.fixed, equations: model.equations }));
 }
 
-export function corpusOutcome(result: CadSketchSolveResult): PlaneGcsCorpusOutcome {
-  return result.kind === 'solved'
-    ? { kind: 'solved', diagnostics: result.diagnostics, values: cadSketchSolvedValues(result.graph) }
-    : { kind: 'rejected', reason: result.reason, diagnostics: result.diagnostics };
-}
-
 /** Reads the frozen corpus with each record's input rebuilt. */
 export function readPlaneGcsCorpus(directory = planeGcsCorpusDirectory) {
   const manifest = JSON.parse(readFileSync(new URL('manifest.json', directory), 'utf8')) as PlaneGcsCorpusManifest;
@@ -115,4 +109,12 @@ export function corpusDragAllowance(input: CadSketchSolveInput, graph: CadSketch
 /** PlaneGCS's solved graph for a corpus input. */
 export function corpusSolvedGraph(input: CadSketchSolveInput, outcome: PlaneGcsCorpusOutcome): CadSketchGraph | undefined {
   return outcome.kind === 'solved' && outcome.values ? cadSketchGraphWithSolvedValues(input.graph, outcome.values) : undefined;
+}
+
+/** PlaneGCS's frozen solution to `input`, which a suite solved while PlaneGCS was bundled. */
+export function planeGcsCorpusSolution(input: CadSketchSolveInput): CadSketchGraph {
+  const hash = corpusInput(input).hash, found = readPlaneGcsCorpus().records.find(({ record }) => record.hash === hash);
+  const graph = found && corpusSolvedGraph(found.input, found.record.outcome);
+  if (!graph) throw new Error(`The frozen PlaneGCS corpus has no solution for input ${hash}.`);
+  return graph;
 }

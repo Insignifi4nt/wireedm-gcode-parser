@@ -2,8 +2,8 @@ import { parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphEntity, ty
 import type { CadSketchSolveInput } from '../cadSketchSolverTypes';
 
 /**
- * Version of the seeded sketch generator. Its inputs are frozen in the PlaneGCS corpus by hash, so a
- * change to what any seed generates is a new version with a corpus update, never an edit in place.
+ * Version of the seeded sketch generator. Version 1's inputs are frozen in the PlaneGCS corpus by hash
+ * with PlaneGCS's answers, so a change to what any seed generates is a new version, never an edit in place.
  */
 export const CAD_SKETCH_FUZZ_VERSION = 1;
 

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import type { CadSketchSolveRecord } from './cadSketchNativeFirstRuntime';
+import type { CadSketchSolveRecord } from './cadSketchNativeRuntime';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from '../cadSession';

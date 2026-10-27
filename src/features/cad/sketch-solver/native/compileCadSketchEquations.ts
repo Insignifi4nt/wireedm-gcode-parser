@@ -18,8 +18,9 @@ interface Segment { readonly startPointId: string; readonly endPointId: string }
 
 /**
  * The scalar equations of a parsed solve input, with the same relations, operand order,
- * source identities and fixed values as the PlaneGCS compilation. A drag target becomes two
- * temporary value equations on the dragged point, last, as PlaneGCS's temporary coordinates.
+ * source identities and fixed values as the PlaneGCS compilation had, which the frozen PlaneGCS corpus
+ * checks. A drag target becomes two temporary value equations on the dragged point, last, as
+ * PlaneGCS's temporary coordinates were.
  */
 export function compileCadSketchEquations(input: CadSketchSolveInput): CadSketchEquationModel {
   const graph = input.graph, scalar = (value: number | string) => evaluateCadScalar(value, input.parameters);
@@ -40,7 +41,7 @@ export function compileCadSketchEquations(input: CadSketchSolveInput): CadSketch
   const point = (pointId: string) => [x(pointId), y(pointId)];
   const radius = (circleId: string) => radiusParameters.get(circleId)!;
   const line = (subject: Segment) => [...point(subject.startPointId), ...point(subject.endPointId)];
-  // Each equation is its own PlaneGCS constraint, except where a two-equation constraint passes its tag.
+  // Each equation is its own constraint, as in PlaneGCS, except where a two-equation constraint passes its tag.
   let tags = 0;
   const add = (kind: CadSketchEquationKind, operands: readonly number[], value: number, sourceId: string, tag = tags++) => equations.push({ kind, operands, value, sourceId, tag });
   const directed = (subject: Parameters<typeof cadSketchLineDirection>[0], message: string) => {

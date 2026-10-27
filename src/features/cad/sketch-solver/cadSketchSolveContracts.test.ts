@@ -220,7 +220,7 @@ describe('independent solver groups', () => {
   });
 
   it('diagnoses relations on fully fixed geometry as one sketch-wide system did', async () => {
-    // PlaneGCS skips diagnosis without unknowns, so fixed relations are diagnosed in an auxiliary system.
+    // PlaneGCS skipped diagnosis without unknowns, so fixed relations are diagnosed in an auxiliary system.
     const runtime = createCadSketchTestSolver(), fixed = (value: number, ...more: Part[]) => runtime.solve({ parameters: {}, graph: merge(
       { points: [{ id: 'p', position: ['0', '0'] }], entities: [], relations: [{ id: 'p-x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value }] }, ...more) });
     const spare: Part = { points: [{ id: 'q', position: [5, 5] }], entities: [], relations: [] };

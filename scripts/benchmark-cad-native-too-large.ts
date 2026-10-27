@@ -5,13 +5,13 @@ import { createNodeCadBenchmarkSolver } from './benchmark-cad-solver-resources';
 
 // The smallest connected rectangle chain the native solver refuses as too large, which the capacity
 // section's one-second search (capped at 4096) does not reach: doubling from 4096, then bisection,
-// one public solve per size in a fresh instance through the production runtime. PlaneGCS refuses 89.
+// one public solve per size in a fresh instance through the production runtime. PlaneGCS refused 89.
 // Usage: tsx --tsconfig tsconfig.app.json scripts/benchmark-cad-native-too-large.ts [--out file.json]
 const args = process.argv.slice(2), out = args.includes('--out') ? args[args.indexOf('--out') + 1] : undefined;
 const probes = new Map<number, { rectangles: number; parameters: number; outcome: string; failures: string[]; elapsedMs: number; nativeMs?: number }>();
 async function probe(rectangles: number) {
   if (!probes.has(rectangles)) {
-    const input = { graph: createCadBenchmarkRectangleGraph(rectangles, 'r', false, true), parameters: {} }, instance = await createNodeCadBenchmarkSolver('native-only');
+    const input = { graph: createCadBenchmarkRectangleGraph(rectangles, 'r', false, true), parameters: {} }, instance = await createNodeCadBenchmarkSolver();
     const started = performance.now(), result = await instance.solver.solve(input), elapsedMs = performance.now() - started;
     const row = { rectangles, parameters: rectangles * 8, outcome: cadSolverOutcome(result), failures: checkCadSolverBenchmarkResult(input, result), elapsedMs,
       nativeMs: instance.solver.takeRecord()?.nativeMs };

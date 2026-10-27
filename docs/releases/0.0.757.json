@@ -1,0 +1,26 @@
+{
+  "version": "0.0.757",
+  "previousVersion": "0.0.756",
+  "postCompatibility": "preserved-output-planegcs-removed",
+  "summary": "The app's own sketch solver is now its only one. PlaneGCS 1.3.0 (LGPL) is removed with its runtime, the native-first runtime that fell back to it, the native-differential test project, the corpus capture and the 114 MB of PlaneGCS sources the app distributed. Sketches solve through one native runtime: a solve that cannot load the solver tries three times, waiting 250 ms and then 1 s, and is rejected with a message to edit again or reload; solves within a second of that fail at once, and the next one tries again. A solver module of another version is never loaded again and asks for a reload. An instance that traps is replaced, and a solve on an instance that had solved before is repeated once on a fresh one. The PlaneGCS sources served up to 0.0.756 are archived in the planegcs-1.3.0-sources release, linked from the third-party sketch-solver page. Before removal, every one of the 1,774 frozen corpus inputs was answered by the shipped runtime and by native alone: PlaneGCS answered 85 of them, and 30 answers differ, none turning a solve into a rejection or a rejection into a solve. The frozen corpus replay keeps native compared with PlaneGCS's answers. Benchmarks before and after are in docs/maintainers/benchmarks/0.0.757-planegcs-removal.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Potentially breaking for sketch feedback: where PlaneGCS answered before, native's own answer is shown. Of the 1,774 frozen corpus inputs, 30 answers change: 8 conflicts blamed from a stalled sketch's start name other relations (7 name fewer conflicting relations, all among those PlaneGCS named, and one names other redundant relations beside the same conflict); 15 drags of a sketch with repeated relations are reported redundant instead of conflicting; 2 redundant drags name other repeated relations; and 5 drags approaching a tangency stop 2.2e-6 to 7.5e-6 mm from their targets where PlaneGCS came closer, 2 of them with freedom unknown instead of zero. A sketch group too large for native (a factor above 2,000,000 entries, such as a connected chain of 83,334 rectangles) is refused as too large with no fallback; PlaneGCS refused chains of 89. A solver that cannot be loaded is now reported after three attempts instead of being answered by PlaneGCS. The third-party sketch-solver page now links to the archived sources instead of serving them.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or worker reply change. The native module is unchanged; its wire protocol stays 5. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. The @salusoft89/planegcs dependency and vendor/sketch-solver are removed; dist/third-party/sketch-solver holds one page pointing to the archive release.",
+    "verification": "Measured on 0.0.756 before removal: the shipped-versus-native-only comparison of every frozen corpus input, the corpus replay (1,774 records: 1,338 solved alike, 301 rejected alike, 16 native solves of PlaneGCS rejections, 2 too large for PlaneGCS, 117 reviewed), the native-differential project, the corpus check against a fresh capture, solver:check, the full solver-workloads benchmark and the too-large boundary probe. After removal: the corpus replay with the same counts, the full Vitest suite, the solver-workloads benchmark, solver:check, the native-solver browser journey, lint, ui:check, build and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Sketches are solved by the app's own solver alone.",
+    "changes": [
+      "Removes the PlaneGCS sketch solver; sketch solving no longer downloads it.",
+      "Retries loading the sketch solver and explains when it cannot be loaded.",
+      "Some sketch conflicts and repeated relations are named differently."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

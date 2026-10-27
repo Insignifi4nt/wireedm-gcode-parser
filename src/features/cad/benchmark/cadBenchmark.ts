@@ -195,10 +195,10 @@ export async function measureCadSolverScaling(solver: CadSketchSolver, options: 
 }
 
 /**
- * PlaneGCS has fixed linear memory and aborts with OOM, leaving its module unusable, so each
- * size gets a fresh solver. Connected rectangles form one native group; independent ones form
- * a group each. Records each size's native parameters and constraints, and reports the largest
- * size that solved and the first that did not.
+ * Each size gets a fresh solver, so no size inherits another's memory high-water mark or a module
+ * an earlier size left unusable, as PlaneGCS's OOM aborts did before 0.0.757. Connected rectangles
+ * form one native group; independent ones form a group each. Records each size's native parameters
+ * and constraints, and reports the largest size that solved and the first that did not.
  */
 export async function probeCadSolverCapacity(createFreshSolver: () => CadSketchSolver, sizes: readonly number[], options: { connected: boolean }) {
   const outcomes: { rectangles: number; parameters: number; constraints: number; outcome: string; reason?: string; message?: string }[] = [];

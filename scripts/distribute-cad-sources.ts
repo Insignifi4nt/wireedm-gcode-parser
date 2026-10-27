@@ -78,11 +78,20 @@ async function inputs(root: string) {
 <h1>CAD kernel licenses and corresponding source</h1><p>broCAD/M uses unmodified Replicad 1.1.0 (MIT) and ${modification ? `modified replicad-opencascadejs ${value.packageVersion} with the upstream native ownership repair${value.packageVersion === '1.1.0-wireedm.2' ? ' and exact indexed topology extraction' : ''}` : 'unmodified replicad-opencascadejs 1.1.0'} (LGPL 2.1), with OpenCascade Technology 8.0.1 (LGPL 2.1 and its additional exception). Exact source, wrapper/build files and dependencies are available below. Models are processed locally in your browser.</p>
 <ul>${[...value.archives, ...localSources].map(file => `<li><a download href="${file.fileName}">${file.fileName}</a> (${file.byteLength} bytes), SHA-256 <code>${file.sha256}</code></li>`).join('\n')}</ul>
 <p><a href="replicad-sources.json">Pinned source and library binary manifest</a> · <a href="REBUILD-replicad.md">Build and relink instructions</a></p>
-<p><a href="../sketch-solver/index.html">PlaneGCS sketch solver licenses, exact source and replacement instructions</a></p>
+<p><a href="../sketch-solver/index.html">PlaneGCS sketch solver, included up to 0.0.756: archived licenses, exact source and replacement instructions</a></p>
 <ul>${notices.map(file => `<li><a href="${file}">${file}</a></li>`).join('\n')}</ul><p>These libraries are provided without warranty. FreeType is distributed under the FreeType License; portions of this software are copyright © 2023 The FreeType Project (www.freetype.org). All rights reserved.</p></body></html>\n`;
   return { manifest: value, localSources, texts: new Map([['replicad-sources.json', manifestText], ['REBUILD-replicad.md', rebuild], ['index.html', index],
     ...await Promise.all(notices.map(async file => [file, await readFile(path.join(root, 'src/features/cad/kernel/notices', file), 'utf8')] as const))]) };
 }
+
+/**
+ * Versions up to 0.0.756 included PlaneGCS and served its licenses and source from this page's
+ * address; it now points to the release archiving them.
+ */
+const archivedSketchSolverPage = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sketch solver licenses and source</title><body>
+<h1>Sketch solver licenses and source</h1><p>broCAD/M versions up to 0.0.756 included the unmodified PlaneGCS 1.3.0 sketch solver (<code>@salusoft89/planegcs</code>): a wrapper under LGPL 2.1-or-later notices and a copied FreeCAD core under GNU Library GPL 2-or-later notices. Since 0.0.757 the app solves sketches with its own MIT-licensed solver and no longer includes PlaneGCS.</p>
+<p>The PlaneGCS package, its exact source, the dependency sources, license notices and rebuild and replacement instructions served with those versions are archived in the <a href="https://github.com/Insignifi4nt/wireedm-gcode-parser/releases/tag/planegcs-1.3.0-sources">PlaneGCS 1.3.0 sources release</a>.</p></body></html>
+`;
 
 export async function distributeCadSources(root = process.cwd(), fetchSource: typeof fetch = fetch) {
   const { manifest, localSources, texts } = await inputs(root);
@@ -93,12 +102,15 @@ export async function distributeCadSources(root = process.cwd(), fetchSource: ty
   for (const [index, archive] of manifest.archives.entries()) await copyFile(sources[index], path.join(destination, archive.fileName));
   for (const file of localSources) await copyFile(path.join(root, 'vendor/cad-kernel', file.fileName), path.join(destination, file.fileName));
   for (const [file, content] of texts) await writeFile(path.join(destination, file), content);
+  await mkdir(path.join(root, 'dist/third-party/sketch-solver'), { recursive: true });
+  await writeFile(path.join(root, 'dist/third-party/sketch-solver/index.html'), archivedSketchSolverPage);
 }
 export async function checkCadSourceDistribution(root = process.cwd()) {
   const { manifest, localSources, texts } = await inputs(root);
   const destination = path.join(root, 'dist/third-party/cad');
   for (const file of [...manifest.archives, ...localSources]) await verifyPinnedFile(path.join(destination, file.fileName), file);
   for (const [file, expected] of texts) if (await readFile(path.join(destination, file), 'utf8') !== expected) throw new Error(`CAD third-party distribution text differs: ${file}`);
+  if (await readFile(path.join(root, 'dist/third-party/sketch-solver/index.html'), 'utf8') !== archivedSketchSolverPage) throw new Error('The archived sketch solver page differs.');
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);

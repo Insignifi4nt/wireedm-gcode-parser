@@ -1,50 +1,30 @@
-import { createCadSketchNativeFirstRuntime, type CadSketchSolveRecord } from '../sketch-solver/cadSketchNativeFirstRuntime';
-import type { CadSketchSolverModule } from '../sketch-solver/cadSketchSolverModule';
-import { createCadSketchSolverRuntime } from '../sketch-solver/cadSketchSolverRuntime';
+import { createCadSketchNativeRuntime, type CadSketchSolveRecord } from '../sketch-solver/cadSketchNativeRuntime';
 import type { CadSketchSolverTimingStage } from '../sketch-solver/cadSketchSolverStages';
 import type { CadSketchNativeSolver } from '../sketch-solver/native/cadSketchNativeSolver';
 import type { CadSketchSolver } from './cadBenchmark';
 
 export type CadSolverBenchmarkStages = Readonly<Record<CadSketchSolverTimingStage, number>>;
 export const emptyCadSolverStages = (): Record<CadSketchSolverTimingStage, number> => ({ parseCompile: 0, nativeCall: 0, mapping: 0, validation: 0 });
-/** `planegcs` is the app before 0.0.746, `native-first` the app since, and `native-only` the app without PlaneGCS. */
-export type CadBenchmarkSolverId = 'planegcs' | 'native-only' | 'native-first';
-export const CAD_BENCHMARK_SOLVER_LABELS: Readonly<Record<CadBenchmarkSolverId, string>> = { planegcs: 'PlaneGCS alone', 'native-only': 'Native only', 'native-first': 'Native first' };
+/** The app's one sketch solver since PlaneGCS was removed in 0.0.757; reports keep a list of solvers. */
+export type CadBenchmarkSolverId = 'native';
+export const CAD_BENCHMARK_SOLVER_LABELS: Readonly<Record<CadBenchmarkSolverId, string>> = { native: 'Native' };
 export interface CadBenchmarkSolver extends CadSketchSolver {
   readonly id: CadBenchmarkSolverId;
   readonly label: string;
   /** Consume observations from the most recent public solve call. */
   takeStages(): CadSolverBenchmarkStages;
-  /** Consume how the most recent public solve was answered; PlaneGCS alone records nothing. */
+  /** Consume how the most recent public solve was answered. */
   takeRecord(): CadSketchSolveRecord | undefined;
 }
 
-function stageCollector() {
-  let stages = emptyCadSolverStages();
-  return { record(stage: CadSketchSolverTimingStage, elapsedMs: number) { stages[stage] += elapsedMs; },
-    take() { const result = stages; stages = emptyCadSolverStages(); return result; } };
-}
-
-export function createCadBenchmarkPlaneGcs(initialize: () => Promise<CadSketchSolverModule>): CadBenchmarkSolver {
-  const collector = stageCollector();
-  return { id: 'planegcs', label: CAD_BENCHMARK_SOLVER_LABELS.planegcs, ...createCadSketchSolverRuntime(initialize, { onStageTiming: collector.record }),
-    takeStages: collector.take, takeRecord: () => undefined };
-}
-
 /**
- * The app's own runtime, so every decision is production's: acceptance, kept and snapped groups,
- * and in `native-first` the PlaneGCS fallback, whose stages add to native's. `loadNative` runs
- * whenever the runtime needs a fresh instance; `initializePlaneGcs` only on the first fallback.
+ * The app's own runtime, so every decision is production's: acceptance, diagnosis, kept and snapped
+ * groups, and instance replacement. `loadNative` runs whenever the runtime needs a fresh instance.
  */
-export function createCadBenchmarkRuntime(mode: 'native-only' | 'native-first', loadNative: () => Promise<CadSketchNativeSolver>,
-  initializePlaneGcs?: () => Promise<CadSketchSolverModule>): CadBenchmarkSolver {
-  const collector = stageCollector();
-  let record: CadSketchSolveRecord | undefined;
-  const runtime = createCadSketchNativeFirstRuntime({ mode, loadNative, onStageTiming: collector.record, onSolve: value => { record = value; },
-    async loadPlaneGcs() {
-      if (!initializePlaneGcs) throw new Error('This benchmark solver has no PlaneGCS.');
-      return createCadSketchSolverRuntime(initializePlaneGcs, { onStageTiming: collector.record });
-    } });
-  return { id: mode, label: CAD_BENCHMARK_SOLVER_LABELS[mode], solve: input => runtime.solve(input), takeStages: collector.take,
+export function createCadBenchmarkRuntime(loadNative: () => Promise<CadSketchNativeSolver>): CadBenchmarkSolver {
+  let stages = emptyCadSolverStages(), record: CadSketchSolveRecord | undefined;
+  const runtime = createCadSketchNativeRuntime({ loadNative, onStageTiming: (stage, elapsedMs) => { stages[stage] += elapsedMs; }, onSolve: value => { record = value; } });
+  return { id: 'native', label: CAD_BENCHMARK_SOLVER_LABELS.native, solve: input => runtime.solve(input),
+    takeStages() { const value = stages; stages = emptyCadSolverStages(); return value; },
     takeRecord() { const value = record; record = undefined; return value; } };
 }

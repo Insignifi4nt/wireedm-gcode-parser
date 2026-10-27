@@ -60,7 +60,7 @@ describe('native sketch equations', () => {
     expect(() => encodeCadSketchEquationModel({ ...model, equations: [{ kind: 'distance', operands: [0, 1, 2], value: 1, sourceId: 'x', tag: 0 }] })).toThrow(/4 operands/);
   });
 
-  it('tags each PlaneGCS constraint once, sharing a tag across the equations of one', () => {
+  it('tags each constraint once, as PlaneGCS compiled them, sharing a tag across the equations of one', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'p', position: [0, 0] }, { id: 'q', position: [1, 1] }, { id: 'm', position: [0, 1] }],
       entities: [{ id: 'pq', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
       relations: [{ id: 'mid', kind: 'midpoint', pointId: 'm', lineId: 'pq' }, { id: 'fix', kind: 'fixed-point', pointId: 'p', position: [0, 0] },
@@ -81,8 +81,8 @@ describe('native sketch solver module', () => {
     expect(solved.points.find(point => point.id === 'h2')?.position).toEqual([expect.closeTo(9e5, 6), expect.closeTo(7e5, 6)]);
   });
 
-  it('solves a connected chain beyond the PlaneGCS group limit to the graph checks', () => {
-    // 1000 linked rectangles, 8000 unknowns in one group; PlaneGCS rejects this as too large.
+  it('solves a connected chain beyond the former PlaneGCS group limit to the graph checks', () => {
+    // 1000 linked rectangles, 8000 unknowns in one group; PlaneGCS rejected this as too large.
     const graph = createCadBenchmarkRectangleGraph(1000, 'r', false, true), model = compileCadSketchEquations({ graph, parameters: {} });
     const solution = solver.solve(model);
     expect(solution.status).toBe('converged');
@@ -102,7 +102,7 @@ describe('native sketch solver module', () => {
     expect(cadSketchEquationDiagnostics(model, solution.diagnosis.labels)).toEqual({ conflictingIds: [], redundantIds: ['again', 'level'], partiallyRedundantIds: [] });
   });
 
-  it('reports a constraint redundant through some of its equations as partially redundant, as PlaneGCS does', () => {
+  it('reports a constraint redundant through some of its equations as partially redundant, as PlaneGCS did', () => {
     // A coincidence after a midpoint: its y repeats the midpoint's, its x places the free point.
     const model = compileCadSketchEquations({ graph: parseCadSketchGraph({
       points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['4', '2'] }, { id: 'm', position: [1.5, 1.5] }, { id: 'p', position: [7, '1'] }],

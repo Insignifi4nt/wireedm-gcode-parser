@@ -6,10 +6,9 @@ import { cpus, totalmem } from 'node:os';
 import { join } from 'node:path';
 import packageInfo from '../package.json' with { type: 'json' };
 import { cadBenchmarkCpuCalibrationMs } from '../src/features/cad/benchmark/cadBenchmark';
-import type { CadBenchmarkSolverId } from '../src/features/cad/benchmark/cadSolverBenchmarkAdapters';
 import { createCadSolverWorkloadCases } from '../src/features/cad/benchmark/cadSolverWorkloadCases';
 import { measureCadSolverDrag, measureCadSolverDragSweep, measureCadSolverEdits, measureCadSolverWorkload } from '../src/features/cad/benchmark/cadSolverWorkloadBenchmark';
-import { cadBenchmarkExecArgv, createNodeCadBenchmarkSolver, measureCadSolverMemory, measureColdCadBenchmarkSolvers, probeCadSolverWorkloadCapacity } from './benchmark-cad-solver-resources';
+import { CAD_BENCHMARK_SOLVER_IDS, cadBenchmarkExecArgv, createNodeCadBenchmarkSolver, measureCadSolverMemory, measureColdCadBenchmarkSolvers, probeCadSolverWorkloadCapacity } from './benchmark-cad-solver-resources';
 
 export const CAD_SOLVER_SECTIONS = ['workloads', 'edits', 'drag', 'sweep', 'cold', 'memory', 'capacity'] as const;
 export type CadSolverSection = typeof CAD_SOLVER_SECTIONS[number];
@@ -19,7 +18,6 @@ export interface CadSolverWorkloadOptions {
   readonly sections: readonly CadSolverSection[];
   /** Workload case ids; every case when empty. */
   readonly cases: readonly string[];
-  readonly solvers: readonly CadBenchmarkSolverId[];
   /** Run directory. A part already written there is kept, so the same command resumes after a stop. */
   readonly out: string;
 }
@@ -37,9 +35,9 @@ async function runIdentity(options: CadSolverWorkloadOptions) {
   const uncommitted = diff.trim() || untracked.length
     ? hash(diff, ...(await Promise.all(untracked.map(async path => [`\0${path}\0`, await readFile(path)]))).flat()) : null;
   return { appVersion: packageInfo.version, commit: git('rev-parse', 'HEAD').trim(), dirty: uncommitted !== null, uncommittedSha256: uncommitted,
-    modules: { native: await sha256('../packages/sketch-solver/wasm/sketch_solver.wasm'), planegcs: await sha256('../node_modules/@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm') },
+    modules: { native: await sha256('../packages/sketch-solver/wasm/sketch_solver.wasm') },
     environment: { node: process.version, v8: process.versions.v8, execArgv: cadBenchmarkExecArgv(), nodeOptions: process.env.NODE_OPTIONS ?? '', platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model ?? 'unknown', cores: cpus().length, totalMemoryBytes: totalmem() },
-    runs: options.runs, quick: options.quick, solvers: options.solvers };
+    runs: options.runs, quick: options.quick, solvers: CAD_BENCHMARK_SOLVER_IDS };
 }
 type RunIdentity = Awaited<ReturnType<typeof runIdentity>>;
 const MANIFEST = 'manifest.json';
@@ -77,7 +75,7 @@ export async function runCadSolverWorkloads(options: CadSolverWorkloadOptions) {
   } else if (existsSync(manifestFile) || (await readdir(options.out)).some(name => name.endsWith('.json')) || (await readdir(join(options.out, 'workloads'))).length) {
     throw new Error(`${options.out} has parts without a readable ${MANIFEST}; use another --out.`);
   } else await writeJson(manifestFile, { createdAt: new Date().toISOString(), identity });
-  const solvers = async () => Promise.all(options.solvers.map(async id => (await createNodeCadBenchmarkSolver(id)).solver));
+  const solvers = async () => [(await createNodeCadBenchmarkSolver()).solver];
   let failures = 0;
   /** `scope` names what a part covers beyond the run's identity, such as memory's fixtures; a kept part must cover the same. */
   const part = async (name: string, measure: () => Promise<unknown>, scope?: readonly string[]) => {
@@ -98,16 +96,13 @@ export async function runCadSolverWorkloads(options: CadSolverWorkloadOptions) {
   };
   const cases = createCadSolverWorkloadCases().filter(testCase => !options.cases.length || options.cases.includes(testCase.id));
   for (const section of options.sections) {
-    if (section === 'workloads') for (const testCase of cases) {
-      const index = createCadSolverWorkloadCases().findIndex(item => item.id === testCase.id);
-      await part(`workloads/${testCase.id}`, async () => measureCadSolverWorkload(testCase, await solvers(), options.runs, index));
-    }
+    if (section === 'workloads') for (const testCase of cases) await part(`workloads/${testCase.id}`, async () => measureCadSolverWorkload(testCase, await solvers(), options.runs));
     if (section === 'edits') await part('edits', async () => measureCadSolverEdits(await solvers(), options.runs));
     if (section === 'drag') await part('drag', async () => measureCadSolverDrag(await solvers(), options.runs));
     if (section === 'sweep') await part('sweep', async () => measureCadSolverDragSweep(await solvers()));
     if (section === 'cold') await part('cold', async () => measureColdCadBenchmarkSolvers(options.runs));
-    if (section === 'memory') await part('memory', () => measureCadSolverMemory(cases, options.quick ? 100 : 1000, options.solvers), cases.map(testCase => testCase.id));
-    if (section === 'capacity') await part('capacity', () => probeCadSolverWorkloadCapacity(options.solvers.filter(id => id !== 'native-first') as ('planegcs' | 'native-only')[]));
+    if (section === 'memory') await part('memory', () => measureCadSolverMemory(cases, options.quick ? 100 : 1000), cases.map(testCase => testCase.id));
+    if (section === 'capacity') await part('capacity', () => probeCadSolverWorkloadCapacity());
   }
   if (failures) { console.log(`${failures} CORRECTNESS FAILURES; the results they belong to are incorrect.`); process.exitCode = 1; }
   console.log(`Parts are in ${options.out}. Aggregate with: npm run cad:benchmark -- --group solver-workloads --aggregate ${options.out}`);
@@ -145,9 +140,7 @@ export async function aggregateCadSolverWorkloads(directory: string) {
   const report = { createdAt: new Date().toISOString(), group: 'solver-workloads', ...identity, parts: parts.map(part => part.part).sort(),
     missing: CAD_SOLVER_SECTIONS.filter(section => section === 'workloads' ? !(sections.workloads as unknown[]).length : !sections[section]),
     failures, cpuCalibrationMs: { min: Math.min(...calibrations), max: Math.max(...calibrations) }, throttledGroups: groups.filter(group => group.throttled).length, groups: groups.length,
-    comparison: { planegcs: 'PlaneGCS alone, as the app solved before 0.0.746: parse, compile, components, solve, always diagnose, map source ids and geometry, validate.',
-      'native-only': 'The app\'s runtime without PlaneGCS: parse, compile, solve, always diagnose, judge, keep or snap groups, map and validate. Native\'s own rejection stands where native-first would ask PlaneGCS.',
-      'native-first': 'The app\'s runtime as shipped: native-only, then PlaneGCS for what native cannot answer, loaded on first use. Stages of both add up.',
+    comparison: { native: 'The app\'s runtime, its only sketch solver since 0.0.757: parse, compile, solve, always diagnose, judge, keep or snap groups, map and validate.',
       stages: 'parseCompile includes parsing and compilation; nativeCall the module call (solve and diagnosis); mapping judging, source ids and geometry; validation the shared graph checks. Public-call totals also include promise, queue and observer overhead.',
       reSolve: 'Already-solved input still passes through the full public call: compile, convergence detection, diagnosis, mapping and validation.' },
     sections };
@@ -181,11 +174,11 @@ function summarize(identity: RunIdentity, failures: readonly string[], sections:
     lines.push('', '| Drag trajectory / mode | Solver | p50/p95 ms | Outcomes | Drag outcomes | Largest target error mm | CPU ms |', '| --- | --- | ---: | --- | --- | ---: | --- |');
     for (const group of drag) for (const row of group.solvers) lines.push(`| ${group.trajectory} / ${group.mode} | ${row.solver} | ${row.totalMs.p50}/${row.totalMs.p95} | ${JSON.stringify(row.outcomes)} | ${JSON.stringify(row.dragOutcomes)} | ${row.largestTargetErrorMm?.toPrecision(4) ?? '-'} | ${group.cpuCalibrationMs.join('/')}${mark(group)} |`);
   }
-  type Sweep = { id: string; drags: number; throttled: boolean; failures: string[]; cpuCalibrationMs: number[]; solvers: { solver: string; sumMs: number; totalMs: { p50: number }; answers: Record<string, number>; worseThanFirst: unknown[] }[] };
+  type Sweep = { id: string; drags: number; throttled: boolean; failures: string[]; cpuCalibrationMs: number[]; solvers: { solver: string; sumMs: number; totalMs: { p50: number }; answers: Record<string, number> }[] };
   const sweep = sections.sweep as Sweep[] | null;
   if (sweep?.length) {
-    lines.push('', '| Sweep | Solver | Drags | Sum ms | p50 ms | Answers | Worse than first | CPU ms |', '| --- | --- | ---: | ---: | ---: | --- | ---: | --- |');
-    for (const group of sweep) for (const row of group.solvers) lines.push(`| ${group.id} | ${row.solver} | ${group.drags} | ${row.sumMs} | ${row.totalMs.p50} | ${JSON.stringify(row.answers)} | ${row.worseThanFirst.length} | ${group.cpuCalibrationMs.join('/')}${mark(group)} |`);
+    lines.push('', '| Sweep | Solver | Drags | Sum ms | p50 ms | Answers | CPU ms |', '| --- | --- | ---: | ---: | ---: | --- | --- |');
+    for (const group of sweep) for (const row of group.solvers) lines.push(`| ${group.id} | ${row.solver} | ${group.drags} | ${row.sumMs} | ${row.totalMs.p50} | ${JSON.stringify(row.answers)} | ${group.cpuCalibrationMs.join('/')}${mark(group)} |`);
   }
   type Cold = { cpuCalibrationMs: number[]; throttled: boolean; modules: { module: string; bytes: number; gzipBytes: number; totalMs: number }[]; firstAnswer: { scenario: string; firstAnswerMs: { p50: number }; outcomes: string[]; samples: { failures: string[] }[] }[] };
   const cold = sections.cold as Cold | null;

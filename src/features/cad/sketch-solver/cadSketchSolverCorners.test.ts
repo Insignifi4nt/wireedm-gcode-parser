@@ -43,15 +43,11 @@ describe('corner constraints', () => {
     expect(JSON.stringify(corner.graph)).toBe(before);
   });
 
-  it('solves a free chamfer edit natively that PlaneGCS reports solved but the graph checks reject', async () => {
+  it('solves a free chamfer edit that PlaneGCS reported solved but the graph checks rejected', async () => {
     const corner = fixture('chamfer', false), before = JSON.stringify(corner.graph);
     const result = await solver.solve({ graph: corner.graph, parameters: { size: 3 } });
     expect(result).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 6, conflictingIds: [], redundantIds: [], issues: [] } });
     if (result.kind === 'solved') expect(checkCadSketchGraph(result.graph, { size: 3 })).toEqual([]);
-    // The graph checks still guard PlaneGCS's success.
-    const planeGcs = await createCadSketchTestSolver({ mode: 'planegcs' }).solve({ graph: corner.graph, parameters: { size: 3 } });
-    expect(planeGcs).toMatchObject({ kind: 'rejected', reason: 'invalid-solution', diagnostics: { status: 'success', degreesOfFreedom: 6, conflictingIds: [], redundantIds: [] } });
-    expect(planeGcs.diagnostics.issues).toContainEqual(expect.objectContaining({ source: { kind: 'relation', id: corner.relationId }, code: 'relation-residual' }));
     expect(JSON.stringify(corner.graph)).toBe(before);
   });
 
