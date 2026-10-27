@@ -72,7 +72,8 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       // the same graph and parameters with every relation still satisfied. Redundancy and freedom are
       // only diagnosed for sketches that are solved. The dragged sketch and every sketch of an
       // exact-prefix certificate always solve.
-      if (!exact && drag?.sketchId !== feature.id && sameParameters && Value.Equal(refreshed, acceptedSketches.get(feature.id))
+      const acceptedSketch = acceptedSketches.get(feature.id);
+      if (!exact && drag?.sketchId !== feature.id && sameParameters && (refreshed === acceptedSketch || Value.Equal(refreshed, acceptedSketch))
         && !checkCadSketchGraph(refreshed.graph, target.parameters).length) {
         features.push(refreshed); previous.set(feature.id, refreshed); continue;
       }

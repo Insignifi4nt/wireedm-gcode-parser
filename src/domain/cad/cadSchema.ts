@@ -10,7 +10,7 @@ import { CadSketchRegionSelectionSchema, validateCadSketchRegionSelection } from
 import { CadEdgeSelectionSchema, CadFaceQuerySchema, resolveCadEdgeSelection, validateCadShellOpening } from './cadTopology';
 import { CadSolidImportSourceSchema, parseCadSolidImportSource } from './cadImports';
 import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
-import { isCadImportData } from './cadImportData';
+import { cadImportDataFields, isCadImportData } from './cadImportData';
 import { MAX_CAD_PATTERN_COUNT, MAX_CAD_PATTERN_INSTANCES, MIN_CAD_PATTERN_COUNT, resolveCadCircularPattern } from './cadPatterns';
 import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS, resolveCadLoftSections } from './cadLoft';
 import { CadCurveFeatureSchema, resolveCadCurveGeometry } from './cadCurve';
@@ -80,6 +80,35 @@ export const CadDocumentSchema = Type.Object({
 // Mutable inputs, lookalikes and structured clones still cross the full boundary.
 const acceptedDocuments = new WeakSet<CadDocument>();
 const acceptedSketchSources = new WeakSet<CadSketchFeature>();
+// Every feature of an accepted document. Its boundary checks read only its own frozen data, so a
+// new document listing it takes it as it is; checks that read the document still run.
+const acceptedFeatures = new WeakSet<object>();
+const isAcceptedFeature = (item: unknown): item is CadFeature => typeof item === 'object' && item !== null && acceptedFeatures.has(item);
+// The document schema with its features left to `CadFeatureSchema`, one by one.
+const CadDocumentEnvelopeSchema = { ...CadDocumentSchema, properties: { ...CadDocumentSchema.properties, features: Type.Array(Type.Unknown()) } };
+
+/** Whether `value` matches `CadDocumentSchema`, taking its accepted features as matching. */
+function matchesCadDocumentSchema(value: unknown) {
+  return Value.Check(CadDocumentEnvelopeSchema, value)
+    && (value as { features: readonly unknown[] }).features.every(feature => isAcceptedFeature(feature) || Value.Check(CadFeatureSchema, feature));
+}
+
+/**
+ * A detached copy of complete own data `value`. A document listing accepted features keeps them and
+ * copies only its other parts, reading its fields and features once through their descriptors, so
+ * a transparent proxy there is copied rather than rejected. Any other is copied whole, as before.
+ * The parts are copied together, so references they share stay shared.
+ */
+function detachCadDocument(value: unknown): unknown {
+  const fields = cadImportDataFields(value), list = fields?.features;
+  if (!fields || !Array.isArray(list)) return structuredClone(value);
+  const items = Array.from({ length: list.length }, (_, index) => Object.getOwnPropertyDescriptor(list, index)?.value);
+  if (!items.some(isAcceptedFeature)) return structuredClone(value);
+  const [envelope, ...copies] = structuredClone([Object.fromEntries(Object.entries(fields).filter(([name]) => name !== 'features')), ...items.filter(item => !isAcceptedFeature(item))]);
+  let next = 0;
+  const features = items.map(item => isAcceptedFeature(item) ? item : copies[next++]);
+  return Object.fromEntries(Object.keys(fields).map(name => [name, name === 'features' ? features : envelope[name]]));
+}
 
 /** Provenance for internal geometry reuse; a caller's frozen lookalike is not accepted. */
 export function isAcceptedCadSketchSource(sketch: CadSketchFeature): boolean {
@@ -89,17 +118,17 @@ export function isAcceptedCadSketchSource(sketch: CadSketchFeature): boolean {
 /** Strict boundary parser. Never rewrites IDs, geometry, units or saved expressions. */
 export function parseCadDocument(value: unknown): CadDocument {
   if (typeof value === 'object' && value !== null && acceptedDocuments.has(value as CadDocument)) return value as CadDocument;
-  if (!isCadImportData(value)) throw new CadError('invalid-document', 'CAD documents must contain their own complete JSON data fields.');
-  if (!Value.Check(CadDocumentSchema, value)) {
+  if (!isCadImportData(value, isAcceptedFeature)) throw new CadError('invalid-document', 'CAD documents must contain their own complete JSON data fields.');
+  if (!matchesCadDocumentSchema(value)) {
     const error = Value.Errors(CadDocumentSchema, value).First();
     throw new CadError('invalid-document', `Invalid CAD document${error ? ` at ${error.path || '/'}: ${error.message}` : '.'}`);
   }
   // A boundary input may have inherited fields or accessors. Validate semantics
   // against its detached own-data snapshot, never against changing getters.
   let snapshot: Static<typeof CadDocumentSchema>;
-  try { snapshot = structuredClone(value); }
+  try { snapshot = detachCadDocument(value) as Static<typeof CadDocumentSchema>; }
   catch { throw new CadError('invalid-document', 'CAD document must contain portable declarative data.'); }
-  if (!Value.Check(CadDocumentSchema, snapshot)) throw new CadError('invalid-document', 'CAD document must contain its own complete JSON fields.');
+  if (!matchesCadDocumentSchema(snapshot)) throw new CadError('invalid-document', 'CAD document must contain its own complete JSON fields.');
   const document: CadDocument = snapshot;
   validateCadParameterMetadata(document);
   if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(document.id)) throw new CadError('invalid-document-id', 'Document ID is a reserved filesystem name.');
@@ -163,8 +192,10 @@ export function parseCadDocument(value: unknown): CadDocument {
         e(feature.offset);
         if (feature.graph) {
           if (document.schemaVersion !== 2) throw new CadError('unsupported-sketch-format', 'Stable sketch entities require CAD schema 2. Preserve the schema 1 original when saving an upgrade.');
-          // Keep the parser's accepted graph, so later parses of it are free.
-          (feature as { graph: CadSketchGraph }).graph = parseCadSketchGraph(feature.graph);
+          // Keep the parser's accepted graph, so later parses of it are free. An accepted feature
+          // is frozen and holds its accepted graph already.
+          const graph = parseCadSketchGraph(feature.graph);
+          if (graph !== feature.graph) (feature as { graph: CadSketchGraph }).graph = graph;
           assertCadSketchExternalReferences({ sketch: feature, parameters: document.parameters, previous });
         }
         if (feature.source) parseCadDxfImportSource(feature.source);
@@ -243,12 +274,16 @@ export function parseCadDocument(value: unknown): CadDocument {
   // Detach from callers, then freeze the complete history so neither a caller's
   // edit payload nor a UI/tool snapshot can mutate an accepted revision later.
   function freeze(value: unknown): void {
-    if (value === null || typeof value !== 'object') return;
+    // An accepted feature is frozen through already.
+    if (value === null || typeof value !== 'object' || acceptedFeatures.has(value)) return;
     Object.values(value).forEach(freeze);
     Object.freeze(value);
   }
   freeze(document);
-  for (const feature of document.features) if (feature.kind === 'sketch') acceptedSketchSources.add(feature);
+  for (const feature of document.features) {
+    acceptedFeatures.add(feature);
+    if (feature.kind === 'sketch') acceptedSketchSources.add(feature);
+  }
   acceptedDocuments.add(document);
   return document;
 }

@@ -74,9 +74,13 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const cancel = () => { submission.cancel(); onCancel(); };
   const previewOwner = useId(), previewCallback = useRef(onFeaturePreview);
   previewCallback.current = onFeaturePreview;
+  // Each revision of the part that holds an existing feature accepts it again, also where the
+  // revision kept its object unchanged. A feature the part no longer holds, or a new feature's
+  // draft, stays with the revision it was opened in.
   const baseline = useRef({ feature, version: documentVersion });
-  if (baseline.current.feature !== feature) baseline.current = { feature, version: documentVersion };
-  const staleDraft = baseline.current.version !== documentVersion;
+  if (baseline.current.feature !== feature || !isNew && baseline.current.version !== documentVersion && document.features.includes(feature)) baseline.current = { feature, version: documentVersion };
+  const accepted = baseline.current;
+  const staleDraft = accepted.version !== documentVersion;
   const draftSource = useRef(feature);
   const pickerCallback = useRef(onReferencePick); pickerCallback.current = onReferencePick;
   const [picker, setPicker] = useState<Exclude<CadFeatureReferencePickCommand, { kind: 'clear' }> | null>(null);
@@ -137,7 +141,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const [error, setError] = useState<string | null>(null);
   const [capturedEdges, setCapturedEdges] = useState(feature.kind === 'fillet' || feature.kind === 'chamfer' ? feature.selection : null);
   const candidateEdits = useMemo(() => cadFeatureCandidateEdits({ feature: draft, isNew, parameters: parameterEdits }), [draft, isNew, parameterEdits]);
-  useEffect(() => { draftSource.current = feature; setDraft(feature); setCapturedEdges(feature.kind === 'fillet' || feature.kind === 'chamfer' ? feature.selection : null); setParameterEdits({}); setValueDrafts({}); setRelationEdits({}); setError(null); setPicker(null); pickToken.current = null; regionStart.current = null; }, [feature]);
+  useEffect(() => { draftSource.current = feature; setDraft(feature); setCapturedEdges(feature.kind === 'fillet' || feature.kind === 'chamfer' ? feature.selection : null); setParameterEdits({}); setValueDrafts({}); setRelationEdits({}); setError(null); setPicker(null); pickToken.current = null; regionStart.current = null; }, [feature, accepted]);
   useLayoutEffect(() => { onPendingChange(isNew || draftSource.current === feature && (changed || scalarPending || Boolean(pickCurrent) || depthGestureActive)); }, [isNew, feature, changed, scalarPending, pickCurrent, depthGestureActive, onPendingChange]);
   useLayoutEffect(() => { onReferencePick?.(pickCurrent ?? { kind: 'clear', owner: previewOwner }); }, [onReferencePick, pickCurrent, previewOwner]);
   useLayoutEffect(() => () => pickerCallback.current?.({ kind: 'clear', owner: previewOwner }), [previewOwner]);
@@ -373,7 +377,12 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
   const [error, setError] = useState<string | null>(null);
   const [parameterDrafts, setParameterDrafts] = useState<Record<string, string>>({});
   const [bindingPending, setBindingPending] = useState(false);
-  useEffect(() => { setDraft(profile); setChanged(false); setError(null); setParameterDrafts({}); }, [profile]);
+  // Each revision of the part that holds the profile accepts it again, also where it kept its object.
+  const baseline = useRef({ profile, document });
+  if (baseline.current.profile !== profile || baseline.current.document !== document
+    && document.features.some(feature => feature.kind === 'sketch' && feature.profiles.includes(profile))) baseline.current = { profile, document };
+  const accepted = baseline.current;
+  useEffect(() => { setDraft(profile); setChanged(false); setError(null); setParameterDrafts({}); }, [profile, accepted]);
   useLayoutEffect(() => { onPendingChange(changed || bindingPending); }, [changed, bindingPending, onPendingChange]);
   const update = (next: CadSketchProfile) => { setDraft(next); setChanged(true); setError(null); };
   const parameterEdits = useMemo(() => Object.fromEntries(Object.entries(parameterDrafts).filter(([, text]) => text.trim() && Number.isFinite(Number(text)) && Math.abs(Number(text)) <= 1e9).map(([name, text]) => [name, Number(text)])), [parameterDrafts]);
