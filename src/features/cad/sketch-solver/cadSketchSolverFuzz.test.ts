@@ -28,6 +28,8 @@ const summary = (result: CadSketchSolveResult) => JSON.stringify([result.kind ==
 
 /** What is wrong with one answer, if anything. */
 function violation(fuzz: CadSketchFuzzCase, role: Role, input: CadSketchSolveInput, result: CadSketchSolveResult): string | undefined {
+  const { conflictingIds, redundantIds, partiallyRedundantIds } = result.diagnostics;
+  if ([...redundantIds, ...partiallyRedundantIds].some(id => conflictingIds.includes(id))) return `a relation named both conflicting and redundant in ${summary(result)}`;
   if (role === 'contradiction') {
     if (result.kind === 'solved') return 'a contradiction solved';
     if (result.reason !== 'conflicting' || !fuzz.contradiction.relationIds.some(id => result.diagnostics.conflictingIds.includes(id)))

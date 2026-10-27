@@ -114,6 +114,17 @@ describe('native sketch solver module', () => {
     expect(cadSketchEquationDiagnostics(model, solution.diagnosis.labels)).toEqual({ conflictingIds: [], redundantIds: [], partiallyRedundantIds: ['meet'] });
   });
 
+  it('reports a fixed point whose y conflicts as conflicting alone, though its x repeats another relation', () => {
+    const model = compileCadSketchEquations({ graph: parseCadSketchGraph({ points: [{ id: 'p', position: [1, 2] }], entities: [],
+      relations: [{ id: 'x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value: 1 }, { id: 'fix', kind: 'fixed-point', pointId: 'p', position: [1, 2] },
+        { id: 'y', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 2 }, { id: 'clash', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 5 }] }), parameters: {} });
+    const solution = solver.solve(model);
+    if (solution.diagnosis.kind === 'unavailable') throw new Error(solution.diagnosis.kind);
+    // The fixed point's x row repeats `x` and its y row conflicts with `clash`; `y` agrees with it.
+    expect(solution.diagnosis.labels).toEqual([0, 1, 2, 1, 2]);
+    expect(cadSketchEquationDiagnostics(model, solution.diagnosis.labels)).toEqual({ conflictingIds: ['fix', 'clash'], redundantIds: ['y'], partiallyRedundantIds: [] });
+  });
+
   it('does not blame a nearly parallel guide for the guide beside it', () => {
     // A far point on a guide, a guide turned by about 4e-7 rad, the first again and a parallel
     // guide 5 along: the repeat is redundant and the parallel guide conflicts with the first.
