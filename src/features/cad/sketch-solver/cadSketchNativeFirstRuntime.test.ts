@@ -25,7 +25,7 @@ function fakeNative(answer: (model: CadSketchEquationModel) => Partial<CadSketch
 
 function runtime(native: () => Promise<CadSketchNativeSolver>, planeGcs: CadSketchSolverBackend, extra: Partial<Parameters<typeof createCadSketchNativeFirstRuntime>[0]> = {}) {
   const records: CadSketchSolveRecord[] = [], loadPlaneGcs = vi.fn(async () => planeGcs), loadNative = vi.fn(native);
-  return { records, loadPlaneGcs, loadNative, solver: createCadSketchNativeFirstRuntime({ loadNative, loadPlaneGcs, onSolve: record => records.push(record), ...extra }) };
+  return { records, loadPlaneGcs, loadNative, solver: createCadSketchNativeFirstRuntime({ mode: 'native-first', loadNative, loadPlaneGcs, onSolve: record => records.push(record), ...extra }) };
 }
 
 describe('native-first sketch solving', () => {
@@ -402,6 +402,17 @@ describe('native-first sketch solving', () => {
     const large = runtime(async () => fakeNative(() => ({}), 2 ** 27), planeGcsSolved(failedResult));
     await large.solver.solve(input); await large.solver.solve(input);
     expect(large.records[0].nativeReset).toBe('memory'); expect(large.loadNative).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs overlapping solves one at a time, so the second gets a fresh instance after the first traps', async () => {
+    let instances = 0;
+    const { solver, records, loadNative, loadPlaneGcs } = runtime(async () => (instances += 1) === 1
+      ? fakeNative(() => { throw new WebAssembly.RuntimeError('unreachable'); }) : loadCadSketchTestNativeSolver(), planeGcsSolved(failedResult), { mode: 'native-only' });
+    const [first, second] = await Promise.all([solver.solve(input), solver.solve(input)]);
+    expect(first).toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.' });
+    expect(second).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 3 } });
+    expect(records).toMatchObject([{ native: 'failed', nativeReset: 'failure' }, { answeredBy: 'native', native: 'answer' }]);
+    expect(loadNative).toHaveBeenCalledTimes(2); expect(loadPlaneGcs).not.toHaveBeenCalled();
   });
 
   it('runs only the selected solver in the comparison modes', async () => {

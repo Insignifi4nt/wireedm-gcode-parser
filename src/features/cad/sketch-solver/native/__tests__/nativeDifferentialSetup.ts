@@ -1,7 +1,7 @@
 // Setup for the `native-differential` project. Every PlaneGCS solve in the selected suites is
 // repeated by the native solver, which must match its diagnosis and, for solved sketches, its
 // geometry, or for a drag, come at least as close to its target within a small bound unless reviewed
-// as a change of assembly. Suites that solve through the application's native-first runtime also get a PlaneGCS
+// as a change of assembly. Suites that solve through the application runtime, native alone or first, also get a PlaneGCS
 // answer for the same input, so every native answer, fallback and rescue is compared and tallied.
 // Mismatches are collected and fail the suite after its tests, so suites that expect rejections
 // cannot swallow them.
@@ -169,7 +169,7 @@ vi.mock('../../cadSketchSolverRuntime', async importOriginal => {
 });
 
 /**
- * Compares the application's native-first answer with PlaneGCS alone on the same captured input.
+ * Compares the application runtime's answer, native alone or first, with PlaneGCS alone on the same captured input.
  * Native may answer differently only where the diagnosis comparison above reviews it, or by solving
  * what PlaneGCS rejects; PlaneGCS may rescue a native fallback only where reviewed.
  */
@@ -214,7 +214,8 @@ function compareAnswer(input: CadSketchSolveInput, result: CadSketchSolveResult,
 vi.mock('../../__tests__/cadSketchTestSolver', async importOriginal => {
   const factory = await importOriginal<typeof import('../../__tests__/cadSketchTestSolver')>();
   return { ...factory, createCadSketchTestSolver: (options: Parameters<typeof factory.createCadSketchTestSolver>[0] = {}) => {
-    if (options.mode && options.mode !== 'native-first') return factory.createCadSketchTestSolver(options);
+    // An injected native solver, faulty on purpose or gated, is not the one under comparison.
+    if (options.mode === 'planegcs' || options.loadNative) return factory.createCadSketchTestSolver(options);
     let record: CadSketchSolveRecord | undefined;
     const inner = factory.createCadSketchTestSolver({ ...options, onSolve: solved => { record = solved; options.onSolve?.(solved); } });
     const oracle = factory.createCadSketchTestSolver({ mode: 'planegcs' });
@@ -233,7 +234,7 @@ vi.mock('../../__tests__/cadSketchTestSolver', async importOriginal => {
 });
 
 afterAll(() => {
-  if (process.env.NATIVE_DIFFERENTIAL_TALLY) console.log(`native-first answers: ${JSON.stringify(answers)}`);
+  if (process.env.NATIVE_DIFFERENTIAL_TALLY) console.log(`application runtime answers: ${JSON.stringify(answers)}`);
   if (process.env.NATIVE_DIFFERENTIAL_TALLY) console.log(`native differential: ${JSON.stringify(tally)}`);
   for (const name of reviewedDragBranches.keys()) if (testsRun.has(name) && !seenDragBranches.has(name)) mismatches.push(`${name}: the reviewed drag no longer ends as recorded, further than PlaneGCS`);
   expect(mismatches).toEqual([]);

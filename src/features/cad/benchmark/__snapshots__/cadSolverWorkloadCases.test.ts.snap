@@ -118,25 +118,17 @@ exports[`solver workload fixtures against real PlaneGCS > fixed-point-vs-dimensi
 exports[`solver workload fixtures against real PlaneGCS > fully-fixed-conflict pins acceptance, freedom and source diagnostics 1`] = `
 {
   "diagnostics": {
-    "conflictingIds": [],
-    "degreesOfFreedom": 0,
-    "issues": [
-      {
-        "code": "relation-residual",
-        "message": "Sketch geometry does not satisfy its driving relation.",
-        "residualMm": 2,
-        "source": {
-          "id": "fixedSize",
-          "kind": "relation",
-        },
-      },
+    "conflictingIds": [
+      "fixedSize",
     ],
+    "degreesOfFreedom": null,
+    "issues": [],
     "partiallyRedundantIds": [],
     "redundantIds": [],
-    "status": "success",
+    "status": "failed",
   },
   "kind": "rejected",
-  "reason": "invalid-solution",
+  "reason": "conflicting",
 }
 `;
 
@@ -150,7 +142,7 @@ exports[`solver workload fixtures against real PlaneGCS > fully-fixed-conflict-w
     "issues": [],
     "partiallyRedundantIds": [],
     "redundantIds": [],
-    "status": "success",
+    "status": "failed",
   },
   "kind": "rejected",
   "reason": "conflicting",
@@ -193,7 +185,7 @@ exports[`solver workload fixtures against real PlaneGCS > impossible-triangle pi
 {
   "diagnostics": {
     "conflictingIds": [],
-    "degreesOfFreedom": 3,
+    "degreesOfFreedom": null,
     "issues": [],
     "partiallyRedundantIds": [],
     "redundantIds": [],
@@ -275,12 +267,13 @@ exports[`solver workload fixtures against real PlaneGCS > overlapping-conflicts-
       "length",
       "other",
       "third",
-      "repeat",
     ],
     "degreesOfFreedom": null,
     "issues": [],
     "partiallyRedundantIds": [],
-    "redundantIds": [],
+    "redundantIds": [
+      "repeat",
+    ],
     "status": "failed",
   },
   "kind": "rejected",
@@ -404,32 +397,13 @@ exports[`solver workload fixtures against real PlaneGCS > tangency-near pins acc
   "diagnostics": {
     "conflictingIds": [],
     "degreesOfFreedom": 0,
-    "issues": [
-      {
-        "code": "arc-radius-mismatch",
-        "message": "Arc endpoints must share their declared center and radius.",
-        "residualMm": 1.666666804567285e-11,
-        "source": {
-          "id": "slotRight",
-          "kind": "entity",
-        },
-      },
-      {
-        "code": "relation-residual",
-        "message": "The line and arc do not form a smooth tangent joint.",
-        "residualMm": 3.333600062651509e-11,
-        "source": {
-          "id": "tangentslotB",
-          "kind": "relation",
-        },
-      },
-    ],
+    "issues": [],
     "partiallyRedundantIds": [],
     "redundantIds": [],
     "status": "success",
   },
-  "kind": "rejected",
-  "reason": "invalid-solution",
+  "kind": "solved",
+  "reason": null,
 }
 `;
 
