@@ -103,6 +103,11 @@ From 0.0.764 `prepareCadViewportReferences` keeps the references it prepared for
 - In a sketch drag the workbench prepares viewport references only when the drag is released, and the 3D view, hidden while a sketch is edited, installs their lines when it is shown again. In three profiled 32-sketch drags of each production build in the browser, 0.0.763 spent 6.9, 14.3 and 19.0 ms of the release task preparing references; with the cache, preparation never ran long enough to be sampled at 0.2 ms. The release task took 63 to 136 ms with both, mostly React rendering, so single releases do not show the difference.
 - Collecting the names a sketch reads walks it, about 0.01 ms for the one-sketch workload, and holding the last two preparations costs about as much again. A sketch that a revision changes therefore prepares 0.02 to 0.05 ms slower than before.
 
+From 0.0.765 the workbench checks which sketches Pad, Revolve and Sweep can use only while the model toolbar shows those tools, and renders of the same document and parameters reuse the answer. Before, every render checked every sketch, also while a sketch was open, and the release of a sketch drag renders the workbench again. The delete dialog finds the transitive dependents it lists only while it is open.
+
+- In three profiled 32-sketch drags of each unminified production build, alternating with 0.0.764, the release task spent 1.4, 3.0 and 2.2 ms in source checks with 0.0.764, and none was sampled with 0.0.765. The workbench body took 21.3, 7.9 and 6.6 ms of the release against 5.5, 3.7 and 6.1 ms. The release task took 60 to 129 ms with 0.0.764 and 56 to 63 ms with 0.0.765, mostly React rendering of the toolbar, history, inspector and their tooltips, so single releases do not show the difference.
+- `CadWorkbench.test.tsx` counts the source checks: a selection in the model toolbar and revisions while a sketch is open check nothing, while a revision or a parameter change in the model toolbar checks again.
+
 ## Native sketch solver
 
 `packages/sketch-solver` is our own Rust constraint solver, compiled to a WebAssembly module with no dependencies (92 kB, 33 kB gzip, at 0.0.739). From 0.0.739 it was built, tested and compared with PlaneGCS; from 0.0.746 the app solved with it first; from 0.0.757 it is the app's only sketch solver.
