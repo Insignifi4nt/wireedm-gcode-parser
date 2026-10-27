@@ -30,11 +30,11 @@ export type CadSketchNativeDragOutcome = 'reached' | 'projected' | 'stalled' | '
  * most severe kind, in the order diagnosed, uncertain, incomplete, from-start, suspected,
  * no-unknowns, unavailable. `suspected`: a group that did not converge stalled short of a collapsed
  * nearest point and was diagnosed with a looser dependence distance, so its conflicts are suspected
- * rather than certain and freedom is unknown. `from-start`: such a group is blamed instead for the
- * dependencies its start shows, as PlaneGCS diagnoses a sketch, between relations that are the same
- * function of the same values up to their value and sign, as repeated dimensions are, so they hold
- * at every point; angles, whose residuals wrap, are left out, and others may exist where the solve
- * stopped. `uncertain`: a converged
+ * rather than certain and freedom is unknown. `from-start`: a group that did not converge is blamed
+ * instead for relations that are the same function of the same values up to their value and sign,
+ * as repeated dimensions are, held at values that cannot agree, as PlaneGCS sees at its start; they
+ * conflict at every point, even where the stall cannot be diagnosed. Angles, whose residuals wrap,
+ * are left out, and other conflicts may exist where the solve stopped. `uncertain`: a converged
  * group's rank was too close to call, as near a tangency, so its labels are the dependencies found
  * but more may exist, and freedom is unknown. `incomplete`: a converged group ran out of work, or
  * was too large to factor, before it was diagnosed, so it labels nothing and freedom is unknown;
@@ -102,7 +102,7 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
       if (kind === undefined || diagnosis === undefined || length !== HEADER + model.values.length + model.equations.length
         || values.some(value => !Number.isFinite(value)) || labels.some(label => label !== 0 && label !== 1 && label !== 2)
         || !(Number.isNaN(degreesOfFreedom) || diagnosis === 'diagnosed' && Number.isSafeInteger(degreesOfFreedom) && degreesOfFreedom >= 0)
-        // Only a group that did not converge is blamed as its start shows.
+        // Only a group that did not converge is blamed for repeated relations.
         || diagnosis === 'from-start' && kind !== 'not-converged'
         || !(dragging ? drag !== undefined && Number.isFinite(targetDistance) && targetDistance >= 0 : Number.isNaN(dragged) && Number.isNaN(targetDistance)))
         throw new Error('The native sketch solver returned an invalid result.');

@@ -53,16 +53,46 @@ fn distances_and_an_offset_that_cannot_agree_are_blamed_as_their_start_shows() {
 
 #[test]
 fn more_work_only_makes_a_stalled_diagnosis_more_definite() {
-    // From the first limit that diagnoses the stall at all: unavailable, then suspected once the
-    // looser diagnosis fits, then blamed from the start once its checks fit too, and never back.
-    let (builder, _, _) = overlapping();
-    let kinds: Vec<_> = (0..8000).map(|work| builder.outcome_within(Limits { fill: usize::MAX, work }).0.diagnosis).collect();
-    let suspected = kinds.iter().position(|&kind| kind == Diagnosis::Suspected).unwrap();
-    let blamed = kinds.iter().position(|&kind| kind == Diagnosis::FromStart).unwrap();
-    assert!(suspected < blamed, "{suspected} {blamed}");
-    assert!(kinds[..suspected].iter().all(|&kind| kind == Diagnosis::Unavailable));
-    assert!(kinds[suspected..blamed].iter().all(|&kind| kind == Diagnosis::Suspected));
-    assert!(kinds[blamed..].iter().all(|&kind| kind == Diagnosis::FromStart));
+    // Unavailable until the solve and its checks fit, then never back: the overlapping dimensions
+    // are blamed for repeating each other as soon as the comparison fits, with no diagnosis of the
+    // stall, and a triangle too long for its sides, which repeats nothing, is suspected once the
+    // looser diagnosis fits.
+    let mut triangle = Builder::new();
+    let a = triangle.point(0.0, 0.0, false);
+    let b = triangle.point(10.0, 0.0, false);
+    let c = triangle.point(10.0, 10.0, false);
+    distance(&mut triangle, 10.0, a, b);
+    distance(&mut triangle, 10.0, b, c);
+    distance(&mut triangle, 30.0, a, c);
+    for (builder, definite) in [(overlapping().0, Diagnosis::FromStart), (triangle, Diagnosis::Suspected)] {
+        let kinds: Vec<_> = (0..8000).map(|work| builder.outcome_within(Limits { fill: usize::MAX, work }).0.diagnosis).collect();
+        let found = kinds.iter().position(|&kind| kind == definite).unwrap();
+        assert!(kinds[..found].iter().all(|&kind| kind == Diagnosis::Unavailable), "{definite:?}");
+        assert!(kinds[found..].iter().all(|&kind| kind == definite), "{definite:?}");
+    }
+}
+
+#[test]
+fn repeated_values_are_blamed_where_the_stall_cannot_be_diagnosed() {
+    // p is held level with q and 5 above it, and q to p perpendicular to q to r, with q and r held by
+    // value at (1, 7) and (1, -3), as fixed points are. Least squares has no minimum: leaning q to r
+    // a little lets p run off sideways between the two heights while the perpendicular's normalized
+    // residual shrinks, so the stall cannot be diagnosed. The two heights are the same function of
+    // the same values, so they alone are blamed wherever the solve stopped; repeated the other way
+    // round, the level one is redundant.
+    for repeat in [false, true] {
+        let mut builder = Builder::new();
+        let p = builder.point(-9.0, 7.0, false);
+        let q = builder.point(1.0, 7.0, false);
+        let r = builder.point(1.0, -3.0, false);
+        builder.equation(Kind::Difference, 0.0, &[p[1], q[1]]);
+        builder.equation(Kind::Perpendicular, 0.0, &[p[0], p[1], q[0], q[1], q[0], q[1], r[0], r[1]]);
+        for (value, at) in [(1.0, r[0]), (-3.0, r[1]), (1.0, q[0]), (7.0, q[1])] { builder.equation(Kind::Value, value, &[at]); }
+        builder.equation(Kind::Difference, 5.0, &[p[1], q[1]]);
+        if repeat { builder.equation(Kind::Difference, 0.0, &[q[1], p[1]]); }
+        let expected = if repeat { vec![C, 0, 0, 0, 0, 0, C, R] } else { vec![C, 0, 0, 0, 0, 0, C] };
+        assert_eq!(diagnose(&builder), (Status::NotConverged, Diagnosis::FromStart, None, expected), "repeat {repeat}");
+    }
 }
 
 #[test]
