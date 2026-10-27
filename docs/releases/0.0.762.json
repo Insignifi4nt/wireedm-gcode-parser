@@ -1,0 +1,24 @@
+{
+  "version": "0.0.762",
+  "previousVersion": "0.0.761",
+  "postCompatibility": "preserved-output-cad-accepted-features",
+  "summary": "parseCadDocument remembers every feature of a document it accepted, and a new document listing such a feature takes it as it is: the import-data walk, the feature schema, the detached copy and the freeze skip it, while copies and lookalikes are checked in full and every document-wide check still runs over all features. Drag previews, which list the features an edit did not change, prepare at 1, 4, 8 and 32 sketches in 2.45 to 2.63, 3.10 to 3.17, 3.55 to 3.75 and 8.39 to 8.40 ms, against 2.62 to 2.66, 7.30 to 7.42, 13.61 to 13.92 and 51.99 to 52.07 ms in the 0.0.761 baseline. A feature a revision did not change keeps its object, and the feature and profile forms compare revisions, not objects, so they still start again from each revision of the part that holds what they edit.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Every document is accepted or rejected with the same error as before. A feature a revision did not change is now the same object in both revisions, so code that took a new feature object as a sign of a new revision must compare revisions instead; the feature and profile forms do. A transparent proxy around a document or feature list that holds accepted features is now copied and accepted instead of rejected.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved CAD files are byte for byte the same.",
+    "verification": "A corpus test parses documents listing accepted features and their variants both as they are and as structured clones and requires the same outcome; all 964 such parses in a full suite run matched. Two bundled preview runs of 30 samples; the full Vitest suite, lint, ui:check, build, solver:check and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Faster sketch drag previews in parts with many features.",
+    "changes": [
+      "Dragging sketch geometry prepares its preview without checking the unchanged features of the part again, so previews in parts with many sketches respond faster."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
