@@ -53,8 +53,10 @@ async function coldFirstAnswer(scenario: ColdScenario) {
 
 function child(args: readonly string[]) {
   // A separate process per probe prevents V8's WASM compilation cache from warming another probe.
-  // OS disk caches are not flushed; this is not a browser/network fetch metric.
-  const run = spawnSync(process.execPath, [...cadBenchmarkExecArgv(), '--import', 'tsx', fileURLToPath(import.meta.url), ...args], { encoding: 'utf8', timeout: 60_000,
+  // OS disk caches are not flushed; this is not a browser/network fetch metric. The source is named,
+  // so a run bundled beside it (scripts/run-bundled.mjs) starts the same probe.
+  const probe = fileURLToPath(new URL('./benchmark-cad-solver-resources.ts', import.meta.url));
+  const run = spawnSync(process.execPath, [...cadBenchmarkExecArgv(), '--import', 'tsx', probe, ...args], { encoding: 'utf8', timeout: 60_000,
     env: { ...process.env, TSX_TSCONFIG_PATH: fileURLToPath(new URL('../tsconfig.app.json', import.meta.url)) } });
   if (run.status !== 0) throw new Error(`Cold probe ${args.join(' ')} failed: ${run.stderr || run.error}`);
   // The probe's report is its last line.

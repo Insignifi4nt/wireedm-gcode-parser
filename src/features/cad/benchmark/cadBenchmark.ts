@@ -1,5 +1,6 @@
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
+import { parseCadDocument } from '@/domain/cad/cadSchema';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { prepareCadMeshDisplay } from '../cadMeshDisplay';
 import { buildCadKernelModel } from '../kernel/cadKernelModel';
@@ -222,6 +223,8 @@ export async function probeCadSolverCapacity(createFreshSolver: () => CadSketchS
 /**
  * Solver calls (input parsing, constraint compilation, the native solve and reply validation)
  * and their share of one preview preparation; the rest is document parsing, refresh and checks.
+ * `documentParseMs` times one boundary parse of a detached copy of the prepared document, as
+ * `parseCadDocument` checks a document it has not accepted, the most of a preparation parsing can be.
  */
 async function measurePreview(solver: CadSketchSolver, document: CadDocument, edit: CadEdit, runs: number) {
   let solves = 0, solverMs = 0;
@@ -230,14 +233,16 @@ async function measurePreview(solver: CadSketchSolver, document: CadDocument, ed
     try { return await solver.solve(input, signal); } finally { solverMs += performance.now() - started; }
   } };
   const before = cadBenchmarkCpuCalibrationMs();
-  const prepare: number[] = [], solverCalls: number[] = [];
+  const prepare: number[] = [], solverCalls: number[] = [], documentParse: number[] = [];
+  let prepared: CadDocument = document;
   for (let run = 0; run <= runs; run++) {
     solves = 0; solverMs = 0;
-    const elapsed = await timeAsync(() => prepareCadEdits(document, [edit], counted));
-    if (run > 0) { prepare.push(elapsed); solverCalls.push(solverMs); }
+    const elapsed = await timeAsync(async () => { prepared = (await prepareCadEdits(document, [edit], counted)).document; });
+    const copy = structuredClone(prepared), parsed = time(() => parseCadDocument(copy));
+    if (run > 0) { prepare.push(elapsed); solverCalls.push(solverMs); documentParse.push(parsed); }
   }
-  return { cpuCalibrationMs: [before, cadBenchmarkCpuCalibrationMs()] as const, solvesPerPreview: solves,
-    prepareMs: cadBenchmarkStats(prepare), solverCallMs: cadBenchmarkStats(solverCalls) };
+  return { cpuCalibrationMs: [before, cadBenchmarkCpuCalibrationMs()] as const, solvesPerPreview: solves, documentJsonBytes: JSON.stringify(prepared).length,
+    prepareMs: cadBenchmarkStats(prepare), solverCallMs: cadBenchmarkStats(solverCalls), documentParseMs: cadBenchmarkStats(documentParse) };
 }
 
 /** One drag-preview preparation of a single point move, across documents with more independent sketches. */

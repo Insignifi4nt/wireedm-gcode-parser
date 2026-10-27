@@ -24,7 +24,7 @@
     "upid:benchmark": "tsx --tsconfig tsconfig.app.json scripts/benchmark-upid.ts",
     "solver:build": "node scripts/build-sketch-solver.mjs",
     "solver:check": "node scripts/build-sketch-solver.mjs --check",
-    "cad:benchmark": "tsx --tsconfig tsconfig.app.json scripts/benchmark-cad.ts",
+    "cad:benchmark": "node scripts/run-bundled.mjs scripts/benchmark-cad.ts",
     "upid:conformance": "tsx --tsconfig tsconfig.app.json scripts/upid.ts docs/upid/v1/examples/mixed-primitives.upid.json docs/upid/v1/examples/partial-circle-stop.upid.json docs/upid/v1/examples/compensated-circle.upid.json --require-executable",
     "post:docs:generate": "tsx scripts/generate-post-authoring-docs.ts",
     "post:docs:check": "tsx scripts/generate-post-authoring-docs.ts --check",
