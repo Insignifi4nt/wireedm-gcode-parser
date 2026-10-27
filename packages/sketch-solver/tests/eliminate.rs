@@ -214,13 +214,17 @@ fn random_sketches_agree_with_the_whole_solve() {
             let (i, j) = ((next() as usize) % count, (next() as usize) % count);
             let axis = (next() % 2) as usize;
             let offset = (next() % 21) as f64 - 10.0;
-            match next() % 4 {
+            match next() % 5 {
                 0 if i != j => builder.equation(Kind::Difference, offset, &[points[i][axis], points[j][axis]]),
                 1 => builder.equation(Kind::Value, offset * 3.0, &[points[i][axis]]),
                 2 if i != j => {
                     let (p, q) = (points[i], points[j]);
                     let length = (builder.values[q[0]] - builder.values[p[0]]).hypot(builder.values[q[1]] - builder.values[p[1]]);
                     if length > 1.0 { builder.equation(Kind::Distance, length + offset / 10.0, &[p[0], p[1], q[0], q[1]]); }
+                }
+                3 if i != j => {
+                    let k = (next() as usize) % count;
+                    if k != i && k != j { builder.equation(Kind::Midpoint, 0.0, &[points[i][axis], points[j][axis], points[k][axis]]); }
                 }
                 _ => {}
             }

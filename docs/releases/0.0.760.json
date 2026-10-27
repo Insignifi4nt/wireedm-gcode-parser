@@ -1,0 +1,24 @@
+{
+  "version": "0.0.760",
+  "previousVersion": "0.0.759",
+  "postCompatibility": "preserved-output-sketch-solver-elimination",
+  "summary": "Solves sketch groups made only of differences, values and midpoints through classes of offset parameters before their first solve. Differences join unknowns into classes, values and differences with fixed parameters pin them, a free class starts at the mean of its members less their offsets, and only classes a midpoint reads become columns, scaled so the smaller solve ends where solving the whole group would: at the solution nearest the start. The group is then diagnosed whole, as before. Drags, groups with a distance, angle, tangency or other bent row, starts already polished, unmet cycle or second-pin rows and smaller solves or diagnoses that fall short are solved whole from their unchanged start, bit for bit as before. Against the 0.0.757 baseline module, 245 of 3,241 corpus and fuzz calls and 10 of 596 benchmark calls answer differently, each value within 4.7e-6 of its 1e-9 allowance and with the same status, diagnosis, freedom and labels. First solves of the four topology workloads take 0.37 to 0.42 of their time; the other 53 timed groups range from 0.94 to 1.04, within the host's noise, and memory is unchanged. The module grows from 211,351 to 224,439 bytes, and the largest connected rectangle chain solved is still 83,333. Elimination in groups with bent rows can reach a different valid solution than the whole solve and is left as an open decision.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Sketch groups held only by horizontal, vertical, coincident, equal radius, axis distance, fixed coordinate and midpoint relations can solve to values that differ from 0.0.759 by roundoff, at most 4.7e-15 times the larger of 1 and the value, with other iteration counts; their status, diagnosis, freedom and named relations are unchanged.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or worker reply change. The native module is rebuilt; its wire protocol stays 5. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Rust solver tests with ten elimination tests, including 400 random sketches solved both ways (a 40,000-seed run found every difference within 1e-12 of a value), solver:check, the baseline comparison against the 0.0.757 module with the elimination allowance, the A/B timing over 58 groups, the too-large boundary probe, the full Vitest suite, lint, ui:check, build and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Faster solving of sketches held by simple relations.",
+    "changes": [
+      "Sketch groups held only by horizontal, vertical, coincident, equal radius, axis distance, fixed coordinate and midpoint relations solve faster."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
