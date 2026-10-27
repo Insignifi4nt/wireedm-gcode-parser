@@ -3,6 +3,7 @@ import type { CadEdit } from '@/domain/cad/cadOperations';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import { prepareCadEdits } from '../cadEditPreparation';
 import { prepareCadMeshDisplay } from '../cadMeshDisplay';
+import { prepareCadViewportReferences } from '../cadViewportReferences';
 import { buildCadKernelModel } from '../kernel/cadKernelModel';
 import { createCadKernelRuntime } from '../kernel/cadKernelRuntime';
 import { isCadKernelReply, type CadKernelReply } from '../kernel/cadKernelProtocol';
@@ -225,6 +226,8 @@ export async function probeCadSolverCapacity(createFreshSolver: () => CadSketchS
  * and their share of one preview preparation; the rest is document parsing, refresh and checks.
  * `documentParseMs` times one boundary parse of a detached copy of the prepared document, as
  * `parseCadDocument` checks a document it has not accepted, the most of a preparation parsing can be.
+ * `viewportReferencesMs` times the viewport references of a preparation after those of the document it
+ * was prepared from, as the workbench prepares them when it shows the preview.
  */
 async function measurePreview(solver: CadSketchSolver, document: CadDocument, edit: CadEdit, runs: number) {
   let solves = 0, solverMs = 0;
@@ -245,8 +248,15 @@ async function measurePreview(solver: CadSketchSolver, document: CadDocument, ed
     const copy = structuredClone(prepared), parsed = time(() => parseCadDocument(copy));
     if (run > 0) documentParse.push(parsed);
   }
+  const references: number[] = [];
+  prepareCadViewportReferences(document.features, document.parameters);
+  for (let run = 0; run <= runs; run++) {
+    const next = (await prepareCadEdits(document, [edit], solver)).document, elapsed = time(() => prepareCadViewportReferences(next.features, next.parameters));
+    if (run > 0) references.push(elapsed);
+  }
   return { cpuCalibrationMs: [before, cadBenchmarkCpuCalibrationMs()] as const, solvesPerPreview: solves, documentJsonBytes: JSON.stringify(prepared).length,
-    prepareMs: cadBenchmarkStats(prepare), solverCallMs: cadBenchmarkStats(solverCalls), documentParseMs: cadBenchmarkStats(documentParse) };
+    prepareMs: cadBenchmarkStats(prepare), solverCallMs: cadBenchmarkStats(solverCalls), documentParseMs: cadBenchmarkStats(documentParse),
+    viewportReferencesMs: cadBenchmarkStats(references) };
 }
 
 /** One drag-preview preparation of a single point move, across documents with more independent sketches. */

@@ -34,7 +34,8 @@ const DRAG_PREVIEW_SKETCH_COUNTS = [1, 4, 8, 32];
 type DragPreview = Awaited<ReturnType<typeof measureCadDragPreview>>;
 const previewLine = (preview: DragPreview['dependent']['referenced']) =>
   `[cpu ${preview.cpuCalibrationMs.join('/')} ms]: ${preview.solvesPerPreview} solves, p50 ${preview.prepareMs.p50} ms of which solver calls ${preview.solverCallMs.p50} ms; `
-  + `one full parse of the ${Math.round(preview.documentJsonBytes / 1024)} KiB document p50 ${preview.documentParseMs.p50} ms${drifted(preview.cpuCalibrationMs) ? ' THROTTLED' : ''}`;
+  + `one full parse of the ${Math.round(preview.documentJsonBytes / 1024)} KiB document p50 ${preview.documentParseMs.p50} ms; `
+  + `viewport references p50 ${preview.viewportReferencesMs.p50} ms${drifted(preview.cpuCalibrationMs) ? ' THROTTLED' : ''}`;
 function logDragPreview(dragPreview: DragPreview) {
   for (const item of dragPreview.independent) console.log(`drag preview with ${item.sketchCount} sketches ${previewLine(item)}`);
   for (const item of dragPreview.padded) console.log(`drag preview with ${item.sketchCount} extruded sketches ${previewLine(item)}`);

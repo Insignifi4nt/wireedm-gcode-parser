@@ -88,6 +88,7 @@ it.each([0, 100000000])('physically chooses a hole-interior cell above opaque st
   const outlines: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>[] = [];
   h.scene.traverse(object => { if (object instanceof THREE.LineSegments && object.material instanceof THREE.LineBasicMaterial && object.userData.featureKind === 'sketch') outlines.push(object); });
   const normalOutlineColors = outlines.map(line => line.material.color.getHex());
+  const normalOutlineOrders = outlines.map(line => line.renderOrder);
   await h.show(h.command); expect(h.cells()).toHaveLength(4);
   for (const line of outlines) expect(line.parent?.visible).toBe(false);
   await h.pointer('pointermove');
@@ -101,7 +102,8 @@ it.each([0, 100000000])('physically chooses a hole-interior cell above opaque st
   await h.click(75); expect(h.command.onSelect).toHaveBeenCalledTimes(1); expect(h.select).not.toHaveBeenCalled();
   await h.show(null); expect(h.cells()).toEqual([]); for (const disposal of disposals) expect(disposal).toHaveBeenCalledTimes(1);
   expect(outlines.map(line => line.material.color.getHex())).toEqual(normalOutlineColors);
-  for (const line of outlines) { expect(line.parent?.visible).toBe(true); expect(line.material.transparent).toBe(false); expect(line.material.depthTest).toBe(true); expect(line.renderOrder).toBe(1); }
+  for (const line of outlines) { expect(line.parent?.visible).toBe(true); expect(line.material.transparent).toBe(false); expect(line.material.depthTest).toBe(true); }
+  expect(outlines.map(line => line.renderOrder)).toEqual(normalOutlineOrders); for (const order of normalOutlineOrders) { expect(order).toBeGreaterThanOrEqual(1); expect(order).toBeLessThan(2); }
   expect(bodies[0].material).toBe(stockMaterial); expect(stockMaterial).toMatchObject({ transparent: false, opacity: 1, depthWrite: true });
   await h.click(); expect(h.select).toHaveBeenCalledExactlyOnceWith('stock');
   expect(h.camera.position.toArray()).toEqual(position); expect(h.camera.zoom).toBe(zoom); expect(rendered.canvases).toHaveLength(1);

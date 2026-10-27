@@ -354,7 +354,6 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           const material = reference.construction ? new THREE.LineDashedMaterial({ color: referenceColor(reference), depthWrite: false }) : new THREE.LineBasicMaterial({ color: referenceColor(reference) });
           const line = new THREE.LineSegments(geometry, material);
           if (reference.construction) line.computeLineDistances();
-          line.renderOrder = 1;
           line.position.set(origin[0], origin[1], origin[2]);
           line.userData.featureKind = reference.featureKind; line.userData.featureId = reference.featureId; line.userData.referenceId = reference.referenceId; referenceLines.add(line); line.updateMatrixWorld(true);
           let patch: THREE.Mesh | undefined;
@@ -365,7 +364,11 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           }
           installedReferences.set(reference.referenceId, { reference, line, patch });
         }
-        pickableReferences.length = 0; installedReferences.forEach(({ line }) => pickableReferences.push(line));
+        // Picked and drawn in the order of the references, which a kept line would otherwise leave for the lines installed
+        // after it: equal render orders draw in the order their materials were made. Orders stay between 1 and 2.
+        pickableReferences.length = 0;
+        for (const id of wanted.keys()) { const installed = installedReferences.get(id); if (installed) pickableReferences.push(installed.line); }
+        pickableReferences.forEach((line, index) => { line.renderOrder = 1 + index / pickableReferences.length; });
         uploadedReferences.current = data.current.references;
       }
       installedReferenceVersion = data.current.referenceVersion;

@@ -1,0 +1,24 @@
+{
+  "version": "0.0.764",
+  "previousVersion": "0.0.763",
+  "postCompatibility": "preserved-output-cad-viewport-reference-cache",
+  "summary": "prepareCadViewportReferences keeps the references it prepared for an accepted sketch and returns the same frozen objects while the sketch's profiles and graph read the same parameter values and its placement (offset, frame and precision) is the same. A miss builds the sketch from only the values in its key and places it once; a sketch that is not accepted, whose offset or geometry reads an accessor, whose geometry reads a value that is not finite or that cannot be placed is prepared as before, and so is every curve and datum glyph. Only the sketches of the last two preparations that kept any are held, enough for a preview and its document, so undo history keeps none alive: a 1,000-circle sketch renamed 50 times with every revision kept retained 19.1 MiB, against 9.4 MiB without the cache and 488.7 MiB when every live sketch object kept its references. The viewport already kept the lines of references whose objects did not change, so a revision now uploads only the lines of the sketches it changed; reference lines are now picked and drawn in the order of the references, so an earlier reference installed after a kept line again wins equal-depth picks over it and no longer draws over its selection color. In three bundled runs of 41 samples, each alternating with 0.0.763 in the same process, references after a drag preview at 4, 8 and 32 sketches take 0.22 to 0.23, 0.22 and 0.28 to 0.30 ms against 0.74 to 0.78, 1.31 to 1.34 and 5.00 to 5.16 ms, and 0.54 to 0.75 ms against 10.89 to 12.07 ms at 32 sketches with an extrude after each; a sketch that a revision changes prepares 0.02 to 0.05 ms slower. In profiled 32-sketch browser drags, the release task spent 6.9 to 19.0 ms preparing references with 0.0.763 and too little to sample with the cache. The drag preview benchmark reports viewportReferencesMs.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. The viewport shows the same references in the same order; only unchanged sketches keep their objects.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved CAD files are byte for byte the same.",
+    "verification": "cadViewportReferenceCache.test.ts compares kept references with preparations of structured clones the parser never accepted, after drags, value, offset and datum frame changes, a suppressed datum, accessors, an unplaceable sketch and a relation-only parameter, and checks the two-preparation bound and offset getter reads; CadViewport.test.tsx checks the pick and draw order of overlapping references. Mutations of the key, the generations, the eligibility guards and the pick order each failed a test. Three interleaved bundled runs against 0.0.763, three profiled browser drags of each production build, a retained-heap measurement with 50 kept revisions; the full Vitest suite, lint, ui:check, build, solver:check and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Faster release of sketch drags in parts with many sketches.",
+    "changes": [
+      "Finishing a sketch drag or edit no longer redraws the unchanged sketches of the part in the 3D view, so the part responds sooner when it has many sketches."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
