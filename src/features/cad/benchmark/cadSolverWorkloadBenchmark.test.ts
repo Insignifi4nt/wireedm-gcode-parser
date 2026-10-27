@@ -119,10 +119,12 @@ describe('public-boundary solver benchmarks', () => {
     for (const [mode, solver] of [['from-start', 'native-only'], ['chained', 'native-only'], ['chained', 'planegcs']]) expect(row('four-bar', mode, solver).largestTargetErrorMm).toBeCloseTo(Math.hypot(17.2, 27.6), 6);
     // Stretched arm frames whose rank is too close to call still solve natively, with freedom unknown.
     expect(row('arm', 'from-start', 'native-only').answers).toEqual({ 'native:answer': 47 });
-    // A gap a native-only release must close, which PlaneGCS answers today: native stalls on the way
-    // to the tangency. Its landing is answered, stopped short of the singular point.
-    expect(row('tangency', 'from-start', 'native-only').answers).toEqual({ 'native:not-converged': 3, 'native:answer': 1 });
-    for (const trajectory of ['arm', 'tangency']) expect(row(trajectory, 'from-start', 'planegcs').outcomes).toEqual({ solved: createCadSolverDragTrajectories().find(item => item.id === trajectory)!.frames.length });
+    // With nothing free, native stalls at its start on the way to the tangency, where its relations
+    // are met: native-only keeps those frames there, and native-first asks PlaneGCS first. Its
+    // landing is answered, stopped short of the singular point.
+    expect(row('tangency', 'from-start', 'native-only').answers).toEqual({ 'native:stalled': 3, 'native:answer': 1 });
+    expect(row('tangency', 'from-start', 'native-only').frames.slice(0, 3).map(frame => frame.targetErrorMm)).toEqual([2.5e-6, 5e-6, 7.5e-6].map(error => expect.closeTo(error, 18)));
+    for (const trajectory of ['arm', 'tangency']) for (const solver of ['planegcs', 'native-only']) expect(row(trajectory, 'from-start', solver).outcomes).toEqual({ solved: createCadSolverDragTrajectories().find(item => item.id === trajectory)!.frames.length });
   }, 60_000);
 
   it('sweeps every free die point from one settled start, all answered natively and never further than PlaneGCS', async () => {

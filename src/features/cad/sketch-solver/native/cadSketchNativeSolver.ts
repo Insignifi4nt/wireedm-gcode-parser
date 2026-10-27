@@ -15,8 +15,10 @@ export interface CadSketchNativeSolution {
    * nearest reachable values holding up to the solver's resolution, which does not prove them
    * nearest; `limited`: stopped short where the drag ended, at the nearest feasible point found
    * that is no more singular than its start, as a landing exactly on a tangency would be; `stalled`:
-   * none of these. `targetDistance` is the Euclidean distance from the values to every target, in
-   * millimetres.
+   * none of these. A stalled drag that is `converged` stopped at the last feasible values it found,
+   * stepped back as a limited one so they are no more singular than its start; nothing shows they
+   * are as close as the target can be reached. `targetDistance` is the Euclidean distance from the
+   * values to every target, in millimetres.
    */
   readonly drag?: { readonly outcome: CadSketchNativeDragOutcome; readonly targetDistance: number };
 }

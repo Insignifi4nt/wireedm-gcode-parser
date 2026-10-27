@@ -34,11 +34,12 @@ export const CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 /**
  * Solves with the native solver first and asks PlaneGCS only when native cannot answer: compilation
  * it refuses, load failure, a failed instance, too large groups, unavailable or suspected
- * diagnosis, unknown freedom, no convergence (including a stalled drag), a drag diagnosed as
- * conflicting or redundant where it ended, or a solution that moves fixed values or fails the graph
- * checks. A converged sketch whose rank is too close to call, as near a tangency, is answered
- * natively with freedom unknown. PlaneGCS loads on first use. When native has its own rejection, PlaneGCS's answer replaces it
- * only if it solves or names definite conflicts or redundancies.
+ * diagnosis, unknown freedom, no convergence, a stalled drag, a drag diagnosed as conflicting or
+ * redundant where it ended, or a solution that moves fixed values or fails the graph checks. A
+ * converged sketch whose rank is too close to call, as near a tangency, is answered natively with
+ * freedom unknown. PlaneGCS loads on first use. When native has its own result, a rejection or the
+ * frame where a drag stalled at feasible values, PlaneGCS's answer replaces it only if it solves or
+ * names definite conflicts or redundancies; `native-only` returns native's own result.
  */
 export function createCadSketchNativeFirstRuntime(options: {
   readonly loadNative: () => Promise<CadSketchNativeSolver>;
@@ -85,10 +86,10 @@ export function createCadSketchNativeFirstRuntime(options: {
         }
       }
       // Compilation is PlaneGCS's to answer outright while both solvers exist.
-      const own = attempt?.kind === 'fallback' && attempt.reason !== 'compile' ? attempt.rejection : undefined;
+      const own = attempt?.kind === 'fallback' && attempt.reason !== 'compile' ? attempt.own : undefined;
       if (mode === 'native-only') {
         record.answeredBy = 'native';
-        return (attempt?.kind === 'fallback' ? attempt.rejection : undefined) ?? { kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.',
+        return (attempt?.kind === 'fallback' ? attempt.own : undefined) ?? { kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.',
           diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
       }
       const started = performance.now();

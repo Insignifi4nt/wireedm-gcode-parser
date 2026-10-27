@@ -7,18 +7,19 @@ import type { CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketch
 
 /** Why the native solver did not answer a solve; PlaneGCS answers it instead while both exist. */
 export type CadSketchNativeFallbackReason = 'compile' | 'too-large' | 'unavailable' | 'suspected' | 'unknown-freedom'
-  | 'not-converged' | 'drag-diagnosis' | 'moved-fixed-value' | 'graph-check';
+  | 'not-converged' | 'stalled' | 'drag-diagnosis' | 'moved-fixed-value' | 'graph-check';
 
 /**
  * `answer`: a solution, or a definite conflicting or redundant diagnosis of a solve that is not a
- * drag. `fallback`: native cannot
- * answer; `rejection` is its own result, returned when PlaneGCS does no better. Group counts say how
+ * drag. `fallback`: native cannot answer for it; `own` is native's own result, returned when
+ * PlaneGCS does no better: a rejection, or for a drag that stalled where its relations are met the
+ * solved frame where it stopped. Group counts say how
  * many connected groups native moved and how many of those kept their accepted start values. `drag`
  * is native's drag outcome whenever the input has a drag target.
  */
 export type CadSketchNativeAttempt = (
   | { readonly kind: 'answer'; readonly result: CadSketchSolveResult; readonly movedGroups: number; readonly keptGroups: number }
-  | { readonly kind: 'fallback'; readonly reason: CadSketchNativeFallbackReason; readonly rejection?: CadSketchSolveResult }
+  | { readonly kind: 'fallback'; readonly reason: CadSketchNativeFallbackReason; readonly own?: CadSketchSolveResult }
 ) & { readonly drag?: CadSketchNativeSolution['drag'] };
 
 const noDiagnostics = (status: CadSketchSolveDiagnostics['status']): CadSketchSolveDiagnostics =>
@@ -31,8 +32,10 @@ const STALLED_DRAG = 'The point could not be moved toward the target from this s
  * a converged solution, diagnosed with known freedom or with a rank too close to call and nothing
  * found dependent, that keeps fixed values and passes the graph checks, or definite conflicts and
  * redundancies, rejected in the PlaneGCS runtime's order. A drag answers only with a solution whose
- * target was reached, projected or limited: a stalled drag is not converged, and a drag's conflicts
- * and redundancies stand only when PlaneGCS does no better.
+ * target was reached, projected or limited. A drag that stalled where its relations are met stopped
+ * at feasible values no more singular than its start, but nothing shows it got as close as it
+ * could, so that frame, checked as any solution, and a drag's conflicts and redundancies stand
+ * only when PlaneGCS does no better; one that stalled elsewhere is not converged.
  * Projected means native's first- and second-order necessary conditions for a local minimum of the
  * target distance held up to its resolution. That proves neither a local minimum nor the nearest
  * configuration: another solver can end closer, for example on another assembly of a linkage.
@@ -45,7 +48,7 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
   try {
     let model: CadSketchEquationModel;
     try { model = compileCadSketchEquations(input); }
-    catch (error) { return { kind: 'fallback', reason: 'compile', rejection: { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics(null) } }; }
+    catch (error) { return { kind: 'fallback', reason: 'compile', own: { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics(null) } }; }
     clock.next('nativeCall');
     const solution = solver.solve(model);
     clock.next('mapping');
@@ -58,11 +61,11 @@ type Check = (graph: CadSketchGraph, parameters: CadSketchSolveInput['parameters
 
 function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, check: Check): CadSketchNativeAttempt {
   const { diagnosis } = solution, stalled = solution.drag?.outcome === 'stalled';
-  if (solution.status === 'too-large') return { kind: 'fallback', reason: 'too-large', rejection: { kind: 'rejected', reason: 'too-large',
+  if (solution.status === 'too-large') return { kind: 'fallback', reason: 'too-large', own: { kind: 'rejected', reason: 'too-large',
     message: 'A connected group of sketch relations is too large to solve. Split it into separate groups or remove relations.', diagnostics: noDiagnostics(null) } };
-  if (diagnosis.kind === 'unavailable') return { kind: 'fallback', reason: 'unavailable', rejection: failed('The sketch solver could not diagnose these relations.') };
+  if (diagnosis.kind === 'unavailable') return { kind: 'fallback', reason: 'unavailable', own: failed('The sketch solver could not diagnose these relations.') };
   // A suspected diagnosis is a stall short of a collapsed point, not a proof: it never blames relations.
-  if (diagnosis.kind === 'suspected') return { kind: 'fallback', reason: 'suspected', rejection: failed('Sketch relations could not be met together from this start.') };
+  if (diagnosis.kind === 'suspected') return { kind: 'fallback', reason: 'suspected', own: failed('Sketch relations could not be met together from this start.') };
   const status = solution.status === 'converged' ? 'success' : 'failed', ids = cadSketchEquationDiagnostics(model, diagnosis.labels);
   // With nothing free, only unmet relations are labelled, each as conflicting, and nothing is free.
   // An uncertain rank leaves freedom unknown.
@@ -70,7 +73,7 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
   const degreesOfFreedom = diagnosis.kind === 'diagnosed' ? diagnosis.degreesOfFreedom : uncertain || ids.conflictingIds.length ? null : 0;
   const diagnostics: CadSketchSolveDiagnostics = { ...noDiagnostics(status), degreesOfFreedom, ...ids };
   const unsolved = (reason: CadSketchNativeFallbackReason): CadSketchNativeAttempt => ({ kind: 'fallback', reason,
-    rejection: { kind: 'rejected', reason: 'failed', message: stalled ? STALLED_DRAG : 'The sketch solver did not produce a valid solution.', diagnostics } });
+    own: { kind: 'rejected', reason: 'failed', message: stalled ? STALLED_DRAG : 'The sketch solver did not produce a valid solution.', diagnostics } });
   // Native judges each equation at its own scale and the graph checks at the sketch's, which can be
   // looser far from the origin. With nothing free there is nothing to solve, so the checks decide for
   // each relation: one they accept is not blamed, and issues elsewhere are reported as the checks'.
@@ -83,14 +86,15 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
   // A drag is diagnosed where it ends, and its target can land it on a singular configuration (a
   // tangency met exactly) whose rank reads redundant or conflicting where the sketch is not, so for a
   // drag such a rejection stands only when PlaneGCS does no better.
-  const definite = (result: CadSketchSolveResult): CadSketchNativeAttempt => solution.drag ? { kind: 'fallback', reason: 'drag-diagnosis', rejection: result } : answer(result);
+  const definite = (result: CadSketchSolveResult): CadSketchNativeAttempt => solution.drag ? { kind: 'fallback', reason: 'drag-diagnosis', own: result } : answer(result);
   if (ids.conflictingIds.length) return definite({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics });
   if (ids.redundantIds.length || ids.partiallyRedundantIds.length) return definite({ kind: 'rejected', reason: 'redundant', message: 'Sketch constraints are redundant.', diagnostics });
-  if (solution.status !== 'converged' || stalled) return unsolved('not-converged');
+  if (solution.status !== 'converged') return unsolved('not-converged');
   // A converged sketch whose rank was too close to call, as near a tangency, is solved with its
   // freedom unknown.
   if (degreesOfFreedom === null && !uncertain) return unsolved('unknown-freedom');
-  return solvedAttempt(input, model, solution, diagnostics, check, !uncertain);
+  const solved = solvedAttempt(input, model, solution, diagnostics, check, !uncertain);
+  return stalled && solved.kind === 'answer' ? { kind: 'fallback', reason: 'stalled', own: solved.result } : solved;
 }
 
 function answer(result: CadSketchSolveResult): CadSketchNativeAttempt { return { kind: 'answer', result, movedGroups: 0, keptGroups: 0 }; }
@@ -122,7 +126,7 @@ const polished = (start: number, value: number) => Math.abs(value - start) <= Ma
  */
 function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, diagnostics: CadSketchSolveDiagnostics, check: Check, snap = true): CadSketchNativeAttempt {
   if (!applyCadSketchEquationSolution(input.graph, model, solution.values)) return { kind: 'fallback', reason: 'moved-fixed-value',
-    rejection: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics } };
+    own: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution changed fixed source geometry.', diagnostics } };
   const group = parameterGroups(model), moved = new Set<number>(), edited = new Set<number>();
   solution.values.forEach((value, index) => {
     const start = model.values[index];
@@ -149,7 +153,7 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
     if (!issues.length) return { kind: 'answer', result: { kind: 'solved', graph, diagnostics }, movedGroups: moved.size, keptGroups: values === solution.values || values === snapped ? 0 : keep.size };
   }
   return { kind: 'fallback', reason: 'graph-check',
-    rejection: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution does not satisfy its geometry and relations.', diagnostics: { ...diagnostics, issues } } };
+    own: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution does not satisfy its geometry and relations.', diagnostics: { ...diagnostics, issues } } };
 }
 
 /**
