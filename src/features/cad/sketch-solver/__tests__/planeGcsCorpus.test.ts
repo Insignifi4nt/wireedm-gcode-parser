@@ -113,7 +113,8 @@ describe('the frozen PlaneGCS corpus', () => {
     if (process.env.PLANEGCS_CORPUS_TALLY) console.log(`PlaneGCS corpus: ${JSON.stringify(tally)}`);
     expect(problems).toEqual([]);
     expect(tally.replayed).toBe(records.length);
-  });
+    // Every record is solved once, about 4 to 6 seconds on a shared CI runner.
+  }, 60_000);
 
   it('fails a reviewed record whose native answer changes, even within its reviewed kind of difference', async () => {
     const { record: frozen, input } = corpusRecord('e5f86571162fb20a'), result = await runtime.solve(input);
