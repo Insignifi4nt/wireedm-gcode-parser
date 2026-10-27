@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AxesHelper, GridHelper, LineDashedMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, Vector3, type Camera, type Scene } from 'three';
+import { AxesHelper, GridHelper, LineDashedMaterial, LineSegments, Mesh, type Material, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, Vector3, type Camera, type Scene } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { CadMesh, CadSketchFeature } from '@/domain/cad/cadDocument';
 import { CadViewport } from './CadViewport';
@@ -413,7 +413,7 @@ describe('datum glyph rendering', () => {
     await pick(); expect(selected).toHaveBeenLastCalledWith('outline');
     selected.mockClear(); await show(references, 'face'); await pick(); expect(selected).not.toHaveBeenCalled(); expect(topology).toHaveBeenCalledWith(null, false);
   });
-  it('keeps the pick order of overlapping references when an earlier one is replaced and a later line is kept', async () => {
+  it('keeps the pick and draw order of overlapping references when an earlier one is replaced and a later line is kept', async () => {
     const outline = (id: string, name = id): CadSketchFeature => ({ id, name, kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
       profiles: [{ id: 'rectangle', name: 'Rectangle', construction: false, geometry: { kind: 'rectangle', x: -1, y: -1, width: 2, height: 2, cornerRadius: 0 } }] });
     const [first, second] = prepareCadViewportReferences([outline('a'), outline('b')], {}), [renamed] = prepareCadViewportReferences([outline('a', 'Renamed')], {});
@@ -430,9 +430,12 @@ describe('datum glyph rendering', () => {
     const pick = async () => { await act(async () => {
       for (const type of ['pointerdown', 'pointerup']) canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, button: 0, clientX: (point.x + 1) * 400, clientY: (1 - point.y) * 300 }));
     }); };
-    await pick(); expect(selected).toHaveBeenLastCalledWith('a');
-    // The second line is kept and the first replaced; the first still wins the tie.
-    await show([renamed, second], 'v2'); selected.mockClear(); await pick(); expect(selected).toHaveBeenLastCalledWith('a');
+    // Three draws opaque objects by render order, then material, then object, so the later line covers the earlier one.
+    const drawn = () => { const lines: LineSegments[] = []; renderer().render.mock.calls.at(-1)![0].traverse((object: unknown) => { if (object instanceof LineSegments && object.userData.referenceId) lines.push(object); });
+      return lines.sort((x, y) => x.renderOrder - y.renderOrder || (x.material as Material).id - (y.material as Material).id || x.id - y.id).map(line => line.userData.featureId); };
+    await pick(); expect(selected).toHaveBeenLastCalledWith('a'); expect(drawn()).toEqual(['a', 'b']);
+    // The second line is kept and the first replaced; the first still wins the tie, and the second is still drawn last.
+    await show([renamed, second], 'v2'); selected.mockClear(); await pick(); expect(selected).toHaveBeenLastCalledWith('a'); expect(drawn()).toEqual(['a', 'b']);
   });
 });
 
