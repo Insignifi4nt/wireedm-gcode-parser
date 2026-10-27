@@ -20,7 +20,12 @@ async function probe(rectangles: number) {
   }
   return probes.get(rectangles)!;
 }
-const tooLarge = (rectangles: number) => probe(rectangles).then(row => row.outcome === 'rejected:too-large');
+// Only a verified solve moves the solved bound; any other outcome stops the search.
+const tooLarge = (rectangles: number) => probe(rectangles).then(row => {
+  if (row.outcome === 'rejected:too-large' && !row.failures.length) return true;
+  if (row.outcome === 'solved' && !row.failures.length) return false;
+  throw new Error(`${rectangles} rectangles were neither solved nor refused as too large: ${JSON.stringify(row)}`);
+});
 let low = 4096, high = 8192;
 if (await tooLarge(low)) throw new Error('4096 connected rectangles are already too large; start lower.');
 while (!await tooLarge(high)) { low = high; high *= 2; if (high > 1 << 20) throw new Error('No refusal up to a million rectangles.'); }

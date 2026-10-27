@@ -1,6 +1,7 @@
 import { CadError } from '@/domain/cad/cadError';
 import type { CadSketchGraph, CadSketchGraphIssue, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
+import { cadSketchSolverRecoveryMessages } from './sketch-solver/cadSketchSolverMessages';
 import type { CadSketchSolveDiagnostics, CadSketchSolveResult } from './sketch-solver/cadSketchSolverTypes';
 
 type Rejection = Extract<CadSketchSolveResult, { kind: 'rejected' }>;
@@ -101,7 +102,9 @@ function feedback({ sketchId, sketchName, graph, rejection, dragPointId }: Prepa
       ...(issue.residualMm === undefined ? {} : { residualMm: issue.residualMm }) }));
   }
   const subjectCount = diagnostics.conflictingIds.length + diagnostics.redundantIds.length + diagnostics.partiallyRedundantIds.length + diagnostics.issues.length;
-  return Object.freeze({ sketchId, reason: rejection.reason, message: `${sketchName}: ${rejectionMessages[rejection.reason]}`,
+  // A solver that could not load says how to recover, which the generic wording would hide.
+  const message = rejection.reason === 'failed' && cadSketchSolverRecoveryMessages.has(rejection.message) ? rejection.message : rejectionMessages[rejection.reason];
+  return Object.freeze({ sketchId, reason: rejection.reason, message: `${sketchName}: ${message}`,
     subjects: Object.freeze(subjects), subjectCount, omittedSubjectCount: subjectCount - subjects.length });
 }
 

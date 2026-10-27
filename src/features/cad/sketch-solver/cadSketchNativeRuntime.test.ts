@@ -2,9 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { createCadSolverDieInput } from '../benchmark/cadSolverWorkloadCases';
-import {
-  CAD_SKETCH_NATIVE_FAILED, CAD_SKETCH_NATIVE_INCOMPATIBLE, CAD_SKETCH_NATIVE_LOAD_FAILED, createCadSketchNativeRuntime, type CadSketchSolveRecord
-} from './cadSketchNativeRuntime';
+import { CAD_SKETCH_NATIVE_FAILED, createCadSketchNativeRuntime, type CadSketchSolveRecord } from './cadSketchNativeRuntime';
+import { CAD_SKETCH_NATIVE_INCOMPATIBLE, CAD_SKETCH_NATIVE_LOAD_FAILED } from './cadSketchSolverMessages';
 import type { CadSketchSolveInput } from './cadSketchSolverTypes';
 import { CadSketchNativeProtocolError, loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketchNativeSolver } from './native/cadSketchNativeSolver';
 import { createCadSketchNativeModuleLoader } from './native/cadSketchNativeModule';

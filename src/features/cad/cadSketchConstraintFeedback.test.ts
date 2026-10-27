@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { CadError } from '@/domain/cad/cadError';
 import { CadSketchPreparationError, describeCadSketchConstraintSource } from './cadSketchConstraintFeedback';
+import { createCadSketchNativeRuntime } from './sketch-solver/cadSketchNativeRuntime';
+import { CAD_SKETCH_NATIVE_INCOMPATIBLE, CAD_SKETCH_NATIVE_LOAD_FAILED } from './sketch-solver/cadSketchSolverMessages';
 import type { CadSketchSolveResult } from './sketch-solver/cadSketchSolverTypes';
+import { CadSketchNativeProtocolError } from './sketch-solver/native/cadSketchNativeSolver';
 
 const proposedId = '730718ab-05fb-45fe-a347-00193af0414b';
 const graph = () => parseCadSketchGraph({ points: [{ id: 'a', position: [' 0 ', '0'] }, { id: 'b', position: [10, 0] }],
@@ -73,6 +76,21 @@ describe('candidate-owned sketch constraint feedback', () => {
     const subject = describeCadSketchConstraintSource(candidate, { kind: 'relation', id: proposedId });
     expect(subject.label).toBe(`${kind === 'parallel' ? 'Parallel' : kind === 'perpendicular' ? 'Perpendicular' : 'Collinear'} relation 1 · Line 2 and Line 1`);
     expect(subject.pointIds).toEqual(['a', 'b', 'c']); expect(subject.entityIds).toEqual(['z-edge', 'a-edge']);
+  });
+
+  it('shows how to recover from a solver that cannot load, and generic wording for other failures', async () => {
+    const present = async (loadNative: () => Promise<never>) => {
+      const rejection = await createCadSketchNativeRuntime({ loadNative, wait: async () => undefined }).solve({ graph: graph(), parameters: {} });
+      if (rejection.kind !== 'rejected') throw new Error('Expected a rejection.');
+      return new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Outline', graph: graph(), rejection });
+    };
+    const unloaded = await present(async () => { throw new TypeError('Failed to fetch'); });
+    expect(unloaded.message).toBe(`Outline: ${CAD_SKETCH_NATIVE_LOAD_FAILED}`); expect(unloaded.feedback.reason).toBe('failed');
+    const incompatible = await present(async () => { throw new CadSketchNativeProtocolError('Protocol 9 is not supported.'); });
+    expect(incompatible.message).toBe(`Outline: ${CAD_SKETCH_NATIVE_INCOMPATIBLE}`);
+    const failed = new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Outline', graph: graph(),
+      rejection: { kind: 'rejected', reason: 'failed', message: 'Native trap at 0x2a.', diagnostics: unloaded.diagnostics } });
+    expect(failed.message).toBe('Outline: The sketch solver could not solve this edit.'); expect(failed.solverMessage).toBe('Native trap at 0x2a.');
   });
 
   it('preserves a proposed relation and exact operands while presenting a readable detached rejection', () => {

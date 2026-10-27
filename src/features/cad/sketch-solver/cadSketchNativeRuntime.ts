@@ -1,5 +1,6 @@
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 import { parseCadSketchSolveInput } from './cadSketchSolverProtocol';
+import { CAD_SKETCH_NATIVE_INCOMPATIBLE, CAD_SKETCH_NATIVE_LOAD_FAILED } from './cadSketchSolverMessages';
 import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from './cadSketchSolverStages';
 import { attemptCadSketchNativeSolve, type CadSketchNativeAttempt, type CadSketchNativeReason } from './native/cadSketchNativeAttempt';
 import { CadSketchNativeProtocolError, type CadSketchNativeSolution, type CadSketchNativeSolver } from './native/cadSketchNativeSolver';
@@ -34,8 +35,6 @@ export const CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 export const CAD_SKETCH_NATIVE_LOAD_RETRY_DELAYS_MS = [250, 1000] as const;
 /** After a solve failed to load an instance, later solves within this long fail without loading again. */
 export const CAD_SKETCH_NATIVE_LOAD_RETRY_INTERVAL_MS = 1000;
-export const CAD_SKETCH_NATIVE_LOAD_FAILED = 'The sketch solver could not be loaded. Edit the sketch again to retry, or reload the page.';
-export const CAD_SKETCH_NATIVE_INCOMPATIBLE = 'The sketch solver does not match this version of the app. Reload the page.';
 export const CAD_SKETCH_NATIVE_FAILED = 'The sketch solver failed on this sketch.';
 
 const noDiagnostics = (): CadSketchSolveDiagnostics => ({ status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
