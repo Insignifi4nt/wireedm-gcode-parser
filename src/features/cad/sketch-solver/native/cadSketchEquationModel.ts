@@ -31,7 +31,7 @@ export interface CadSketchEquation {
   readonly value: number;
   /** Graph identity reported for this equation; an entity ID for an arc's structural equation. */
   readonly sourceId: string;
-  /** The compiled constraint this equation belongs to, one per PlaneGCS constraint. Equations of one
+  /** The compiled constraint this equation belongs to, one per constraint as PlaneGCS compiled them. Equations of one
    * constraint share it, and tags never decrease. */
   readonly tag: number;
   /** Solved but left out of diagnosis, as a drag target is. */
@@ -117,7 +117,7 @@ export const CAD_SKETCH_EQUATION_REDUNDANT = 1, CAD_SKETCH_EQUATION_CONFLICTING 
 /**
  * Source identities of the constraints that equation `labels` make conflicting, redundant or
  * partially redundant (redundant through some but not all of its equations), each in compiled
- * order and listed once, as the PlaneGCS runtime reports them. A source whose constraints are
+ * order and listed once, as the PlaneGCS runtime reported them. A source whose constraints are
  * labelled apart, as a fixed point's two axes, is only conflicting when any of them conflicts.
  */
 export function cadSketchEquationDiagnostics(model: CadSketchEquationModel, labels: readonly number[]) {

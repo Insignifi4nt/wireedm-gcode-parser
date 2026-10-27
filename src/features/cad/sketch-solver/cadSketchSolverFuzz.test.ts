@@ -13,7 +13,7 @@ import { corpusDragAllowance, corpusDragDistance, corpusHash, corpusInput, decod
 import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
 const SEEDS = 150;
-/** Every input the generator makes for these seeds, hashed: a change needs a new generator version and a corpus update. */
+/** Every input the generator makes for these seeds, hashed: a change needs a new generator version. */
 const GENERATED = { version: 1, hash: '5a91d8083a8e7992' };
 
 /** The smallest inputs of failures the fuzz found, kept whatever later generators make. */

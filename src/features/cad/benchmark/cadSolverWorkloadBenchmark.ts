@@ -1,5 +1,5 @@
 import { checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import type { CadSketchSolveRecord } from '../sketch-solver/cadSketchNativeFirstRuntime';
+import type { CadSketchSolveRecord } from '../sketch-solver/cadSketchNativeRuntime';
 import type { CadSketchSolveInput, CadSketchSolveResult } from '../sketch-solver/cadSketchSolverTypes';
 import { cadSketchSolutionMatchesInput, parseCadSketchSolveInput } from '../sketch-solver/cadSketchSolverProtocol';
 import { cadBenchmarkCpuCalibrationMs, cadBenchmarkStats } from './cadBenchmark';
@@ -23,11 +23,9 @@ export function checkCadSolverBenchmarkResult(input: CadSketchSolveInput, result
     ...checkCadSketchGraph(result.graph, input.parameters).map(issue => `${issue.source.id}: ${issue.code}`)];
 }
 export const cadSolverOutcome = (result: CadSketchSolveResult) => result.kind === 'solved' ? 'solved' : `rejected:${result.reason}`;
-/** Who answered and why, as `answeredBy:native outcome`, with PlaneGCS's outcome when it was asked. */
-export const cadSolverRecordKey = (record: CadSketchSolveRecord) => `${record.answeredBy}:${record.native ?? 'skipped'}${record.planeGcs ? `:planegcs-${record.planeGcs}` : ''}`;
+/** How native answered, as `native:` and the record's outcome: `answer`, its reason, or how it failed. */
+export const cadSolverRecordKey = (record: CadSketchSolveRecord) => `native:${record.native}`;
 const count = (counts: Record<string, number>, key: string | undefined) => { if (key !== undefined) counts[key] = (counts[key] ?? 0) + 1; return counts; };
-/** Solvers in turn, starting one later on each repetition, so no solver always runs first or after the same one. */
-const rotated = <T>(items: readonly T[], offset: number) => items.map((_, index) => items[(index + offset) % items.length]);
 
 export interface CadSolverBenchmarkOperation {
   readonly id: string;
@@ -44,18 +42,16 @@ async function timedSolve(solver: CadBenchmarkSolver, input: CadSketchSolveInput
   return { ms, result, stages: solver.takeStages(), record: solver.takeRecord() };
 }
 
-/** Each repetition runs EVERY solver, rotating their order on the next repetition. All input
- * construction and independent correctness checks are outside the public solve timer. */
-export async function measureCadSolverOperations({ id, input, operations, solvers, runs, orderOffset = 0 }: {
+/** Each repetition runs every solver through every operation, after one untimed warmup repetition.
+ * All input construction and independent correctness checks are outside the public solve timer. */
+export async function measureCadSolverOperations({ id, input, operations, solvers, runs }: {
   readonly id: string; readonly input: CadSketchSolveInput; readonly operations: readonly CadSolverBenchmarkOperation[];
-  readonly solvers: readonly CadBenchmarkSolver[]; readonly runs: number; readonly orderOffset?: number;
+  readonly solvers: readonly CadBenchmarkSolver[]; readonly runs: number;
 }) {
   const collected: Samples[] = solvers.flatMap(solver => operations.map(operation => ({ solver, operation: operation.id, samples: [], skipped: [] })));
-  const failures: string[] = [], sampleOrder: string[][] = [];
-  const repetition = async (index: number, warmup: boolean) => {
-    const ordered = rotated(solvers, index + orderOffset);
-    if (!warmup) sampleOrder.push(ordered.map(solver => solver.id));
-    for (const solver of ordered) {
+  const failures: string[] = [];
+  const repetition = async (warmup: boolean) => {
+    for (const solver of solvers) {
       let previous = input, accepted = true;
       for (const operation of operations) {
         const row = collected.find(item => item.solver === solver && item.operation === operation.id)!;
@@ -72,11 +68,11 @@ export async function measureCadSolverOperations({ id, input, operations, solver
       }
     }
   };
-  await repetition(0, true);
+  await repetition(true);
   const before = cadBenchmarkCpuCalibrationMs();
-  for (let index = 0; index < runs; index++) await repetition(index, false);
+  for (let index = 0; index < runs; index++) await repetition(false);
   const after = cadBenchmarkCpuCalibrationMs(), cpuCalibrationMs = [before, after];
-  return { id, cpuCalibrationMs, throttled: cadSolverCalibrationDrifted(cpuCalibrationMs), sampleOrder, failures,
+  return { id, cpuCalibrationMs, throttled: cadSolverCalibrationDrifted(cpuCalibrationMs), failures,
     measurements: collected.map(row => {
       const samples = row.samples;
       const base = { solver: row.solver.id, label: row.solver.label, operation: row.operation };
@@ -89,8 +85,8 @@ export async function measureCadSolverOperations({ id, input, operations, solver
     }) };
 }
 
-export function measureCadSolverWorkload(testCase: CadSolverWorkloadCase, solvers: readonly CadBenchmarkSolver[], runs: number, orderOffset: number) {
-  return measureCadSolverOperations({ id: testCase.id, input: testCase.input, solvers, runs, orderOffset,
+export function measureCadSolverWorkload(testCase: CadSolverWorkloadCase, solvers: readonly CadBenchmarkSolver[], runs: number) {
+  return measureCadSolverOperations({ id: testCase.id, input: testCase.input, solvers, runs,
     operations: [{ id: 'first-solve', prepare: () => testCase.input }, { id: 're-solve', prepare: previous => previous }] });
 }
 
@@ -107,7 +103,7 @@ export async function measureCadSolverEdits(solvers: readonly CadBenchmarkSolver
   return [await measureCadSolverOperations({ id: 'die-dimension-edits', input: die, solvers, runs, operations: [
     { id: 'dimension-plus-0.5-mm', prepare: previous => ({ ...previous, parameters: { ...previous.parameters, slotRadius: previous.parameters.slotRadius + .5 } }) },
     { id: 'dimension-plus-20-percent', prepare: previous => ({ ...previous, parameters: { ...previous.parameters, slotRadius: previous.parameters.slotRadius * 1.2 } }) }
-  ] }), await measureCadSolverOperations({ id: 'die-constraint-edits', input: free, solvers, runs, orderOffset: 1, operations: [
+  ] }), await measureCadSolverOperations({ id: 'die-constraint-edits', input: free, solvers, runs, operations: [
     { id: 'constraint-addition', prepare: previous => ({ ...previous, graph: parseCadSketchGraph({ ...previous.graph, relations: [...previous.graph.relations, full] }) }) },
     { id: 'constraint-removal', prepare: previous => ({ ...previous, graph: parseCadSketchGraph({ ...previous.graph, relations: previous.graph.relations.filter(relation => relation.id !== full.id) }) }) }
   ] })];
@@ -122,40 +118,35 @@ const targetError = (result: CadSketchSolveResult, drag: CadSolverDrag) => {
 /**
  * `from-start` solves every frame from the trajectory's start, as the editor's previews do;
  * `chained` solves each frame from the previous accepted one. Each run plays the whole trajectory
- * once per solver, rotating their order. A target error above 1e-6 mm counts as projected for
- * PlaneGCS, which reports no drag outcome; native's own outcome comes from its record.
+ * once per solver. Drag outcomes are native's own, from its record.
  */
 export async function measureCadSolverDrag(solvers: readonly CadBenchmarkSolver[], runs: number,
   trajectories: readonly CadSolverDragTrajectory[] = createCadSolverDragTrajectories(), modes: readonly ('from-start' | 'chained')[] = ['from-start', 'chained']) {
   const groups = [];
-  for (const [index, trajectory] of trajectories.entries()) for (const mode of modes) {
+  for (const trajectory of trajectories) for (const mode of modes) {
     const frames = new Map(solvers.map(solver => [solver, [] as { run: number; frame: number; target: readonly [number, number]; outcome: string; targetErrorMm: number | null;
       totalMs: number; stagesMs: CadSolverBenchmarkStages; drag?: CadSketchSolveRecord['drag']; answer?: string }[]]));
-    const failures: string[] = [], sampleOrder: string[][] = [];
+    const failures: string[] = [];
     const before = cadBenchmarkCpuCalibrationMs();
-    for (let run = 0; run < runs; run++) {
-      const ordered = rotated(solvers, run + index);
-      sampleOrder.push(ordered.map(solver => solver.id));
-      for (const solver of ordered) {
-        let previous = trajectory.input;
-        for (const [frame, drag] of trajectory.frames.entries()) {
-          const input = { ...(mode === 'chained' ? previous : trajectory.input), drag };
-          const sample = await timedSolve(solver, input);
-          failures.push(...checkCadSolverBenchmarkResult(input, sample.result).map(error => `${trajectory.id}/${mode}/${solver.id}/${frame}: ${error}`));
-          frames.get(solver)!.push({ run, frame, target: drag.position, outcome: cadSolverOutcome(sample.result), targetErrorMm: targetError(sample.result, drag),
-            totalMs: sample.ms, stagesMs: sample.stages, drag: sample.record?.drag, answer: sample.record && cadSolverRecordKey(sample.record) });
-          if (sample.result.kind === 'solved') previous = { graph: sample.result.graph, parameters: input.parameters };
-        }
+    for (let run = 0; run < runs; run++) for (const solver of solvers) {
+      let previous = trajectory.input;
+      for (const [frame, drag] of trajectory.frames.entries()) {
+        const input = { ...(mode === 'chained' ? previous : trajectory.input), drag };
+        const sample = await timedSolve(solver, input);
+        failures.push(...checkCadSolverBenchmarkResult(input, sample.result).map(error => `${trajectory.id}/${mode}/${solver.id}/${frame}: ${error}`));
+        frames.get(solver)!.push({ run, frame, target: drag.position, outcome: cadSolverOutcome(sample.result), targetErrorMm: targetError(sample.result, drag),
+          totalMs: sample.ms, stagesMs: sample.stages, drag: sample.record?.drag, answer: sample.record && cadSolverRecordKey(sample.record) });
+        if (sample.result.kind === 'solved') previous = { graph: sample.result.graph, parameters: input.parameters };
       }
     }
     const cpuCalibrationMs = [before, cadBenchmarkCpuCalibrationMs()];
     groups.push({ trajectory: trajectory.id, description: trajectory.description, mode, framesPerTrajectory: trajectory.frames.length, trajectories: runs,
-      cpuCalibrationMs, throttled: cadSolverCalibrationDrifted(cpuCalibrationMs), sampleOrder, failures,
+      cpuCalibrationMs, throttled: cadSolverCalibrationDrifted(cpuCalibrationMs), failures,
       solvers: solvers.map(solver => {
         const rows = frames.get(solver)!, errors = rows.flatMap(row => row.targetErrorMm === null ? [] : [row.targetErrorMm]);
         return { solver: solver.id, label: solver.label, totalMs: cadSolverFrameStats(rows.map(row => row.totalMs)),
           outcomes: rows.reduce<Record<string, number>>((counts, row) => count(counts, row.outcome), {}),
-          dragOutcomes: rows.reduce<Record<string, number>>((counts, row) => count(counts, row.drag?.outcome ?? (row.targetErrorMm === null ? undefined : row.targetErrorMm > 1e-6 ? 'projected' : 'reached')), {}),
+          dragOutcomes: rows.reduce<Record<string, number>>((counts, row) => count(counts, row.drag?.outcome), {}),
           answers: rows.reduce<Record<string, number>>((counts, row) => count(counts, row.answer), {}),
           largestTargetErrorMm: errors.length ? Math.max(...errors) : null, frames: rows };
       }) });
@@ -163,11 +154,7 @@ export async function measureCadSolverDrag(solvers: readonly CadBenchmarkSolver[
   return groups;
 }
 
-/**
- * Every sweep drag once per solver from the same settled start, timed, with the drags where a
- * solver ends further from its target than the first solver (beyond 1e-6 mm) or is rejected where
- * the first solver is not. Settling runs outside timing.
- */
+/** Every sweep drag once per solver from the same settled start, timed. Settling runs outside timing. */
 export async function measureCadSolverDragSweep(solvers: readonly CadBenchmarkSolver[]) {
   const sweeps = [];
   for (const sweep of createCadSolverDragSweep()) {
@@ -177,25 +164,20 @@ export async function measureCadSolverDragSweep(solvers: readonly CadBenchmarkSo
       // The app refuses to drag pattern-generated or referenced geometry; its own input check decides.
       .filter(drag => { try { parseCadSketchSolveInput({ ...start, drag }); return true; } catch { return false; } });
     const before = cadBenchmarkCpuCalibrationMs(), failures: string[] = [];
-    const rows = new Map(solvers.map(solver => [solver, [] as { drag: CadSolverDrag; ms: number; outcome: string; targetErrorMm: number | null; record?: CadSketchSolveRecord }[]]));
-    for (const [index, drag] of drags.entries()) for (const solver of rotated(solvers, index)) {
+    const rows = new Map(solvers.map(solver => [solver, [] as { ms: number; outcome: string; record?: CadSketchSolveRecord }[]]));
+    for (const drag of drags) for (const solver of solvers) {
       const input = { ...start, drag }, sample = await timedSolve(solver, input);
       failures.push(...checkCadSolverBenchmarkResult(input, sample.result).map(error => `${sweep.id}/${solver.id}/${drag.pointId}: ${error}`));
-      rows.get(solver)!.push({ drag, ms: sample.ms, outcome: cadSolverOutcome(sample.result), targetErrorMm: targetError(sample.result, drag), record: sample.record });
+      rows.get(solver)!.push({ ms: sample.ms, outcome: cadSolverOutcome(sample.result), record: sample.record });
     }
-    const cpuCalibrationMs = [before, cadBenchmarkCpuCalibrationMs()], reference = rows.get(solvers[0])!;
+    const cpuCalibrationMs = [before, cadBenchmarkCpuCalibrationMs()];
     sweeps.push({ id: sweep.id, drags: drags.length, cpuCalibrationMs, throttled: cadSolverCalibrationDrifted(cpuCalibrationMs), failures,
       solvers: solvers.map(solver => {
         const own = rows.get(solver)!;
         return { solver: solver.id, label: solver.label, totalMs: cadSolverFrameStats(own.map(row => row.ms)), sumMs: Math.round(own.reduce((sum, row) => sum + row.ms, 0) * 10) / 10,
           outcomes: own.reduce<Record<string, number>>((counts, row) => count(counts, row.outcome), {}),
           dragOutcomes: own.reduce<Record<string, number>>((counts, row) => count(counts, row.record?.drag?.outcome), {}),
-          answers: own.reduce<Record<string, number>>((counts, row) => count(counts, row.record && cadSolverRecordKey(row.record)), {}),
-          worseThanFirst: own.flatMap((row, index) => {
-            const first = reference[index].targetErrorMm;
-            return first !== null && (row.targetErrorMm === null || row.targetErrorMm > first + 1e-6)
-              ? [{ pointId: row.drag.pointId, target: row.drag.position, outcome: row.outcome, targetErrorMm: row.targetErrorMm, firstTargetErrorMm: first }] : [];
-          }) };
+          answers: own.reduce<Record<string, number>>((counts, row) => count(counts, row.record && cadSolverRecordKey(row.record)), {}) };
       }) });
   }
   return sweeps;

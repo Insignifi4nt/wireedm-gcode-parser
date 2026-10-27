@@ -1,0 +1,2532 @@
+{
+  "tally": {
+    "records": 1774,
+    "answeredByNative": 1689,
+    "answeredByPlaneGcs": 85,
+    "fallbacks": {
+      "start-diagnosis": 10,
+      "drag-diagnosis": 70,
+      "graph-check": 7,
+      "stalled": 5,
+      "compile": 4,
+      "not-converged": 2,
+      "suspected": 1
+    },
+    "identical": 1744,
+    "differ": 30
+  },
+  "fallbacks": [
+    {
+      "hash": "001919daf0945c9f3c21caf8df98c1f063f213e144e1442417d77ece279935d2",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > names only the contradiction of seed 3 from generator 1",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "016fb6465a3482490c58719b0fb89814f41d26fcc4c146f4ee32708f93749084",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=11",
+      "nativeAlone": "redundant success dof=11"
+    },
+    {
+      "hash": "058955e1b9f5ce97c6a0a61f1f104bd9a81e180a16cc149e38eeeb4d8de2239c",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=8",
+      "nativeAlone": "redundant success dof=8"
+    },
+    {
+      "hash": "06230b624bf0b53774f276305a47e4a1e3830a10f47c8609b7a6cfd1c3f1ea66",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverLineRelations.test.ts > line pair relations > keeps uncertain disparate and far-origin tiny perpendicular attempts rejected",
+      "native": "graph-check",
+      "answeredBy": "native",
+      "shipped": "invalid-solution success dof=0",
+      "nativeAlone": "invalid-solution success dof=0"
+    },
+    {
+      "hash": "0fd5d82094a4cf6d6031d6d04436b0ec4f6e80bc3f12d1554937e8bd6a10ed46",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=10",
+      "nativeAlone": "redundant success dof=10"
+    },
+    {
+      "hash": "123c40691033b8c5b42db6ad9196f2668e2f3886698eff4d34d4dd030a2ebb1f",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=11",
+      "nativeAlone": "redundant success dof=11"
+    },
+    {
+      "hash": "160a144581fd70719f96a3ed0d7c4959bcb829075ebbb1d8156b61558b11cea0",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=2"
+    },
+    {
+      "hash": "16df6ceacf964e9a9a781a64644f4993f975296a8ad80b537893b7634c5c7579",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "1905cbd4e85c2e95d112a47d5ef058415c29ebad109485ceb111bed3a4286df7",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=12",
+      "nativeAlone": "redundant success dof=12"
+    },
+    {
+      "hash": "1ccf289e109a083e8765b0c26101f9bbf713e948cf65bb684def0b3ace57da11",
+      "provenance": "src/features/cad/cadSketchTangentPreparation.test.ts > prepared line–arc tangent joint > rejects fixed cusp geometry and retains the complete session",
+      "native": "graph-check",
+      "answeredBy": "native",
+      "shipped": "invalid-solution success dof=0",
+      "nativeAlone": "invalid-solution success dof=0"
+    },
+    {
+      "hash": "1eef73b381bd43b1b99e6defcb6ff3982bda68b30cbbf6b15b4f66931302d0ab",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=4",
+      "nativeAlone": "redundant success dof=4"
+    },
+    {
+      "hash": "235e552d03e3c48205b709a0844cb401e2b73018c853b39a6b4a850d66ba34bd",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > names only the contradiction of seed 175 from generator 1",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "2500ebded2dfa9381eb39994fdaadb82e4fe57baf5c20a77f63ea1df9d992660",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=5",
+      "nativeAlone": "redundant success dof=5"
+    },
+    {
+      "hash": "2bb53ac8eab7cdfaf8828bf5bfe94ca45a99f2cd5f67f8440f851f5bd6f9e23d",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=3",
+      "nativeAlone": "redundant success dof=3"
+    },
+    {
+      "hash": "2ce0e9aade5db1b0cf15eb3e37c50913364e0fb405e43863b6d83fe0c696b0cf",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=13",
+      "nativeAlone": "redundant success dof=13"
+    },
+    {
+      "hash": "2cf560c3a683f6a3ae54b04997bfde007e54c500bcffbc2ff1af65b4a692284c",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=9",
+      "nativeAlone": "redundant success dof=9"
+    },
+    {
+      "hash": "2d21e253eecc9b5397fe6e038e8aeeecffc8ca21babc071760e344c6a5517e73",
+      "provenance": "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records",
+      "native": "stalled",
+      "answeredBy": "planegcs",
+      "shipped": "solved success dof=0",
+      "nativeAlone": "solved success dof=0"
+    },
+    {
+      "hash": "2f98afa9a60ca50c23a2c0782d65990c365f36c185ecffa072bb926579e9e043",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=5",
+      "nativeAlone": "redundant success dof=5"
+    },
+    {
+      "hash": "3087b20110571f19180d3ac418b3ee752e1a53f9e7cc958114c899eb0538881d",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=1"
+    },
+    {
+      "hash": "311cdf5059b542d08247ad42363287b7cabcda1cc33814b8aa2cf16de22d42ce",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverRadialRelations.test.ts > explicit radial dimensions > rejects an invalid physical target when compiling, before the native solve",
+      "native": "compile",
+      "answeredBy": "native",
+      "shipped": "invalid-input null dof=?",
+      "nativeAlone": "invalid-input null dof=?"
+    },
+    {
+      "hash": "38cfdec99a7ccdec54ec399afa69cbcbf64a6247da6f61b88caf542c08e91bfc",
+      "provenance": "src/features/cad/sketch-solver/cadSketchNativeFirstRuntime.test.ts > native-first sketch solving > rejects an input native refuses to compile as PlaneGCS does, without loading it",
+      "native": "compile",
+      "answeredBy": "native",
+      "shipped": "invalid-input null dof=?",
+      "nativeAlone": "invalid-input null dof=?"
+    },
+    {
+      "hash": "3cb2f744726e5ca5a1f7d633e14e79285ea084f457ab4732c41d4f375ccfcdf6",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=7",
+      "nativeAlone": "redundant success dof=7"
+    },
+    {
+      "hash": "3f672252a867403ad85f76e740a50e6037fccd0fa8f0082bc134071fff9dd7d5",
+      "provenance": "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records",
+      "native": "stalled",
+      "answeredBy": "planegcs",
+      "shipped": "solved success dof=0",
+      "nativeAlone": "solved success dof=0"
+    },
+    {
+      "hash": "41c374daf9dcc9ce8d07d32de90d434717a34662b0f057249d411fd8bdf3d7fa",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=15",
+      "nativeAlone": "redundant success dof=15"
+    },
+    {
+      "hash": "42023a3bcdb40b64a0e024ac73af2893757a5f5ef1c5378cf92cc802d341f795",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=4",
+      "nativeAlone": "redundant success dof=4"
+    },
+    {
+      "hash": "480ae4e638636c8dd90a22c2844cb56e035e6d7d9dd4ea8d72ffe2f15ad6494c",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=8",
+      "nativeAlone": "redundant success dof=8"
+    },
+    {
+      "hash": "48c05244c499733b1aa19a5f34aaf644cac46e122055dbc6531e1c76b8018af6",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=6",
+      "nativeAlone": "redundant success dof=6"
+    },
+    {
+      "hash": "4fc6b530c85a05c4dedd316f4f97e863584269869fcba24c4441983a8f4eb672",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=11",
+      "nativeAlone": "redundant success dof=11"
+    },
+    {
+      "hash": "50b12ac360968159fec89110a3e7e01a452c12217767a755eecd7efb86709a92",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=3"
+    },
+    {
+      "hash": "525ba7d7767a93ca313fe2c08bbbe268f7d871cdc416fa8bbccf1dbcea24c458",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "529e8db85a8a30be21ae2a0b752f0e6ddacf4e5be796db6c60368dda60369828",
+      "provenance": "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records",
+      "native": "stalled",
+      "answeredBy": "planegcs",
+      "shipped": "solved success dof=0",
+      "nativeAlone": "solved success dof=0"
+    },
+    {
+      "hash": "58cdc1dd3d002e3351fb6774166c53f5fa52548201c30c0ce4751c5f522c1004",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=9",
+      "nativeAlone": "redundant success dof=9"
+    },
+    {
+      "hash": "5943b9f1039069cddbcba10f971ad1d953caaa9a3de2398b2ab24d325d2f83f2",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverCorners.test.ts > corner constraints > rejects an oversized fixed chamfer driver edit without a version or history change",
+      "native": "graph-check",
+      "answeredBy": "native",
+      "shipped": "invalid-solution success dof=0",
+      "nativeAlone": "invalid-solution success dof=0"
+    },
+    {
+      "hash": "5a68814327b6d7e0cb929b3d33c61932cfa231d8357ce4a1df6c4c2cf76c258c",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=8",
+      "nativeAlone": "redundant success dof=8"
+    },
+    {
+      "hash": "5b5e9d3b722e9ea0f7afafd7742d27e46ea70c0adc276b7525b840cf6c34f068",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=3",
+      "nativeAlone": "redundant success dof=3"
+    },
+    {
+      "hash": "5ccf5671dc30f35d8f5e274055372c6c538adb4071172e56641d1bac2c342691",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=0"
+    },
+    {
+      "hash": "5dfb3ee64f627860a305c90d6a203d89060f64f0ca7d08672d2fffeaab87de05",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=4",
+      "nativeAlone": "redundant success dof=4"
+    },
+    {
+      "hash": "61782c2f35ccfeaf02807f541a2aa8ac226fd4e6ab0d613a25378e7ecc64459d",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=3",
+      "nativeAlone": "redundant success dof=3"
+    },
+    {
+      "hash": "648043e4156fb0bb3d2b8af51dbe078c4c17defd77f8d784ae181ab9a56d6549",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=6",
+      "nativeAlone": "redundant success dof=6"
+    },
+    {
+      "hash": "65b093c6981b902431d3937d6d2007ebeaf61bd41b52fd37ab7d46d92f1429bd",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > names only the contradiction of seed 150 from generator 1",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "65ba6e957c89c85c27d9659aa30596d8136643a13195463b237eca102d133444",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=10"
+    },
+    {
+      "hash": "6892950b0a19c564c08bbac94ac2e10cefa7016db8de897a12656804cfacbc50",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=6",
+      "nativeAlone": "redundant success dof=6"
+    },
+    {
+      "hash": "6d10b126c76d46e5e230596d2aa568e2257621d27458becc31209dd2c030a7f2",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=8",
+      "nativeAlone": "redundant success dof=8"
+    },
+    {
+      "hash": "72888247507bc8156ddad3635a715477557a43beebf5193bbf0acb8e238b0c8b",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=14",
+      "nativeAlone": "redundant success dof=14"
+    },
+    {
+      "hash": "729500ec19da54954347b03a73eeaf73f7018640f3020cf3dcaa78377c26fe0d",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=5",
+      "nativeAlone": "redundant success dof=5"
+    },
+    {
+      "hash": "87c61764067dd34759a1c0a3698bbe2ad72231a1c6568213e81f723e4ef2b98f",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=13",
+      "nativeAlone": "redundant success dof=13"
+    },
+    {
+      "hash": "87ff086cef05ff709aae1da9be8a3ea8b3d4806387e1f55364593f15e0597647",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=5",
+      "nativeAlone": "redundant success dof=5"
+    },
+    {
+      "hash": "889e8b6e75b46efbb7e28bcd6153748ffcf12ea18c9bae0d6885d96b853b8c1c",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=5"
+    },
+    {
+      "hash": "8b548db1ff625ffba486c1282810b5325dadb4ad4bbe7e85f8d8aa06527c632c",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=3",
+      "nativeAlone": "redundant success dof=3"
+    },
+    {
+      "hash": "8f2b7fcfbc781010ef6349babc5c26ffdf8ab5c62b1e627aa550975f6c3d819c",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=11"
+    },
+    {
+      "hash": "8fedb9d6ef1c1e3c72a9b19767d9a59c56120b87f7cc5bad676514cf13c01a28",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=2"
+    },
+    {
+      "hash": "945f62b733cce2733c71f259bcd3e891ddde18394c41a02fc3f4d2bc5dc09f2a",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=13",
+      "nativeAlone": "redundant success dof=13"
+    },
+    {
+      "hash": "95db228aa7a420ec0cef4e3ce46473d3c2833ba3581a4f546be0e5626f19fa14",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=16",
+      "nativeAlone": "redundant success dof=16"
+    },
+    {
+      "hash": "9630064249e02f1fa2bb5d3714af28caf9d9ec6571f5a0794f1ed2dc93077656",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=2",
+      "nativeAlone": "redundant success dof=2"
+    },
+    {
+      "hash": "985797adcad98281201e5ed6673db4162a540a9be0630a6458a63dfa4c4048e5",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverLineRelations.test.ts > line pair relations > keeps uncertain disparate and far-origin tiny perpendicular attempts rejected",
+      "native": "not-converged",
+      "answeredBy": "native",
+      "shipped": "failed failed dof=0",
+      "nativeAlone": "failed failed dof=0"
+    },
+    {
+      "hash": "9ff2c0d22a0a94532a54bb374551d275f4ed8212f50e7edb802aa2f8b300a236",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=14",
+      "nativeAlone": "redundant success dof=14"
+    },
+    {
+      "hash": "a1fbe8c9c1493785c89c571e756fcb407491f3584eea393c0d729e2052dd84d9",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=6"
+    },
+    {
+      "hash": "a2fb9a01a5fd6952c093b1fa0c1b4d265b2c8f98384c1c70ea0fe256b4ee832a",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=12",
+      "nativeAlone": "redundant success dof=12"
+    },
+    {
+      "hash": "a39314be63da34a8263f96b866ca6ad8f674273776e1cbe2cacf3fe06888aae1",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverCorners.test.ts > corner constraints > rejects an oversized fixed fillet driver edit without a version or history change",
+      "native": "graph-check",
+      "answeredBy": "native",
+      "shipped": "invalid-solution success dof=0",
+      "nativeAlone": "invalid-solution success dof=0"
+    },
+    {
+      "hash": "a602741beb1b787e7f07582c5569dd581782c6689c27614370d87802cce1b3b0",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=5",
+      "nativeAlone": "redundant success dof=5"
+    },
+    {
+      "hash": "ae6cedda6b1364c3783e7d100bbdd4cf48a22f565a79c7eead3f1b2104e69d99",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=6",
+      "nativeAlone": "redundant success dof=6"
+    },
+    {
+      "hash": "b1e8b538cdb2e81e4429bc4683c83d8039409d2ca09fc62fae81d29b26a97201",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=10",
+      "nativeAlone": "redundant success dof=10"
+    },
+    {
+      "hash": "b416ceaecb638e3a4ae8673569cb6aac0f87b3cb5602bfa22c4dd7cda7298253",
+      "provenance": "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > answers every workload through the production runtime as PlaneGCS does, except reviewed differences",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "b602092518b504e36652c012b814c1d306ae3dcd99dab939c5c056eef3aeb97a",
+      "provenance": "src/features/cad/sketch-solver/cadSketchNativeFirstRuntime.test.ts > native-first sketch solving > rejects an input native refuses to compile as PlaneGCS does, without loading it",
+      "native": "compile",
+      "answeredBy": "native",
+      "shipped": "invalid-input null dof=?",
+      "nativeAlone": "invalid-input null dof=?"
+    },
+    {
+      "hash": "b749262d7d28d5db9341a06d58d920e0c87916c31f8c853ea333942334c3bf19",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=2"
+    },
+    {
+      "hash": "b795ecd897b26e98a99b7ba38bf456f9673b344020c17878216f507676c830f6",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=4"
+    },
+    {
+      "hash": "b8fac4a6762104e92066e16a6ffe1928c19a23242efbc958f7a160fcbb8ff237",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=7",
+      "nativeAlone": "redundant success dof=7"
+    },
+    {
+      "hash": "b9d714b7827acfe267a99c1e8a9b5d6357d7c5bc2f780f5ca5d875413ca8d93c",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=7",
+      "nativeAlone": "redundant success dof=7"
+    },
+    {
+      "hash": "ba0f14ece316e2d7cd89db0d0e510da911fabdbe5e5f962fb4eebf9d752b21f6",
+      "provenance": "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records",
+      "native": "stalled",
+      "answeredBy": "planegcs",
+      "shipped": "solved success dof=0",
+      "nativeAlone": "solved success dof=?"
+    },
+    {
+      "hash": "bc2fb96496277342a463ff2eeb7aecd2b02a06a0163eb4108be1780a8057f03b",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=10",
+      "nativeAlone": "redundant success dof=10"
+    },
+    {
+      "hash": "bc71e5ca5b35b031e211b4c63d1bb8ac0a5f6986a2d1a522d6189cc6cf746c03",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverLineRelations.test.ts > line pair relations > keeps uncertain disparate and far-origin tiny parallel attempts rejected",
+      "native": "not-converged",
+      "answeredBy": "native",
+      "shipped": "failed failed dof=0",
+      "nativeAlone": "failed failed dof=0"
+    },
+    {
+      "hash": "bc8f9a5d1e244c27f0a74af88b10f41ba47f090aad87214652bbd4dffb69804d",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverLineRelations.test.ts > line pair relations > keeps uncertain disparate and far-origin tiny parallel attempts rejected",
+      "native": "graph-check",
+      "answeredBy": "native",
+      "shipped": "invalid-solution success dof=0",
+      "nativeAlone": "invalid-solution success dof=0"
+    },
+    {
+      "hash": "c42dda1c8f49073865db6017bc3f787d8b5c33cf5cdb75b54d894c11816219df",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=6",
+      "nativeAlone": "redundant success dof=6"
+    },
+    {
+      "hash": "c5dea6a160856c4d1e96d2b2953d97666eb3b81827e15aa4851f906eab093e26",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=?"
+    },
+    {
+      "hash": "c69f59b14bd9d47e7ee3e0fc71d3233a01deba62519cc720f1f45d2f00cfac88",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "c89b7ad63f7adbbfbfd9c58c3dbd89be0adf7eec380f38451aafc59e2a205057",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=9",
+      "nativeAlone": "redundant success dof=9"
+    },
+    {
+      "hash": "cb04cdf565346413285d08febc41fdf4dac43e50848e3ef3fbaad88b5c218afd",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=3",
+      "nativeAlone": "redundant success dof=3"
+    },
+    {
+      "hash": "cb7fa5504890c04a61d8121336bbed28f72e6c75d2027592a8b7fd7e2066f4e6",
+      "provenance": "src/features/cad/sketch-solver/cadSketchNativeFirstRuntime.test.ts > native-first sketch solving > keeps small driven values and edits next to large coordinates",
+      "native": "graph-check",
+      "answeredBy": "native",
+      "shipped": "invalid-solution success dof=0",
+      "nativeAlone": "invalid-solution success dof=0"
+    },
+    {
+      "hash": "ceefb88019c667517d20178cc064cb46d9abc38eb28553995d36b4fdf221c8fa",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=11",
+      "nativeAlone": "redundant success dof=11"
+    },
+    {
+      "hash": "d007076f0a0eeef04b3bf6543c92a28ff6880c09f4235c4882269397fbbd011b",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=6",
+      "nativeAlone": "redundant success dof=6"
+    },
+    {
+      "hash": "d03c6c3ace9921b27d723b15ff3125fbe63baa8a2ff7fa7e1bd7939015c4a840",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=8",
+      "nativeAlone": "redundant success dof=8"
+    },
+    {
+      "hash": "d39adb9984512825fd05359946cfb9e1fe3f9427f076c207a9dd1b7568255280",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=12",
+      "nativeAlone": "redundant success dof=12"
+    },
+    {
+      "hash": "d5f1e6ee40a43ef03f65d244b9c07d3e6e594293b067a3362b55c6cb807e1ef2",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=7"
+    },
+    {
+      "hash": "d9170ca9ab2cfdd35c4fbe462913894e476548a14a02fb5f7e3887e15abf3426",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolveContracts.test.ts > sketch solving > rejects a native success whose geometry fails independent graph validation",
+      "native": "graph-check",
+      "answeredBy": "native",
+      "shipped": "invalid-solution success dof=4",
+      "nativeAlone": "invalid-solution success dof=4"
+    },
+    {
+      "hash": "daabb93b3c368a180ac8a5aab3caa0071243589eb4e91e0a9ccfe614ad654c94",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=2"
+    },
+    {
+      "hash": "dde495c063f9e6bddafd6ae554151ce45661b8808b06d7bcc5d18f03e1c5f2ef",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting success dof=?",
+      "nativeAlone": "redundant success dof=10"
+    },
+    {
+      "hash": "e0da3bc68202ae3ac46b8eed396476d1d75c3a082fe7e029dc5978b8b78707ef",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=6",
+      "nativeAlone": "redundant success dof=6"
+    },
+    {
+      "hash": "e20983b00df70768665efd72fa933db55d45f8fb0573687db52358c1d561f315",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=2",
+      "nativeAlone": "redundant success dof=2"
+    },
+    {
+      "hash": "e32f31f5b8eb618d96bbbad05b4920e65cc16cd5e489030f1e4380dc3f86c937",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=5",
+      "nativeAlone": "redundant success dof=5"
+    },
+    {
+      "hash": "e53b79584111491d1d10ed8395e1f6b44c2137c9300526f34fe540f5428725b5",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=2",
+      "nativeAlone": "redundant success dof=2"
+    },
+    {
+      "hash": "e5ab88b68e198369b4966200af5f2348da287da3cf05144e40cd2e083cc5d90c",
+      "provenance": "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records",
+      "native": "stalled",
+      "answeredBy": "planegcs",
+      "shipped": "solved success dof=0",
+      "nativeAlone": "solved success dof=?"
+    },
+    {
+      "hash": "e5f86571162fb20aca5936696460deecdf83867bb60e8b38aa51c96cbc0482f6",
+      "provenance": "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > answers every workload through the production runtime as PlaneGCS does, except reviewed differences",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "e94f689ee8343de318a0c88895661f8ec9a049b3793ac05f03c3d631a62164e0",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=11",
+      "nativeAlone": "redundant success dof=11"
+    },
+    {
+      "hash": "eb65c034adf6d955f319bf199dce610767015e82e9ebff46d3e3b9286773e0d8",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverLineRelations.test.ts > line pair relations > rejects zero native direction lengths when compiling, before the native solve",
+      "native": "compile",
+      "answeredBy": "native",
+      "shipped": "invalid-input null dof=?",
+      "nativeAlone": "invalid-input null dof=?"
+    },
+    {
+      "hash": "edfb4d8fdc04e330c3799da2f54007c9484d7d6d65a2f9a0dfc705b0ac8a42fd",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=12",
+      "nativeAlone": "redundant success dof=12"
+    },
+    {
+      "hash": "f3fe4e4f2400ea6affcb75cd978abb366f0c6043ae110a3f9fb2c49af9cda7e6",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > names only the contradiction of seed 81 from generator 1",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "f48b9c2cfaf71ba5b0b5a813fe970e682b7f83881d3ab782f05fbd7212db7984",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "start-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "conflicting failed dof=?",
+      "nativeAlone": "conflicting failed dof=?"
+    },
+    {
+      "hash": "f672e07f6eabed9e51a3984260f48f9f66a778ae7ef4bfb4f8687fe6677f1c75",
+      "provenance": "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > answers every workload through the production runtime as PlaneGCS does, except reviewed differences",
+      "native": "suspected",
+      "answeredBy": "native",
+      "shipped": "failed failed dof=?",
+      "nativeAlone": "failed failed dof=?"
+    },
+    {
+      "hash": "f821fb497baab7b387825f98dfb27ca6db9f037f7cf037cc4659098551e08521",
+      "provenance": "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean",
+      "native": "drag-diagnosis",
+      "answeredBy": "planegcs",
+      "shipped": "redundant success dof=5",
+      "nativeAlone": "redundant success dof=5"
+    }
+  ],
+  "differences": [
+    {
+      "hash": "001919daf0945c9f3c21caf8df98c1f063f213e144e1442417d77ece279935d2",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > names only the contradiction of seed 3 from generator 1"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 2.404899999999998,
+        "native": "start-diagnosis",
+        "planeGcsMs": 15.333399999999983,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.8295000000000528,
+        "native": "start-diagnosis",
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r5",
+            "r10",
+            "r21",
+            "r22",
+            "r23"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r22",
+            "r23"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "160a144581fd70719f96a3ed0d7c4959bcb829075ebbb1d8156b61558b11cea0",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.5305999999998221,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 1.8073903826532227
+        },
+        "planeGcsMs": 15.077199999999948,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.38380000000006476,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 1.8073903826532227
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r5",
+            "r10"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 2,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r10"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "16df6ceacf964e9a9a781a64644f4993f975296a8ad80b537893b7634c5c7579",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.8675000000000637,
+        "native": "start-diagnosis",
+        "planeGcsMs": 14.058199999999943,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.8173999999999069,
+        "native": "start-diagnosis",
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r5",
+            "r7",
+            "r8",
+            "r10",
+            "r11",
+            "r12"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r11",
+            "r12"
+          ],
+          "redundantIds": [
+            "r10"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "1eef73b381bd43b1b99e6defcb6ff3982bda68b30cbbf6b15b4f66931302d0ab",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.1147000000000844,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "reached",
+          "targetDistance": 0
+        },
+        "planeGcsMs": 14.583099999999831,
+        "planeGcs": "redundant"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.16229999999995925,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "reached",
+          "targetDistance": 0
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 4,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r8"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 4,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r10",
+            "r12",
+            "r13"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "235e552d03e3c48205b709a0844cb401e2b73018c853b39a6b4a850d66ba34bd",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > names only the contradiction of seed 175 from generator 1"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.2907000000000153,
+        "native": "start-diagnosis",
+        "planeGcsMs": 12.963700000000017,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.288899999999785,
+        "native": "start-diagnosis",
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r5",
+            "r17",
+            "r18",
+            "r19",
+            "r20",
+            "r21"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r20",
+            "r21"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "2d21e253eecc9b5397fe6e038e8aeeecffc8ca21babc071760e344c6a5517e73",
+      "provenance": [
+        "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.2677000000003318,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.000005
+        },
+        "planeGcsMs": 12.089300000000094,
+        "planeGcs": "solved"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.2768999999998414,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.000005
+        },
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          10,
+          1.2974967523685259e-7
+        ]
+      },
+      "nativeAlone": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          10,
+          0.00001
+        ]
+      }
+    },
+    {
+      "hash": "3087b20110571f19180d3ac418b3ee752e1a53f9e7cc958114c899eb0538881d",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.12179999999989377,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.7480279296386101
+        },
+        "planeGcsMs": 14.677999999999884,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.18039999999973588,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.7480279296386101
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r4",
+            "r7",
+            "r8",
+            "r9"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 1,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r9"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "3f672252a867403ad85f76e740a50e6037fccd0fa8f0082bc134071fff9dd7d5",
+      "provenance": [
+        "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.25720000000001164,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.000007500000000000001
+        },
+        "planeGcsMs": 12.12559999999985,
+        "planeGcs": "solved"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.27280000000018845,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.000007500000000000001
+        },
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          10,
+          1.2974967523685259e-7
+        ]
+      },
+      "nativeAlone": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          10,
+          0.00001
+        ]
+      }
+    },
+    {
+      "hash": "50b12ac360968159fec89110a3e7e01a452c12217767a755eecd7efb86709a92",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.19970000000012078,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.07470344282808128
+        },
+        "planeGcsMs": 14.790300000000116,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.21550000000024738,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.07470344282808128
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r8",
+            "r12",
+            "r13"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 3,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r13"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "525ba7d7767a93ca313fe2c08bbbe268f7d871cdc416fa8bbccf1dbcea24c458",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.8487999999997555,
+        "native": "start-diagnosis",
+        "planeGcsMs": 14.63070000000016,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.953899999999976,
+        "native": "start-diagnosis",
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r5",
+            "r10",
+            "r21",
+            "r22",
+            "r23"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r22",
+            "r23"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "529e8db85a8a30be21ae2a0b752f0e6ddacf4e5be796db6c60368dda60369828",
+      "provenance": [
+        "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.24900000000025102,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.0000024999999999999998
+        },
+        "planeGcsMs": 12.84439999999995,
+        "planeGcs": "solved"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.3009999999999309,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.0000024999999999999998
+        },
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          10,
+          1.445522698729436e-7
+        ]
+      },
+      "nativeAlone": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          10,
+          0.00001
+        ]
+      }
+    },
+    {
+      "hash": "5ccf5671dc30f35d8f5e274055372c6c538adb4071172e56641d1bac2c342691",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.08800000000019281,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.09999999999999999
+        },
+        "planeGcsMs": 23.313900000000103,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.1594000000000051,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.09999999999999999
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r5"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r5"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "65b093c6981b902431d3937d6d2007ebeaf61bd41b52fd37ab7d46d92f1429bd",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > names only the contradiction of seed 150 from generator 1"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.41489999999976135,
+        "native": "start-diagnosis",
+        "planeGcsMs": 23.041200000000117,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.4511000000002241,
+        "native": "start-diagnosis",
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r7",
+            "r8",
+            "r10",
+            "r11",
+            "r12"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r11",
+            "r12"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "65ba6e957c89c85c27d9659aa30596d8136643a13195463b237eca102d133444",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.3884000000002743,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.24358251811338905
+        },
+        "planeGcsMs": 29.920300000000225,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.5196000000000822,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.24358251811338905
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r20",
+            "r23"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 10,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r23"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "6892950b0a19c564c08bbac94ac2e10cefa7016db8de897a12656804cfacbc50",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.6714999999999236,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "reached",
+          "targetDistance": 0
+        },
+        "planeGcsMs": 22.442599999999857,
+        "planeGcs": "redundant"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.8063999999999396,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "reached",
+          "targetDistance": 0
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 6,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r12"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 6,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r13",
+            "r16"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "889e8b6e75b46efbb7e28bcd6153748ffcf12ea18c9bae0d6885d96b853b8c1c",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.6997999999998683,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 10
+        },
+        "planeGcsMs": 27.352300000000014,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.9780000000000655,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 10
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r3",
+            "r17",
+            "r21"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 5,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r21"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "8f2b7fcfbc781010ef6349babc5c26ffdf8ab5c62b1e627aa550975f6c3d819c",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 2.156699999999546,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.2959071243131707
+        },
+        "planeGcsMs": 25.03269999999975,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 2.4400000000005093,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.2959071243131707
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r7",
+            "r11",
+            "r18",
+            "r21"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 11,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r21"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "8fedb9d6ef1c1e3c72a9b19767d9a59c56120b87f7cc5bad676514cf13c01a28",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.9166999999997643,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 8.79220644747489
+        },
+        "planeGcsMs": 21.60950000000048,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 1.1001999999998588,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 8.79220644747489
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r12",
+            "r14",
+            "r15"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 2,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r15"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "a1fbe8c9c1493785c89c571e756fcb407491f3584eea393c0d729e2052dd84d9",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.16600000000016735,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 3.355972401673533
+        },
+        "planeGcsMs": 25.941399999999703,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.2448999999996886,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 3.355972401673533
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r19"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 6,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r19"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "b749262d7d28d5db9341a06d58d920e0c87916c31f8c853ea333942334c3bf19",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.21280000000024302,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.8684467340742383
+        },
+        "planeGcsMs": 22.796699999999873,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.33739999999943393,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.8684467340742383
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r6",
+            "r8"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 2,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r8"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "b795ecd897b26e98a99b7ba38bf456f9673b344020c17878216f507676c830f6",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.16039999999975407,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.006958026750469859
+        },
+        "planeGcsMs": 23.1912999999995,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.24790000000029977,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.006958026750469859
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r8",
+            "r9"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 4,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r9"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "ba0f14ece316e2d7cd89db0d0e510da911fabdbe5e5f962fb4eebf9d752b21f6",
+      "provenance": [
+        "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.6710999999995693,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.000002152448776751996
+        },
+        "planeGcsMs": 25.281199999999444,
+        "planeGcs": "solved"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.6221999999997934,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.000002152448776751996
+        },
+        "movedGroups": 1,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          10,
+          1.445522698729436e-7
+        ]
+      },
+      "nativeAlone": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          9.999999999999998,
+          3.47551223248004e-7
+        ]
+      }
+    },
+    {
+      "hash": "c5dea6a160856c4d1e96d2b2953d97666eb3b81827e15aa4851f906eab093e26",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 3.7747000000008484,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.07883197585864135
+        },
+        "planeGcsMs": 24.262800000000425,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 4.054900000000089,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.07883197585864135
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r12",
+            "r13",
+            "r16"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r13"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "c69f59b14bd9d47e7ee3e0fc71d3233a01deba62519cc720f1f45d2f00cfac88",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.8876000000000204,
+        "native": "start-diagnosis",
+        "planeGcsMs": 21.15519999999924,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 1.0609999999996944,
+        "native": "start-diagnosis",
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r14",
+            "r15"
+          ],
+          "redundantIds": [
+            "r13"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r14",
+            "r15"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "d5f1e6ee40a43ef03f65d244b9c07d3e6e594293b067a3362b55c6cb807e1ef2",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.17399999999997817,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 1.0000000000000004
+        },
+        "planeGcsMs": 21.396499999999833,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.28770000000076834,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 1.0000000000000004
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r4",
+            "r10",
+            "r15",
+            "r16"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 7,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r16"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "daabb93b3c368a180ac8a5aab3caa0071243589eb4e91e0a9ccfe614ad654c94",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.4466999999995096,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.7275402491350551
+        },
+        "planeGcsMs": 24.291699999999764,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.5061999999998079,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.7275402491350551
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r6",
+            "r7",
+            "r8",
+            "r9"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 2,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r8",
+            "r9"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "dde495c063f9e6bddafd6ae554151ce45661b8808b06d7bcc5d18f03e1c5f2ef",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.5814999999993233,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.7172998329952041
+        },
+        "planeGcsMs": 25.71439999999984,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.7584999999999127,
+        "native": "drag-diagnosis",
+        "drag": {
+          "outcome": "projected",
+          "targetDistance": 0.7172998329952041
+        }
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r15",
+            "r21"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "redundant",
+        "message": "Sketch constraints are redundant.",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 10,
+          "conflictingIds": [],
+          "redundantIds": [
+            "r21"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "e5ab88b68e198369b4966200af5f2348da287da3cf05144e40cd2e083cc5d90c",
+      "provenance": [
+        "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > plays every drag trajectory from its start and chained, with native outcomes from production records"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.6520999999993364,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.000004595742108529149
+        },
+        "planeGcsMs": 21.348699999999553,
+        "planeGcs": "solved"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.6451000000006388,
+        "native": "stalled",
+        "drag": {
+          "outcome": "stalled",
+          "targetDistance": 0.000004595742108529149
+        },
+        "movedGroups": 1,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": 0,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          10,
+          1.445522698729436e-7
+        ]
+      },
+      "nativeAlone": {
+        "kind": "solved",
+        "diagnostics": {
+          "status": "success",
+          "degreesOfFreedom": null,
+          "conflictingIds": [],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        },
+        "values": [
+          9.999999999999996,
+          4.0425789147085166e-7
+        ]
+      }
+    },
+    {
+      "hash": "e5f86571162fb20aca5936696460deecdf83867bb60e8b38aa51c96cbc0482f6",
+      "provenance": [
+        "src/features/cad/benchmark/cadSolverWorkloadBenchmark.test.ts > public-boundary solver benchmarks > answers every workload through the production runtime as PlaneGCS does, except reviewed differences",
+        "src/features/cad/benchmark/cadSolverWorkloadCases.test.ts > solver workload fixtures > overlapping-conflicts-repeated pins acceptance, freedom and source diagnostics"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.3194000000003143,
+        "native": "start-diagnosis",
+        "planeGcsMs": 22.283799999999246,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.33659999999963475,
+        "native": "start-diagnosis",
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "length",
+            "other",
+            "third",
+            "repeat"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "length",
+            "other",
+            "third"
+          ],
+          "redundantIds": [
+            "repeat"
+          ],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    },
+    {
+      "hash": "f3fe4e4f2400ea6affcb75cd978abb366f0c6043ae110a3f9fb2c49af9cda7e6",
+      "provenance": [
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > names only the contradiction of seed 81 from generator 1",
+        "src/features/cad/sketch-solver/cadSketchSolverFuzz.test.ts > seeded native sketch solves > never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean"
+      ],
+      "shippedRecord": {
+        "answeredBy": "planegcs",
+        "nativeMs": 0.7732000000005428,
+        "native": "start-diagnosis",
+        "planeGcsMs": 23.527600000000348,
+        "planeGcs": "conflicting"
+      },
+      "nativeRecord": {
+        "answeredBy": "native",
+        "nativeMs": 0.8326000000006388,
+        "native": "start-diagnosis",
+        "movedGroups": 0,
+        "keptGroups": 0
+      },
+      "shipped": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r4",
+            "r7",
+            "r8",
+            "r9",
+            "r10"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      },
+      "nativeAlone": {
+        "kind": "rejected",
+        "reason": "conflicting",
+        "message": "Sketch constraints conflict.",
+        "diagnostics": {
+          "status": "failed",
+          "degreesOfFreedom": null,
+          "conflictingIds": [
+            "r4",
+            "r10"
+          ],
+          "redundantIds": [],
+          "partiallyRedundantIds": [],
+          "issues": []
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,662 @@
+{
+  "createdAt": "2026-10-27T09:54:54.849Z",
+  "quick": false,
+  "runs": 7,
+  "environment": {
+    "node": "v24.22.1",
+    "platform": "win32",
+    "arch": "x64",
+    "cpu": "Intel(R) Core(TM) i9-14900HX",
+    "cores": 32,
+    "totalMemoryBytes": 68316803072
+  },
+  "assets": [
+    {
+      "name": "replicad-opencascadejs",
+      "bytes": 22987129,
+      "gzipBytes": 7265840
+    },
+    {
+      "name": "sketch-solver (native)",
+      "bytes": 210230,
+      "gzipBytes": 70323
+    },
+    {
+      "name": "occt-import-js (machine STEP import only)",
+      "bytes": 7604031,
+      "gzipBytes": 3114121
+    }
+  ],
+  "kernel": {
+    "initMs": 82,
+    "cases": [
+      {
+        "id": "plate-hole-pattern",
+        "description": "Plate cut by a six-hole linear pattern; the width edit invalidates every feature.",
+        "steps": [
+          {
+            "label": "build",
+            "failures": [],
+            "cpuCalibrationMs": {
+              "beforeBuild": 65.36,
+              "beforeEdit": 61.06,
+              "beforeMainThread": 79.38,
+              "after": 62.9
+            },
+            "coldMs": 201.82,
+            "buildMs": {
+              "runs": 7,
+              "p50": 66.7,
+              "p95": 80.74,
+              "min": 62.46,
+              "max": 80.74
+            },
+            "payload": {
+              "triangles": 2052,
+              "numbers": 24624,
+              "jsonBytes": 224123
+            },
+            "mainThread": {
+              "cloneMs": {
+                "runs": 7,
+                "p50": 0.3,
+                "p95": 0.44,
+                "min": 0.28,
+                "max": 0.44
+              },
+              "validateMs": {
+                "runs": 7,
+                "p50": 0.17,
+                "p95": 0.94,
+                "min": 0.14,
+                "max": 0.94
+              },
+              "displayMs": {
+                "runs": 7,
+                "p50": 1.26,
+                "p95": 2.82,
+                "min": 1.16,
+                "max": 2.82
+              }
+            }
+          },
+          {
+            "label": "plate width 120",
+            "failures": [],
+            "cpuCalibrationMs": {
+              "beforeBuild": 60.28,
+              "beforeEdit": 61.04,
+              "beforeMainThread": 199.58,
+              "after": 191.42
+            },
+            "buildMs": {
+              "runs": 7,
+              "p50": 63.66,
+              "p95": 71.42,
+              "min": 61.93,
+              "max": 71.42
+            },
+            "shippedEditMs": {
+              "runs": 7,
+              "p50": 154.75,
+              "p95": 197.97,
+              "min": 127.26,
+              "max": 197.97
+            },
+            "payload": {
+              "triangles": 2052,
+              "numbers": 24624,
+              "jsonBytes": 224018
+            },
+            "mainThread": {
+              "cloneMs": {
+                "runs": 7,
+                "p50": 1.15,
+                "p95": 2.58,
+                "min": 0.73,
+                "max": 2.58
+              },
+              "validateMs": {
+                "runs": 7,
+                "p50": 0.5,
+                "p95": 2.81,
+                "min": 0.28,
+                "max": 2.81
+              },
+              "displayMs": {
+                "runs": 7,
+                "p50": 3.64,
+                "p95": 5.89,
+                "min": 1.44,
+                "max": 5.89
+              }
+            }
+          }
+        ],
+        "memoryBytesAfterRebuilds": {
+          "1": 104857600,
+          "10": 104857600,
+          "50": 133234688
+        }
+      },
+      {
+        "id": "gear-and-plate",
+        "description": "Independent gear and holed plate; editing only the plate still rebuilds the gear.",
+        "steps": [
+          {
+            "label": "build",
+            "failures": [],
+            "cpuCalibrationMs": {
+              "beforeBuild": 236.63,
+              "beforeEdit": 214.87,
+              "beforeMainThread": 157.22,
+              "after": 211.68
+            },
+            "coldMs": 1704.22,
+            "buildMs": {
+              "runs": 7,
+              "p50": 1527.22,
+              "p95": 1637.06,
+              "min": 1327.89,
+              "max": 1637.06
+            },
+            "payload": {
+              "triangles": 5792,
+              "numbers": 85092,
+              "jsonBytes": 1144587
+            },
+            "mainThread": {
+              "cloneMs": {
+                "runs": 7,
+                "p50": 6.41,
+                "p95": 9.1,
+                "min": 4.89,
+                "max": 9.1
+              },
+              "validateMs": {
+                "runs": 7,
+                "p50": 1.93,
+                "p95": 4.81,
+                "min": 1.25,
+                "max": 4.81
+              },
+              "displayMs": {
+                "runs": 7,
+                "p50": 8.4,
+                "p95": 22.3,
+                "min": 4.39,
+                "max": 22.3
+              }
+            }
+          },
+          {
+            "label": "plate width 110",
+            "failures": [],
+            "cpuCalibrationMs": {
+              "beforeBuild": 211.7,
+              "beforeEdit": 214.51,
+              "beforeMainThread": 205.93,
+              "after": 165.61
+            },
+            "buildMs": {
+              "runs": 7,
+              "p50": 1530.04,
+              "p95": 1595.39,
+              "min": 1313.28,
+              "max": 1595.39
+            },
+            "shippedEditMs": {
+              "runs": 7,
+              "p50": 1494.92,
+              "p95": 1531.94,
+              "min": 1465.13,
+              "max": 1531.94
+            },
+            "affectedBodiesMs": {
+              "runs": 7,
+              "p50": 184.46,
+              "p95": 204.21,
+              "min": 153.77,
+              "max": 204.21
+            },
+            "payload": {
+              "triangles": 5792,
+              "numbers": 85092,
+              "jsonBytes": 1144701
+            },
+            "mainThread": {
+              "cloneMs": {
+                "runs": 7,
+                "p50": 6.95,
+                "p95": 8.96,
+                "min": 4.56,
+                "max": 8.96
+              },
+              "validateMs": {
+                "runs": 7,
+                "p50": 2.08,
+                "p95": 2.77,
+                "min": 1.31,
+                "max": 2.77
+              },
+              "displayMs": {
+                "runs": 7,
+                "p50": 5.9,
+                "p95": 8.23,
+                "min": 4.67,
+                "max": 8.23
+              }
+            }
+          }
+        ],
+        "memoryBytesAfterRebuilds": {
+          "1": 208732160,
+          "10": 208732160,
+          "50": 250478592
+        }
+      },
+      {
+        "id": "box-fillet-all-edges",
+        "description": "Box with all twelve edges filleted; the radius edit reruns the rolling-ball fillet.",
+        "steps": [
+          {
+            "label": "build",
+            "failures": [],
+            "cpuCalibrationMs": {
+              "beforeBuild": 210.93,
+              "beforeEdit": 167.63,
+              "beforeMainThread": 185.98,
+              "after": 198.96
+            },
+            "coldMs": 182.81,
+            "buildMs": {
+              "runs": 7,
+              "p50": 140.4,
+              "p95": 195.53,
+              "min": 80.48,
+              "max": 195.53
+            },
+            "payload": {
+              "triangles": 4260,
+              "numbers": 32124,
+              "jsonBytes": 369255
+            },
+            "mainThread": {
+              "cloneMs": {
+                "runs": 7,
+                "p50": 1.12,
+                "p95": 1.57,
+                "min": 0.79,
+                "max": 1.57
+              },
+              "validateMs": {
+                "runs": 7,
+                "p50": 0.58,
+                "p95": 2.15,
+                "min": 0.43,
+                "max": 2.15
+              },
+              "displayMs": {
+                "runs": 7,
+                "p50": 2.5,
+                "p95": 9.15,
+                "min": 1.78,
+                "max": 9.15
+              }
+            }
+          },
+          {
+            "label": "radius 3",
+            "failures": [],
+            "cpuCalibrationMs": {
+              "beforeBuild": 202.12,
+              "beforeEdit": 190.64,
+              "beforeMainThread": 132.1,
+              "after": 174.06
+            },
+            "buildMs": {
+              "runs": 7,
+              "p50": 134.32,
+              "p95": 156.2,
+              "min": 122.41,
+              "max": 156.2
+            },
+            "shippedEditMs": {
+              "runs": 7,
+              "p50": 121.13,
+              "p95": 143.82,
+              "min": 93.88,
+              "max": 143.82
+            },
+            "payload": {
+              "triangles": 4260,
+              "numbers": 32124,
+              "jsonBytes": 369741
+            },
+            "mainThread": {
+              "cloneMs": {
+                "runs": 7,
+                "p50": 0.73,
+                "p95": 1.16,
+                "min": 0.72,
+                "max": 1.16
+              },
+              "validateMs": {
+                "runs": 7,
+                "p50": 0.39,
+                "p95": 0.4,
+                "min": 0.38,
+                "max": 0.4
+              },
+              "displayMs": {
+                "runs": 7,
+                "p50": 1.34,
+                "p95": 2.77,
+                "min": 1.3,
+                "max": 2.77
+              }
+            }
+          }
+        ],
+        "memoryBytesAfterRebuilds": {
+          "1": 104857600,
+          "10": 104857600,
+          "50": 104857600
+        }
+      }
+    ]
+  },
+  "cpuCalibrationMs": {
+    "idle": 69.15,
+    "solver": 193.73
+  },
+  "solver": {
+    "initMs": 2,
+    "scaling": {
+      "sizes": [
+        {
+          "rectangles": 1,
+          "entities": 4,
+          "relations": 7,
+          "cpuCalibrationMs": [
+            179.7,
+            165
+          ],
+          "outcome": "solved",
+          "degreesOfFreedom": 0,
+          "solveMs": {
+            "runs": 7,
+            "p50": 0.7,
+            "p95": 3.13,
+            "min": 0.49,
+            "max": 3.13
+          }
+        },
+        {
+          "rectangles": 10,
+          "entities": 40,
+          "relations": 70,
+          "cpuCalibrationMs": [
+            212.61,
+            161.69
+          ],
+          "outcome": "solved",
+          "degreesOfFreedom": 0,
+          "solveMs": {
+            "runs": 7,
+            "p50": 3.84,
+            "p95": 5.32,
+            "min": 2.7,
+            "max": 5.32
+          }
+        },
+        {
+          "rectangles": 40,
+          "entities": 160,
+          "relations": 280,
+          "cpuCalibrationMs": [
+            176.53,
+            191.91
+          ],
+          "outcome": "solved",
+          "degreesOfFreedom": 0,
+          "solveMs": {
+            "runs": 7,
+            "p50": 7.96,
+            "p95": 10.34,
+            "min": 4.81,
+            "max": 10.34
+          }
+        },
+        {
+          "rectangles": 60,
+          "entities": 240,
+          "relations": 420,
+          "cpuCalibrationMs": [
+            150.58,
+            132.13
+          ],
+          "outcome": "solved",
+          "degreesOfFreedom": 0,
+          "solveMs": {
+            "runs": 7,
+            "p50": 10.08,
+            "p95": 13.38,
+            "min": 6.9,
+            "max": 13.38
+          }
+        }
+      ],
+      "drag": {
+        "rectangles": 40,
+        "entities": 160,
+        "relations": 280,
+        "cpuCalibrationMs": [
+          175,
+          217.15
+        ],
+        "outcome": "solved",
+        "solveMs": {
+          "runs": 7,
+          "p50": 11.5,
+          "p95": 17.33,
+          "min": 9.22,
+          "max": 17.33
+        }
+      }
+    },
+    "dragPreview": {
+      "independent": [
+        {
+          "sketchCount": 1,
+          "rectanglesPerSketch": 10,
+          "cpuCalibrationMs": [
+            202.86,
+            207.07
+          ],
+          "solvesPerPreview": 1,
+          "prepareMs": {
+            "runs": 7,
+            "p50": 8.52,
+            "p95": 12.27,
+            "min": 4.49,
+            "max": 12.27
+          },
+          "solverCallMs": {
+            "runs": 7,
+            "p50": 1.31,
+            "p95": 3.6,
+            "min": 0.68,
+            "max": 3.6
+          }
+        },
+        {
+          "sketchCount": 4,
+          "rectanglesPerSketch": 10,
+          "cpuCalibrationMs": [
+            177.1,
+            171.31
+          ],
+          "solvesPerPreview": 1,
+          "prepareMs": {
+            "runs": 7,
+            "p50": 25.79,
+            "p95": 29.55,
+            "min": 16.72,
+            "max": 29.55
+          },
+          "solverCallMs": {
+            "runs": 7,
+            "p50": 1.28,
+            "p95": 4.53,
+            "min": 0.7,
+            "max": 4.53
+          }
+        },
+        {
+          "sketchCount": 8,
+          "rectanglesPerSketch": 10,
+          "cpuCalibrationMs": [
+            180.25,
+            209.27
+          ],
+          "solvesPerPreview": 1,
+          "prepareMs": {
+            "runs": 7,
+            "p50": 44.55,
+            "p95": 48.99,
+            "min": 29.71,
+            "max": 48.99
+          },
+          "solverCallMs": {
+            "runs": 7,
+            "p50": 1.2,
+            "p95": 2.71,
+            "min": 0.71,
+            "max": 2.71
+          }
+        }
+      ],
+      "dependent": {
+        "referenced": {
+          "cpuCalibrationMs": [
+            163.56,
+            168.26
+          ],
+          "solvesPerPreview": 2,
+          "prepareMs": {
+            "runs": 7,
+            "p50": 15.41,
+            "p95": 20.32,
+            "min": 9.9,
+            "max": 20.32
+          },
+          "solverCallMs": {
+            "runs": 7,
+            "p50": 2.13,
+            "p95": 3.17,
+            "min": 1.56,
+            "max": 3.17
+          }
+        },
+        "unreferenced": {
+          "cpuCalibrationMs": [
+            158.46,
+            178.95
+          ],
+          "solvesPerPreview": 1,
+          "prepareMs": {
+            "runs": 7,
+            "p50": 13.89,
+            "p95": 15.38,
+            "min": 9.47,
+            "max": 15.38
+          },
+          "solverCallMs": {
+            "runs": 7,
+            "p50": 0.94,
+            "p95": 1.21,
+            "min": 0.72,
+            "max": 1.21
+          }
+        }
+      }
+    },
+    "capacity": {
+      "independent": {
+        "connected": false,
+        "largestSolved": 400,
+        "firstFailed": null,
+        "outcomes": [
+          {
+            "rectangles": 80,
+            "parameters": 640,
+            "constraints": 640,
+            "outcome": "solved"
+          },
+          {
+            "rectangles": 100,
+            "parameters": 800,
+            "constraints": 800,
+            "outcome": "solved"
+          },
+          {
+            "rectangles": 200,
+            "parameters": 1600,
+            "constraints": 1600,
+            "outcome": "solved"
+          },
+          {
+            "rectangles": 400,
+            "parameters": 3200,
+            "constraints": 3200,
+            "outcome": "solved"
+          }
+        ]
+      },
+      "connected": {
+        "connected": true,
+        "largestSolved": 125,
+        "firstFailed": null,
+        "outcomes": [
+          {
+            "rectangles": 60,
+            "parameters": 480,
+            "constraints": 480,
+            "outcome": "solved"
+          },
+          {
+            "rectangles": 80,
+            "parameters": 640,
+            "constraints": 640,
+            "outcome": "solved"
+          },
+          {
+            "rectangles": 88,
+            "parameters": 704,
+            "constraints": 704,
+            "outcome": "solved"
+          },
+          {
+            "rectangles": 89,
+            "parameters": 712,
+            "constraints": 712,
+            "outcome": "solved"
+          },
+          {
+            "rectangles": 100,
+            "parameters": 800,
+            "constraints": 800,
+            "outcome": "solved"
+          },
+          {
+            "rectangles": 125,
+            "parameters": 1000,
+            "constraints": 1000,
+            "outcome": "solved"
+          }
+        ]
+      }
+    }
+  }
+}

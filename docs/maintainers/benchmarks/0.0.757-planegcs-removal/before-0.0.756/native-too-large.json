@@ -1,0 +1,183 @@
+{
+  "family": "connected rectangle chain (createCadBenchmarkRectangleGraph(n, \"r\", false, true)), 8 unknowns and 8 equations per rectangle",
+  "largestSolved": 83333,
+  "smallestTooLarge": 83334,
+  "probes": [
+    {
+      "rectangles": 4096,
+      "parameters": 32768,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 308.3425,
+      "nativeMs": 307.81579999999997
+    },
+    {
+      "rectangles": 8192,
+      "parameters": 65536,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 635.7278999999999,
+      "nativeMs": 635.6572000000001
+    },
+    {
+      "rectangles": 16384,
+      "parameters": 131072,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 3268.763,
+      "nativeMs": 3268.5767000000005
+    },
+    {
+      "rectangles": 32768,
+      "parameters": 262144,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 7971.645100000002,
+      "nativeMs": 7967.260100000001
+    },
+    {
+      "rectangles": 65536,
+      "parameters": 524288,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 18470.1137,
+      "nativeMs": 18469.444500000005
+    },
+    {
+      "rectangles": 81920,
+      "parameters": 655360,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 22363.103500000012,
+      "nativeMs": 22362.242700000003
+    },
+    {
+      "rectangles": 82944,
+      "parameters": 663552,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 21876.5778,
+      "nativeMs": 21875.444400000008
+    },
+    {
+      "rectangles": 83200,
+      "parameters": 665600,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 25622.867,
+      "nativeMs": 25621.918000000005
+    },
+    {
+      "rectangles": 83328,
+      "parameters": 666624,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 24882.817900000024,
+      "nativeMs": 24879.028099999996
+    },
+    {
+      "rectangles": 83332,
+      "parameters": 666656,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 22620.087900000042,
+      "nativeMs": 22619.281799999997
+    },
+    {
+      "rectangles": 83333,
+      "parameters": 666664,
+      "outcome": "solved",
+      "failures": [],
+      "elapsedMs": 27535.68709999998,
+      "nativeMs": 27534.487399999984
+    },
+    {
+      "rectangles": 83334,
+      "parameters": 666672,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 3777.941300000006,
+      "nativeMs": 3776.556900000025
+    },
+    {
+      "rectangles": 83336,
+      "parameters": 666688,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 2880.5091999999713,
+      "nativeMs": 2879.4135999999708
+    },
+    {
+      "rectangles": 83344,
+      "parameters": 666752,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 3282.3391999999876,
+      "nativeMs": 3280.0242000000435
+    },
+    {
+      "rectangles": 83360,
+      "parameters": 666880,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 3178.6648000000278,
+      "nativeMs": 3176.411599999992
+    },
+    {
+      "rectangles": 83392,
+      "parameters": 667136,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 2629.0971000000136,
+      "nativeMs": 2628.4147999999695
+    },
+    {
+      "rectangles": 83456,
+      "parameters": 667648,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 3485.719699999987,
+      "nativeMs": 3481.7917000000016
+    },
+    {
+      "rectangles": 83968,
+      "parameters": 671744,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 3515.955200000026,
+      "nativeMs": 3514.7382999999973
+    },
+    {
+      "rectangles": 86016,
+      "parameters": 688128,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 2766.162100000016,
+      "nativeMs": 2765.2337999999872
+    },
+    {
+      "rectangles": 90112,
+      "parameters": 720896,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 2830.7480000000214,
+      "nativeMs": 2829.4118999999773
+    },
+    {
+      "rectangles": 98304,
+      "parameters": 786432,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 3589.938300000009,
+      "nativeMs": 3589.0911999999953
+    },
+    {
+      "rectangles": 131072,
+      "parameters": 1048576,
+      "outcome": "rejected:too-large",
+      "failures": [],
+      "elapsedMs": 5213.156300000002,
+      "nativeMs": 5210.376699999993
+    }
+  ]
+}

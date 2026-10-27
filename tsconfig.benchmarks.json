@@ -8,7 +8,6 @@
   "include": [
     "scripts/benchmark-cad*.ts",
     "src/vite-env.d.ts",
-    "src/types/*.d.ts",
-    "src/features/cad/sketch-solver/planegcs-native.d.ts"
+    "src/types/*.d.ts"
   ]
 }

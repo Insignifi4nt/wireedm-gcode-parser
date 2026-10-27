@@ -32,7 +32,7 @@ export type CadSketchNativeDragOutcome = 'reached' | 'projected' | 'stalled' | '
  * nearest point and was diagnosed with a looser dependence distance, so its conflicts are suspected
  * rather than certain and freedom is unknown. `from-start`: a group that did not converge is blamed
  * instead for relations that are the same function of the same values up to their value and sign,
- * as repeated dimensions are, held at values that cannot agree, as PlaneGCS sees at its start; they
+ * as repeated dimensions are, held at values that cannot agree, as PlaneGCS saw at its start; they
  * conflict at every point, even where the stall cannot be diagnosed. Angles, whose residuals wrap,
  * are left out, and other conflicts may exist where the solve stopped. `uncertain`: a converged
  * group's rank was too close to call, as near a tangency, so its labels are the dependencies found
@@ -80,7 +80,7 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
   const bytes = typeof source === 'string' || source instanceof URL ? await (await fetch(source)).arrayBuffer() : source;
   const instance = bytes instanceof WebAssembly.Module ? await WebAssembly.instantiate(bytes, {}) : (await WebAssembly.instantiate(bytes, {})).instance;
   const exports = instance.exports;
-  if (!isExports(exports)) throw new Error('The native sketch solver module has unexpected exports.');
+  if (!isExports(exports)) throw new CadSketchNativeProtocolError('The native sketch solver module has unexpected exports.');
   observeMemory?.(exports.memory);
   let stopped = false;
   return { memoryBytes: () => exports.memory.buffer.byteLength, solve(model) {

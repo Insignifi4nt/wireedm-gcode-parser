@@ -1,0 +1,33 @@
+{
+  "applicationRuntimeAnswers": {
+    "files": 25,
+    "native": 434,
+    "planeGcs": 0,
+    "fallbacks": {
+      "graph-check": 6,
+      "not-converged": 2,
+      "compile": 2
+    },
+    "keptGroups": 0,
+    "nativeOnlyImprovements": 2,
+    "freeSolutions": 186,
+    "largestFreeDifference": 3.0090751157602433,
+    "movedFurther": 0,
+    "movedLess": 27,
+    "largestExtraMovement": 0,
+    "drags": 27,
+    "dragBranches": 0
+  },
+  "nativeDifferential": {
+    "files": 25,
+    "compared": 451,
+    "diagnosed": 449,
+    "reviewedDifferences": 4,
+    "unmetWithoutUnknowns": 11,
+    "wellConstrained": 167,
+    "drags": 38,
+    "dragStalls": 0,
+    "dragBranches": 1,
+    "largestDragImprovement": 7.875543706500654e-15
+  }
+}

@@ -2,20 +2,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import { cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph } from '../../../domain/cad/cadSketchGraph';
 import { createCadSolverDieInput } from '../benchmark/cadSolverWorkloadCases';
-import { createCadSketchNativeFirstRuntime, type CadSketchSolveRecord, type CadSketchSolverBackend } from './cadSketchNativeFirstRuntime';
-import type { CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
+import { CAD_SKETCH_NATIVE_FAILED, createCadSketchNativeRuntime, type CadSketchSolveRecord } from './cadSketchNativeRuntime';
+import { CAD_SKETCH_NATIVE_INCOMPATIBLE, CAD_SKETCH_NATIVE_LOAD_FAILED } from './cadSketchSolverMessages';
+import type { CadSketchSolveInput } from './cadSketchSolverTypes';
 import { CadSketchNativeProtocolError, loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketchNativeSolver } from './native/cadSketchNativeSolver';
+import { createCadSketchNativeModuleLoader } from './native/cadSketchNativeModule';
 import { CAD_SKETCH_EQUATION_CONFLICTING, CAD_SKETCH_EQUATION_REDUNDANT, type CadSketchEquationModel } from './native/cadSketchEquationModel';
 import { createCadSketchTestSolver, loadCadSketchTestNativeSolver } from './__tests__/cadSketchTestSolver';
+import { planeGcsCorpusSolution } from './__tests__/planeGcsCorpus';
 
 // A free line whose length is driven: one relation, three degrees of freedom.
 const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [9, 1] }],
   entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
   relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] });
 const input: CadSketchSolveInput = { graph, parameters: {} };
-const noDiagnostics = { status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] };
-const planeGcsSolved = (result: CadSketchSolveResult): CadSketchSolverBackend => ({ solve: vi.fn(async () => result) });
-const failedResult: CadSketchSolveResult = { kind: 'rejected', reason: 'failed', message: 'PlaneGCS failed.', diagnostics: { ...noDiagnostics, status: 'failed' } };
 
 /** A native solver answering every model with `answer`, and the real solver's values otherwise. */
 function fakeNative(answer: (model: CadSketchEquationModel) => Partial<CadSketchNativeSolution>, memoryBytes = 0): CadSketchNativeSolver {
@@ -23,17 +23,20 @@ function fakeNative(answer: (model: CadSketchEquationModel) => Partial<CadSketch
     diagnosis: { kind: 'diagnosed', degreesOfFreedom: 3, labels: model.equations.map(() => 0) }, ...answer(model) }) };
 }
 
-function runtime(native: () => Promise<CadSketchNativeSolver>, planeGcs: CadSketchSolverBackend, extra: Partial<Parameters<typeof createCadSketchNativeFirstRuntime>[0]> = {}) {
-  const records: CadSketchSolveRecord[] = [], loadPlaneGcs = vi.fn(async () => planeGcs), loadNative = vi.fn(native);
-  return { records, loadPlaneGcs, loadNative, solver: createCadSketchNativeFirstRuntime({ mode: 'native-first', loadNative, loadPlaneGcs, onSolve: record => records.push(record), ...extra }) };
+/** A runtime on a clock the test moves, whose load retries wait no real time. */
+function runtime(native: () => Promise<CadSketchNativeSolver>, extra: Partial<Parameters<typeof createCadSketchNativeRuntime>[0]> = {}) {
+  const records: CadSketchSolveRecord[] = [], loadNative = vi.fn(native), waits: number[] = [], clock = { now: 0 };
+  const solver = createCadSketchNativeRuntime({ loadNative, onSolve: record => records.push(record), now: () => clock.now,
+    wait: async ms => { waits.push(ms); clock.now += ms; }, ...extra });
+  return { records, loadNative, waits, clock, solver };
 }
 
-describe('native-first sketch solving', () => {
-  it('answers solves and drags natively without loading PlaneGCS', async () => {
-    const { solver, records, loadPlaneGcs } = runtime(loadCadSketchTestNativeSolver, (await createCadSketchTestSolver({ mode: 'planegcs' })));
+describe('native sketch solving', () => {
+  it('answers solves and drags', async () => {
+    const { solver, records } = runtime(loadCadSketchTestNativeSolver);
     const solved = await solver.solve(input);
     expect(solved).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 3, conflictingIds: [], redundantIds: [], issues: [] } });
-    expect(records[0]).toMatchObject({ answeredBy: 'native', native: 'answer' });
+    expect(records[0]).toMatchObject({ native: 'answer', loadAttempts: 1 });
     expect(records[0]).not.toHaveProperty('drag');
     for (const position of [[12, 2], [13, 3]] as const) {
       const dragged = await solver.solve({ ...input, drag: { pointId: 'b', position } });
@@ -41,12 +44,13 @@ describe('native-first sketch solving', () => {
       expect(dragged.graph.points[1].position).toEqual(position);
       expect(dragged.diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 3 });
     }
-    expect(records.slice(1)).toEqual([0, 1].map(() => expect.objectContaining({ answeredBy: 'native', native: 'answer', drag: { outcome: 'reached', targetDistance: 0 } })));
-    expect(loadPlaneGcs).not.toHaveBeenCalled();
+    expect(records.slice(1)).toEqual([0, 1].map(() => expect.objectContaining({ native: 'answer', drag: { outcome: 'reached', targetDistance: 0 } })));
+    // Only the first solve loaded an instance.
+    expect(records.slice(1).every(record => record.loadAttempts === undefined)).toBe(true);
   });
 
   it('keeps a reached drag target exactly, however little it moved', async () => {
-    const { solver } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
+    const { solver } = runtime(loadCadSketchTestNativeSolver);
     const start = await solver.solve(input);
     if (start.kind !== 'solved') throw new Error(JSON.stringify(start));
     const [x, y] = start.graph.points[1].position as [number, number];
@@ -59,35 +63,29 @@ describe('native-first sketch solving', () => {
     }
   });
 
-  it('follows a drag trajectory out of reach and back, chained and from the start, as close as PlaneGCS', async () => {
+  it('follows a drag trajectory out of reach and back, chained and from the start, as close as the target can be reached', async () => {
     // A two-link arm of 10 mm links from a fixed base reaches 20 mm. Its tip is dragged along y = 1
-    // from x = 10 to 21.25, past its reach, then straight back to x = 15. Native's rank diagnosis
-    // cannot yet decide some nearly straight arms, whose second row keeps a lead between TAU and
-    // CERTAIN in an early column (see `smallest_singular_value`): roundoff picks those frames among
-    // the stretched ones, and native solves them with freedom unknown.
+    // from x = 10 to 21.25, past its reach, then straight back to x = 15.
     const arm = parseCadSketchGraph({ points: [{ id: 'c', position: ['0', '0'] }, { id: 'p', position: [6, 8] }, { id: 'q', position: [16, 8] }],
       entities: [{ id: 'cp', kind: 'line', construction: false, startPointId: 'c', endPointId: 'p' }, { id: 'pq', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
       relations: [{ id: 'upper', kind: 'distance', pointIds: ['c', 'p'], value: 10 }, { id: 'lower', kind: 'distance', pointIds: ['p', 'q'], value: 10 }] });
     const targets = [...Array.from({ length: 46 }, (_, frame) => [10 + 0.25 * frame, 1] as const), [15, 1] as const];
-    const planeGcs = await createCadSketchTestSolver({ mode: 'planegcs' });
     for (const chained of [true, false]) {
-      const { solver, records } = runtime(loadCadSketchTestNativeSolver, planeGcs);
+      const { solver, records } = runtime(loadCadSketchTestNativeSolver);
       let current = arm;
       for (const [frame, position] of targets.entries()) {
-        const input = { graph: chained ? current : arm, parameters: {}, drag: { pointId: 'q', position } };
-        const [dragged, expected] = [await solver.solve(input), await planeGcs.solve(input)];
-        if (dragged.kind !== 'solved' || expected.kind !== 'solved') throw new Error(`frame ${frame}: ${JSON.stringify(dragged.kind === 'solved' ? expected : dragged)}`);
-        const tip = (graph: typeof arm) => graph.points[2].position as [number, number], distance = (graph: typeof arm) => Math.hypot(tip(graph)[0] - position[0], tip(graph)[1] - position[1]);
-        const reach = Math.hypot(...position);
+        const dragged = await solver.solve({ graph: chained ? current : arm, parameters: {}, drag: { pointId: 'q', position } });
+        if (dragged.kind !== 'solved') throw new Error(`frame ${frame}: ${JSON.stringify(dragged)}`);
+        const [x, y] = dragged.graph.points[2].position as [number, number], reach = Math.hypot(...position);
         expect(records[frame].drag?.outcome, `frame ${frame}`).toBe(reach < 20 ? 'reached' : 'projected');
-        expect(distance(dragged.graph), `frame ${frame}`).toBeLessThanOrEqual(Math.max(0, reach - 20) + 1e-9);
-        expect(distance(dragged.graph), `frame ${frame}`).toBeLessThanOrEqual(distance(expected.graph) + 1e-6);
-        expect(records[frame], `frame ${frame}`).toMatchObject({ answeredBy: 'native', native: 'answer' });
+        // The nearest the tip can be is the target within reach and 20 mm along its ray beyond it.
+        expect(Math.hypot(x - position[0], y - position[1]), `frame ${frame}`).toBeLessThanOrEqual(Math.max(0, reach - 20) + 1e-9);
+        expect(records[frame], `frame ${frame}`).toMatchObject({ native: 'answer' });
         expect(dragged.diagnostics.degreesOfFreedom, `frame ${frame}`).toBe(2);
         current = dragged.graph;
       }
-      // Released straight, solved again, then edited, all by native alone.
-      const native = createCadSketchTestSolver({ mode: 'native-only' });
+      // Released straight, solved again, then edited.
+      const native = createCadSketchTestSolver();
       const stretched = await native.solve({ graph: chained ? current : arm, parameters: {}, drag: { pointId: 'q', position: [21.25, 1] } });
       if (stretched.kind !== 'solved') throw new Error(JSON.stringify(stretched));
       expect(await native.solve({ graph: stretched.graph, parameters: {} })).toMatchObject({ kind: 'solved' });
@@ -98,44 +96,30 @@ describe('native-first sketch solving', () => {
     }
   });
 
-  it('rejects a stalled drag as not moved toward its target unless PlaneGCS solves it', async () => {
+  it('rejects a stalled drag as not moved toward its target', async () => {
     const stalled = { status: 'not-converged' as const, drag: { outcome: 'stalled' as const, targetDistance: 3 } };
     const drag = { ...input, drag: { pointId: 'b', position: [12, 2] as const } };
-    const rejected = runtime(async () => fakeNative(() => stalled), planeGcsSolved(failedResult));
+    const rejected = runtime(async () => fakeNative(() => stalled));
     expect(await rejected.solver.solve(drag)).toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The point could not be moved toward the target from this start.' });
-    expect(rejected.records[0]).toMatchObject({ answeredBy: 'native', native: 'not-converged', planeGcs: 'failed', drag: stalled.drag });
-    const solvedByPlaneGcs: CadSketchSolveResult = { kind: 'solved', graph, diagnostics: { ...noDiagnostics, status: 'success', degreesOfFreedom: 3 } };
-    const rescued = runtime(async () => fakeNative(() => stalled), planeGcsSolved(solvedByPlaneGcs));
-    expect(await rescued.solver.solve(drag)).toBe(solvedByPlaneGcs);
-    expect(rescued.records[0]).toMatchObject({ answeredBy: 'planegcs', native: 'not-converged', planeGcs: 'solved' });
+    expect(rejected.records[0]).toMatchObject({ native: 'not-converged', drag: stalled.drag });
     // With nothing free, unmet labels the graph checks accept would otherwise solve: a stalled drag still does not.
     const fixed = parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['6', '8'] }] });
     const unmet = runtime(async () => fakeNative(model => ({ status: 'converged', diagnosis: { kind: 'no-unknowns', labels: model.equations.map(equation => equation.temporary ? 0 : CAD_SKETCH_EQUATION_CONFLICTING) },
-      drag: stalled.drag })), planeGcsSolved(failedResult));
+      drag: stalled.drag })));
     expect(await unmet.solver.solve({ graph: fixed, parameters: {}, drag: { pointId: 'b', position: [7, 8] } }))
       .toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The point could not be moved toward the target from this start.' });
   });
 
-  it('returns the frame where a drag stalled at feasible values only when PlaneGCS does no better', async () => {
+  it('returns the frame where a drag stalled at feasible values, checked as any solution', async () => {
     // Stopped at (6, 8), 10 mm from a, on the way to (12, 2).
     const stalled = { values: [0, 0, 6, 8], drag: { outcome: 'stalled' as const, targetDistance: Math.hypot(6, 6) } };
     const drag = { ...input, drag: { pointId: 'b', position: [12, 2] as const } };
-    const solvedByPlaneGcs: CadSketchSolveResult = { kind: 'solved', graph, diagnostics: { ...noDiagnostics, status: 'success', degreesOfFreedom: 3 } };
-    const rescued = runtime(async () => fakeNative(() => stalled), planeGcsSolved(solvedByPlaneGcs));
-    expect(await rescued.solver.solve(drag)).toBe(solvedByPlaneGcs);
-    expect(rescued.records[0]).toMatchObject({ answeredBy: 'planegcs', native: 'stalled', planeGcs: 'solved', drag: stalled.drag });
     const frame = { kind: 'solved', graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [6, 8] }] }, diagnostics: { status: 'success', degreesOfFreedom: 3, conflictingIds: [], issues: [] } };
-    for (const [planeGcs, outcome] of [[planeGcsSolved(failedResult), 'failed'], [{ solve: async () => { throw new Error('PlaneGCS failed.'); } }, 'threw']] as const) {
-      const unhelped = runtime(async () => fakeNative(() => stalled), planeGcs);
-      expect(await unhelped.solver.solve(drag)).toMatchObject(frame);
-      expect(unhelped.records[0]).toMatchObject({ answeredBy: 'native', native: 'stalled', planeGcs: outcome, drag: stalled.drag });
-    }
-    const nativeOnly = runtime(async () => fakeNative(() => stalled), planeGcsSolved(solvedByPlaneGcs), { mode: 'native-only' });
-    expect(await nativeOnly.solver.solve(drag)).toMatchObject(frame);
-    expect(nativeOnly.records[0]).toMatchObject({ answeredBy: 'native', native: 'stalled', drag: stalled.drag });
-    expect(nativeOnly.loadPlaneGcs).not.toHaveBeenCalled();
-    // The frame is checked as any solution: one that fails the graph checks is still rejected.
-    const broken = runtime(async () => fakeNative(() => ({ ...stalled, values: [0, 0, 5, 1] })), planeGcsSolved(failedResult), { mode: 'native-only' });
+    const stopped = runtime(async () => fakeNative(() => stalled));
+    expect(await stopped.solver.solve(drag)).toMatchObject(frame);
+    expect(stopped.records[0]).toMatchObject({ native: 'stalled', drag: stalled.drag, movedGroups: 1, keptGroups: 0 });
+    // A frame that fails the graph checks is rejected.
+    const broken = runtime(async () => fakeNative(() => ({ ...stalled, values: [0, 0, 5, 1] })));
     expect(await broken.solver.solve(drag)).toMatchObject({ kind: 'rejected', reason: 'invalid-solution' });
     expect(broken.records[0]).toMatchObject({ native: 'graph-check' });
   });
@@ -149,12 +133,12 @@ describe('native-first sketch solving', () => {
         { id: 'db', kind: 'line', construction: false, startPointId: 'd', endPointId: 'b' }],
       relations: [{ id: 'ac-length', kind: 'distance', pointIds: ['a', 'c'], value: 10 }, { id: 'cd-length', kind: 'distance', pointIds: ['c', 'd'], value: 5 },
         { id: 'db-length', kind: 'distance', pointIds: ['d', 'b'], value: 11 }] });
-    const { solver, records, loadPlaneGcs } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
+    const { solver, records } = runtime(loadCadSketchTestNativeSolver);
     const target = [-20, -18] as const, jump = { graph: fourBar, parameters: {}, drag: { pointId: 'c', position: target } };
     const solved = await solver.solve(jump), again = await solver.solve(jump);
     if (solved.kind !== 'solved') throw new Error(JSON.stringify(solved));
     expect(again).toEqual(solved);
-    expect(records[0]).toMatchObject({ answeredBy: 'native', native: 'answer', drag: { outcome: 'projected' } });
+    expect(records[0]).toMatchObject({ native: 'answer', drag: { outcome: 'projected' } });
     const [, , c, d] = solved.graph.points.map(point => point.position as [number, number]);
     [[c, [-2.8, 9.6]], [d, [1.2, 6.6]]].forEach(([actual, expected]) => actual.forEach((value, axis) => expect(value).toBeCloseTo(expected[axis], 9)));
     expect(Math.hypot(c[0] - target[0], c[1] - target[1])).toBeCloseTo(Math.hypot(17.2, 27.6), 9);
@@ -166,17 +150,16 @@ describe('native-first sketch solving', () => {
       current = dragged.graph;
     }
     current.points[2].position.forEach((value, axis) => expect(value).toBeCloseTo(c[axis], 9));
-    expect(loadPlaneGcs).not.toHaveBeenCalled();
   });
 
-  it.each([10, 100, 1000])('stops a drag onto a tangency short of its singular point, then solves, drags and edits it natively (radius %d)', async radius => {
+  it.each([10, 100, 1000])('stops a drag onto a tangency short of its singular point, then solves, drags and edits it (radius %d)', async radius => {
     // p rides a circle about a and the vertical line x = radius. Exactly on their tangency the two
     // relations' gradients align and rank reads redundant; near it rank is too close to call, so
     // the sketch solves with freedom unknown and the drag stops where rank is still clear of it.
     const tangent = (x: number) => parseCadSketchGraph({ points: [{ id: 'a', position: ['0', '0'] }, { id: 'p', position: [radius, 1e-5 * radius] }],
       entities: [{ id: 'ap', kind: 'line', construction: false, startPointId: 'a', endPointId: 'p' }],
       relations: [{ id: 'radius', kind: 'distance', pointIds: ['a', 'p'], value: radius }, { id: 'x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value: x }] });
-    const records: CadSketchSolveRecord[] = [], solver = createCadSketchTestSolver({ mode: 'native-only', onSolve: record => records.push(record) });
+    const records: CadSketchSolveRecord[] = [], solver = createCadSketchTestSolver({ onSolve: record => records.push(record) });
     const solve = async (input: CadSketchSolveInput) => {
       const result = await solver.solve(input);
       if (result.kind !== 'solved') throw new Error(JSON.stringify(result));
@@ -197,19 +180,19 @@ describe('native-first sketch solving', () => {
     }
     const edited = await solve({ graph: parseCadSketchGraph({ ...current, relations: tangent(radius - 1).relations }), parameters: {} });
     expect(Number(edited.points[1].position[1])).toBeCloseTo(Math.sqrt(2 * radius - 1), 9);
-    expect(records.every(record => record.answeredBy === 'native' && record.native === 'answer')).toBe(true);
+    expect(records.every(record => record.native === 'answer')).toBe(true);
   });
 
-  it('keeps native\'s own drag rejection when PlaneGCS does no better', async () => {
-    const fallback = runtime(async () => fakeNative(model => ({ diagnosis: { kind: 'diagnosed', degreesOfFreedom: 1, labels: model.equations.map(equation => equation.temporary ? 0 : CAD_SKETCH_EQUATION_REDUNDANT) },
-      drag: { outcome: 'reached', targetDistance: 0 } })), planeGcsSolved(failedResult));
-    expect(await fallback.solver.solve({ ...input, drag: { pointId: 'b', position: [12, 2] } })).toMatchObject({ kind: 'rejected', reason: 'redundant' });
-    expect(fallback.records[0]).toMatchObject({ answeredBy: 'native', native: 'drag-diagnosis', planeGcs: 'failed' });
+  it('rejects a drag diagnosed redundant where it ended, recording that the diagnosis is the drag\'s', async () => {
+    const dragged = runtime(async () => fakeNative(model => ({ diagnosis: { kind: 'diagnosed', degreesOfFreedom: 1, labels: model.equations.map(equation => equation.temporary ? 0 : CAD_SKETCH_EQUATION_REDUNDANT) },
+      drag: { outcome: 'reached', targetDistance: 0 } })));
+    expect(await dragged.solver.solve({ ...input, drag: { pointId: 'b', position: [12, 2] } })).toMatchObject({ kind: 'rejected', reason: 'redundant' });
+    expect(dragged.records[0]).toMatchObject({ native: 'drag-diagnosis' });
   });
 
-  it('captures the input before waiting, so both solvers see the caller\'s values at the call', async () => {
+  it('captures the input before waiting, so the solve sees the caller\'s values at the call', async () => {
     const parameters = { length: 10 }, source = parseCadSketchGraph({ ...graph, relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: ' length ' }] });
-    const { solver } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
+    const { solver } = runtime(loadCadSketchTestNativeSolver);
     const pending = solver.solve({ graph: source, parameters });
     parameters.length = 20;
     const result = await pending;
@@ -219,31 +202,30 @@ describe('native-first sketch solving', () => {
   });
 
   it('keeps each already accepted group exactly and snaps roundoff to the exact intent', async () => {
-    const die = createCadSolverDieInput(), first = await createCadSketchTestSolver({ mode: 'planegcs' }).solve(die);
-    if (first.kind !== 'solved') throw new Error(first.message);
-    const { solver, records } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
-    // Each solver moves the other's solutions by ulps; an accepted start keeps its exact values.
-    const again = await solver.solve({ graph: first.graph, parameters: die.parameters });
+    // Solutions saved by PlaneGCS, from the frozen corpus: native moves them by ulps, and an accepted
+    // start keeps its exact values.
+    const die = createCadSolverDieInput(), first = planeGcsCorpusSolution(die);
+    const { solver, records } = runtime(loadCadSketchTestNativeSolver);
+    const again = await solver.solve({ graph: first, parameters: die.parameters });
     if (again.kind !== 'solved') throw new Error(again.message);
-    const before = cadSketchSolvedValues(first.graph);
+    const before = cadSketchSolvedValues(first);
     expect(cadSketchSolvedValues(again.graph).every((value, index) => Object.is(value, before[index]))).toBe(true);
-    expect(records[0].answeredBy).toBe('native');
+    expect(records[0].native).toBe('answer');
     // An edit moves only the group it affects; the other line keeps its exact values.
     const lines = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [9, 1] }, { id: 'c', position: [0, 5] }, { id: 'd', position: [9, 6] }],
       entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
       relations: [{ id: 'first', kind: 'distance', pointIds: ['a', 'b'], value: 'first' }, { id: 'second', kind: 'distance', pointIds: ['c', 'd'], value: 'second' }] });
-    const accepted = await createCadSketchTestSolver({ mode: 'planegcs' }).solve({ graph: lines, parameters: { first: 10, second: 10 } });
-    if (accepted.kind !== 'solved') throw new Error(accepted.message);
-    const edited = await solver.solve({ graph: accepted.graph, parameters: { first: 11, second: 10 } });
+    const accepted = planeGcsCorpusSolution({ graph: lines, parameters: { first: 10, second: 10 } });
+    const edited = await solver.solve({ graph: accepted, parameters: { first: 11, second: 10 } });
     if (edited.kind !== 'solved') throw new Error(edited.message);
-    const values = cadSketchSolvedValues(edited.graph), start = cadSketchSolvedValues(accepted.graph);
+    const values = cadSketchSolvedValues(edited.graph), start = cadSketchSolvedValues(accepted);
     expect(values.slice(4).every((value, index) => Object.is(value, start[index + 4]))).toBe(true);
     expect(Math.hypot(values[2] - values[0], values[3] - values[1])).toBeCloseTo(11, 12);
     // A value a few ulps from a short decimal lands on it; one that needs every digit keeps them.
     const level = { graph: parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: ['0', '0'] }, graph.points[1]],
       relations: [{ id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }] }), parameters: {} };
     const solvedAt = async (x: number, y: number) => {
-      const result = await runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 ? x : index === 3 ? y : value) })), planeGcsSolved(failedResult)).solver.solve(level);
+      const result = await runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 ? x : index === 3 ? y : value) }))).solver.solve(level);
       return result.kind === 'solved' ? result.graph.points[1].position : result;
     };
     expect(await solvedAt(9.999999999999998, 1e-47)).toEqual([10, 0]);
@@ -251,7 +233,7 @@ describe('native-first sketch solving', () => {
     // A rank too close to call solves with freedom unknown and is never rounded, which could close a
     // near tangency exactly.
     const uncertain = await runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 ? 9.999999999999998 : index === 3 ? 1e-47 : value),
-      diagnosis: { kind: 'uncertain', labels: [0] } })), planeGcsSolved(failedResult)).solver.solve(level);
+      diagnosis: { kind: 'uncertain', labels: [0] } }))).solver.solve(level);
     expect(uncertain).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: null } });
     expect(uncertain.kind === 'solved' && uncertain.graph.points[1].position).toEqual([9.999999999999998, 1e-47]);
     // Far from the origin 8 ulps exceed the driver tolerance, and rounding never moves a value that far.
@@ -259,18 +241,17 @@ describe('native-first sketch solving', () => {
       entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
       relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] }), parameters: {} };
     for (const position of [[999999990, 1e-9], [999999990.0000001, 0]] as const) {
-      const result = await runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 || index === 3 ? position[index - 2] : value) })),
-        planeGcsSolved(failedResult)).solver.solve(farLine);
+      const result = await runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 || index === 3 ? position[index - 2] : value) }))).solver.solve(farLine);
       expect(result.kind === 'solved' && result.graph.points[1].position).toEqual(position);
     }
     // A group that moved only by polishing keeps its start, though a snap would move it further.
-    const near = 100000.00000000012, polishing = runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 ? near + 2 ** -36 : index === 3 ? 0 : value) })), planeGcsSolved(failedResult));
+    const near = 100000.00000000012, polishing = runtime(async () => fakeNative(model => ({ values: model.values.map((value, index) => index === 2 ? near + 2 ** -36 : index === 3 ? 0 : value) })));
     const untouched = await polishing.solver.solve({ ...level, graph: parseCadSketchGraph({ ...level.graph, points: [level.graph.points[0], { id: 'b', position: [near, 1e-13] }] }) });
     expect(untouched.kind === 'solved' && untouched.graph.points[1].position).toEqual([near, 1e-13]);
   });
 
   it('keeps small driven values and edits next to large coordinates', async () => {
-    const { solver, records } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
+    const { solver, records } = runtime(loadCadSketchTestNativeSolver);
     const far = (a: readonly (string | number)[], b: readonly (string | number)[], relations: readonly object[]) => parseCadSketchGraph({ points: [{ id: 'a', position: a }, { id: 'b', position: b }],
       entities: [{ id: 'line', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations });
     const lift = { id: 'lift', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0.000001 };
@@ -282,10 +263,10 @@ describe('native-first sketch solving', () => {
     expect(placed.kind === 'solved' && placed.graph.points.map(point => point.position[0])).toEqual([999999990.000001, 999999990.000001]);
     const target = await solver.solve({ graph: far([999999990, '0'], [999999990, 10], [{ id: 'place', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 999999990.000001 }]), parameters: {} });
     expect(target.kind === 'solved' && target.graph.points[0].position[0]).toBe(999999990.000001);
-    // With nothing free, a relation the graph checks accept is solved, as PlaneGCS solves it.
+    // With nothing free, a relation the graph checks accept is solved.
     const fixed = await solver.solve({ graph: far(['1000000000', '0'], ['1000000000', '10'], [lift]), parameters: {} });
     expect(fixed).toMatchObject({ kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom: 0, conflictingIds: [], issues: [] } });
-    expect(records.at(-1)!.answeredBy).toBe('native');
+    expect(records.at(-1)!.native).toBe('answer');
     // Only relations the checks reject are blamed; an unrelated invalid circle is reported as such.
     const ring = { id: 'ring', kind: 'circle', construction: true, centerPointId: 'b', radius: '0' };
     const invalid = await solver.solve({ graph: parseCadSketchGraph({ ...far(['1000000000', '0'], ['1000000000', '10'], [lift]), entities: [ring] }), parameters: {} });
@@ -303,9 +284,8 @@ describe('native-first sketch solving', () => {
     expect(Math.abs(Number(after.graph.points[1].position[1]) - 10.000001)).toBeLessThan(1e-9);
   });
 
-  it('moves a group with freedom left to the solution nearest its start, never further than PlaneGCS', async () => {
-    const { solver, records } = runtime(loadCadSketchTestNativeSolver, planeGcsSolved(failedResult));
-    const planeGcs = await createCadSketchTestSolver({ mode: 'planegcs' });
+  it('moves a group with freedom left to the solution nearest its start', async () => {
+    const { solver, records } = runtime(loadCadSketchTestNativeSolver);
     // Free c on a line from fixed d made parallel to a fixed reference: the nearest solution projects
     // c onto the line through d, where a Newton step on the normalized sine swings it across.
     for (const degrees of [0, 30, 75]) {
@@ -316,39 +296,29 @@ describe('native-first sketch solving', () => {
         { id: 'reference', kind: 'line', construction: true, startPointId: 'e', endPointId: 'f' }],
       relations: [{ id: 'aligned', kind: 'parallel', lineIds: ['cd', 'reference'] }] });
       const along = 35 * cos - 5 * sin, nearest = [along * cos, 20 + along * sin];
-      const result = await solver.solve({ graph: sketch, parameters: {} }), oracle = await planeGcs.solve({ graph: sketch, parameters: {} });
-      if (result.kind !== 'solved' || oracle.kind !== 'solved') throw new Error('Both solvers solve a free parallel line.');
-      expect(records.at(-1)!.answeredBy).toBe('native');
+      const result = await solver.solve({ graph: sketch, parameters: {} });
+      if (result.kind !== 'solved') throw new Error('A free parallel line solves.');
+      expect(records.at(-1)!.native).toBe('answer');
       result.graph.points[0].position.forEach((value, axis) => expect(Math.abs(Number(value) - nearest[axis])).toBeLessThan(1e-9));
-      const moved = (graph: typeof sketch) => Math.hypot(Number(graph.points[0].position[0]) - 35, Number(graph.points[0].position[1]) - 15);
-      expect(moved(result.graph)).toBeLessThanOrEqual(moved(oracle.graph) + 1e-9);
       if (degrees === 0) expect(result.graph.points[0].position).toEqual([35, 20]);
     }
   });
 
   it.each([
-    ['too-large',{ status: 'too-large' }, 'too-large'],
-    ['unavailable', { diagnosis: { kind: 'unavailable' } }, 'failed'],
-    ['suspected', { status: 'not-converged', diagnosis: { kind: 'suspected', labels: [2] } }, 'failed'],
-    ['not-converged', { status: 'not-converged' }, 'failed'],
-    ['unknown-freedom', { diagnosis: { kind: 'diagnosed', degreesOfFreedom: null, labels: [0] } }, 'failed'],
-    ['moved-fixed-value', { values: [1, 0, 9, 1] }, 'invalid-solution'],
-    ['graph-check', { values: [0, 0, 5, 1] }, 'invalid-solution']
-  ] as const)('falls back on %s, and keeps its own rejection unless PlaneGCS does better', async (reason, answer, rejection) => {
+    ['too-large', { status: 'too-large' }, 'too-large', 'A connected group of sketch relations is too large to solve. Split it into separate groups or remove relations.'],
+    ['unavailable', { diagnosis: { kind: 'unavailable' } }, 'failed', 'The sketch solver could not diagnose these relations.'],
+    ['suspected', { status: 'not-converged', diagnosis: { kind: 'suspected', labels: [2] } }, 'failed', 'Sketch relations could not be met together from this start.'],
+    ['not-converged', { status: 'not-converged' }, 'failed', 'The sketch solver did not produce a valid solution.'],
+    ['unknown-freedom', { diagnosis: { kind: 'diagnosed', degreesOfFreedom: null, labels: [0] } }, 'failed', 'The sketch solver did not produce a valid solution.'],
+    ['moved-fixed-value', { values: [1, 0, 9, 1] }, 'invalid-solution', 'The sketch solution changed fixed source geometry.'],
+    ['graph-check', { values: [0, 0, 5, 1] }, 'invalid-solution', 'The sketch solution does not satisfy its geometry and relations.']
+  ] as const)('rejects %s with native\'s own reason and message', async (reason, answer, rejection, message) => {
     const fixedGraph = parseCadSketchGraph({ ...graph, points: [{ id: 'a', position: ['0', '0'] }, graph.points[1]] });
-    const native = async () => fakeNative(() => answer as Partial<CadSketchNativeSolution>);
-    const solved = await createCadSketchTestSolver({ mode: 'planegcs' }).solve({ graph: fixedGraph, parameters: {} });
-    const rescued = runtime(native, planeGcsSolved(solved));
-    expect(await rescued.solver.solve({ graph: fixedGraph, parameters: {} })).toBe(solved);
-    expect(rescued.records[0]).toMatchObject({ answeredBy: 'planegcs', native: reason, planeGcs: 'solved' });
-    const unhelped = runtime(native, planeGcsSolved(failedResult));
-    const result = await unhelped.solver.solve({ graph: fixedGraph, parameters: {} });
-    expect(result).toMatchObject({ kind: 'rejected', reason: rejection });
+    const { solver, records } = runtime(async () => fakeNative(() => answer as Partial<CadSketchNativeSolution>));
+    const result = await solver.solve({ graph: fixedGraph, parameters: {} });
+    expect(result).toMatchObject({ kind: 'rejected', reason: rejection, message });
     expect(result.diagnostics.conflictingIds).toEqual([]);
-    expect(unhelped.records[0]).toMatchObject({ answeredBy: 'native', native: reason, planeGcs: 'failed' });
-    const thrown = runtime(native, { solve: async () => { throw new WebAssembly.RuntimeError('Aborted(OOM)'); } });
-    expect(await thrown.solver.solve({ graph: fixedGraph, parameters: {} })).toMatchObject({ kind: 'rejected', reason: rejection });
-    expect(thrown.records[0]).toMatchObject({ answeredBy: 'native', planeGcs: 'threw' });
+    expect(records[0]).toMatchObject({ native: reason });
   });
 
   it.each([
@@ -358,87 +328,127 @@ describe('native-first sketch solving', () => {
       { kind: 'solved', graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [6, 8] }] }, diagnostics: { status: 'success', degreesOfFreedom: null, conflictingIds: [] } }, 1],
     ['incomplete', { status: 'not-converged', diagnosis: { kind: 'incomplete', labels: [2] } },
       { kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'] } }, 0]
-  ] as const)('returns native\'s own answer on %s only when PlaneGCS does no better', async (reason, answer, own, movedGroups) => {
-    // Blame as a stalled start shows it, and a sketch some group of which was not diagnosed, are
-    // native's answers once PlaneGCS is gone; until then PlaneGCS is asked first.
-    const native = async () => fakeNative(() => answer as Partial<CadSketchNativeSolution>);
-    const solvedByPlaneGcs: CadSketchSolveResult = { kind: 'solved', graph, diagnostics: { ...noDiagnostics, status: 'success', degreesOfFreedom: 3 } };
-    const rescued = runtime(native, planeGcsSolved(solvedByPlaneGcs));
-    expect(await rescued.solver.solve(input)).toBe(solvedByPlaneGcs);
-    expect(rescued.records[0]).toMatchObject({ answeredBy: 'planegcs', native: reason, planeGcs: 'solved' });
-    for (const [planeGcs, outcome] of [[planeGcsSolved(failedResult), 'failed'], [{ solve: async () => { throw new Error('PlaneGCS failed.'); } }, 'threw']] as const) {
-      const unhelped = runtime(native, planeGcs);
-      expect(await unhelped.solver.solve(input)).toMatchObject(own);
-      // Native's own solution counts the groups it moved, as an answer does.
-      expect(unhelped.records[0]).toMatchObject({ answeredBy: 'native', native: reason, planeGcs: outcome, movedGroups, keptGroups: 0 });
-    }
-    const nativeOnly = runtime(native, planeGcsSolved(solvedByPlaneGcs), { mode: 'native-only' });
-    expect(await nativeOnly.solver.solve(input)).toMatchObject(own);
-    expect(nativeOnly.records[0]).toMatchObject({ answeredBy: 'native', native: reason, movedGroups, keptGroups: 0 });
-    expect(nativeOnly.loadPlaneGcs).not.toHaveBeenCalled();
+  ] as const)('answers %s with blame as its start shows or freedom unknown, recording why', async (reason, answer, own, movedGroups) => {
+    const { solver, records } = runtime(async () => fakeNative(() => answer as Partial<CadSketchNativeSolution>));
+    expect(await solver.solve(input)).toMatchObject(own);
+    // Its solution counts the groups it moved, as any answer does.
+    expect(records[0]).toMatchObject({ native: reason, movedGroups, keptGroups: 0 });
   });
 
-  it('rejects an input native refuses to compile as PlaneGCS does, without loading it', async () => {
-    const planeGcs = createCadSketchTestSolver({ mode: 'planegcs' });
+  it('rejects an input it refuses to compile as invalid', async () => {
     const circle = (value: number | string) => parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }],
       entities: [{ id: 'hole', kind: 'circle', construction: false, centerPointId: 'center', radius: 6 }],
       relations: [{ id: 'size', kind: 'radial-size', entityId: 'hole', quantity: typeof value === 'number' ? 'diameter' : 'radius', value }] });
     // A zero diameter and a negative radius parameter, as the CAD journeys enter to see them refused.
     const inputs: CadSketchSolveInput[] = [{ graph: circle(0), parameters: {} }, { graph: circle(' bend '), parameters: { bend: -1 } }];
     for (const refused of inputs) {
-      const { solver, records, loadPlaneGcs } = runtime(loadCadSketchTestNativeSolver, planeGcs);
-      const result = await solver.solve(refused);
-      expect(result).toMatchObject({ kind: 'rejected', reason: 'invalid-input', message: expect.stringContaining('Driving radius') });
-      expect(result).toEqual(await planeGcs.solve(refused));
-      expect(records).toEqual([expect.objectContaining({ answeredBy: 'native', native: 'compile' })]); expect(loadPlaneGcs).not.toHaveBeenCalled();
+      const { solver, records } = runtime(loadCadSketchTestNativeSolver);
+      expect(await solver.solve(refused)).toMatchObject({ kind: 'rejected', reason: 'invalid-input', message: expect.stringContaining('Driving radius'),
+        diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [], issues: [] } });
+      expect(records).toEqual([expect.objectContaining({ native: 'compile' })]);
     }
   });
 
-  it('answers definite conflicts natively and takes PlaneGCS whole when native cannot run', async () => {
-    const conflicting = runtime(async () => fakeNative(model => ({ status: 'not-converged', diagnosis: { kind: 'diagnosed', degreesOfFreedom: null, labels: model.equations.map(() => 2) } })), planeGcsSolved(failedResult));
-    expect(await conflicting.solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', conflictingIds: ['length'] } });
-    expect(conflicting.loadPlaneGcs).not.toHaveBeenCalled();
-    // A load failure is remembered; PlaneGCS answers, including its own rejections.
-    const unloadable = runtime(async () => { throw new Error('No module.'); }, planeGcsSolved(failedResult));
-    expect(await unloadable.solver.solve(input)).toBe(failedResult); expect(await unloadable.solver.solve(input)).toBe(failedResult);
-    expect(unloadable.loadNative).toHaveBeenCalledTimes(1); expect(unloadable.records[1]).toMatchObject({ answeredBy: 'planegcs', native: 'load-failed' });
-    const failing = runtime(async () => { throw new Error('No module.'); }, { solve: async () => { throw new Error('PlaneGCS stopped.'); } });
-    await expect(failing.solver.solve(input)).rejects.toThrow('PlaneGCS stopped.');
-    // A failed instance is replaced on the next solve; another protocol stops native for good.
+  it('answers definite conflicts', async () => {
+    const { solver, records } = runtime(async () => fakeNative(model => ({ status: 'not-converged', diagnosis: { kind: 'diagnosed', degreesOfFreedom: null, labels: model.equations.map(() => 2) } })));
+    expect(await solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', conflictingIds: ['length'] } });
+    expect(records[0]).toMatchObject({ native: 'answer', movedGroups: 0, keptGroups: 0 });
+  });
+});
+
+describe('native instance loading and failures', () => {
+  it('tries a load three times within a solve, waiting 250 ms and then 1 s', async () => {
+    let calls = 0;
+    const { solver, records, waits, loadNative } = runtime(async () => { if (++calls < 3) throw new TypeError('Failed to fetch'); return fakeNative(() => ({})); });
+    expect(await solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'invalid-solution' });
+    expect(waits).toEqual([250, 1000]); expect(loadNative).toHaveBeenCalledTimes(3);
+    expect(records[0]).toMatchObject({ native: 'graph-check', loadAttempts: 3 });
+  });
+
+  it('rejects a solve whose loads all fail, fails at once within a second of it, then tries again', async () => {
+    let calls = 0;
+    const { solver, records, waits, loadNative, clock } = runtime(async () => { if (++calls <= 3) throw new TypeError('Failed to fetch'); return loadCadSketchTestNativeSolver(); });
+    const unloaded = { kind: 'rejected', reason: 'failed', message: CAD_SKETCH_NATIVE_LOAD_FAILED, diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [] } };
+    expect(await solver.solve(input)).toMatchObject(unloaded);
+    expect(records[0]).toMatchObject({ native: 'load-failed', loadAttempts: 3 }); expect(waits).toEqual([250, 1000]);
+    // A drag's next frames within the second fail without waiting or loading.
+    clock.now += 999;
+    expect(await solver.solve(input)).toMatchObject(unloaded);
+    expect(records[1]).toMatchObject({ native: 'load-failed', loadAttempts: 0 }); expect(loadNative).toHaveBeenCalledTimes(3); expect(waits).toHaveLength(2);
+    clock.now += 1;
+    expect(await solver.solve(input)).toMatchObject({ kind: 'solved' });
+    expect(records[2]).toMatchObject({ native: 'answer', loadAttempts: 1 }); expect(loadNative).toHaveBeenCalledTimes(4);
+  });
+
+  it('never loads again a module speaking another protocol', async () => {
+    // Refused at load, as a module without the solver's exports is.
+    const withoutExports = runtime(async () => loadCadSketchNativeSolver(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])));
+    const incompatible = { kind: 'rejected', reason: 'failed', message: CAD_SKETCH_NATIVE_INCOMPATIBLE };
+    expect(await withoutExports.solver.solve(input)).toMatchObject(incompatible);
+    withoutExports.clock.now += 60_000;
+    expect(await withoutExports.solver.solve(input)).toMatchObject(incompatible);
+    expect(withoutExports.loadNative).toHaveBeenCalledTimes(1); expect(withoutExports.waits).toEqual([]);
+    expect(withoutExports.records).toMatchObject([{ native: 'incompatible', loadAttempts: 1 }, { native: 'incompatible' }]);
+    // Refused on its first reply, as another protocol version is.
+    const versioned = runtime(async () => fakeNative(() => { throw new CadSketchNativeProtocolError('Other protocol.'); }));
+    expect(await versioned.solver.solve(input)).toMatchObject(incompatible);
+    expect(await versioned.solver.solve(input)).toMatchObject(incompatible);
+    expect(versioned.loadNative).toHaveBeenCalledTimes(1);
+    expect(versioned.records).toMatchObject([{ native: 'incompatible', nativeReset: 'failure' }, { native: 'incompatible' }]);
+  });
+
+  it('solves again on a fresh instance when a used one fails, and rejects a failure on a fresh one', async () => {
+    // The first instance answers once, then traps; the second answers.
     let instances = 0;
-    const trapping = runtime(async () => { instances += 1; return instances === 1 ? fakeNative(() => { throw new WebAssembly.RuntimeError('unreachable'); }) : fakeNative(() => ({})); }, planeGcsSolved(failedResult));
-    expect(await trapping.solver.solve(input)).toBe(failedResult);
-    expect(trapping.records[0]).toMatchObject({ answeredBy: 'planegcs', native: 'failed', nativeReset: 'failure' });
+    const trapping = runtime(async () => {
+      let solves = 0;
+      return ++instances === 1 ? fakeNative(() => { if (solves++) throw new WebAssembly.RuntimeError('unreachable'); return {}; }) : loadCadSketchTestNativeSolver();
+    });
     await trapping.solver.solve(input);
-    expect(trapping.loadNative).toHaveBeenCalledTimes(2); expect(trapping.records[1]).toMatchObject({ native: 'graph-check' });
-    expect(trapping.records[1].nativeReset).toBeUndefined();
-    const versioned = runtime(async () => fakeNative(() => { throw new CadSketchNativeProtocolError('Other protocol.'); }), planeGcsSolved(failedResult));
-    await versioned.solver.solve(input); await versioned.solver.solve(input);
-    expect(versioned.loadNative).toHaveBeenCalledTimes(1); expect(versioned.records[1].native).toBe('load-failed');
-    // An instance holding too much memory is replaced after its solve.
-    const large = runtime(async () => fakeNative(() => ({}), 2 ** 27), planeGcsSolved(failedResult));
+    expect(await trapping.solver.solve(input)).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 3 } });
+    expect(trapping.records[1]).toMatchObject({ native: 'answer', nativeReset: 'failure', loadAttempts: 1 }); expect(trapping.loadNative).toHaveBeenCalledTimes(2);
+    // A fresh instance that fails is not tried again within the solve; the next solve loads another.
+    instances = 0;
+    const fresh = runtime(async () => ++instances === 1 ? fakeNative(() => { throw new WebAssembly.RuntimeError('unreachable'); }) : fakeNative(() => ({})));
+    expect(await fresh.solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'failed', message: CAD_SKETCH_NATIVE_FAILED });
+    expect(fresh.records[0]).toMatchObject({ native: 'failed', nativeReset: 'failure' }); expect(fresh.loadNative).toHaveBeenCalledTimes(1);
+    expect(await fresh.solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'invalid-solution' });
+    expect(fresh.records[1]).toMatchObject({ native: 'graph-check' }); expect(fresh.records[1].nativeReset).toBeUndefined();
+    // Failing again on the fresh instance it loaded, a used one's input is rejected.
+    const always = runtime(async () => { let solves = 0; return fakeNative(() => { if (solves++ || always.loadNative.mock.calls.length > 1) throw new WebAssembly.RuntimeError('unreachable'); return {}; }); });
+    await always.solver.solve(input);
+    expect(await always.solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'failed', message: CAD_SKETCH_NATIVE_FAILED });
+    expect(always.records[1]).toMatchObject({ native: 'failed', nativeReset: 'failure' }); expect(always.loadNative).toHaveBeenCalledTimes(2);
+  });
+
+  it('replaces an instance holding too much memory after its solve', async () => {
+    const large = runtime(async () => fakeNative(() => ({}), 2 ** 27));
     await large.solver.solve(input); await large.solver.solve(input);
     expect(large.records[0].nativeReset).toBe('memory'); expect(large.loadNative).toHaveBeenCalledTimes(2);
   });
 
-  it('runs overlapping solves one at a time, so the second gets a fresh instance after the first traps', async () => {
+  it('runs overlapping solves one at a time, so the second gets a fresh instance after the first fails', async () => {
     let instances = 0;
-    const { solver, records, loadNative, loadPlaneGcs } = runtime(async () => (instances += 1) === 1
-      ? fakeNative(() => { throw new WebAssembly.RuntimeError('unreachable'); }) : loadCadSketchTestNativeSolver(), planeGcsSolved(failedResult), { mode: 'native-only' });
+    const { solver, records, loadNative } = runtime(async () => (instances += 1) === 1
+      ? fakeNative(() => { throw new WebAssembly.RuntimeError('unreachable'); }) : loadCadSketchTestNativeSolver());
     const [first, second] = await Promise.all([solver.solve(input), solver.solve(input)]);
-    expect(first).toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.' });
+    expect(first).toMatchObject({ kind: 'rejected', reason: 'failed', message: CAD_SKETCH_NATIVE_FAILED });
     expect(second).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 3 } });
-    expect(records).toMatchObject([{ native: 'failed', nativeReset: 'failure' }, { answeredBy: 'native', native: 'answer' }]);
-    expect(loadNative).toHaveBeenCalledTimes(2); expect(loadPlaneGcs).not.toHaveBeenCalled();
+    expect(records).toMatchObject([{ native: 'failed', nativeReset: 'failure' }, { native: 'answer' }]);
+    expect(loadNative).toHaveBeenCalledTimes(2);
   });
 
-  it('runs only the selected solver in the comparison modes', async () => {
-    const planeGcsOnly = runtime(async () => fakeNative(() => ({})), planeGcsSolved(failedResult), { mode: 'planegcs' });
-    expect(await planeGcsOnly.solver.solve(input)).toBe(failedResult); expect(planeGcsOnly.loadNative).not.toHaveBeenCalled();
-    const nativeOnly = runtime(async () => fakeNative(() => ({ status: 'not-converged' })), planeGcsSolved(failedResult), { mode: 'native-only' });
-    expect(await nativeOnly.solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The sketch solver did not produce a valid solution.' });
-    expect(await nativeOnly.solver.solve({ ...input, drag: { pointId: 'b', position: [1, 1] } })).toMatchObject({ kind: 'rejected', reason: 'failed' });
-    expect(nativeOnly.loadPlaneGcs).not.toHaveBeenCalled();
+  it('fetches the module again after a failed download, and compiles it once', async () => {
+    const bytes = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
+    const responses = [() => Promise.reject(new TypeError('Failed to fetch')), () => Promise.resolve(new Response('Not found', { status: 404 })),
+      () => Promise.resolve(new Response(bytes))];
+    const fetchModule = vi.fn(async () => responses[fetchModule.mock.calls.length - 1]()) as unknown as typeof fetch & ReturnType<typeof vi.fn>;
+    const load = createCadSketchNativeModuleLoader('solver.wasm', fetchModule);
+    await expect(load()).rejects.toThrow('Failed to fetch');
+    await expect(load()).rejects.toThrow('could not be downloaded (HTTP 404)');
+    const compiled = await load();
+    expect(compiled).toBeInstanceOf(WebAssembly.Module);
+    expect(await load()).toBe(compiled); expect(fetchModule).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -464,6 +474,10 @@ describe('native solver instances', () => {
   it('reads a reply and frees both buffers', async () => {
     const solver = await loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data: reply }));
     for (let run = 0; run < 2; run++) expect(solver.solve(empty)).toEqual({ status: 'converged', iterations: 0, residual: 0, values: [], diagnosis: { kind: 'no-unknowns', labels: [] } });
+  });
+
+  it('refuses a module without the solver\'s exports as another protocol', async () => {
+    await expect(loadCadSketchNativeSolver(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]))).rejects.toBeInstanceOf(CadSketchNativeProtocolError);
   });
 
   it('reads a drag outcome only for a model with drag targets', async () => {

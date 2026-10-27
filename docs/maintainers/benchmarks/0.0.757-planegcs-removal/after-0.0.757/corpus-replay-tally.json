@@ -1,0 +1,13 @@
+{
+  "replayed": 1774,
+  "solvedAlike": 1338,
+  "rejectedAlike": 301,
+  "wellConstrained": 153,
+  "drags": 825,
+  "freeSolutions": 383,
+  "nativeSolvesRejected": 16,
+  "nativeSolvesTooLarge": 2,
+  "planeGcsThrew": 0,
+  "reviewed": 117,
+  "largestFreeDifference": 5.953226044798402
+}

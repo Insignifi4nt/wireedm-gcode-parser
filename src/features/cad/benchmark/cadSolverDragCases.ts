@@ -17,8 +17,8 @@ const distance = (id: string, from: string, to: string, value: number): CadSketc
  * Pointer paths through the cases that decide drag behavior. The die's slot frees one freedom of a
  * connected die and reverses, with frame 45 off its manifold. The arm's tip leaves a 20 mm reach
  * and returns; nearly straight frames are where native's rank estimate is least sure. The four-bar
- * is dragged far past reach, where PlaneGCS's single jump reassembles it the other way up. The
- * tangency case ends exactly on the tangency of a circle and a fixed axis.
+ * is dragged far past reach, where a single jump can reassemble it the other way up, as PlaneGCS's
+ * did before 0.0.757. The tangency case ends exactly on the tangency of a circle and a fixed axis.
  */
 export function createCadSolverDragTrajectories(): CadSolverDragTrajectory[] {
   const die = createCadSolverDieInput();

@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/third-party-sources
-          key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json', 'vendor/sketch-solver/planegcs-sources.json') }}
+          key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json') }}
       - name: Build
         run: |
           npm run release:check
