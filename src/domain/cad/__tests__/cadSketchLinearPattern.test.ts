@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { parseCadDocument } from '../cadSchema';
 import { applyCadEdits } from '../cadOperations';
 import type { CadEdit } from '../cadOperations';
-import type { CadSketchLinearPattern } from '../cadSketchGraph';
-import { cadSketchLinearPatternInstances, cadSketchLinearPatternLockReason, reconcileCadSketchLinearPattern } from '../cadSketchLinearPattern';
+import { isAcceptedCadSketchGraph, type CadSketchLinearPattern } from '../cadSketchGraph';
+import { cadSketchLinearPatternForSelection, cadSketchLinearPatternInstances, cadSketchLinearPatternLockReason, reconcileCadSketchLinearPattern } from '../cadSketchLinearPattern';
 import { circleRow, circleRowPart, rowSketch } from './cadSketchLinearPatternFixtures';
 const set = (relation: CadSketchLinearPattern): CadEdit => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation });
 
@@ -22,6 +22,22 @@ describe('persistent circle row source and ownership', () => {
     expect(rowSketch(regrown).graph.entities.map(entity => entity.id)).toEqual(['seed', 'holes_i1_e0', 'holes_i2_e0']);
     expect(rowSketch(regrown).graph.relations[0]).toMatchObject({ omittedInstances: [3] });
     expect(applyCadEdits(regrown, [set({ ...circleRow, omittedInstances: [3] })])).toEqual(regrown);
+  });
+  it('finds the same owners in an accepted graph as by scanning an unaccepted copy', () => {
+    const graph = rowSketch(applyCadEdits(circleRowPart(), [set({ ...circleRow, count: 5, omittedInstances: [2] })])).graph, copy = structuredClone(graph);
+    expect(isAcceptedCadSketchGraph(graph)).toBe(true); expect(isAcceptedCadSketchGraph(copy)).toBe(false);
+    const ids = [...graph.points.map(point => point.id), ...graph.entities.map(entity => entity.id), 'holes_i2_p0', 'holes_i2_e0', 'holes_i5_p0', 'holes_i5_e0', 'missing'];
+    for (const kind of ['point', 'entity'] as const) for (const id of ids)
+      expect(cadSketchLinearPatternForSelection(graph, { kind, id })).toEqual(cadSketchLinearPatternForSelection(copy, { kind, id }));
+    expect(cadSketchLinearPatternForSelection(graph, { kind: 'entity', id: 'seed' })).toEqual({ relation: graph.relations[0], index: 0 });
+    expect(cadSketchLinearPatternForSelection(graph, { kind: 'point', id: 'center' })).toEqual({ relation: graph.relations[0], index: 0 });
+    expect(cadSketchLinearPatternForSelection(graph, { kind: 'point', id: 'holes_i4_p0' })).toEqual({ relation: graph.relations[0], index: 4 });
+    expect(cadSketchLinearPatternForSelection(graph, { kind: 'entity', id: 'holes_i2_e0' })).toBeNull();
+    expect(cadSketchLinearPatternForSelection(graph, { kind: 'point', id: 'holes_i4_e0' })).toBeNull();
+    // Each accepted graph answers for itself, and a graph that can still change is read again.
+    expect(cadSketchLinearPatternForSelection(rowSketch(circleRowPart()).graph, { kind: 'entity', id: 'seed' })).toBeNull();
+    (copy.relations as unknown[]).length = 0;
+    expect(cadSketchLinearPatternForSelection(copy, { kind: 'entity', id: 'seed' })).toBeNull();
   });
   it('rejects forged members, aliases, drivers, cascade seed deletion and identity rebinding', () => {
     const patterned = applyCadEdits(circleRowPart(), [set(circleRow)]), sketch = rowSketch(patterned), before = JSON.stringify(patterned);

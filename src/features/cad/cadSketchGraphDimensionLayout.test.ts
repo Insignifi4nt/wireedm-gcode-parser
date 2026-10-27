@@ -130,9 +130,20 @@ describe('explicit graph distance layout', () => {
       {id:'overall',kind:'distance',pointIds:['a','b'],value:50},{id:'short',kind:'distance',pointIds:['a','c'],value:25}
     ]});
     const [overall,short]=linearDimensions(graph,{},.1), gap=((overall.line[0][0]-short.line[0][0])*.8-(overall.line[0][1]-short.line[0][1])*.6)/.1;
-    expect(gap).toBeGreaterThanOrEqual(18+2+8-1e-6);
+    // Moved just clear: label height, its lift and the margin, read across the turned label.
+    expect(gap).toBeCloseTo(18+2+8, 5);
     expect(overall.extensions[0][0]).toEqual(short.extensions[0][0]);
     expect(overall.arrows.map(arrow=>arrow[0])).toEqual(overall.line);
+  });
+
+  it('sizes each label from its own value when separating parallel dimensions', () => {
+    const offsets = (end: number) => linearDimensions(parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [1, 0] },
+      { id: 'c', position: [5, 0] }, { id: 'd', position: [end, 0] }], entities: [], relations: [
+      { id: 'short', kind: 'distance', pointIds: ['a', 'b'], value: 1 }, { id: 'wide', kind: 'distance', pointIds: ['c', 'd'], value: end - 5 }] }), {}, .1)
+      .map(dimension => dimension.line[0][1]);
+    // "1.2345 mm" reaches back over the "1 mm" label, so its line moves one label row further out; "1.5 mm" does not.
+    expect(offsets(6.2345)).toEqual([expect.closeTo(-2.8, 9), expect.closeTo(-5.6, 9)]);
+    expect(offsets(6.5)).toEqual([expect.closeTo(-2.8, 9), expect.closeTo(-2.8, 9)]);
   });
 
   it('leaves separated projected spans and nonparallel annotations at their original geometric offsets', () => {

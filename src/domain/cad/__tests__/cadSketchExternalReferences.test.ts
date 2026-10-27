@@ -5,7 +5,7 @@ import { applyCadEdits, CadEditSchema, reduceCadEditIntents } from '../cadOperat
 import type { CadDocument, CadFeature, CadSketchFeature } from '../cadDocument';
 import { assertCadSketchExternalReferences, cadSketchExternalReferenceComponents, cadSketchExternalReferenceForSelection,
   cadSketchExternalReferenceLockReason, cadSketchReferenceSources, prepareCadSketchUseEntity, refreshCadSketchExternalReferences } from '../cadSketchExternalReferences';
-import { checkCadSketchGraph, parseCadSketchGraph } from '../cadSketchGraph';
+import { checkCadSketchGraph, isAcceptedCadSketchGraph, parseCadSketchGraph } from '../cadSketchGraph';
 import { cadFeatureDependencies } from '../cadFeatureInputs';
 import { mapCadFeatureScalars } from '../cadParameters';
 import { translateCadSketchGraph } from '../cadSketchTranslation';
@@ -61,6 +61,21 @@ describe('persistent preceding graph references', () => {
     expect(mapCadFeatureScalars(target, value => value)).toEqual(target); expect(JSON.stringify(initial)).toBe(before);
     expect(() => applyCadEdits(accepted, [use])).toThrow('Duplicate');
     expect(Value.Check(CadEditSchema, { ...use, source: 'calculated geometry' })).toBe(false);
+  });
+
+  it('finds the same owning reference in an accepted graph as by scanning an unaccepted copy', () => {
+    const graph = graphOf(sketchOf(applyCadEdits(applyCadEdits(withoutReference(), [use]), [{ ...use, idPrefix: 'again' }]))), copy = structuredClone(graph);
+    expect(isAcceptedCadSketchGraph(graph)).toBe(true); expect(isAcceptedCadSketchGraph(copy)).toBe(false);
+    const ids = [...graph.points.map(point => point.id), ...graph.entities.map(entity => entity.id), ...graph.relations.map(relation => relation.id), 'missing'];
+    for (const kind of ['point', 'entity'] as const) for (const id of ids)
+      expect(cadSketchExternalReferenceForSelection(graph, { kind, id })).toEqual(cadSketchExternalReferenceForSelection(copy, { kind, id }));
+    expect(cadSketchExternalReferenceForSelection(graph, { kind: 'point', id: 'again_p1' })).toEqual(graph.relations[1]);
+    expect(cadSketchExternalReferenceForSelection(graph, { kind: 'entity', id: 'use_e0' })).toEqual(graph.relations[0]);
+    expect(cadSketchExternalReferenceForSelection(graph, { kind: 'entity', id: 'use_p0' })).toBeUndefined();
+    // Each accepted graph answers for itself, and a graph that can still change is read again.
+    expect(cadSketchExternalReferenceForSelection(graphOf(sketchOf(applyCadEdits(withoutReference(), [use]))), { kind: 'point', id: 'again_p1' })).toBeUndefined();
+    (copy.relations as unknown[]).length = 0;
+    expect(cadSketchExternalReferenceForSelection(copy, { kind: 'point', id: 'use_p1' })).toBeUndefined();
   });
 
   it('rejects stale or forged snapshots in strict parse/direct edits and refreshes only through an explicit solved-prefix helper', () => {

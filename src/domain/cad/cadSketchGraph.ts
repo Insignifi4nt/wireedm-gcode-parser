@@ -102,6 +102,11 @@ export type CadSketchGraphIssue = Immutable<Static<typeof CadSketchGraphIssueSch
 // never on how numeric values relate, so a solved copy with in-range numbers stays valid.
 const acceptedGraphs = new WeakSet<CadSketchGraph>();
 
+/** Whether `graph` is one of those trusted outputs, which cannot change, so facts read from it can be kept with it. */
+export function isAcceptedCadSketchGraph(graph: CadSketchGraph): boolean {
+  return acceptedGraphs.has(graph);
+}
+
 /** Parse unsolved intent without solving, changing scalars, or checking geometric residuals. */
 export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   if (typeof value === 'object' && value !== null && acceptedGraphs.has(value as CadSketchGraph)) return value as CadSketchGraph;

@@ -73,9 +73,15 @@ function separateAlignedDimensions(dimensions: readonly CadSketchGraphDimensionL
   const key = (dimension: AlignedDimension) => dimension.relation.id + '/' + dimension.kind + (dimension.kind === 'setback' ? dimension.side : '');
   const ordered = dimensions.flatMap((dimension, index) => isAlignedDimension(dimension) ? [{ dimension, index }] : [])
     .sort((a, b) => length(a.dimension) - length(b.dimension) || (key(a.dimension) < key(b.dimension) ? -1 : key(a.dimension) > key(b.dimension) ? 1 : 0));
+  // Each label is sized and turned once, not again for every dimension it is compared with.
+  const boxes = new Map<AlignedDimension, { readonly width: number; readonly height: number; readonly cos: number; readonly sin: number }>();
   const halfBox = (dimension: AlignedDimension, x: number, y: number) => {
-    const box = cadSketchGraphDimensionLabel(dimension.valueMm, dimension.kind, dimension.relation.kind === 'reference-dimension');
-    const cos = Math.cos(dimension.labelAngle), sin = Math.sin(dimension.labelAngle);
+    let box = boxes.get(dimension);
+    if (!box) {
+      const { width, height } = cadSketchGraphDimensionLabel(dimension.valueMm, dimension.kind, dimension.relation.kind === 'reference-dimension');
+      boxes.set(dimension, box = { width, height, cos: Math.cos(dimension.labelAngle), sin: Math.sin(dimension.labelAngle) });
+    }
+    const { cos, sin } = box;
     return (Math.abs(x * cos + y * sin) * box.width + Math.abs(y * cos - x * sin) * box.height) * mmPerPixel / 2;
   };
   const span = (dimension: AlignedDimension, x: number, y: number) => {
