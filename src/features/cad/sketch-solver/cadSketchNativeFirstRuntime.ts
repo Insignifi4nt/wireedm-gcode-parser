@@ -32,11 +32,12 @@ export interface CadSketchSolveRecord {
 export const CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 
 /**
- * Solves with the native solver first and asks PlaneGCS only when native cannot answer: compilation
- * it refuses, load failure, a failed instance, too large groups, unavailable or suspected
+ * Solves with the native solver first and asks PlaneGCS only when native cannot answer: load
+ * failure, a failed instance, too large groups, unavailable or suspected
  * diagnosis, conflicts blamed as a stalled sketch's start shows, a group not diagnosed, unknown
  * freedom, no convergence, a stalled drag, a drag diagnosed as conflicting or redundant where it
- * ended, or a solution that moves fixed values or fails the graph checks. A converged sketch whose
+ * ended, or a solution that moves fixed values or fails the graph checks. An input native refuses
+ * to compile is rejected natively as invalid, as PlaneGCS rejects it. A converged sketch whose
  * rank is too close to call, as near a tangency, is answered natively with freedom unknown. PlaneGCS
  * loads on first use. When native has its own result, a rejection, a solution with freedom unknown
  * or the frame where a drag stalled at feasible values, PlaneGCS's answer replaces it only if it
@@ -86,14 +87,15 @@ export function createCadSketchNativeFirstRuntime(options: {
           return attempt.result;
         }
       }
-      // Compilation is PlaneGCS's to answer outright while both solvers exist.
-      const own = attempt?.kind === 'fallback' && attempt.reason !== 'compile' ? attempt.own : undefined;
+      const own = attempt?.kind === 'fallback' ? attempt.own : undefined;
       const answerOwn = <T extends CadSketchSolveResult | undefined>(result: T): T => {
         record.answeredBy = 'native';
         if (result && attempt?.kind === 'fallback' && attempt.movedGroups !== undefined) { record.movedGroups = attempt.movedGroups; record.keptGroups = attempt.keptGroups; }
         return result;
       };
-      if (mode === 'native-only') {
+      // Both compilations validate an input through the same domain checks, so an input native
+      // refuses is refused by PlaneGCS too, with the same message.
+      if (mode === 'native-only' || attempt?.kind === 'fallback' && attempt.reason === 'compile') {
         return answerOwn(attempt?.kind === 'fallback' ? attempt.own : undefined) ?? { kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.',
           diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
       }
