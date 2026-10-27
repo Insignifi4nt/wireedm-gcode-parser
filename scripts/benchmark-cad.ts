@@ -42,7 +42,7 @@ function logDragPreview(dragPreview: DragPreview) {
 }
 const dragPreviewCalibrations = (dragPreview: DragPreview) =>
   [...dragPreview.independent, dragPreview.dependent.referenced, dragPreview.dependent.unreferenced].flatMap(preview => preview.cpuCalibrationMs);
-async function writeReport(prefix: string, report: { createdAt: string }) {
+async function writeReport<Report extends { createdAt: string }>(prefix: string, report: Report) {
   await mkdir('tmp/cad-benchmark', { recursive: true });
   const file = `tmp/cad-benchmark/${prefix}${report.createdAt.replace(/[:.]/g, '-')}.json`;
   await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
