@@ -20,6 +20,12 @@ export interface CadSketchFuzzCase {
   readonly perturbed: CadSketchSolveInput;
   /** A free point dragged a tenth of the sketch scale from the witness. */
   readonly drag: CadSketchSolveInput;
+  /**
+   * The same drag of the witness without its fixed points, fixed axes and expression positions: every
+   * relation left holds after any translation, so the target is reachable, at least by moving the
+   * whole sketch with the point.
+   */
+  readonly reachable: CadSketchSolveInput;
   /** The witness with two relations that cannot both hold. */
   readonly contradiction: { readonly input: CadSketchSolveInput; readonly relationIds: readonly [string, string] };
 }
@@ -277,7 +283,10 @@ export function createCadSketchFuzzCase(seed: number): CadSketchFuzzCase {
   const movable = sketch.points.filter(point => !point.expression && !sketch.fixed.has(point.id)), dragged = movable.length ? sketch.pick(movable) : sketch.points[0];
   const toward = add(dragged, polar(sketch.range(0, 2 * Math.PI)), .1 * sketch.scale);
   const drag = { ...witness, drag: { pointId: dragged.id, position: [toward.x, toward.y] as const } };
-  return { seed, witness, perturbed, drag, contradiction: contradict(sketch, witness) };
+  const contradiction = contradict(sketch, witness);
+  const translatable = sketch.relations.filter(relation => relation.kind !== 'fixed-point' && relation.kind !== 'fixed-axis');
+  const reachable = { graph: graphOf(sketch, point => [point.x, point.y], curve => curve.radius, translatable), parameters: witness.parameters, drag: drag.drag };
+  return { seed, witness, perturbed, drag, reachable, contradiction };
 }
 
 /** Adds a relation that cannot hold together with one already there, or a pair that cannot. */

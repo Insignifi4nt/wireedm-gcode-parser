@@ -250,6 +250,11 @@ fn a_satisfiable_sketch_held_on_a_saddle_is_not_blamed() {
     builder.equation(Kind::Difference, 0.0, &[p[0], q[0]]);
     builder.equation(Kind::PointOnLine, 0.0, &[q[0], q[1], c[0], c[1], d[0], d[1]]);
     assert_eq!(diagnose(&builder), (Status::NotConverged, Diagnosis::Suspected, None, vec![C; 4]));
+    // A repeat of the point-on-line relation holds at zero too, whatever value it carries: its
+    // residual ignores it, so the two are not blamed as repeats that cannot agree.
+    builder.equation(Kind::PointOnLine, 1.0, &[q[0], q[1], c[0], c[1], d[0], d[1]]);
+    let (status, diagnosis, _, _) = diagnose(&builder);
+    assert_eq!((status, diagnosis), (Status::NotConverged, Diagnosis::Suspected));
 }
 
 #[test]

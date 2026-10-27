@@ -490,9 +490,10 @@ fn repeated(system: &System, values: &[f64], start: &[f64], limits: Limits, work
     // Stable, so each function's equations stay in order.
     keyed.sort_by(|a, b| a.0.cmp(&b.0));
     let at_start = |p: usize| if system.column[p] == usize::MAX { values[p] } else { start[system.column[p]] };
+    // The value an equation is held at; a kind whose residual ignores `value` is held at zero.
+    let target = |e: usize| { let equation = &problem.equations[e]; if equation.kind.reads_value() { equation.value } else { 0.0 } };
     let tolerance = |e: usize| {
-        let equation = &problem.equations[e];
-        let scale = equation.operands.iter().fold(equation.value.abs().max(1.0), |scale, &p| scale.max(at_start(p).abs()));
+        let scale = problem.equations[e].operands.iter().fold(target(e).abs().max(1.0), |scale, &p| scale.max(at_start(p).abs()));
         ACCEPT_MM.max(8.0 * f64::EPSILON * scale)
     };
     let mut witnesses = Vec::new();
@@ -500,7 +501,7 @@ fn repeated(system: &System, values: &[f64], start: &[f64], limits: Limits, work
         let first = function[0].1;
         let held = |e: usize| {
             let equation = &problem.equations[e];
-            if equation.kind == Kind::Difference && equation.operands != problem.equations[first].operands { -equation.value } else { equation.value }
+            if equation.kind == Kind::Difference && equation.operands != problem.equations[first].operands { -target(e) } else { target(e) }
         };
         // The earliest equation of each value held so far.
         let mut held_values = vec![first];

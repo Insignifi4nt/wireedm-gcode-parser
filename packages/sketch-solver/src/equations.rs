@@ -37,6 +37,9 @@ impl Kind {
         Kind::PointOnLine, Kind::Parallel, Kind::Perpendicular, Kind::Angle, Kind::EqualLength, Kind::SymmetricMidpoint,
         Kind::SymmetricPerpendicular];
 
+    /// Whether the residual reads the equation's `value`; the other kinds hold at zero whatever it is.
+    pub fn reads_value(self) -> bool { matches!(self, Kind::Difference | Kind::Value | Kind::Distance | Kind::Angle) }
+
     /// Wire code; the order of `ALL` is the protocol.
     pub fn from_code(code: f64) -> Option<Kind> {
         if code.fract() != 0.0 || code < 0.0 { return None; }

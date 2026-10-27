@@ -14,14 +14,14 @@ import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
 const SEEDS = 150;
 /** Every input the generator makes for these seeds, hashed: a change needs a new generator version and a corpus update. */
-const GENERATED = { version: 1, hash: '1d76d92ddddb9ef5' };
+const GENERATED = { version: 1, hash: '5a91d8083a8e7992' };
 
 /** The smallest inputs of failures the fuzz found, kept whatever later generators make. */
 const regressions = decodeCorpusJson(readFileSync(new URL('./__tests__/fixtures/sketch-fuzz-regressions.json', import.meta.url), 'utf8')) as readonly {
   readonly seed: number; readonly version: number; readonly conflicting: readonly string[]; readonly input: CadSketchSolveInput }[];
 
-type Role = 'witness' | 'perturbed' | 'drag' | 'contradiction';
-const roles: readonly Role[] = ['witness', 'perturbed', 'drag', 'contradiction'];
+type Role = 'witness' | 'perturbed' | 'drag' | 'reachable' | 'contradiction';
+const roles: readonly Role[] = ['witness', 'perturbed', 'drag', 'reachable', 'contradiction'];
 const inputOf = (fuzz: CadSketchFuzzCase, role: Role) => role === 'contradiction' ? fuzz.contradiction.input : fuzz[role];
 const summary = (result: CadSketchSolveResult) => JSON.stringify([result.kind === 'solved' ? 'solved' : result.reason, result.diagnostics.degreesOfFreedom,
   result.diagnostics.conflictingIds, result.diagnostics.redundantIds, result.diagnostics.partiallyRedundantIds]);
@@ -50,6 +50,10 @@ function violation(fuzz: CadSketchFuzzCase, role: Role, input: CadSketchSolveInp
   if (role === 'drag') {
     const from = corpusDragDistance(input, input.graph), to = corpusDragDistance(input, result.graph);
     if (to > from + corpusDragAllowance(input, input.graph)) return `a drag ended ${to} from its target, further than its start ${from}`;
+  }
+  if (role === 'reachable') {
+    const to = corpusDragDistance(input, result.graph);
+    if (to > corpusDragAllowance(input, result.graph)) return `a drag ended ${to} from a target it can reach`;
   }
 }
 
@@ -91,7 +95,7 @@ describe('seeded native sketch solves', () => {
     }
     expect(problems).toEqual([]);
     // Each property is exercised, not passed vacuously.
-    for (const outcome of ['witness solved', 'witness redundant', 'perturbed solved', 'perturbed redundant', 'drag solved', 'drag redundant', 'contradiction conflicting'])
+    for (const outcome of ['witness solved', 'witness redundant', 'perturbed solved', 'perturbed redundant', 'drag solved', 'drag redundant', 'reachable solved', 'contradiction conflicting'])
       expect(outcomes.get(outcome) ?? 0, outcome).toBeGreaterThanOrEqual(10);
 
     const fresh = createCadSketchTestSolver();
