@@ -10,5 +10,7 @@ export default defineConfig({
   test: build
     ? { globals: true, environment: 'node', include: ['src/features/cad/sketch-solver/native/__tests__/planeGcsCorpusBuild.corpus.ts'], testTimeout: 600_000 }
     : { globals: true, environment: 'jsdom', maxWorkers: 4, include: ['src/features/cad/**/*.{test,spec}.{ts,tsx}'],
+      // The replay solves every record already in the corpus; capturing it would only echo them.
+      exclude: ['**/node_modules/**', 'src/features/cad/sketch-solver/__tests__/planeGcsCorpus.test.ts'],
       setupFiles: ['./src/testSetup.ts', './src/features/cad/sketch-solver/native/__tests__/planeGcsCorpusCapture.ts'] }
 });

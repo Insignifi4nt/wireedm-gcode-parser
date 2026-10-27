@@ -1,0 +1,24 @@
+{
+  "version": "0.0.755",
+  "previousVersion": "0.0.754",
+  "postCompatibility": "preserved-output-native-solver-contracts",
+  "summary": "The sketch tests now hold the app's own sketch solver to its contracts without PlaneGCS, so PlaneGCS can be removed without losing what it showed. The shared test solver answers with native alone and fails any solve whose native module could not load or trapped; only the tests of the fallback itself still ask PlaneGCS. What a sketch solve promises its callers (input captured before an asynchronous load, fixed values and expressions kept, diagnosis order, results rebuilt across the worker boundary) is now tested natively, with injected faulty solvers proving that a moved fixed reference and a missed arc closure are still rejected; the PlaneGCS runtime suite keeps only what PlaneGCS alone does. A frozen corpus keeps PlaneGCS's answer to each of the 1,043 distinct sketch solves the CAD suites make, with the equations native must compile each one to; a replay test with no PlaneGCS answers every record natively and fails on any difference not reviewed by input hash. The 43 reviewed differences each say why native's answer stands. Every CAD browser journey now fails if any page or worker requests PlaneGCS, so a passing journey had every sketch solve answered natively.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. The app's solving is unchanged: it still asks PlaneGCS when native falls back. Only tests, test fixtures and maintainer scripts change.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal, worker reply or native protocol change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "The full Vitest suite, the native-differential project, the corpus replay (1,043 records: 942 solved alike, 50 rejected alike, 4 that PlaneGCS rejected and native solves, 4 that PlaneGCS refused as invalid or too large, 43 reviewed differences), build, lint and ui:check pass. CAD browser journeys run with the PlaneGCS request guard (single journeys locally, all of them in CI); a deliberately failing control journey showed the guard catches a PlaneGCS request."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Sketch solving is tested against the app's own solver alone.",
+    "changes": [
+      "Checks every sketch test against the app's own solver, with a record of PlaneGCS's answers to compare against."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
