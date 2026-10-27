@@ -10,7 +10,7 @@
     "capabilities": "No post or machine capability change and no new application controls.",
     "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
     "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved CAD files are byte for byte the same.",
-    "verification": "A corpus test parses documents listing accepted features and their variants both as they are and as structured clones and requires the same outcome; all 964 such parses in a full suite run matched. Three bundled preview runs of 30 samples alternating with three of 0.0.761; the full Vitest suite, lint, ui:check, build, solver:check and the release check."
+    "verification": "A corpus test parses documents listing accepted features and their variants both as they are and as structured clones and requires the same outcome; all 1,508 such parses in a full suite run matched, apart from the deliberate getter and proxy cases. Three bundled preview runs of 30 samples alternating with three of 0.0.761; the full Vitest suite, lint, ui:check, build, solver:check and the release check."
   },
   "testedPosts": [],
   "publicNotes": {
