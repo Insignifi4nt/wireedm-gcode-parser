@@ -22,6 +22,7 @@ import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './
 import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
 import { CadSketchGraphSchema, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
 import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
+import { readCadSketchGeometryParameters, sameCadSketchGeometryValues } from './cadSketchParameterReads';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
 export { CadPathSegmentSchema } from './cadPrimitives';
 
@@ -84,6 +85,11 @@ const acceptedSketchSources = new WeakSet<CadSketchFeature>();
 // new document listing it takes it as it is; checks that read the document still run.
 const acceptedFeatures = new WeakSet<object>();
 const isAcceptedFeature = (item: unknown): item is CadFeature => typeof item === 'object' && item !== null && acceptedFeatures.has(item);
+// Accepted sketches whose geometry was valid, and accepted extrudes and revolves whose sketch had regions
+// to use, each under the values of the parameters the sketch reads. The checks resolve only the frozen
+// features and those values, so the same values give the same success. Failures are never kept.
+const validSketches = new WeakMap<CadSketchFeature, readonly (number | undefined)[]>();
+const usableSketches = new WeakMap<CadFeature, { readonly sketch: CadSketchFeature; readonly values: readonly (number | undefined)[] }>();
 // The document schema with its features left to `CadFeatureSchema`, one by one.
 const CadDocumentEnvelopeSchema = { ...CadDocumentSchema, properties: { ...CadDocumentSchema.properties, features: Type.Array(Type.Unknown()) } };
 
@@ -123,6 +129,15 @@ export function isAcceptedCadSketchSource(sketch: CadSketchFeature): boolean {
   return acceptedSketchSources.has(sketch);
 }
 
+/**
+ * Whether an accepted sketch's geometry was found valid under the values it reads from these parameters.
+ * Its graph's relations then hold under them too, since compiling the graph requires that.
+ */
+export function hasValidCadSketchGeometry(sketch: CadSketchFeature, parameters: CadDocument['parameters']): boolean {
+  const valid = validSketches.get(sketch), reads = valid && readCadSketchGeometryParameters(sketch, parameters);
+  return Boolean(valid && reads && sameCadSketchGeometryValues(reads.values, valid));
+}
+
 /** Strict boundary parser. Never rewrites IDs, geometry, units or saved expressions. */
 export function parseCadDocument(value: unknown): CadDocument {
   if (typeof value === 'object' && value !== null && acceptedDocuments.has(value as CadDocument)) return value as CadDocument;
@@ -149,6 +164,8 @@ export function parseCadDocument(value: unknown): CadDocument {
   const visibleBodies = new Set<string>();
   const expandedInstances = new Map<string, number>();
   let instanceBudget = 0;
+  // Kept only once the whole document is accepted, with every feature they name.
+  const certificates: (() => void)[] = [];
   const e = (value: number | string) => evaluateCadScalar(value, document.parameters);
   for (const feature of document.features) {
     if (previous.has(feature.id)) throw new CadError('duplicate-id', `Duplicate feature ID "${feature.id}".`);
@@ -218,7 +235,11 @@ export function parseCadDocument(value: unknown): CadDocument {
             dimensionIds.add(constraint.id);
           }
         }
-        validateCadSketchGeometry(feature, document.parameters);
+        const reads = readCadSketchGeometryParameters(feature, document.parameters), valid = validSketches.get(feature);
+        if (!reads || !valid || !sameCadSketchGeometryValues(reads.values, valid)) {
+          validateCadSketchGeometry(feature, reads?.environment ?? document.parameters);
+          if (reads) certificates.push(() => validSketches.set(feature, reads.values));
+        }
         if (!feature.suppressed) resolveCadSketchPlacement(feature, document.parameters, datumLookup);
         break;
       }
@@ -226,8 +247,14 @@ export function parseCadDocument(value: unknown): CadDocument {
         const sketch = previous.get(feature.sketchId);
         if (sketch?.kind !== 'sketch') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding sketch.`);
         if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
-        if (!feature.suppressed && (sketch.suppressed || !resolveCadSketchRegions(sketch, document.parameters,
-          feature.kind === 'extrude' ? feature.regionSelection : undefined).length)) throw new CadError('empty-sketch', `Feature "${feature.name}" needs an active nonempty sketch.`);
+        if (!feature.suppressed) {
+          const reads = sketch.suppressed ? null : readCadSketchGeometryParameters(sketch, document.parameters), usable = usableSketches.get(feature);
+          if (!reads || usable?.sketch !== sketch || !sameCadSketchGeometryValues(reads.values, usable.values)) {
+            if (sketch.suppressed || !resolveCadSketchRegions(sketch, reads?.environment ?? document.parameters,
+              feature.kind === 'extrude' ? feature.regionSelection : undefined).length) throw new CadError('empty-sketch', `Feature "${feature.name}" needs an active nonempty sketch.`);
+            if (reads) certificates.push(() => usableSketches.set(feature, { sketch, values: reads.values }));
+          }
+        }
         if (feature.kind === 'extrude') {
           const distance = e(feature.distance);
           if (Math.abs(distance) <= 1e-7 || Math.abs(distance) > 1e6) throw new CadError('invalid-dimension', 'Extrusion distance must be nonzero and within one million millimetres.');
@@ -292,6 +319,7 @@ export function parseCadDocument(value: unknown): CadDocument {
     acceptedFeatures.add(feature);
     if (feature.kind === 'sketch') acceptedSketchSources.add(feature);
   }
+  certificates.forEach(certify => certify());
   acceptedDocuments.add(document);
   return document;
 }

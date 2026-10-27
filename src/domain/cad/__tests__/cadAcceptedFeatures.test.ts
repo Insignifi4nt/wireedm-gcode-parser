@@ -48,6 +48,7 @@ function corpus(): readonly (readonly [string, CadDocument])[] {
   return [
     ...createCadKernelBenchmarkCases().flatMap(kernelCase => kernelCase.steps.map(step => [`${kernelCase.id} ${step.label}`, step.document] as const)),
     ['independent graph sketches', createCadBenchmarkDragPreview(3, 2).document],
+    ['extruded graph sketches', createCadBenchmarkDragPreview(3, 2, true).document],
     ['a used edge', createCadBenchmarkDependentDragPreview(2).document],
     ['a used line with a midpoint and a consumer', lineReferencePart(true, true)],
     ['a used circle', circleReferencePart(true)],

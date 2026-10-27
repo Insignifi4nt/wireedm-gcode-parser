@@ -114,14 +114,16 @@ export function createCadBenchmarkRectangleGraph(count: number, prefix = 'r', so
  * Drag-preview workload: sketchCount independent graph sketches (no external references),
  * dragging the first rectangle of the first sketch, whose fixed corner is released so the drag
  * moves it. Today every sketch is re-solved per preview; an edited-sketch-only preparation
- * should solve one.
+ * should solve one. `padded` extrudes each sketch too, as most parts do, so every preview also
+ * checks that each extrude's sketch still has regions.
  */
-export function createCadBenchmarkDragPreview(sketchCount: number, rectanglesPerSketch: number): { document: CadDocument; edit: CadEdit } {
-  const features: CadFeature[] = Array.from({ length: sketchCount }, (_, index): CadSketchFeature => {
+export function createCadBenchmarkDragPreview(sketchCount: number, rectanglesPerSketch: number, padded = false): { document: CadDocument; edit: CadEdit } {
+  const features: CadFeature[] = Array.from({ length: sketchCount }, (_, index): CadFeature[] => {
     const graph = createCadBenchmarkRectangleGraph(rectanglesPerSketch, `s${index}r`, true);
-    return { ...base(`sketch_${index}`), kind: 'sketch', plane: 'XY', offset: index * 5, profiles: [],
+    const sketch: CadSketchFeature = { ...base(`sketch_${index}`), kind: 'sketch', plane: 'XY', offset: index * 5, profiles: [],
       graph: index ? graph : { ...graph, relations: graph.relations.filter(relation => relation.id !== 's0r0_fixed') } };
-  });
+    return padded ? [sketch, { ...base(`pad_${index}`), kind: 'extrude', sketchId: sketch.id, distance: 2, symmetric: false, operation: 'new', targetId: null }] : [sketch];
+  }).flat();
   return { document: parseCadDocument({ format: 'wireedm-cad', schemaVersion: 2, id: 'drag_preview', name: 'drag_preview', units: 'mm', parameters: {}, features }),
     edit: { kind: 'move-sketch-point', sketchId: 'sketch_0', pointId: 's0r0_p2', translation: [0.5, 0.25] } };
 }

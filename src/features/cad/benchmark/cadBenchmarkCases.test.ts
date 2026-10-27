@@ -53,6 +53,10 @@ describe('CAD benchmark cases', () => {
       expect(Number(point.position[1]) - Number(original[index].position[1])).toBeCloseTo(.25, 6);
     }
     expect(prepared.document.features.slice(1)).toEqual(document.features.slice(1));
+    // The padded variant extrudes each sketch, and a drag keeps every extrude.
+    const padded = createCadBenchmarkDragPreview(3, 2, true);
+    expect(padded.document.features.map(feature => `${feature.kind} ${feature.id}`)).toEqual(['sketch sketch_0', 'extrude pad_0', 'sketch sketch_1', 'extrude pad_1', 'sketch sketch_2', 'extrude pad_2']);
+    expect((await prepareCadEdits(padded.document, [padded.edit], solver)).document.features.slice(1)).toEqual(padded.document.features.slice(1));
   });
 
   it('re-solves a reference dependent only when the drag moves what it references', async () => {

@@ -251,15 +251,19 @@ async function measurePreview(solver: CadSketchSolver, document: CadDocument, ed
 
 /** One drag-preview preparation of a single point move, across documents with more independent sketches. */
 export async function measureCadDragPreview(solver: CadSketchSolver, options: { sketchCounts: readonly number[]; rectanglesPerSketch: number; runs: number }) {
-  const independent = [];
+  const independent = [], padded = [];
   for (const sketchCount of options.sketchCounts) {
     const { document, edit } = createCadBenchmarkDragPreview(sketchCount, options.rectanglesPerSketch);
     independent.push({ sketchCount, rectanglesPerSketch: options.rectanglesPerSketch, ...await measurePreview(solver, document, edit, options.runs) });
+  }
+  for (const sketchCount of options.sketchCounts) {
+    const { document, edit } = createCadBenchmarkDragPreview(sketchCount, options.rectanglesPerSketch, true);
+    padded.push({ sketchCount, rectanglesPerSketch: options.rectanglesPerSketch, ...await measurePreview(solver, document, edit, options.runs) });
   }
   const { document, referencedEdit, unreferencedEdit } = createCadBenchmarkDependentDragPreview(options.rectanglesPerSketch);
   const dependent = {
     referenced: await measurePreview(solver, document, referencedEdit, options.runs),
     unreferenced: await measurePreview(solver, document, unreferencedEdit, options.runs)
   };
-  return { independent, dependent };
+  return { independent, padded, dependent };
 }
