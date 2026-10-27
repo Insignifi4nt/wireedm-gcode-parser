@@ -21,7 +21,7 @@ const why = {
   tangencyStall: 'With nothing free, native stalls at its start on the way to a tangency, where its relations are met; PlaneGCS creeps on.',
   mirroredSmallScale: 'PlaneGCS mirrors the 0.02 mm rectangle beside a 20 mm one across its fixed corner; native keeps the side it started on.',
   perturbedRedundant: 'Moved off its witness, the sketch keeps the relation PlaneGCS calls redundant there: native diagnoses where it solves and answers as PlaneGCS does at the witness, while PlaneGCS diagnoses the moved start, where that relation is not yet implied, and solves or calls it conflicting.',
-  perturbedRedundantInvalid: 'Moved off its witness, the sketch keeps the relation PlaneGCS calls redundant there, and native answers as PlaneGCS does at the witness; PlaneGCS solves from the moved start to a solution that misses an arc's radii and three relations.',
+  perturbedRedundantInvalid: 'Moved off its witness, the sketch keeps the relation PlaneGCS calls redundant there, and native answers as PlaneGCS does at the witness; PlaneGCS solves from the moved start to a solution that misses the radii of an arc and three relations.',
   draggedRedundant: 'Dragged with a relation PlaneGCS calls redundant at rest, native answers as PlaneGCS does at rest, the same relation redundant with the same freedom; PlaneGCS calls it conflicting with relations it depends on.',
   draggedRepeatsUndecided: 'Dragged with three equal diameters, which both call redundant at rest, native names one repeat where the drag ends, with freedom too close to call; PlaneGCS calls all three conflicting.',
   repeatNaming: 'Of relations that repeat what others fix, PlaneGCS names the first, though the later ones would still repeat it without it; native names each later relation with a row the others imply, with the same freedom.',
@@ -90,7 +90,7 @@ export const reviewedCorpusDifferences = new Map<string, Reviewed>([
   ['89463f19e2ca8ac7', { differs: ['drag-further'], native: 'solved success dof=1', why: why.fourBarReassembly, dragMm: 32.53 }],
   ['f815c7400240750c', { differs: ['drag-further'], native: 'solved success dof=1', why: why.fourBarReassembly, dragMm: 32.53 }],
   ['3f672252a867403a', { differs: ['drag-further'], native: 'solved success dof=0', why: why.tangencyStall, dragMm: 7.501e-6 }],
-  ['f573371195c8132a', { differs: ['geometry-differs'], native: 'solved success dof=0', why: why.mirroredSmallScale, geometryMm: 0.02001 }]
+  ['f573371195c8132a', { differs: ['geometry-differs'], native: 'solved success dof=0', why: why.mirroredSmallScale, geometryMm: 0.02001 }],
   ['46bbba071c77a572', { differs: ['native-rejects-solved'], native: 'redundant success dof=6 redundant=r12', why: why.perturbedRedundant }],
   ['a19c72130c6a5dc7', { differs: ['reason-differs', 'freedom-differs', 'ids-differ'], native: 'redundant success dof=5 redundant=r22', why: why.perturbedRedundant }],
   ['c07572dc321a744f', { differs: ['native-rejects-solved'], native: 'redundant success dof=1 redundant=r9', why: why.perturbedRedundant }],
