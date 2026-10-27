@@ -3,7 +3,7 @@ mod common;
 use common::Builder;
 use sketch_solver::diagnose::{CONFLICTING, REDUNDANT};
 use sketch_solver::equations::Kind;
-use sketch_solver::newton::{LIMITS, Limits, Outcome};
+use sketch_solver::newton::{LIMITS, Limits, MAX_ITERATIONS, Outcome};
 use sketch_solver::problem::Status;
 
 type Solved = (Outcome, Vec<f64>);
@@ -119,6 +119,43 @@ fn a_midpoint_left_over_a_class_is_solved_in_its_column() {
 }
 
 #[test]
+fn a_midpoint_inside_one_class_holds_as_a_row_that_must_already_hold() {
+    // Its ends and middle move as one class, so it reads only their offsets: `b - a = 0` makes it
+    // hold wherever the class moves, and `b - a = 2` makes it fail everywhere.
+    for (offset, met) in [(0.0, true), (2.0, false)] {
+        let mut builder = Builder::new();
+        let a = builder.parameter(0.0, false);
+        let b = builder.parameter(10.0, false);
+        builder.equation(Kind::Difference, offset, &[a, b]);
+        builder.equation(Kind::Midpoint, 0.0, &[a, a, b]);
+        let (eliminated, whole) = both(&builder);
+        if met {
+            assert_eq!((eliminated.1[a], eliminated.1[b], eliminated.0.iterations), (5.0, 5.0, 0));
+            assert!(whole.0.iterations > 0 && agrees(&eliminated, &whole), "{:?} {:?}", eliminated, whole);
+        } else {
+            assert!(whole.0.labels.contains(&CONFLICTING) && identical(&eliminated, &whole), "{:?} {:?}", eliminated.0, whole.0);
+        }
+    }
+}
+
+#[test]
+fn where_the_whole_solve_runs_out_of_iterations_the_classes_can_still_converge() {
+    // Found in review: each midpoint halves the next unknown's distance to `z`, a chain so badly
+    // scaled that the whole solve stops at its iteration limit just short of polish. The classes
+    // converge, and every row of the group holds where they end. This is the one way elimination
+    // changes a status: wherever its smaller solve or a check falls short, the group is solved whole.
+    let mut builder = Builder::new();
+    let z = builder.parameter(0.0, true);
+    let x: Vec<usize> = (0..21).map(|_| builder.parameter(100.0, false)).collect();
+    builder.equation(Kind::Value, 0.0, &[x[0]]);
+    for i in 0..20 { builder.equation(Kind::Midpoint, 0.0, &[x[i + 1], z, x[i]]); }
+    let (eliminated, whole) = both(&builder);
+    assert_eq!((whole.0.status, whole.0.iterations), (Status::NotConverged, MAX_ITERATIONS), "{:?}", whole.0);
+    let e = &eliminated.0;
+    assert!(e.status == Status::Converged && e.residual <= 1e-15 && e.degrees_of_freedom == Some(0) && e.labels.iter().all(|&label| label == 0), "{e:?}");
+}
+
+#[test]
 fn a_repeated_midpoint_is_solved_whole() {
     // Left to solve, a dependent row that holds only nearly would be traded against the others by
     // the whole solve, so any dependent row but a constant one sends the group whole.
@@ -156,7 +193,8 @@ fn pins_that_hold_only_nearly_are_solved_whole() {
 #[test]
 fn far_from_the_origin_the_whole_solve_stops_within_its_tolerance_of_where_the_classes_land() {
     // Each solve stops once its rows are polished, within a tolerance that grows with the
-    // coordinates: here the whole solve stops about 1.2e-7 mm short of the solution.
+    // coordinates: here the whole solve stops 1.2e-7 mm from the solution in y and 2.4e-7 mm in x,
+    // about 2.7e-7 mm away.
     let mut builder = Builder::new();
     let f = builder.parameter(-1e9, true);
     let x = builder.parameter(1e9 + 0.2, false);

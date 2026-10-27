@@ -20,6 +20,10 @@
 //! sends the group whole from its start, as before. A group with a bent row can have several
 //! separate solutions, and the two solves can reach different ones, so it is solved whole too; so
 //! are a drag, a start already polished, and a smaller solve or diagnosis that falls short.
+//!
+//! So elimination changes a group's status in one way only: the smaller system can converge where
+//! the whole one runs out of iterations, as on a long, badly scaled chain of midpoints. The group
+//! then converges, with every one of its rows checked where the classes end.
 
 use super::{ColumnMap, GroupOutcome, Limits, MAX_ITERATIONS, Row, System, assess, diagnose_group, solve_group_within, worst};
 use crate::diagnose::{TAU, Witness};
@@ -127,13 +131,17 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, r
         };
     }
     // A free class is one column of the reduced system when a row left reads it; a row that reads
-    // none is constant.
+    // none is constant. So is a midpoint whose ends and middle are all of one free class: its
+    // weights on that class sum to zero.
     let free = |p: usize| column[p] != NONE && pin[classes.root[column[p]]].is_none();
     let mut read = vec![false; n];
     for (index, equation) in equations.iter().enumerate() {
         if role[index] != Role::Kept { continue; }
+        let class = |p: usize| free(p).then(|| classes.root[column[p]]);
+        let one_class = equation.kind == Kind::Midpoint && class(equation.operands[0]).is_some()
+            && equation.operands.iter().all(|&p| class(p) == class(equation.operands[0]));
+        if one_class || !equation.operands.iter().any(|&p| free(p)) { role[index] = Role::Constant; continue; }
         for &p in &equation.operands { if free(p) { read[classes.root[column[p]]] = true; } }
-        if !equation.operands.iter().any(|&p| free(p)) { role[index] = Role::Constant; }
     }
     let roots: Vec<usize> = (0..n).filter(|&i| classes.root[i] == i).collect();
     let (mut class_column, mut unknowns) = (vec![NONE; n], Vec::new());
