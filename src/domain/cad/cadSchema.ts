@@ -22,7 +22,7 @@ import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './
 import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
 import { CadSketchGraphSchema, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
 import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
-import { readCadSketchGeometryParameters, sameCadSketchGeometryValues } from './cadSketchParameterReads';
+import { sameCadSketchGeometryParameters } from './cadSketchParameterReads';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
 export { CadPathSegmentSchema } from './cadPrimitives';
 
@@ -86,10 +86,11 @@ const acceptedSketchSources = new WeakSet<CadSketchFeature>();
 const acceptedFeatures = new WeakSet<object>();
 const isAcceptedFeature = (item: unknown): item is CadFeature => typeof item === 'object' && item !== null && acceptedFeatures.has(item);
 // Accepted sketches whose geometry was valid, and accepted extrudes and revolves whose sketch had regions
-// to use, each under the values of the parameters the sketch reads. The checks resolve only the frozen
-// features and those values, so the same values give the same success. Failures are never kept.
-const validSketches = new WeakMap<CadSketchFeature, readonly (number | undefined)[]>();
-const usableSketches = new WeakMap<CadFeature, { readonly sketch: CadSketchFeature; readonly values: readonly (number | undefined)[] }>();
+// to use, each with the parameters of the document they were checked in. The checks read only the frozen
+// features and the values of the parameters the sketch names, so a parse in which the sketch reads the same
+// values skips them. Those names are collected only when a parse lists the sketch again. Failures are never kept.
+const validSketches = new WeakMap<CadSketchFeature, CadDocument['parameters']>();
+const usableSketches = new WeakMap<CadFeature, { readonly sketch: CadSketchFeature; readonly parameters: CadDocument['parameters'] }>();
 // The document schema with its features left to `CadFeatureSchema`, one by one.
 const CadDocumentEnvelopeSchema = { ...CadDocumentSchema, properties: { ...CadDocumentSchema.properties, features: Type.Array(Type.Unknown()) } };
 
@@ -134,8 +135,8 @@ export function isAcceptedCadSketchSource(sketch: CadSketchFeature): boolean {
  * Its graph's relations then hold under them too, since compiling the graph requires that.
  */
 export function hasValidCadSketchGeometry(sketch: CadSketchFeature, parameters: CadDocument['parameters']): boolean {
-  const valid = validSketches.get(sketch), reads = valid && readCadSketchGeometryParameters(sketch, parameters);
-  return Boolean(valid && reads && sameCadSketchGeometryValues(reads.values, valid));
+  const checked = validSketches.get(sketch);
+  return Boolean(checked && sameCadSketchGeometryParameters(sketch, checked, parameters));
 }
 
 /** Strict boundary parser. Never rewrites IDs, geometry, units or saved expressions. */
@@ -235,10 +236,10 @@ export function parseCadDocument(value: unknown): CadDocument {
             dimensionIds.add(constraint.id);
           }
         }
-        const reads = readCadSketchGeometryParameters(feature, document.parameters), valid = validSketches.get(feature);
-        if (!reads || !valid || !sameCadSketchGeometryValues(reads.values, valid)) {
-          validateCadSketchGeometry(feature, reads?.environment ?? document.parameters);
-          if (reads) certificates.push(() => validSketches.set(feature, reads.values));
+        const checked = validSketches.get(feature);
+        if (!checked || !sameCadSketchGeometryParameters(feature, checked, document.parameters)) {
+          validateCadSketchGeometry(feature, document.parameters);
+          certificates.push(() => validSketches.set(feature, document.parameters));
         }
         if (!feature.suppressed) resolveCadSketchPlacement(feature, document.parameters, datumLookup);
         break;
@@ -248,11 +249,12 @@ export function parseCadDocument(value: unknown): CadDocument {
         if (sketch?.kind !== 'sketch') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding sketch.`);
         if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
         if (!feature.suppressed) {
-          const reads = sketch.suppressed ? null : readCadSketchGeometryParameters(sketch, document.parameters), usable = usableSketches.get(feature);
-          if (!reads || usable?.sketch !== sketch || !sameCadSketchGeometryValues(reads.values, usable.values)) {
-            if (sketch.suppressed || !resolveCadSketchRegions(sketch, reads?.environment ?? document.parameters,
+          // Only an active sketch with regions is kept, so the same sketch object is still active.
+          const usable = usableSketches.get(feature);
+          if (usable?.sketch !== sketch || !sameCadSketchGeometryParameters(sketch, usable.parameters, document.parameters)) {
+            if (sketch.suppressed || !resolveCadSketchRegions(sketch, document.parameters,
               feature.kind === 'extrude' ? feature.regionSelection : undefined).length) throw new CadError('empty-sketch', `Feature "${feature.name}" needs an active nonempty sketch.`);
-            if (reads) certificates.push(() => usableSketches.set(feature, { sketch, values: reads.values }));
+            certificates.push(() => usableSketches.set(feature, { sketch, parameters: document.parameters }));
           }
         }
         if (feature.kind === 'extrude') {
