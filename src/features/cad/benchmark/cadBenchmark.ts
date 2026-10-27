@@ -238,8 +238,12 @@ async function measurePreview(solver: CadSketchSolver, document: CadDocument, ed
   for (let run = 0; run <= runs; run++) {
     solves = 0; solverMs = 0;
     const elapsed = await timeAsync(async () => { prepared = (await prepareCadEdits(document, [edit], counted)).document; });
+    if (run > 0) { prepare.push(elapsed); solverCalls.push(solverMs); }
+  }
+  // After every preparation, so the copies' allocations never land in a timed preparation.
+  for (let run = 0; run <= runs; run++) {
     const copy = structuredClone(prepared), parsed = time(() => parseCadDocument(copy));
-    if (run > 0) { prepare.push(elapsed); solverCalls.push(solverMs); documentParse.push(parsed); }
+    if (run > 0) documentParse.push(parsed);
   }
   return { cpuCalibrationMs: [before, cadBenchmarkCpuCalibrationMs()] as const, solvesPerPreview: solves, documentJsonBytes: JSON.stringify(prepared).length,
     prepareMs: cadBenchmarkStats(prepare), solverCallMs: cadBenchmarkStats(solverCalls), documentParseMs: cadBenchmarkStats(documentParse) };

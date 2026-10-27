@@ -15,6 +15,8 @@ export type CadSolverSection = typeof CAD_SOLVER_SECTIONS[number];
 export interface CadSolverWorkloadOptions {
   readonly runs: number;
   readonly quick: boolean;
+  /** How the script runs: bundled as the application is built, or its source through tsx, which times slower. */
+  readonly runner: 'bundled' | 'source';
   readonly sections: readonly CadSolverSection[];
   /** Workload case ids; every case when empty. */
   readonly cases: readonly string[];
@@ -37,11 +39,12 @@ async function runIdentity(options: CadSolverWorkloadOptions) {
   return { appVersion: packageInfo.version, commit: git('rev-parse', 'HEAD').trim(), dirty: uncommitted !== null, uncommittedSha256: uncommitted,
     modules: { native: await sha256('../packages/sketch-solver/wasm/sketch_solver.wasm') },
     environment: { node: process.version, v8: process.versions.v8, execArgv: cadBenchmarkExecArgv(), nodeOptions: process.env.NODE_OPTIONS ?? '', platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model ?? 'unknown', cores: cpus().length, totalMemoryBytes: totalmem() },
-    runs: options.runs, quick: options.quick, solvers: CAD_BENCHMARK_SOLVER_IDS };
+    runner: options.runner, runs: options.runs, quick: options.quick, solvers: CAD_BENCHMARK_SOLVER_IDS };
 }
 type RunIdentity = Awaited<ReturnType<typeof runIdentity>>;
 const MANIFEST = 'manifest.json';
-const identityDifferences = (expected: RunIdentity, actual: Partial<RunIdentity> = {}) => (Object.keys(expected) as (keyof RunIdentity)[])
+// Keys of both sides, so a directory written before a field was recorded, such as `runner`, never matches a run that records it.
+const identityDifferences = (expected: RunIdentity, actual: Partial<RunIdentity> = {}) => ([...new Set([...Object.keys(expected), ...Object.keys(actual)])] as (keyof RunIdentity)[])
   .filter(key => JSON.stringify(expected[key]) !== JSON.stringify(actual[key]));
 
 /** Written to a temporary file and renamed into place, so an interrupted write never leaves a part that looks complete. */
@@ -156,7 +159,8 @@ function summarize(identity: RunIdentity, failures: readonly string[], sections:
   type Measured = { solver: string; operation: string; kind: string; totalMs?: { p50: number }; outcomes?: Record<string, number>; answers?: Record<string, number> };
   type Group = { id: string; throttled: boolean; failures: string[]; cpuCalibrationMs: number[]; measurements: Measured[] };
   const ids = (rows: readonly { solver: string }[]) => [...new Set(rows.map(row => row.solver))];
-  const lines: string[] = [`App ${identity.appVersion}, commit ${identity.commit}${identity.dirty ? ` with uncommitted changes ${identity.uncommittedSha256}` : ''}; ${identity.environment.cpu}, ${identity.environment.cores} cores, Node ${identity.environment.node} on ${identity.environment.platform}; ${identity.runs} runs${identity.quick ? ', quick' : ''}; ${identity.solvers.join(', ')}.`, ''];
+  // Directories from before 0.0.761 record no runner; they ran through tsx.
+  const lines: string[] = [`App ${identity.appVersion}, commit ${identity.commit}${identity.dirty ? ` with uncommitted changes ${identity.uncommittedSha256}` : ''}; ${identity.environment.cpu}, ${identity.environment.cores} cores, Node ${identity.environment.node} on ${identity.environment.platform}; ${identity.runner ?? 'source'}, ${identity.runs} runs${identity.quick ? ', quick' : ''}; ${identity.solvers.join(', ')}.`, ''];
   if (failures.length) lines.push(`**${failures.length} correctness failures. Rows marked INVALID gave incorrect results; their timings are not comparable.**`, '', ...failures.map(failure => `- ${failure}`), '');
   const mark = (group: { throttled?: boolean; failures?: readonly string[] }) => `${group.throttled ? ' THROTTLED' : ''}${group.failures?.length ? ' INVALID' : ''}`;
   const operations = [...(sections.workloads as Group[] ?? []), ...(sections.edits as Group[] ?? [])];

@@ -151,7 +151,7 @@ if (group === 'all' || group === 'solver-workloads') {
     const { execFileSync } = await import('node:child_process');
     const commit = (() => { try { return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { return 'unknown'; } })();
     const packageInfo = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
-    await runCadSolverWorkloads({ runs, quick, sections: list('--sections', CAD_SOLVER_SECTIONS, CAD_SOLVER_SECTIONS), cases: list('--cases', undefined, []),
+    await runCadSolverWorkloads({ runs, quick, runner, sections: list('--sections', CAD_SOLVER_SECTIONS, CAD_SOLVER_SECTIONS), cases: list('--cases', undefined, []),
       out: args.includes('--out') ? args[args.indexOf('--out') + 1] : `tmp/cad-benchmark/solver-workloads-${packageInfo.version}-${commit}${quick ? '-quick' : ''}` });
   }
 }

@@ -1,9 +1,10 @@
 // Runs a TypeScript script bundled by Vite, as the application is built, instead of through tsx,
 // whose transform keeps every function's name with a wrapper call that inflates measured times.
 // Dependencies stay external. The bundle is written beside its entry, so the entry's
-// `import.meta.url` paths resolve as they do from source, and removed after the run.
+// `import.meta.url` paths resolve as they do from source, and removed when the process exits,
+// through `process.exit` too; only a killed run leaves it behind.
 // Usage: node scripts/run-bundled.mjs scripts/benchmark-cad.ts [script arguments]
-import { rm } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'vite';
@@ -25,6 +26,6 @@ await build({
   }
 });
 const bundle = resolve(outDir, fileName);
+process.on('exit', () => rmSync(bundle, { force: true }));
 process.argv = [process.argv[0], entry, ...scriptArguments];
-try { await import(pathToFileURL(bundle).href); }
-finally { await rm(bundle, { force: true }); }
+await import(pathToFileURL(bundle).href);
