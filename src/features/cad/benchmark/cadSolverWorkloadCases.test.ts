@@ -1,17 +1,13 @@
 // @vitest-environment node
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { createCadSketchSolverRuntime } from '../sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from '../sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from '../sketch-solver/__tests__/cadSketchTestSolver';
 import { cadSketchSolutionMatchesInput } from '../sketch-solver/cadSketchSolverProtocol';
 import { createCadSolverDieInput, createCadSolverFreeDieInput, createCadSolverWorkloadCases } from './cadSolverWorkloadCases';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 
-describe('solver workload fixtures against real PlaneGCS', () => {
+describe('solver workload fixtures', () => {
   it.each(createCadSolverWorkloadCases().map(testCase => [testCase.id, testCase.input] as const))('%s pins acceptance, freedom and source diagnostics', async (_id, input) => {
     expect(parseCadSketchGraph(input.graph)).toEqual(input.graph);
     const before = structuredClone(input), result = await solver.solve(input);

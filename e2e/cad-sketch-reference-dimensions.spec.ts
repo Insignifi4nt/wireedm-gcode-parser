@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('persists passive dimensions through private sketch Finish and converts a diameter without losing exact geometry or Undo',async({page})=>{

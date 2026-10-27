@@ -10,7 +10,8 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - `npm test -- --run` - run tests once
 - `npm test -- --run --project pure-domain` - run pure geometry/planning suites in Node
 - `npm test -- --run --project browser` - run browser storage, DOM and app suites
-- `npm test -- --run --project native-differential` - repeat the PlaneGCS sketch suites through the native Rust solver
+- `npm test -- --run --project native-differential` - compare every solve in the sketch suites with PlaneGCS alone
+- `npm run solver:corpus -- --check` / `--update` - check or rewrite the frozen PlaneGCS outcome corpus that `planeGcsCorpus.test.ts` replays natively
 - `npm run solver:build` / `npm run solver:check` - rebuild the Rust sketch solver module, or test it and verify the committed module matches its source (needs `rustup`)
 - `npm run build` - type-check (TypeScript 7 native `tsc`) and build
 - `npm run lint` - oxlint correctness rules; must stay at zero findings

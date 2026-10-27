@@ -1,11 +1,14 @@
 import { IDBFactory } from 'fake-indexeddb';
-import { beforeEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
+import { expectNoUnexpectedNativeFailures } from './features/cad/sketch-solver/__tests__/cadSketchNativeFailures';
 
 // Each test receives a fresh browser profile. Adapter suites still inject their
 // own factories when they exercise reopen, migration and blocked-upgrade cases.
 beforeEach(() => {
   Object.defineProperty(globalThis, 'indexedDB', { configurable: true, writable: true, value: new IDBFactory() });
 });
+
+afterEach(expectNoUnexpectedNativeFailures);
 
 // React's act helper needs this flag before any root renders. A shared baseline
 // also survives tests that stub globals and restore them during cleanup.

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('keeps a rounded profile tangent through radius edits, private recovery, solid/export, exact history and saved agent parity',async({page})=>{

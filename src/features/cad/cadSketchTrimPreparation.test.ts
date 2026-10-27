@@ -15,7 +15,7 @@ import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTe
 
 const runtime = createCadSketchTestSolver();
 
-describe('real PlaneGCS exact end-Trim preparation', () => {
+describe('exact end-Trim preparation', () => {
   it.each([false, true])('preserves the complete middle-arc candidate with fixed endpoint drivers=%s', async fixed => {
     const document = middleArcTrimPart(fixed), source = document.features[0];
     if (source.kind !== 'sketch' || !source.graph) throw new Error('Middle arc source missing.');

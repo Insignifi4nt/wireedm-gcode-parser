@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context } from './cad-tool-helpers';
 
 test('edits a free sketch vertex directly, cancels cleanly and preserves the contour through undo and save', async ({ page }) => {

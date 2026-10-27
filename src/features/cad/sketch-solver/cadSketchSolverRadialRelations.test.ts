@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { cadSketchSolvedValues, checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
+import type { CadSketchSolveRecord } from './cadSketchNativeFirstRuntime';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from '../cadSession';
@@ -12,7 +12,7 @@ import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
 const runtime = createCadSketchTestSolver();
 
-describe('real PlaneGCS explicit radial dimensions', () => {
+describe('explicit radial dimensions', () => {
   it('solves a displayed diameter into free numeric circle radius while retaining its exact driver text', async () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'center', position: [' 0 ', '0'] }],
       entities: [{ id: 'circle', kind: 'circle', construction: true, centerPointId: 'center', radius: 6 }],
@@ -118,14 +118,13 @@ describe('real PlaneGCS explicit radial dimensions', () => {
     }
   });
 
-  it('rejects an invalid physical target before native initialization', async () => {
-    let initialized = false;
-    const guarded = createCadSketchSolverRuntime(async () => { initialized = true; throw new Error('Unexpected native initialization.'); });
+  it('rejects an invalid physical target when compiling, before the native solve', async () => {
+    const records: CadSketchSolveRecord[] = [], guarded = createCadSketchTestSolver({ onSolve: record => records.push(record) });
     const graph = parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }],
       entities: [{ id: 'circle', kind: 'circle', construction: false, centerPointId: 'center', radius: 6 }],
       relations: [{ id: 'size', kind: 'radial-size', entityId: 'circle', quantity: 'diameter', value: 2e-7 }] });
     expect(await guarded.solve({ graph, parameters: {} })).toMatchObject({ kind: 'rejected', reason: 'invalid-input' });
-    expect(initialized).toBe(false);
+    expect(records).toEqual([expect.objectContaining({ native: 'compile' })]);
   });
 
   it('accepts an explicit source-driver release followed by radial sizing as one normal ordered batch', async () => {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import type { CadFeature } from '../src/domain/cad/cadDocument';
 import type { CadTopologyDescriptor } from '../src/domain/cad/cadTopology';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context, openFeatureEditor } from './cad-tool-helpers';

@@ -25,7 +25,7 @@ function fakeNative(answer: (model: CadSketchEquationModel) => Partial<CadSketch
 
 function runtime(native: () => Promise<CadSketchNativeSolver>, planeGcs: CadSketchSolverBackend, extra: Partial<Parameters<typeof createCadSketchNativeFirstRuntime>[0]> = {}) {
   const records: CadSketchSolveRecord[] = [], loadPlaneGcs = vi.fn(async () => planeGcs), loadNative = vi.fn(native);
-  return { records, loadPlaneGcs, loadNative, solver: createCadSketchNativeFirstRuntime({ loadNative, loadPlaneGcs, onSolve: record => records.push(record), ...extra }) };
+  return { records, loadPlaneGcs, loadNative, solver: createCadSketchNativeFirstRuntime({ mode: 'native-first', loadNative, loadPlaneGcs, onSolve: record => records.push(record), ...extra }) };
 }
 
 describe('native-first sketch solving', () => {
@@ -378,6 +378,22 @@ describe('native-first sketch solving', () => {
     expect(nativeOnly.loadPlaneGcs).not.toHaveBeenCalled();
   });
 
+  it('rejects an input native refuses to compile as PlaneGCS does, without loading it', async () => {
+    const planeGcs = createCadSketchTestSolver({ mode: 'planegcs' });
+    const circle = (value: number | string) => parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }],
+      entities: [{ id: 'hole', kind: 'circle', construction: false, centerPointId: 'center', radius: 6 }],
+      relations: [{ id: 'size', kind: 'radial-size', entityId: 'hole', quantity: typeof value === 'number' ? 'diameter' : 'radius', value }] });
+    // A zero diameter and a negative radius parameter, as the CAD journeys enter to see them refused.
+    const inputs: CadSketchSolveInput[] = [{ graph: circle(0), parameters: {} }, { graph: circle(' bend '), parameters: { bend: -1 } }];
+    for (const refused of inputs) {
+      const { solver, records, loadPlaneGcs } = runtime(loadCadSketchTestNativeSolver, planeGcs);
+      const result = await solver.solve(refused);
+      expect(result).toMatchObject({ kind: 'rejected', reason: 'invalid-input', message: expect.stringContaining('Driving radius') });
+      expect(result).toEqual(await planeGcs.solve(refused));
+      expect(records).toEqual([expect.objectContaining({ answeredBy: 'native', native: 'compile' })]); expect(loadPlaneGcs).not.toHaveBeenCalled();
+    }
+  });
+
   it('answers definite conflicts natively and takes PlaneGCS whole when native cannot run', async () => {
     const conflicting = runtime(async () => fakeNative(model => ({ status: 'not-converged', diagnosis: { kind: 'diagnosed', degreesOfFreedom: null, labels: model.equations.map(() => 2) } })), planeGcsSolved(failedResult));
     expect(await conflicting.solver.solve(input)).toMatchObject({ kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', conflictingIds: ['length'] } });
@@ -403,6 +419,17 @@ describe('native-first sketch solving', () => {
     const large = runtime(async () => fakeNative(() => ({}), 2 ** 27), planeGcsSolved(failedResult));
     await large.solver.solve(input); await large.solver.solve(input);
     expect(large.records[0].nativeReset).toBe('memory'); expect(large.loadNative).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs overlapping solves one at a time, so the second gets a fresh instance after the first traps', async () => {
+    let instances = 0;
+    const { solver, records, loadNative, loadPlaneGcs } = runtime(async () => (instances += 1) === 1
+      ? fakeNative(() => { throw new WebAssembly.RuntimeError('unreachable'); }) : loadCadSketchTestNativeSolver(), planeGcsSolved(failedResult), { mode: 'native-only' });
+    const [first, second] = await Promise.all([solver.solve(input), solver.solve(input)]);
+    expect(first).toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.' });
+    expect(second).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 3 } });
+    expect(records).toMatchObject([{ native: 'failed', nativeReset: 'failure' }, { answeredBy: 'native', native: 'answer' }]);
+    expect(loadNative).toHaveBeenCalledTimes(2); expect(loadPlaneGcs).not.toHaveBeenCalled();
   });
 
   it('runs only the selected solver in the comparison modes', async () => {

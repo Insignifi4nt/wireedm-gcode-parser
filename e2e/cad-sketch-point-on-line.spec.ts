@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('slides a bore on an angled guide, locates it and follows guide edits through private Finish, history, agent parity and save',async({page})=>{

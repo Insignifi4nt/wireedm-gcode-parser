@@ -19,7 +19,7 @@ function graphSource(document: ReturnType<typeof offsetGraphPart>): CadSketchOff
   if (!graph?.cycles[0]) throw new Error('Source cycle missing.'); return { kind: 'graph-cycle', sourceRefs: graph.cycles[0].sourceRefs };
 }
 
-describe('real PlaneGCS detached Offset preparation', () => {
+describe('detached Offset preparation', () => {
   it.each([
     { name: 'graph lines', document: () => offsetGraphPart(), source: (document: ReturnType<typeof offsetGraphPart>) => graphSource(document) },
     { name: 'graph mixed arcs', document: () => offsetGraphPart(true), source: (document: ReturnType<typeof offsetGraphPart>) => graphSource(document) },

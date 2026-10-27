@@ -26,7 +26,7 @@ async function prepared(graph: CadSketchGraph, entityId: string, parameters: Rea
   return result;
 }
 
-describe('real PlaneGCS exact line Extend preparation', () => {
+describe('exact line Extend preparation', () => {
   it('preserves a diameter owner through start-side arc extension while its native radius spoke changes endpoint', async () => {
     const base = arcExtendPart(), source = base.features[0];
     if (source.kind !== 'sketch' || !source.graph) throw new Error('Arc source missing.');

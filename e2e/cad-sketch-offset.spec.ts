@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
 import type { CadSketchCellReference } from '../src/domain/cad/cadSketchRegionSelection';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context, historyRow } from './cad-tool-helpers';

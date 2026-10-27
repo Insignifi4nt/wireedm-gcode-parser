@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
 import { prepareCadTools, callCadTool as call, cadContext as context, historyRow } from './cad-tool-helpers';
 

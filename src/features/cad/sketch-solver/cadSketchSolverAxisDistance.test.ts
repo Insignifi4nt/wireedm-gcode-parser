@@ -26,7 +26,7 @@ function sketchGraph(part: ReturnType<typeof document>) {
   return sketch.graph;
 }
 
-describe('real PlaneGCS signed axis distances', () => {
+describe('signed axis distances', () => {
   it('constrains relative coordinates without anchoring either free point and carries their remaining translation', async () => {
     const free = parseCadSketchGraph({ points: [{ id: 'a', position: [5, 7] }, { id: 'b', position: [35, 27] }], entities: [], relations: [] });
     const baseline = await runtime.solve({ graph: free, parameters });

@@ -17,7 +17,7 @@ function freePair(shared = false, reverse = false) {
   ], relations: [{ id: 'support', kind: 'collinear', lineIds: reverse ? ['right', 'left'] : ['left', 'right'] }] });
 }
 
-describe('real PlaneGCS collinear support', () => {
+describe('collinear support', () => {
   it('constrains two disjoint free lines by exactly two freedoms without choosing a master or rewriting source identities', async () => {
     const graph = freePair(), before = JSON.stringify(graph);
     const baseline = await runtime.solve({ graph: parseCadSketchGraph({ ...graph, relations: [] }), parameters: {} });

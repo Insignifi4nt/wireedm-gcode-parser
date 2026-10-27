@@ -18,7 +18,7 @@ function fixture(kind: 'fillet' | 'chamfer', fixed = true) {
   return createCadSketchCornerTreatment({ graph, parameters: { size: 2 }, pointId: 'v',
     treatment: kind === 'fillet' ? { kind, radius: ' size ' } : { kind, setbacks: [' size ', 'size + 1'] }, createId: () => `corner_${++next}` });
 }
-describe('real PlaneGCS corner constraints', () => {
+describe('corner constraints', () => {
   it.each(['fillet', 'chamfer'] as const)('solves changed %s drivers before whole-part acceptance as one undo step', async kind => {
     const corner = fixture(kind), document = parseCadDocument({ ...createCadDocument('Corner', 'corner'), schemaVersion: 2, parameters: { size: 2 }, features: [{
       id: 'sketch', name: 'Sketch', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: corner.graph

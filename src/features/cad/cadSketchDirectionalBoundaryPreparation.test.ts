@@ -14,7 +14,7 @@ function part(graph: CadSketchGraph) {
     features: [{ id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph }] });
 }
 
-describe('real PlaneGCS direction-preserving line boundary preparation', () => {
+describe('direction-preserving line boundary preparation', () => {
   it('trims a fresh four-H/V rectangle with only its matching direction operand transferred and all old corner records retained', async () => {
     let id = 0;
     const rectangle = createCadFreshSketchGraph({ geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 },

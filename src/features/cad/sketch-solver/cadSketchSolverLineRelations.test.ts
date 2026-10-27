@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { createCadSketchSolverRuntime } from './cadSketchSolverRuntime';
+import type { CadSketchSolveRecord } from './cadSketchNativeFirstRuntime';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from '../cadSession';
 import { prepareCadEdits } from '../cadEditPreparation';
@@ -28,7 +28,7 @@ function rotatedPair(kind: 'parallel' | 'perpendicular', sizeA: number, sizeB: n
     relations: [{ id: 'length', kind: 'distance', pointIds: ['c', 'd'], value: ' span ' }, { id: 'direction', kind, lineIds: ['reference', 'moving'] }] });
 }
 
-describe('real PlaneGCS line pair relations', () => {
+describe('line pair relations', () => {
   it.each(['parallel', 'perpendicular'] as const)('solves %s lines with exact drivers and one independent angular degree of freedom', async kind => {
     const graph = pair(kind, kind === 'perpendicular', kind === 'parallel'), original = JSON.stringify(graph);
     const baseline = await runtime.solve({ graph: parseCadSketchGraph({ ...graph, relations: graph.relations.slice(0, 1) }), parameters: { span: 17 } });
@@ -106,12 +106,11 @@ describe('real PlaneGCS line pair relations', () => {
     expect(session.getSnapshot()).toBe(accepted);
   });
 
-  it('rejects zero native direction lengths before initializing WASM', async () => {
-    let initialized = false;
-    const guarded = createCadSketchSolverRuntime(async () => { initialized = true; throw new Error('Unexpected native initialization.'); });
+  it('rejects zero native direction lengths when compiling, before the native solve', async () => {
+    const records: CadSketchSolveRecord[] = [], guarded = createCadSketchTestSolver({ onSolve: record => records.push(record) });
     const original = pair('parallel'), graph = parseCadSketchGraph({ ...original,
       points: original.points.map(point => point.id === 'b' ? { ...point, position: [' 0 ', '0'] } : point) });
     const result = await guarded.solve({ graph, parameters: { span: 17 } });
-    expect(result).toMatchObject({ kind: 'rejected', reason: 'invalid-input' }); expect(initialized).toBe(false);
+    expect(result).toMatchObject({ kind: 'rejected', reason: 'invalid-input' }); expect(records).toEqual([expect.objectContaining({ native: 'compile' })]);
   });
 });

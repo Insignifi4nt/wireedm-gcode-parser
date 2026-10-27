@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
 
 test('edits a persistent circle row on a consumed sketch, restores exclusions and saves identical human/agent parts', async ({ page }) => {

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import { readFile } from 'node:fs/promises';
 import type { CadDocument, CadFeature, CadSketchFeature } from '../src/domain/cad/cadDocument';
 import { prepareCadTools, callCadTool, cadContext, historyRow } from './cad-tool-helpers';

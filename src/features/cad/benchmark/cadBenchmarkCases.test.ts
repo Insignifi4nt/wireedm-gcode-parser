@@ -1,20 +1,16 @@
 // @vitest-environment node
 import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import initOpenCascade from 'replicad-opencascadejs';
 import { setOC } from 'replicad';
 import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import { buildCadKernelModel } from '../kernel/cadKernelModel';
 import { prepareCadEdits } from '../cadEditPreparation';
-import { createCadSketchSolverRuntime } from '../sketch-solver/cadSketchSolverRuntime';
-import { initializeCadSketchSolverModule } from '../sketch-solver/cadSketchSolverModule';
+import { createCadSketchTestSolver } from '../sketch-solver/__tests__/cadSketchTestSolver';
 import { cadBenchmarkStats, checkCadBenchmarkStep } from './cadBenchmark';
 import { createCadBenchmarkDependentDragPreview, createCadBenchmarkDragPreview, createCadBenchmarkRectangleGraph, createCadKernelBenchmarkCases } from './cadBenchmarkCases';
 
-const require = createRequire(import.meta.url);
-const solver = createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href));
+const solver = createCadSketchTestSolver();
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));

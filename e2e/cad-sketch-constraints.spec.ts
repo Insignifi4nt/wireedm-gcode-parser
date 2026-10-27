@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadContext as context, enableGridSnap, historyRow, relationControl, openSketchRelations } from './cad-tool-helpers';
 
 test('resizes a free circle directly, cancels cleanly and preserves explicit size ownership through extrusion and reopen', async ({ page }) => {
@@ -1538,9 +1538,7 @@ test('previews and applies a linked size across legacy and solved sketch geometr
   await page.keyboard.press('Control+z'); await expect.poll(length).toBeCloseTo(20, 9); await expect.poll(plate).toBeCloseTo(20, 6);
 });
 
-test('solves a saved entity sketch through WebMCP, rejects conflicts and exports its exact extrusion', async ({ page }) => {
-  const nativeRequests: string[] = [];
-  page.on('request', request => { if (request.url().endsWith('.wasm')) nativeRequests.push(request.url()); });
+test('solves a saved entity sketch through WebMCP, rejects conflicts and exports its exact extrusion', async ({ page, solverRequests: nativeRequests }) => {
   await prepareCadTools(page);
   await call(page, 'cad_open_workspace');
   const initial = await context(page);
