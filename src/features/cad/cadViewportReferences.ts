@@ -1,9 +1,11 @@
-import type { CadFeature, CadPlane, CadProfile, CadSketchPlane } from '@/domain/cad/cadDocument';
+import type { CadFeature, CadPlane, CadProfile, CadSketchFeature, CadSketchPlane } from '@/domain/cad/cadDocument';
 import { inspectCadCurve, type CadBounds3 } from '@/domain/cad/cadCurve';
-import { prepareCadDatumFrames, resolveCadSketchPlacement, resolveCadWorldDatum, cadFramePointToWorld, cadPrincipalFrame, type CadResolvedFrame } from '@/domain/cad/cadDatumPlanes';
+import { prepareCadDatumFrames, resolveCadSketchPlacement, resolveCadWorldDatum, cadFramePointToWorld, cadPrincipalFrame, type CadDatumFrameLookup, type CadResolvedFrame,
+  type CadResolvedPlacement } from '@/domain/cad/cadDatumPlanes';
 import { cadFrameEntityBounds } from '@/domain/cad/cadFrameBounds';
 import { cadPlanePointToWorld } from '@/domain/cad/cadPlanes';
-import { cadFeatureDependencies, cadFeatureProducesBody } from '@/domain/cad/cadSchema';
+import { cadFeatureDependencies, cadFeatureProducesBody, isAcceptedCadSketchSource } from '@/domain/cad/cadSchema';
+import { readCadSketchGeometryParameters, sameCadSketchGeometryValues } from '@/domain/cad/cadSketchParameterReads';
 import { cadProfileToEntities, resolveCadProfile, type CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
 import { arcBounds, boundsFromPoints, emptyBounds, mergeBounds } from '@/domain/path-intel/segments';
 import type { Bounds2 } from '@/domain/path-intel/types';
@@ -56,53 +58,105 @@ function worldBounds(plane: CadPlane, offset: number, bounds: Bounds2): CadBound
     max: Object.freeze([Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])] satisfies [number, number, number]) });
 }
 
+type PreparedSources = { readonly references: readonly CadViewportReference[] }
+  | { readonly sources: readonly ReferenceSource[]; readonly remember?: (references: readonly CadViewportReference[]) => void };
+interface PreparedSketchReferences {
+  readonly values: readonly (number | undefined)[];
+  readonly placement: CadResolvedPlacement;
+  readonly references: readonly CadViewportReference[];
+}
+// An accepted sketch cannot change, so its references depend only on the values its profiles and graph read and on
+// where it is placed. A sketch that a revision leaves unchanged keeps its reference objects, and the viewport its lines.
+// Only the sketches of the last two preparations that kept any are held: enough for the viewport to switch between a
+// preview and its document, while undo history never keeps sampled references alive.
+let recentSketches = new Map<CadSketchFeature, PreparedSketchReferences>(), olderSketches = recentSketches;
+
 /** Prepare once per immutable accepted revision; scene size never changes curve resolution. */
 export function prepareCadViewportReferences(features: readonly CadFeature[], parameters: Readonly<Record<string, number>>): readonly CadViewportReference[] {
   const frames = prepareCadDatumFrames(features, parameters);
   const glyphs = features.flatMap(feature => feature.kind === 'datum-plane' && !feature.suppressed ? [cadDatumReference(feature, resolveCadWorldDatum(feature, parameters))] : []);
-  const sources = features.flatMap<ReferenceSource>(feature => {
-    if (feature.suppressed) return [];
+  const kept = new Map<CadSketchFeature, PreparedSketchReferences>();
+  // Every source is found before any is placed in the world, so an input that cannot be placed fails as it always has.
+  const prepared = features.map((feature): PreparedSources => {
+    if (feature.suppressed) return { sources: [] };
     if (feature.kind === 'curve') {
       const result = inspectCadCurve(feature, parameters, frames);
-      return result.eligible ? [{ referenceId: feature.id, featureId: feature.id, featureKind: 'curve', name: feature.name, construction: false,
-        frame: resolveCadSketchPlacement(feature, parameters, frames).frame, offset: result.curve.offset, entities: result.curve.entities, bounds: result.curve.worldBounds }] : [];
+      return { sources: result.eligible ? [{ referenceId: feature.id, featureId: feature.id, featureKind: 'curve', name: feature.name, construction: false,
+        frame: resolveCadSketchPlacement(feature, parameters, frames).frame, offset: result.curve.offset, entities: result.curve.entities, bounds: result.curve.worldBounds }] : [] };
     }
-    if (feature.kind !== 'sketch') return [];
-    const legacy = feature.profiles.flatMap<ReferenceSource>(profile => {
-      try {
-        const geometry = cadProfileReferenceGeometry(profile.geometry, parameters); const placement = resolveCadSketchPlacement(feature, parameters, frames); const offset = placement.offsetMm;
-        if (!geometry.entities.length) return [];
-        return [{ referenceId: `${feature.id}/${profile.id}`, featureId: feature.id, featureKind: 'sketch', name: feature.name, construction: profile.construction,
-          frame: placement.frame, offset, entities: geometry.entities, bounds: typeof feature.plane === 'string' ? worldBounds(feature.plane, offset, geometry.bounds) : cadFrameEntityBounds(geometry.entities, placement.frame, offset) }];
-      } catch { return []; } // Invalid sources retain their feature/editor diagnostics.
-    });
-    if (!feature.graph) return legacy;
-    try {
-      const graph = compileCadSketchGraph(feature.graph, parameters), construction = new Set(feature.graph.entities.filter(entity => entity.construction).map(entity => entity.id));
-      const placement = resolveCadSketchPlacement(feature, parameters, frames), offset = placement.offsetMm;
-      return [...legacy, ...graph.segments.map((segment): ReferenceSource => {
-        const entities = [cadSketchGraphBoundary(segment)];
-        return { referenceId: `${feature.id}/${segment.id}`, featureId: feature.id, featureKind: 'sketch', name: feature.name, construction: construction.has(segment.id),
-          frame: placement.frame, offset, entities, bounds: typeof feature.plane === 'string' ? worldBounds(feature.plane, offset, segment.bounds) : cadFrameEntityBounds(entities, placement.frame, offset) };
-      })];
-    } catch { return legacy; }
+    return feature.kind === 'sketch' ? prepareSketchSources(feature, parameters, frames, kept) : { sources: [] };
   });
-  return Object.freeze([...glyphs, ...sources.map(source => {
-    const positions: number[] = [];
-    const point = (value: { x: number; y: number }) => cadFramePointToWorld(source.frame, source.offset, [value.x, value.y]);
-    for (const entity of source.entities) {
-      if (entity.type === 'line') { positions.push(...point(entity.start), ...point(entity.end)); continue; }
-      const startAngle = entity.type === 'circle' ? 0 : entity.startAngle;
-      const sweep = entity.type === 'circle' ? 2 * Math.PI : entity.sweepRadians ?? entity.endAngle - entity.startAngle;
-      const steps = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 60)));
-      const at = (index: number) => entity.type === 'arc' && index === 0 ? point(entity.start) : entity.type === 'arc' && index === steps ? point(entity.end)
-        : point({ x: entity.center.x + entity.radius * Math.cos(startAngle + sweep * index / steps), y: entity.center.y + entity.radius * Math.sin(startAngle + sweep * index / steps) });
-      let previous = at(0);
-      for (let index = 1; index <= steps; index++) { const next = at(index); positions.push(...previous, ...next); previous = next; }
-    }
-    return Object.freeze({ referenceId: source.referenceId, featureId: source.featureId, featureKind: source.featureKind, name: source.name,
-      construction: source.construction, positions: Object.freeze(positions), bounds: source.bounds });
+  const references = Object.freeze([...glyphs, ...prepared.flatMap(item => {
+    if ('references' in item) return item.references;
+    const references = Object.freeze(item.sources.map(cadSourceReference));
+    item.remember?.(references);
+    return references;
   })]);
+  if (kept.size) { olderSketches = recentSketches; recentSketches = kept; }
+  return references;
+}
+
+function prepareSketchSources(feature: CadSketchFeature, parameters: Readonly<Record<string, number>>, frames: CadDatumFrameLookup,
+  kept: Map<CadSketchFeature, PreparedSketchReferences>): PreparedSources {
+  const place = () => resolveCadSketchPlacement(feature, parameters, frames);
+  // Own data is read once for both the key and the geometry. Other sketches, accessors and invalid values keep the ordinary path.
+  const reads = isAcceptedCadSketchSource(feature) ? readCadSketchGeometryParameters(feature, parameters) : null;
+  if (!reads) return { sources: cadSketchSources(feature, parameters, place) };
+  let placement: CadResolvedPlacement;
+  try { placement = place(); } catch { return { sources: cadSketchSources(feature, parameters, place) }; }
+  const previous = [recentSketches.get(feature), olderSketches.get(feature)]
+    .find(entry => entry && sameCadSketchGeometryValues(reads.values, entry.values) && sameCadPlacement(placement, entry.placement));
+  if (previous) {
+    kept.set(feature, previous);
+    return { references: previous.references };
+  }
+  return { sources: cadSketchSources(feature, reads.environment, () => placement),
+    remember: references => kept.set(feature, { values: reads.values, placement, references }) };
+}
+
+function cadSketchSources(feature: CadSketchFeature, parameters: Readonly<Record<string, number>>, place: () => CadResolvedPlacement): ReferenceSource[] {
+  const legacy = feature.profiles.flatMap<ReferenceSource>(profile => {
+    try {
+      const geometry = cadProfileReferenceGeometry(profile.geometry, parameters); const placement = place(); const offset = placement.offsetMm;
+      if (!geometry.entities.length) return [];
+      return [{ referenceId: `${feature.id}/${profile.id}`, featureId: feature.id, featureKind: 'sketch', name: feature.name, construction: profile.construction,
+        frame: placement.frame, offset, entities: geometry.entities, bounds: typeof feature.plane === 'string' ? worldBounds(feature.plane, offset, geometry.bounds) : cadFrameEntityBounds(geometry.entities, placement.frame, offset) }];
+    } catch { return []; } // Invalid sources retain their feature/editor diagnostics.
+  });
+  if (!feature.graph) return legacy;
+  try {
+    const graph = compileCadSketchGraph(feature.graph, parameters), construction = new Set(feature.graph.entities.filter(entity => entity.construction).map(entity => entity.id));
+    const placement = place(), offset = placement.offsetMm;
+    return [...legacy, ...graph.segments.map((segment): ReferenceSource => {
+      const entities = [cadSketchGraphBoundary(segment)];
+      return { referenceId: `${feature.id}/${segment.id}`, featureId: feature.id, featureKind: 'sketch', name: feature.name, construction: construction.has(segment.id),
+        frame: placement.frame, offset, entities, bounds: typeof feature.plane === 'string' ? worldBounds(feature.plane, offset, segment.bounds) : cadFrameEntityBounds(entities, placement.frame, offset) };
+    })];
+  } catch { return legacy; }
+}
+
+const sameNumbers = (left: readonly number[], right: readonly number[]) => left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
+function sameCadPlacement(left: CadResolvedPlacement, right: CadResolvedPlacement): boolean {
+  return Object.is(left.offsetMm, right.offsetMm) && sameNumbers(left.frame.origin, right.frame.origin) && sameNumbers(left.frame.u, right.frame.u)
+    && sameNumbers(left.frame.v, right.frame.v) && sameNumbers(left.frame.normal, right.frame.normal)
+    && Object.is(left.frame.precision.angularUncertainty, right.frame.precision.angularUncertainty) && Object.is(left.frame.precision.originUncertaintyMm, right.frame.precision.originUncertaintyMm);
+}
+
+function cadSourceReference(source: ReferenceSource): CadViewportReference {
+  const positions: number[] = [];
+  const point = (value: { x: number; y: number }) => cadFramePointToWorld(source.frame, source.offset, [value.x, value.y]);
+  for (const entity of source.entities) {
+    if (entity.type === 'line') { positions.push(...point(entity.start), ...point(entity.end)); continue; }
+    const startAngle = entity.type === 'circle' ? 0 : entity.startAngle;
+    const sweep = entity.type === 'circle' ? 2 * Math.PI : entity.sweepRadians ?? entity.endAngle - entity.startAngle;
+    const steps = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 60)));
+    const at = (index: number) => entity.type === 'arc' && index === 0 ? point(entity.start) : entity.type === 'arc' && index === steps ? point(entity.end)
+      : point({ x: entity.center.x + entity.radius * Math.cos(startAngle + sweep * index / steps), y: entity.center.y + entity.radius * Math.sin(startAngle + sweep * index / steps) });
+    let previous = at(0);
+    for (let index = 1; index <= steps; index++) { const next = at(index); positions.push(...previous, ...next); previous = next; }
+  }
+  return Object.freeze({ referenceId: source.referenceId, featureId: source.featureId, featureKind: source.featureKind, name: source.name,
+    construction: source.construction, positions: Object.freeze(positions), bounds: source.bounds });
 }
 
 /** Selection controls view-only source visibility; saved geometry is never rewritten. */
