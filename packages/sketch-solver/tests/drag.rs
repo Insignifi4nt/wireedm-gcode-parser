@@ -956,3 +956,15 @@ fn every_frame_of_an_arm_stretched_past_its_reach_and_back_is_solved() {
         }
     }
 }
+#[test]
+fn a_drag_that_runs_out_of_work_is_too_large_rather_than_limited() {
+    // A difference held twice, dragged: counting the dependent rows along the way runs out before
+    // a rotation is made, which must read as running out, not as the drag growing more singular.
+    let mut builder = Builder::new();
+    let (x, y) = (builder.parameter(0.0, false), builder.parameter(0.0, false));
+    for _ in 0..2 { builder.equation(Kind::Difference, 0.0, &[x, y]); }
+    builder.temporary(Kind::Value, 1.0, &[x]);
+    let (outcome, _) = builder.outcome_within(Limits { fill: usize::MAX, work: 278 });
+    assert_eq!(outcome.status, Status::TooLarge);
+    assert_ne!(outcome.drag, Some(DragOutcome::Limited));
+}

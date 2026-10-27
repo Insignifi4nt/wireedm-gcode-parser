@@ -5,10 +5,11 @@ const SWEEPS: usize = 64;
 
 /// Eigenvalues and unit eigenvectors of the symmetric matrix `a`, by cyclic Jacobi rotations;
 /// `vectors[k]` belongs to `values[k]`. Only the upper triangle of `a` is read. Also the entries
-/// read and written; `None` once they pass `allowance`.
+/// read and written; `None` once they would pass `allowance`, checked before each step.
 pub fn symmetric_eigen(mut a: Vec<Vec<f64>>, allowance: usize) -> Option<(Vec<f64>, Vec<Vec<f64>>, usize)> {
     let n = a.len();
     let mut work = n * n;
+    if work > allowance { return None; }
     for i in 0..n { for j in 0..i { a[i][j] = a[j][i]; } }
     // Rows of `v` are the eigenvectors.
     let mut v: Vec<Vec<f64>> = (0..n).map(|i| (0..n).map(|j| if i == j { 1.0 } else { 0.0 }).collect()).collect();
@@ -53,12 +54,13 @@ pub fn symmetric_eigen(mut a: Vec<Vec<f64>>, allowance: usize) -> Option<(Vec<f6
 /// one length: a Householder triangle `R`, then the eigenpairs of `[[0, R], [R^T, 0]]`, which are
 /// `±sigma`. Small singular values keep an absolute accuracy of about `epsilon |R|`, where those of
 /// `R^T R` would square it. `vectors[k]` belongs to `values[k]`; values come largest first. Also
-/// the entries read and written; `None` once they pass `allowance`.
+/// the entries read and written; `None` once they would pass `allowance`, checked before each step.
 pub fn singular(columns: &[Vec<f64>], allowance: usize) -> Option<(Vec<f64>, Vec<Vec<f64>>, usize)> {
     let s = columns.len();
     let n = columns.first().map_or(0, Vec::len);
     let triangle = 2 * s * s * n;
-    if triangle > allowance { return None; }
+    // The triangle, then the joined matrix that the eigenproblem counts first.
+    if triangle.saturating_add(4 * s * s) > allowance { return None; }
     let mut a = columns.to_vec();
     for k in 0..s.min(n) {
         let size = a[k][k..].iter().map(|x| x * x).sum::<f64>().sqrt();

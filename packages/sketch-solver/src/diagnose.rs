@@ -78,7 +78,7 @@ pub struct Witness {
 pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize, fill: usize) -> (Option<Diagnosis>, usize) {
     let mut work = Work { done: 0, budget, fill, out: false };
     let found = diagnose_within(n, rows, distance, &mut work);
-    (found, work.done)
+    (found, work.spent())
 }
 
 fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Option<Diagnosis> {
@@ -129,7 +129,7 @@ pub fn dependent_count(n: usize, rows: &[SparseRow], distance: f64, budget: usiz
         }
         Some(count)
     })();
-    (found, work.done)
+    (found, work.spent())
 }
 
 /// Indices of the nonzero `rows` within `TAU` of the span of earlier ones once normalized, and
@@ -152,7 +152,7 @@ pub fn dependent(n: usize, rows: &[SparseRow], budget: usize, fill: usize) -> (O
         if !dependent.is_empty() && !clear_of_dependence(&r, &mut work)? { return None; }
         Some(dependent)
     })();
-    (found, work.done)
+    (found, work.spent())
 }
 
 fn unit(row: &Row, norm: f64) -> SparseRow { row.entries.iter().map(|&(k, x)| (k, x / norm)).collect() }
@@ -173,6 +173,8 @@ impl Work {
         (!self.out).then_some(())
     }
     fn run_out(&self) -> bool { self.out || self.done > self.budget }
+    /// The work spent, past `budget` when it ran out, which callers read as running out.
+    fn spent(&self) -> usize { if self.out { self.done.max(self.budget.saturating_add(1)) } else { self.done } }
 }
 
 enum Insertion { Independent, Dependent }
@@ -506,7 +508,7 @@ fn beyond_comparison(r: &[SparseRow], work: &mut Work) -> Option<bool> {
     for (j, row) in s.iter().enumerate() {
         for &(k, x) in row { dense[k][j] = x; }
     }
-    // A decomposition that runs out may have used all it was allowed.
+    // A decomposition that runs out used at most what it was allowed.
     let Some((values, _, spent)) = crate::dense::singular(&dense, work.budget.saturating_sub(work.done)) else {
         work.done = work.done.max(work.budget);
         return None;
