@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use sketch_solver::equations::Kind;
-use sketch_solver::newton::{Limits, Outcome, solve_within};
+use sketch_solver::newton::{Limits, Outcome, solve_whole, solve_within};
 use sketch_solver::problem::{Status, VERSION, decode};
 use sketch_solver::solve_buffer;
 
@@ -59,6 +59,13 @@ impl Builder {
         let problem = decode(&self.encode()).unwrap();
         let mut values = problem.values.clone();
         let outcome = solve_within(&problem, &mut values, limits);
+        (outcome, values)
+    }
+    /// `outcome_within` with every group solved whole, its simple equalities not eliminated.
+    pub fn outcome_whole_within(&self, limits: Limits) -> (Outcome, Vec<f64>) {
+        let problem = decode(&self.encode()).unwrap();
+        let mut values = problem.values.clone();
+        let outcome = solve_whole(&problem, &mut values, limits);
         (outcome, values)
     }
     /// `(status, iterations, values)` within `limits`.

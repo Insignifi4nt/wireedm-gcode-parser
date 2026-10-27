@@ -81,3 +81,37 @@ export function nativeAnswerDifferences(baseline: NativeAnswer, current: NativeA
   if (!same(a.residual, b.residual)) found.push('residual');
   return found;
 }
+
+/**
+ * Whether the solver may eliminate a simple equality of `model` (from 0.0.760): it is not a drag, and
+ * some lasting difference or value reads an unknown.
+ */
+export function nativeModelEliminates(model: CadSketchEquationModel) {
+  return !model.equations.some(equation => equation.temporary)
+    && model.equations.some(equation => (equation.kind === 'difference' || equation.kind === 'value') && equation.operands.some(p => !model.fixed[p]));
+}
+
+/** How far eliminating simple equalities may move a value: this part of its size, and at least of a millimetre. */
+export const NATIVE_ELIMINATION_TOLERANCE = 1e-9;
+
+/** The largest move of any value, each over its allowance (see `nativeEliminationDifferences`); zero for the same values. */
+export function nativeValueMove(baseline: readonly number[], current: readonly number[]) {
+  return baseline.reduce((largest, value, index) => Object.is(value, current[index]) ? largest
+    : Math.max(largest, Math.abs(value - current[index]) / (NATIVE_ELIMINATION_TOLERANCE * Math.max(1, Math.abs(value)))), 0);
+}
+
+/**
+ * The parts in which two answers to one model differ beyond what eliminating simple equalities
+ * allows. A group solved through its classes reaches the solution solving it whole does, to
+ * roundoff, so its values may move within `NATIVE_ELIMINATION_TOLERANCE`, and its iterations and
+ * largest residual may change. Nothing else may: status, diagnosis, freedom, labels, drag and any
+ * error stay the baseline's, and a model the solver cannot eliminate from, or whose every group
+ * the baseline took no step in, is answered bit for bit.
+ */
+export function nativeEliminationDifferences(model: CadSketchEquationModel, baseline: NativeAnswer, current: NativeAnswer): string[] {
+  const found = nativeAnswerDifferences(baseline, current);
+  if (!found.length || 'error' in baseline || 'error' in current || !nativeModelEliminates(model) || baseline.solution.iterations === 0) return found;
+  const allowed = new Set(['iterations', 'residual']);
+  if (baseline.solution.values.length === current.solution.values.length && nativeValueMove(baseline.solution.values, current.solution.values) <= 1) allowed.add('values');
+  return found.filter(part => !allowed.has(part));
+}

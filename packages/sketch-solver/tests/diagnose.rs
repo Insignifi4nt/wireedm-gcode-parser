@@ -192,12 +192,13 @@ fn a_nearly_parallel_guide_is_not_blamed_for_its_neighbour() {
 #[test]
 fn diagnosis_shares_the_work_limit_of_its_group() {
     // The smallest limits that converge and that diagnose, from a solved start and after a solve:
-    // diagnosing after a solve needs the solve's work and its own.
+    // diagnosing after a solve needs the solve's work and its own. Solved whole, as a group whose
+    // equalities are not eliminated is; an eliminated value takes no solve (see `eliminate.rs`).
     let least = |start: f64| {
         let mut builder = Builder::new();
         let x = builder.parameter(start, false);
         builder.equation(Kind::Value, 0.0, &[x]);
-        let outcomes: Vec<_> = (0..1000).map(|work| builder.outcome_within(Limits { fill: usize::MAX, work }).0).collect();
+        let outcomes: Vec<_> = (0..1000).map(|work| builder.outcome_whole_within(Limits { fill: usize::MAX, work }).0).collect();
         let converged = outcomes.iter().position(|outcome| outcome.status == Status::Converged).unwrap();
         let diagnosed = outcomes.iter().position(|outcome| outcome.diagnosis == Diagnosis::Diagnosed).unwrap();
         assert!(outcomes[diagnosed..].iter().all(|outcome| outcome.diagnosis == Diagnosis::Diagnosed));
@@ -217,7 +218,8 @@ fn diagnosis_shares_the_work_limit_of_its_group() {
 fn a_group_out_of_work_while_diagnosed_leaves_the_others_labelled() {
     // A value given twice, before or after a chain of twelve points dimensioned along x and held
     // level, which needs more work: at some limits the chain converges but its diagnosis runs out,
-    // and the repeated value is still redundant.
+    // and the repeated value is still redundant. Solved whole: eliminated, the chain takes no solve,
+    // and below the work its diagnosis needs it is solved whole (see `eliminate.rs`).
     for repeat_first in [true, false] {
         let mut builder = Builder::new();
         let repeat = |builder: &mut Builder| {
@@ -238,7 +240,7 @@ fn a_group_out_of_work_while_diagnosed_leaves_the_others_labelled() {
         if !repeat_first { repeat(&mut builder); }
         let mut labels = vec![0; 26];
         labels[if repeat_first { 1 } else { 25 }] = REDUNDANT;
-        let outcomes: Vec<_> = (0..1000).map(|work| builder.outcome_within(Limits { fill: usize::MAX, work }).0).collect();
+        let outcomes: Vec<_> = (0..1000).map(|work| builder.outcome_whole_within(Limits { fill: usize::MAX, work }).0).collect();
         let incomplete: Vec<_> = outcomes.iter().filter(|outcome| outcome.diagnosis == Diagnosis::Incomplete).collect();
         assert!(!incomplete.is_empty(), "repeat first {repeat_first}");
         for outcome in incomplete {
