@@ -13,4 +13,6 @@ Wire EDM's own 2D sketch constraint solver: a Rust crate with no dependencies, c
   - the loader;
   - the runtime in `../cadSketchNativeRuntime.ts`, which loads, retries and replaces instances and answers every solve.
 
+`baseline/` keeps an earlier release's module, named with its size and sha256 in `baseline/manifest.json`, so a change to the solver is compared with the module it replaces, answer by answer in `native/__tests__/nativeBaseline.test.ts` and in time by `scripts/benchmark-cad-native-ab.ts`. Replace it only with a module a release shipped, once the answers that release changed are accepted.
+
 `npm run solver:build` rebuilds the module and `wasm/manifest.json` with the toolchain pinned in `rust-toolchain.toml`; commit both. `npm run solver:check` runs `cargo test` and fails unless a fresh build matches the committed module byte for byte. CI runs it in the native solver job. Source paths are remapped so Windows and Linux builds match.

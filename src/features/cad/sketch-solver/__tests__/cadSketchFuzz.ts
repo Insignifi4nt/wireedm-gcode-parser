@@ -6,6 +6,15 @@ import type { CadSketchSolveInput } from '../cadSketchSolverTypes';
  * with PlaneGCS's answers, so a change to what any seed generates is a new version, never an edit in place.
  */
 export const CAD_SKETCH_FUZZ_VERSION = 1;
+/** Version of the generator weighted toward simple equalities, frozen the same way by its own hash. */
+export const CAD_SKETCH_EQUALITY_FUZZ_VERSION = 1;
+
+/**
+ * `mixed`: every construction step and dimension alike. `equalities`: horizontal, vertical,
+ * coincident and equal-radius steps, rectangles, axis distances and fixed coordinates made more
+ * likely, so chains of simple equalities meet each other and the nonlinear relations that read them.
+ */
+export type CadSketchFuzzMode = 'mixed' | 'equalities';
 
 /** Relation kinds the generator builds; corners, patterns and references keep their own suites. */
 export const cadSketchFuzzFamilies = ['horizontal', 'vertical', 'parallel', 'perpendicular', 'collinear', 'equal-length', 'midpoint',
@@ -14,6 +23,7 @@ export const cadSketchFuzzFamilies = ['horizontal', 'vertical', 'parallel', 'per
 
 export interface CadSketchFuzzCase {
   readonly seed: number;
+  readonly mode: CadSketchFuzzMode;
   /** Every relation holds at these start values, measured from them. */
   readonly witness: CadSketchSolveInput;
   /** The witness with each free start value moved by up to 3% of the sketch scale. */
@@ -252,6 +262,21 @@ const dimensions: readonly ((sketch: Builder) => void)[] = [
   }
 ];
 
+/** A rectangle by its corners: two horizontal and two vertical sides, as most profiles start. */
+function rectangle(sketch: Builder) {
+  const a = sketch.anchor(), across = { x: sketch.pick([-1, 1]) * sketch.span(), y: sketch.pick([-1, 1]) * sketch.span() };
+  const b = sketch.point(add(a, { x: across.x, y: 0 })), c = sketch.point(add(a, across)), d = sketch.point(add(a, { x: 0, y: across.y }));
+  sketch.line(a, b); sketch.line(b, c); sketch.line(c, d); sketch.line(d, a);
+  sketch.relate({ id: sketch.id('r'), kind: 'horizontal', pointIds: [a.id, b.id] }); sketch.relate({ id: sketch.id('r'), kind: 'vertical', pointIds: [b.id, c.id] });
+  sketch.relate({ id: sketch.id('r'), kind: 'horizontal', pointIds: [c.id, d.id] }); sketch.relate({ id: sketch.id('r'), kind: 'vertical', pointIds: [d.id, a.id] });
+}
+
+// The `equalities` generator draws from every step and dimension, with these made more likely.
+const [, horizontal, vertical, , , , , , , , coincident, circle, , equalRadius] = steps;
+const equalitySteps = [...steps, horizontal, horizontal, vertical, vertical, coincident, coincident, circle, equalRadius, equalRadius, rectangle, rectangle, rectangle];
+const [, axisDistance, , , fixedPoint, fixedAxis] = dimensions;
+const equalityDimensions = [...dimensions, axisDistance, axisDistance, axisDistance, fixedAxis, fixedAxis, fixedPoint];
+
 function graphOf(sketch: Builder, position: (point: Point) => readonly [number | string, number | string], radius: (curve: Curve) => number,
   relations: readonly CadSketchGraphRelation[] = sketch.relations): CadSketchGraph {
   return parseCadSketchGraph({
@@ -262,15 +287,17 @@ function graphOf(sketch: Builder, position: (point: Point) => readonly [number |
 }
 
 /** The witness, its perturbed start, a drag and an injected contradiction for one seed. */
-export function createCadSketchFuzzCase(seed: number): CadSketchFuzzCase {
-  const random = seeded(Math.imul(seed, 2654435761) ^ CAD_SKETCH_FUZZ_VERSION);
+export function createCadSketchFuzzCase(seed: number, mode: CadSketchFuzzMode = 'mixed'): CadSketchFuzzCase {
+  const equalities = mode === 'equalities';
+  // Each generator seeds its own sequence, so the same seed builds unrelated sketches in each.
+  const random = seeded(Math.imul(seed, 2654435761) ^ (equalities ? 0x45510000 + CAD_SKETCH_EQUALITY_FUZZ_VERSION : CAD_SKETCH_FUZZ_VERSION));
   const scale = [1, 10, 100][Math.floor(random() * 3)];
   const far = random() < .12, origin = far ? { x: (random() - .5) * 400 * scale, y: (random() - .5) * 400 * scale } : { x: 0, y: 0 };
   const sketch = new Builder(random, scale, origin);
   sketch.scatter();
-  for (let count = 3 + Math.floor(sketch.range(0, 6)); count > 0; count--) sketch.pick(steps)(sketch);
+  for (let count = 3 + Math.floor(sketch.range(0, 6)) + (equalities ? 2 : 0); count > 0; count--) sketch.pick(equalities ? equalitySteps : steps)(sketch);
   if (!sketch.lines.length) steps[0](sketch);
-  for (let count = Math.floor(sketch.range(0, 5)); count > 0; count--) sketch.pick(dimensions)(sketch);
+  for (let count = Math.floor(sketch.range(0, 5)); count > 0; count--) sketch.pick(equalities ? equalityDimensions : dimensions)(sketch);
   if (sketch.chance(.75)) dimensions[4](sketch);
   if (sketch.relations.length && sketch.chance(.2)) sketch.relate({ ...sketch.pick(sketch.relations), id: sketch.id('r') });
 
@@ -286,7 +313,7 @@ export function createCadSketchFuzzCase(seed: number): CadSketchFuzzCase {
   const contradiction = contradict(sketch, witness);
   const translatable = sketch.relations.filter(relation => relation.kind !== 'fixed-point' && relation.kind !== 'fixed-axis');
   const reachable = { graph: graphOf(sketch, point => [point.x, point.y], curve => curve.radius, translatable), parameters: witness.parameters, drag: drag.drag };
-  return { seed, witness, perturbed, drag, reachable, contradiction };
+  return { seed, mode, witness, perturbed, drag, reachable, contradiction };
 }
 
 /** Adds a relation that cannot hold together with one already there, or a pair that cannot. */
