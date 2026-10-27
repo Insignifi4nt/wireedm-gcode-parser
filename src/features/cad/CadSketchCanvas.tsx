@@ -449,7 +449,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   }, [onControlsReady]);
   useEffect(() => { setPicks([]); setPathDraft(createCadPathDraft()); setTrimHover(null); }, [sketch.id, tool, cancelSignal]);
   useLayoutEffect(() => { setCursorInput(current => ({ ...current, mode: 'position' })); }, [sourceSketch, graphSourceParameters, tool, cancelSignal, center, span, aspect]);
-  useEffect(() => { acquired.current = []; }, [sourceSketch, tool, cancelSignal]);
+  // Acquired points are positions, so a revision or a parameter change can move what they came from, also
+  // where the sketch keeps its object.
+  useEffect(() => { acquired.current = []; }, [sourceSketch, graphSourceParameters, documentVersion, tool, cancelSignal]);
   const pathPending = tool === 'path' && pathDraft.kind !== 'idle';
   useLayoutEffect(() => { onPendingChange(points.length > 0 || pathPending || dragPreview !== null || submission.applying || graphPending || boxPending || overlapPending || choicePending); }, [points.length, pathPending, dragPreview !== null, submission.applying, graphPending, boxPending, overlapPending, choicePending, onPendingChange]);
   const publishGraphPending = useCallback((value: boolean) => {
