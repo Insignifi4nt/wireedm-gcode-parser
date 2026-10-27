@@ -3,7 +3,7 @@
 // compares each answer with PlaneGCS's on the same input. Needs no PlaneGCS, so it outlives it.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { cadSketchSolvedValues } from '@/domain/cad/cadSketchGraph';
+import { cadSketchGraphWithSolvedValues, cadSketchSolvedValues } from '@/domain/cad/cadSketchGraph';
 import { createCadSketchNativeFirstRuntime, type CadSketchSolveRecord } from '../cadSketchNativeFirstRuntime';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations } from '../native/compileCadSketchEquations';
@@ -33,8 +33,12 @@ const why = {
   mirroredSmallScale: 'PlaneGCS mirrors the 0.02 mm rectangle beside a 20 mm one across its fixed corner; native keeps the side it started on.'
 };
 
-/** A reviewed record: every way native differs, native's answer exactly, and why it stands. */
-interface Reviewed { readonly differs: readonly Difference[]; readonly native: string; readonly why: string }
+/**
+ * A reviewed record: every way native differs, native's answer exactly, and why it stands. A
+ * reviewed geometry difference also bounds how far native's solution may be from PlaneGCS's, and a
+ * reviewed further drag how far native may end from its target, both in mm.
+ */
+interface Reviewed { readonly differs: readonly Difference[]; readonly native: string; readonly why: string; readonly geometryMm?: number; readonly dragMm?: number }
 
 /**
  * Reviewed differences, by the start of the input hash. Each must still occur, on exactly one record,
@@ -57,9 +61,9 @@ const reviewed = new Map<string, Reviewed>([
   ['df979527d2e0b1a3', { differs: ['freedom-unknown'], native: 'solved success dof=?', why: why.nearTangency }],
   ['e5ab88b68e198369', { differs: ['freedom-unknown'], native: 'solved success dof=?', why: why.nearTangency }],
   ['e6a41fd884982b98', { differs: ['freedom-unknown'], native: 'solved success dof=?', why: why.nearTangency }],
-  ['060e6d055d6ee020', { differs: ['freedom-unknown', 'geometry-differs'], native: 'solved success dof=?', why: why.releasedOnTangency }],
-  ['1df3aae67436520a', { differs: ['freedom-unknown', 'geometry-differs'], native: 'solved success dof=?', why: why.releasedOnTangency }],
-  ['a9a79893a74fc708', { differs: ['freedom-unknown', 'geometry-differs'], native: 'solved success dof=?', why: why.releasedOnTangency }],
+  ['060e6d055d6ee020', { differs: ['freedom-unknown', 'geometry-differs'], native: 'solved success dof=?', why: why.releasedOnTangency, geometryMm: 0.0002822 }],
+  ['1df3aae67436520a', { differs: ['freedom-unknown', 'geometry-differs'], native: 'solved success dof=?', why: why.releasedOnTangency, geometryMm: 0.0001220 }],
+  ['a9a79893a74fc708', { differs: ['freedom-unknown', 'geometry-differs'], native: 'solved success dof=?', why: why.releasedOnTangency, geometryMm: 0.00002472 }],
   ['1ac1c9c8d31404da', { differs: ['reason-differs', 'status-differs', 'freedom-unknown', 'ids-differ', 'issues-differ'], native: 'conflicting failed dof=? conflicting=mid', why: why.unmetWithNothingFree }],
   ['26d0b45a0b375c2b', { differs: ['reason-differs', 'status-differs', 'freedom-unknown', 'ids-differ', 'issues-differ'], native: 'conflicting failed dof=? conflicting=incompatible-radius', why: why.unmetWithNothingFree }],
   ['308f5e3824425661', { differs: ['reason-differs', 'status-differs', 'freedom-unknown', 'ids-differ', 'issues-differ'], native: 'conflicting failed dof=? conflicting=mid', why: why.unmetWithNothingFree }],
@@ -86,10 +90,10 @@ const reviewed = new Map<string, Reviewed>([
   ['e5f86571162fb20a', { differs: ['ids-differ'], native: 'conflicting failed dof=? conflicting=length,other,third redundant=repeat', why: why.repeatedDimension }],
   ['f672e07f6eabed9e', { differs: ['freedom-unknown'], native: 'failed failed dof=?', why: why.impossibleTriangle }],
   ['a39314be63da34a8', { differs: ['issues-differ'], native: 'invalid-solution success dof=0 issues=relation:corner_5:relation-residual,relation:corner_5:relation-residual', why: why.oversizedFillet }],
-  ['89463f19e2ca8ac7', { differs: ['drag-further'], native: 'solved success dof=1', why: why.fourBarReassembly }],
-  ['f815c7400240750c', { differs: ['drag-further'], native: 'solved success dof=1', why: why.fourBarReassembly }],
-  ['3f672252a867403a', { differs: ['drag-further'], native: 'solved success dof=0', why: why.tangencyStall }],
-  ['f573371195c8132a', { differs: ['geometry-differs'], native: 'solved success dof=0', why: why.mirroredSmallScale }]
+  ['89463f19e2ca8ac7', { differs: ['drag-further'], native: 'solved success dof=1', why: why.fourBarReassembly, dragMm: 32.53 }],
+  ['f815c7400240750c', { differs: ['drag-further'], native: 'solved success dof=1', why: why.fourBarReassembly, dragMm: 32.53 }],
+  ['3f672252a867403a', { differs: ['drag-further'], native: 'solved success dof=0', why: why.tangencyStall, dragMm: 7.501e-6 }],
+  ['f573371195c8132a', { differs: ['geometry-differs'], native: 'solved success dof=0', why: why.mirroredSmallScale, geometryMm: 0.02001 }]
 ]);
 
 /** Outcomes that are not differences to review: counted for the record. */
@@ -147,15 +151,28 @@ function differences(input: CadSketchSolveInput, outcome: PlaneGcsCorpusOutcome,
   return found;
 }
 
+/** How far a native solution is from PlaneGCS's in mm, or a native drag from its target. */
+function distances(input: CadSketchSolveInput, outcome: PlaneGcsCorpusOutcome, result: CadSketchSolveResult): { geometryMm?: number; dragMm?: number } {
+  if (outcome.kind !== 'solved' || result.kind !== 'solved') return {};
+  if (input.drag) return { dragMm: corpusDragDistance(input, result.graph) };
+  return { geometryMm: Math.max(0, ...cadSketchSolvedValues(result.graph).map((value, index) => Math.abs(value - outcome.values![index]))) };
+}
+
 /** What is wrong with native's answer to one record, if anything: a difference not reviewed, or a reviewed record that changed. */
 function problem(hash: string, input: CadSketchSolveInput, outcome: PlaneGcsCorpusOutcome, result: CadSketchSolveResult, tally: Tally, seen: Map<string, number>) {
   const found = differences(input, outcome, result, tally), key = [...reviewed.keys()].find(prefix => hash.startsWith(prefix));
   const planeGcs = outcome.kind === 'threw' ? `threw ${outcome.message}` : answer(outcome.kind === 'solved' ? 'solved' : outcome.reason!, outcome.diagnostics);
   if (key) {
     seen.set(key, (seen.get(key) ?? 0) + 1);
-    const entry = reviewed.get(key)!;
-    if (entry.differs.join() === found.join() && entry.native === nativeAnswer(result)) { tally.reviewed += 1; return; }
-    return `reviewed as ${entry.differs.join(', ')} with native "${entry.native}", now ${found.join(', ') || 'no difference'} with native "${nativeAnswer(result)}" (PlaneGCS "${planeGcs}")`;
+    const entry = reviewed.get(key)!, { geometryMm, dragMm } = distances(input, outcome, result);
+    // A bound only where its difference is reviewed, and then met.
+    const bounded = (difference: Difference, bound: number | undefined, measured: number | undefined) =>
+      entry.differs.includes(difference) ? bound !== undefined && measured !== undefined && measured <= bound : bound === undefined;
+    if (entry.differs.join() === found.join() && entry.native === nativeAnswer(result) && bounded('geometry-differs', entry.geometryMm, geometryMm)
+      && bounded('drag-further', entry.dragMm, dragMm)) { tally.reviewed += 1; return; }
+    const measured = [...geometryMm === undefined ? [] : [`${geometryMm} mm from PlaneGCS's solution (up to ${entry.geometryMm})`],
+      ...dragMm === undefined ? [] : [`${dragMm} mm from its target (up to ${entry.dragMm})`]].join(', ');
+    return `reviewed as ${entry.differs.join(', ')} with native "${entry.native}", now ${found.join(', ') || 'no difference'} with native "${nativeAnswer(result)}"${measured && ` ${measured}`} (PlaneGCS "${planeGcs}")`;
   }
   if (found.length) return `${found.join(', ')}: native "${nativeAnswer(result)}", PlaneGCS "${planeGcs}"`;
 }
@@ -192,15 +209,31 @@ describe('the frozen PlaneGCS corpus', () => {
     expect(problem(frozen.hash, input, frozen.outcome, failed, newTally(), new Map())).toMatch(/now reason-differs, ids-differ with native "failed failed dof=\?"/);
   });
 
+  /** `result` with its dragged point moved `mm` further from the drag target. */
+  function draggedFurther(input: CadSketchSolveInput, result: CadSketchSolveResult, mm: number): CadSketchSolveResult {
+    if (result.kind !== 'solved' || !input.drag) throw new Error('The record is a solved drag.');
+    const { pointId, position: [x, y] } = input.drag, [atX, atY] = result.graph.points.find(point => point.id === pointId)!.position as readonly [number, number];
+    const away = Math.hypot(atX - x, atY - y), [alongX, alongY] = away ? [(atX - x) / away, (atY - y) / away] : [1, 0];
+    return { ...result, graph: { ...result.graph, points: result.graph.points.map(point => point.id === pointId
+      ? { ...point, position: [atX + alongX * mm, atY + alongY * mm] as const } : point) } };
+  }
+
   it('fails a drag that ends further than PlaneGCS on a record reviewed for another difference', async () => {
     const { record: frozen, input } = corpusRecord('0c97e98a1743e0e9'), result = await runtime.solve(input);
-    if (result.kind !== 'solved' || !input.drag) throw new Error('The record is a solved drag.');
-    const { pointId, position: target } = input.drag, at = result.graph.points.find(point => point.id === pointId)!.position as readonly [number, number];
-    const away = Math.hypot(at[0] - target[0], at[1] - target[1]) || 1, step = 1e-5 / away;
-    const further = { ...result, graph: { ...result.graph, points: result.graph.points.map(point => point.id === pointId
-      ? { ...point, position: [at[0] + (away === 1 && at[0] === target[0] ? 1e-5 : (at[0] - target[0]) * step), at[1] + (at[1] - target[1]) * step] as const } : point) } };
     expect(problem(frozen.hash, input, frozen.outcome, result, newTally(), new Map())).toBeUndefined();
-    expect(problem(frozen.hash, input, frozen.outcome, further, newTally(), new Map())).toMatch(/now freedom-unknown, drag-further/);
+    expect(problem(frozen.hash, input, frozen.outcome, draggedFurther(input, result, 1e-5), newTally(), new Map())).toMatch(/now freedom-unknown, drag-further/);
+  });
+
+  it('fails a reviewed geometry difference or further drag that grows past its bound', async () => {
+    const mirrored = corpusRecord('f573371195c8132a'), solved = await runtime.solve(mirrored.input);
+    if (solved.kind !== 'solved') throw new Error('The record solves.');
+    const moved = { ...solved, graph: cadSketchGraphWithSolvedValues(solved.graph, cadSketchSolvedValues(solved.graph).map(value => value + 1)) };
+    expect(problem(mirrored.record.hash, mirrored.input, mirrored.record.outcome, solved, newTally(), new Map())).toBeUndefined();
+    expect(problem(mirrored.record.hash, mirrored.input, mirrored.record.outcome, moved, newTally(), new Map())).toMatch(/now geometry-differs .* 1\.0\d* mm from PlaneGCS's solution \(up to 0\.02001\)/);
+    const fourBar = corpusRecord('89463f19e2ca8ac7'), dragged = await runtime.solve(fourBar.input);
+    expect(problem(fourBar.record.hash, fourBar.input, fourBar.record.outcome, dragged, newTally(), new Map())).toBeUndefined();
+    expect(problem(fourBar.record.hash, fourBar.input, fourBar.record.outcome, draggedFurther(fourBar.input, dragged, .1), newTally(), new Map()))
+      .toMatch(/now drag-further .* 32\.6\d* mm from its target \(up to 32\.53\)/);
   });
 
   it('fails an input PlaneGCS refused as invalid that native no longer refuses alike', async () => {

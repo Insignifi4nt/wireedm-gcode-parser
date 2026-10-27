@@ -8,6 +8,7 @@ import { createCadSketchNativeFirstRuntime, type CadSketchSolveRecord, type CadS
 import { createCadSketchSolverRuntime } from '../cadSketchSolverRuntime';
 import { initializeCadSketchSolverModule } from '../cadSketchSolverModule';
 import { loadCadSketchNativeSolver, type CadSketchNativeSolver } from '../native/cadSketchNativeSolver';
+import { recordUnexpectedNativeFailure } from './cadSketchNativeFailures';
 
 const require = createRequire(import.meta.url);
 export const cadSketchPlaneGcsWasmUrl = pathToFileURL(require.resolve('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm')).href;
@@ -17,7 +18,8 @@ export const loadCadSketchTestNativeSolver = async () => loadCadSketchNativeSolv
 
 /**
  * A solve whose native instance failed to load or trapped rejects, so no suite passes on a
- * fallback answer by accident; `allowNativeFailure` lets a suite that tests those paths through.
+ * fallback answer by accident, and fails its test after it ends, so a test expecting a rejection
+ * cannot pass on it; `allowNativeFailure` lets a suite that tests those paths through.
  */
 export function createCadSketchTestSolver({ allowNativeFailure = false, ...options }: {
   readonly mode?: CadSketchSolverMode;
@@ -28,8 +30,10 @@ export function createCadSketchTestSolver({ allowNativeFailure = false, ...optio
   return createCadSketchNativeFirstRuntime({ loadNative: loadCadSketchTestNativeSolver, mode: 'native-only', ...options,
     onSolve: record => {
       options.onSolve?.(record);
-      if (!allowNativeFailure && (record.native === 'failed' || record.native === 'load-failed' || record.nativeReset === 'failure'))
-        throw new Error(`The native sketch solver could not run (${JSON.stringify(record)}).`);
+      if (allowNativeFailure || record.native !== 'failed' && record.native !== 'load-failed' && record.nativeReset !== 'failure') return;
+      const failure = `The native sketch solver could not run (${JSON.stringify(record)}).`;
+      recordUnexpectedNativeFailure(failure);
+      throw new Error(failure);
     },
     loadPlaneGcs: async () => createCadSketchSolverRuntime(() => initializeCadSketchSolverModule(cadSketchPlaneGcsWasmUrl)) });
 }
