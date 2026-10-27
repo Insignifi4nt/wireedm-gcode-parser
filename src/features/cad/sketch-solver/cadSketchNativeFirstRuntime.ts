@@ -34,12 +34,13 @@ export const CAD_SKETCH_NATIVE_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
 /**
  * Solves with the native solver first and asks PlaneGCS only when native cannot answer: compilation
  * it refuses, load failure, a failed instance, too large groups, unavailable or suspected
- * diagnosis, unknown freedom, no convergence, a stalled drag, a drag diagnosed as conflicting or
- * redundant where it ended, or a solution that moves fixed values or fails the graph checks. A
- * converged sketch whose rank is too close to call, as near a tangency, is answered natively with
- * freedom unknown. PlaneGCS loads on first use. When native has its own result, a rejection or the
- * frame where a drag stalled at feasible values, PlaneGCS's answer replaces it only if it solves or
- * names definite conflicts or redundancies; `native-only` returns native's own result.
+ * diagnosis, conflicts blamed as a stalled sketch's start shows, a group not diagnosed, unknown
+ * freedom, no convergence, a stalled drag, a drag diagnosed as conflicting or redundant where it
+ * ended, or a solution that moves fixed values or fails the graph checks. A converged sketch whose
+ * rank is too close to call, as near a tangency, is answered natively with freedom unknown. PlaneGCS
+ * loads on first use. When native has its own result, a rejection, a solution with freedom unknown
+ * or the frame where a drag stalled at feasible values, PlaneGCS's answer replaces it only if it
+ * solves or names definite conflicts or redundancies; `native-only` returns native's own result.
  */
 export function createCadSketchNativeFirstRuntime(options: {
   readonly loadNative: () => Promise<CadSketchNativeSolver>;

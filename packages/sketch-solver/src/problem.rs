@@ -11,13 +11,13 @@
 //! equations of one constraint share it. Flag 1 marks a temporary equation, a drag target: a
 //! `value` row that is approached as closely as the lasting equations allow and left out of
 //! diagnosis. Degrees of freedom are NaN unless the sketch was diagnosed exactly (code 0) without
-//! conflicts. The drag outcome and the distance in millimetres from the targeted coordinates to
+//! conflicts; labels are zero when it was not diagnosed (code 1). The drag outcome and the distance in millimetres from the targeted coordinates to
 //! their targets are NaN without targets.
 
 use crate::equations::Kind;
 use crate::newton::DragOutcome;
 
-pub const VERSION: f64 = 4.0;
+pub const VERSION: f64 = 5.0;
 pub const TEMPORARY: f64 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,7 +33,7 @@ pub enum Status {
 pub enum Diagnosis {
     Diagnosed = 0,
     /// Some group was too large, a row was not finite, or a group that did not converge could not
-    /// be diagnosed reliably.
+    /// be diagnosed reliably or within its work.
     Unavailable = 1,
     /// Nothing can move, so there is no freedom to diagnose against; relations that are not met
     /// conflict.
@@ -44,6 +44,31 @@ pub enum Diagnosis {
     /// A converged group's rank was unclear, as near a tangency: its labels are dependencies
     /// found, but more may exist, and freedom is unknown.
     Uncertain = 4,
+    /// A group that did not converge, suspected at its stall, is blamed as diagnosed at its start
+    /// instead: each dependency found there holds on its own rows alone, clear of every other
+    /// dependence and agreeing the same way, both at the start and where the solve stopped. Its
+    /// conflicts are those the start shows; others may exist where the solve stopped.
+    FromStart = 5,
+    /// A converged group ran out of work, or was too large to factor, before it was diagnosed: it
+    /// labels nothing and freedom is unknown, though other groups are diagnosed and labelled as
+    /// usual.
+    Incomplete = 6,
+}
+
+impl Diagnosis {
+    /// Order of precedence when groups are diagnosed differently: the problem takes the most
+    /// severe. `NoUnknowns` never meets another, as it means nothing in the problem can move.
+    pub fn severity(self) -> u8 {
+        match self {
+            Diagnosis::Diagnosed => 0,
+            Diagnosis::Uncertain => 1,
+            Diagnosis::Incomplete => 2,
+            Diagnosis::FromStart => 3,
+            Diagnosis::Suspected => 4,
+            Diagnosis::NoUnknowns => 5,
+            Diagnosis::Unavailable => 6,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

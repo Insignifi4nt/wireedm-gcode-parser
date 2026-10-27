@@ -113,3 +113,49 @@ fn a_witness_drops_a_row_the_others_reproduce_without() {
     assert_eq!(diagnosis.rank, 3);
     assert_eq!(diagnosis.witnesses.iter().map(|w| (w.rows.clone(), w.agrees)).collect::<Vec<_>>(), vec![(vec![1, 2, 3], false)]);
 }
+
+/// x = 0, then rows of `x + 1.27e-10 (y + z)` with these residuals and signs. Their remainder past x
+/// is about 0.9e-10 in each of y and z: each lead is within the dependence distance but together they
+/// are not, so such a row is left out undecided.
+fn copies(rows: &[(f64, f64)], last: Option<Vec<(usize, f64)>>) -> diagnose::Diagnosis {
+    let row = |entries: Vec<(usize, f64)>, residual: f64| diagnose::Row { entries, residual, tolerance: 1e-10 };
+    let mut built = vec![row(vec![(0, 1.0)], 0.0)];
+    built.extend(rows.iter().map(|&(sign, residual)| row(vec![(0, sign), (1, sign * 1.27e-10), (2, sign * 1.27e-10)], residual)));
+    if let Some(entries) = last { built.push(row(entries, 0.0)); }
+    diagnose::diagnose(3, &built, diagnose::TAU, usize::MAX, usize::MAX).0.unwrap()
+}
+
+fn witnesses(diagnosis: &diagnose::Diagnosis) -> Vec<(Vec<usize>, bool)> { diagnosis.witnesses.iter().map(|w| (w.rows.clone(), w.agrees)).collect() }
+
+#[test]
+fn an_exact_copy_of_an_undecided_row_depends_on_it_alone() {
+    let alone = copies(&[(1.0, 0.0)], None);
+    assert_eq!((alone.rank, alone.certain, witnesses(&alone)), (1, false, vec![]));
+    // Copied, negated, or repeated twice, each copy depends on the first and agrees with it.
+    for (rows, expected) in [
+        (vec![(1.0, 0.0), (1.0, 0.0)], vec![(vec![1, 2], true)]),
+        (vec![(1.0, 2e-11), (-1.0, -2e-11)], vec![(vec![1, 2], true)]),
+        (vec![(1.0, 0.0), (1.0, 0.0), (1.0, 0.0)], vec![(vec![1, 2], true), (vec![1, 3], true)]),
+        // With another residual, it disagrees, past the rows' tolerances together.
+        (vec![(1.0, 0.0), (1.0, 2.1e-10)], vec![(vec![1, 2], false)]),
+        (vec![(1.0, 0.0), (1.0, 1.9e-10)], vec![(vec![1, 2], true)]),
+    ] {
+        let diagnosis = copies(&rows, None);
+        assert_eq!((diagnosis.rank, diagnosis.certain, witnesses(&diagnosis)), (1, false, expected), "{rows:?}");
+    }
+    // A row one unit in the last place away is no copy, and is left out as well.
+    let near = copies(&[(1.0, 0.0)], Some(vec![(0, 1.0), (1, 1.27e-10), (2, 1.2700000000000002e-10)]));
+    assert_eq!((near.rank, near.certain, witnesses(&near)), (1, false, vec![]));
+}
+
+#[test]
+fn a_copy_decided_on_its_own_keeps_its_own_witness() {
+    // Once y is independent, the copy's remainder past it is decided in z, and it depends on its
+    // first row's factor through the independent rows, as before.
+    let row = |entries: Vec<(usize, f64)>, residual: f64| diagnose::Row { entries, residual, tolerance: 1e-10 };
+    let copy = || row(vec![(0, 1.0), (1, 1.27e-10), (2, 1.27e-10)], 0.0);
+    let rows = [row(vec![(0, 1.0)], 0.0), copy(), row(vec![(1, 1.0)], 0.0), copy()];
+    let diagnosis = diagnose::diagnose(3, &rows, diagnose::TAU, usize::MAX, usize::MAX).0.unwrap();
+    assert_eq!((diagnosis.rank, diagnosis.certain), (2, false));
+    assert!(diagnosis.witnesses.iter().all(|w| w.rows.last() == Some(&3) && !w.rows.contains(&1)), "{:?}", witnesses(&diagnosis));
+}

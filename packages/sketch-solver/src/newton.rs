@@ -307,26 +307,44 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
         if outcome.status != Status::TooLarge && group.status != Status::Converged { outcome.status = group.status; }
         if outcome.diagnosis == Diagnosis::NoUnknowns { witnesses.extend(unmet(&system, values)); continue; }
         if outcome.diagnosis == Diagnosis::Unavailable { continue; }
-        let Some(position) = group.position else { outcome.diagnosis = Diagnosis::Unavailable; continue; };
+        // A group accepted where it is but out of work, or too large to factor, is not diagnosed:
+        // converged, it labels nothing; otherwise nothing is available.
+        let Some(position) = group.position else {
+            let kind = if group.status == Status::Converged { Diagnosis::Incomplete } else { Diagnosis::Unavailable };
+            if kind.severity() > outcome.diagnosis.severity() { outcome.diagnosis = kind; }
+            continue;
+        };
         // A group that stalled short of a collapsed nearest point is diagnosed again only when its
         // rank was unclear, so a clear diagnosis is never lost to the looser distance.
         let mut work = group.work;
-        let mut diagnose_at = |distance| {
-            let (found, spent) = diagnose_group(&system, values, &position, distance, limits.work.saturating_sub(work), limits.fill);
-            work = work.saturating_add(spent);
-            found
+        // What was found within `distance`, and whether the work ran out first.
+        let diagnose_at = |values: &[f64], distance, work: &mut usize| {
+            let budget = limits.work.saturating_sub(*work);
+            let (found, spent) = diagnose_group(&system, values, &position, distance, budget, limits.fill);
+            *work = work.saturating_add(spent);
+            (found, spent > budget)
         };
         // A converged group whose rank is unclear, as near a tangency, keeps the witnesses found
-        // and leaves freedom unknown; a group that did not converge is diagnosed again at
-        // `STALLED`, as rank decides whether it conflicts.
+        // and leaves freedom unknown, and one that ran out of work while diagnosed labels nothing; a
+        // group that did not converge is diagnosed again at `STALLED`, as rank decides whether it
+        // conflicts, and then blamed as its start is diagnosed when that stands where it stopped.
         let converged = group.status == Status::Converged;
-        let diagnosed = match diagnose_at(TAU) {
-            Some(found) if found.2 || converged => Some((found, false)),
-            _ => (group.status == Status::NotConverged).then(|| diagnose_at(STALLED)).flatten()
-                .filter(|found| found.2).map(|found| (found, true)),
+        let diagnosed = match diagnose_at(values, TAU, &mut work) {
+            (Some(found), _) if found.2 => Some((found, Diagnosis::Diagnosed)),
+            (Some(found), _) if converged => Some((found, Diagnosis::Uncertain)),
+            (None, true) if converged => Some(((0, Vec::new(), false), Diagnosis::Incomplete)),
+            _ => (group.status == Status::NotConverged).then(|| diagnose_at(values, STALLED, &mut work).0).flatten()
+                .filter(|found| found.2).map(|stalled| {
+                    // A drag has no start of its own here, and its diagnoses already fall back.
+                    let from_start = (!dragging).then(|| blamed_from_start(&system, values, &start, &position, limits, &mut work)).flatten();
+                    match from_start {
+                        Some(witnesses) => ((0, witnesses, false), Diagnosis::FromStart),
+                        None => (stalled, Diagnosis::Suspected),
+                    }
+                }),
         };
         match diagnosed {
-            Some(((group_rank, group_witnesses, certain), suspected)) => {
+            Some(((group_rank, group_witnesses, certain), kind)) => {
                 // A solution that stands with freedom left moves toward the one nearest its start.
                 // The move stands only when the group is diagnosed the same where it ends, as a
                 // nearer solution can be singular; otherwise the diagnosed solution is kept.
@@ -347,9 +365,8 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
                 }
                 rank += group_rank;
                 witnesses.extend(group_witnesses);
-                // Unavailable, then Suspected, then Uncertain win over what any other group found.
-                if suspected { outcome.diagnosis = Diagnosis::Suspected; }
-                else if !certain && outcome.diagnosis == Diagnosis::Diagnosed { outcome.diagnosis = Diagnosis::Uncertain; }
+                // The most severe group decides; see `Diagnosis::severity`.
+                if kind.severity() > outcome.diagnosis.severity() { outcome.diagnosis = kind; }
             }
             None => outcome.diagnosis = Diagnosis::Unavailable,
         }
@@ -440,6 +457,57 @@ fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance:
     let (diagnosis, spent) = diagnose(position.len(), &diagnosed, distance, budget, fill);
     (diagnosis.map(|diagnosis| (diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
         rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect(), diagnosis.certain)), spent)
+}
+
+/// The witnesses of a group that did not converge as its `start` diagnoses them at `TAU`, when
+/// that stands: some disagree, and each holds with the same agreement on its own rows alone, clear
+/// of every other dependence, both at the start and at `values`, where the solve stopped. A
+/// dependency that holds at both points is not an accident of either, as a start that happens to be
+/// singular can be. This blames what PlaneGCS blames, as it diagnoses the start, where a collapsed
+/// stall cannot be diagnosed exactly; dependencies that only the stall shows go unblamed. `None`
+/// otherwise, or when the work would pass `limits.work`; `values` end as they began.
+fn blamed_from_start(system: &System, values: &mut [f64], start: &[f64], position: &[usize], limits: Limits, work: &mut usize) -> Option<Vec<Witness>> {
+    let stopped: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
+    let place = |values: &mut [f64], at: &[f64]| for (&p, &value) in system.unknowns.iter().zip(at) { values[p] = value; };
+    place(values, start);
+    let found = (|| {
+        let budget = limits.work.saturating_sub(*work);
+        let (found, spent) = diagnose_group(system, values, position, TAU, budget, limits.fill);
+        *work = work.saturating_add(spent);
+        let (_, witnesses, _) = found?;
+        if witnesses.iter().all(|witness| witness.agrees) { return None; }
+        let early = alone(system, values, position, &witnesses, limits, work)?;
+        Some((witnesses, early))
+    })();
+    place(values, &stopped);
+    let (witnesses, early) = found?;
+    let late = alone(system, values, position, &witnesses, limits, work)?;
+    (early == late && early.iter().zip(&witnesses).all(|(&agrees, witness)| agrees == witness.agrees)).then_some(witnesses)
+}
+
+/// Whether each of `witnesses` agrees when its rows alone are diagnosed at `TAU` at `values`, over
+/// their own columns; `None` unless every one is clear (its rows short of the last independent and
+/// shown clear of dependence, the last dependent on them) or when the work would pass
+/// `limits.work`.
+fn alone(system: &System, values: &[f64], position: &[usize], witnesses: &[Witness], limits: Limits, work: &mut usize) -> Option<Vec<bool>> {
+    let rows = system.rows(values, None);
+    let jacobian = system.jacobian(&rows, position);
+    witnesses.iter().map(|witness| {
+        // Group equations are in problem order, so each is found by bisection.
+        let local: Vec<usize> = witness.rows.iter().map(|e| system.equations.binary_search(e).ok()).collect::<Option<_>>()?;
+        // The rows' columns in their order, renumbered from zero, so the factor is as small as they are.
+        let mut columns: Vec<usize> = local.iter().flat_map(|&i| jacobian.rows[i].0.iter().map(|entry| entry.0)).collect();
+        columns.sort_unstable();
+        columns.dedup();
+        let subset: Vec<diagnose::Row> = local.iter().map(|&i| diagnose::Row {
+            entries: jacobian.rows[i].0.iter().map(|&(k, x)| (columns.binary_search(&k).unwrap(), x)).collect(),
+            residual: rows[i].residual, tolerance: rows[i].tolerance }).collect();
+        let budget = limits.work.saturating_sub(*work);
+        let (found, spent) = diagnose(columns.len(), &subset, TAU, budget, limits.fill);
+        *work = work.saturating_add(spent);
+        let found = found.filter(|found| found.certain && found.rank + 1 == subset.len() && found.witnesses.len() == 1)?;
+        (found.witnesses[0].rows.last() == Some(&(subset.len() - 1))).then_some(found.witnesses[0].agrees)
+    }).collect()
 }
 
 /// Rows that depend on earlier lasting rows at the start stay out of a first solve, as their

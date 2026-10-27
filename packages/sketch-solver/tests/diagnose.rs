@@ -201,10 +201,72 @@ fn diagnosis_shares_the_work_limit_of_its_group() {
         let converged = outcomes.iter().position(|outcome| outcome.status == Status::Converged).unwrap();
         let diagnosed = outcomes.iter().position(|outcome| outcome.diagnosis == Diagnosis::Diagnosed).unwrap();
         assert!(outcomes[diagnosed..].iter().all(|outcome| outcome.diagnosis == Diagnosis::Diagnosed));
+        // Converged but out of work while diagnosed, it labels nothing and freedom is unknown; with
+        // no work at all, labelling cannot run either and nothing is available.
+        for (work, outcome) in outcomes.iter().enumerate().take(diagnosed).skip(converged) {
+            let expected = if work == 0 { Diagnosis::Unavailable } else { Diagnosis::Incomplete };
+            assert_eq!((outcome.status, outcome.diagnosis, outcome.degrees_of_freedom), (Status::Converged, expected, None), "start {start}, work {work}");
+        }
         (converged, diagnosed)
     };
     let ((_, alone), (solved, diagnosed)) = (least(0.0), least(1.0));
     assert!(solved > 0 && diagnosed >= solved + alone, "solve {solved}, diagnosis alone {alone}, both {diagnosed}");
+}
+
+#[test]
+fn a_group_out_of_work_while_diagnosed_leaves_the_others_labelled() {
+    // A value given twice, before or after a chain of twelve points dimensioned along x and held
+    // level, which needs more work: at some limits the chain converges but its diagnosis runs out,
+    // and the repeated value is still redundant.
+    for repeat_first in [true, false] {
+        let mut builder = Builder::new();
+        let repeat = |builder: &mut Builder| {
+            let x = builder.parameter(2.0, false);
+            builder.equation(Kind::Value, 2.0, &[x]);
+            builder.equation(Kind::Value, 2.0, &[x]);
+        };
+        if repeat_first { repeat(&mut builder); }
+        let mut last = builder.point(0.0, 100.0, false);
+        builder.equation(Kind::Value, 0.0, &[last[0]]);
+        builder.equation(Kind::Value, 100.0, &[last[1]]);
+        for i in 1..12 {
+            let p = builder.point(i as f64 * 3.0 + 0.1, 100.2, false);
+            builder.equation(Kind::Value, i as f64 * 3.0, &[p[0]]);
+            builder.equation(Kind::Difference, 0.0, &[last[1], p[1]]);
+            last = p;
+        }
+        if !repeat_first { repeat(&mut builder); }
+        let mut labels = vec![0; 26];
+        labels[if repeat_first { 1 } else { 25 }] = REDUNDANT;
+        let outcomes: Vec<_> = (0..1000).map(|work| builder.outcome_within(Limits { fill: usize::MAX, work }).0).collect();
+        let incomplete: Vec<_> = outcomes.iter().filter(|outcome| outcome.diagnosis == Diagnosis::Incomplete).collect();
+        assert!(!incomplete.is_empty(), "repeat first {repeat_first}");
+        for outcome in incomplete {
+            assert_eq!((outcome.status, outcome.degrees_of_freedom, &outcome.labels), (Status::Converged, None, &labels), "repeat first {repeat_first}");
+        }
+        assert!(outcomes.iter().all(|outcome| outcome.diagnosis != Diagnosis::Unavailable || outcome.status == Status::TooLarge));
+    }
+}
+
+#[test]
+fn a_group_that_did_not_converge_and_ran_out_of_work_is_not_diagnosed() {
+    // Lengths 5 and 6 conflict: between stopping and being diagnosed, nothing explains the failure.
+    let mut builder = Builder::new();
+    let [a, b] = segment(&mut builder);
+    builder.equation(Kind::Distance, 5.0, &[a[0], a[1], b[0], b[1]]);
+    builder.equation(Kind::Distance, 6.0, &[a[0], a[1], b[0], b[1]]);
+    let outcomes: Vec<_> = (0..3000).map(|work| builder.outcome_within(Limits { fill: usize::MAX, work }).0).collect();
+    let stopped = outcomes.iter().position(|outcome| outcome.status == Status::NotConverged).unwrap();
+    let diagnosed = outcomes.iter().position(|outcome| outcome.diagnosis == Diagnosis::Diagnosed).unwrap();
+    assert!(stopped < diagnosed);
+    assert!(outcomes[stopped..diagnosed].iter().all(|outcome| (outcome.status, outcome.diagnosis) == (Status::NotConverged, Diagnosis::Unavailable)));
+    assert_eq!(outcomes[diagnosed].labels, vec![0, 0, 0, CONFLICTING, CONFLICTING]);
+}
+
+#[test]
+fn the_most_severe_group_decides_the_diagnosis() {
+    let order = [Diagnosis::Diagnosed, Diagnosis::Uncertain, Diagnosis::Incomplete, Diagnosis::FromStart, Diagnosis::Suspected, Diagnosis::NoUnknowns, Diagnosis::Unavailable];
+    assert!(order.windows(2).all(|pair| pair[0].severity() < pair[1].severity()));
 }
 
 /// Unknowns x, y, z from `start`, and in order `x = 0`, `x + 1e-6 y = 0`, `z = 0` when `pinned`,
