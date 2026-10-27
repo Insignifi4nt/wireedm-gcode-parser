@@ -76,7 +76,7 @@ pub struct Witness {
 /// fit would hold more than `fill`, is left out and leaves the diagnosis uncertain: the factor is
 /// then as it was, so the rows after it are decided as before.
 pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize, fill: usize) -> (Option<Diagnosis>, usize) {
-    let mut work = Work { done: 0, budget, fill };
+    let mut work = Work { done: 0, budget, fill, out: false };
     let found = diagnose_within(n, rows, distance, &mut work);
     (found, work.done)
 }
@@ -99,7 +99,7 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
             None => false,
         };
         if !decided {
-            if work.done > work.budget { return None; }
+            if work.run_out() { return None; }
             certain = false;
         }
     }
@@ -118,7 +118,7 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
 /// normalized, and the work spent; no singular value gate applies. `None` when a row's dependence
 /// cannot be decided or the work would pass `budget`.
 pub fn dependent_count(n: usize, rows: &[SparseRow], distance: f64, budget: usize) -> (Option<usize>, usize) {
-    let mut work = Work { done: 0, budget, fill: usize::MAX };
+    let mut work = Work { done: 0, budget, fill: usize::MAX, out: false };
     let found = (|| {
         let (mut r, mut count) = (vec![Vec::new(); n], 0);
         for row in rows {
@@ -136,7 +136,7 @@ pub fn dependent_count(n: usize, rows: &[SparseRow], distance: f64, budget: usiz
 /// the work spent; `None` when some are and rank cannot be decided reliably, or the work would
 /// pass `budget`. A factor that rank is checked through holds at most `fill` entries.
 pub fn dependent(n: usize, rows: &[SparseRow], budget: usize, fill: usize) -> (Option<Vec<usize>>, usize) {
-    let mut work = Work { done: 0, budget, fill };
+    let mut work = Work { done: 0, budget, fill, out: false };
     let found = (|| {
         let (mut r, mut dependent) = (vec![Vec::new(); n], Vec::new());
         for (index, row) in rows.iter().enumerate() {
@@ -157,14 +157,22 @@ pub fn dependent(n: usize, rows: &[SparseRow], budget: usize, fill: usize) -> (O
 
 fn unit(row: &Row, norm: f64) -> SparseRow { row.entries.iter().map(|&(k, x)| (k, x / norm)).collect() }
 
-/// Entries written so far against `budget`, and the entries a witness fit's factor may hold.
-struct Work { done: usize, budget: usize, fill: usize }
+/// Entries written so far against `budget`, and the entries a witness fit's factor may hold;
+/// `out` once a step was refused because it could pass `budget`.
+struct Work { done: usize, budget: usize, fill: usize, out: bool }
 
 impl Work {
     fn spend(&mut self, entries: usize) -> Option<()> {
         self.done = self.done.saturating_add(entries);
         (self.done <= self.budget).then_some(())
     }
+    /// Whether `entries` more fit before they are spent; when they do not, the work has run out
+    /// without them.
+    fn afford(&mut self, entries: usize) -> Option<()> {
+        self.out |= self.done.saturating_add(entries) > self.budget;
+        (!self.out).then_some(())
+    }
+    fn run_out(&self) -> bool { self.out || self.done > self.budget }
 }
 
 enum Insertion { Independent, Dependent }
@@ -194,8 +202,11 @@ fn insert(r: &mut [SparseRow], mut v: SparseRow, distance: f64, work: &mut Work)
 }
 
 /// The Givens rotation of `v` against `row`, whose lead is in the column of the lead of `v`:
-/// the rotated row and what is left of `v`; `None` when the work runs out.
+/// the rotated row and what is left of `v`; `None` when the work could run out, which is checked
+/// before rotating.
 fn rotate(row: &SparseRow, v: &SparseRow, work: &mut Work) -> Option<(SparseRow, SparseRow)> {
+    // Each holds at most the lead and every column of either.
+    work.afford(2 * (row.len() + v.len()))?;
     let (k, pivot, lead) = (row[0].0, row[0].1, v[0].1);
     let big = pivot.abs().max(lead.abs());
     let radius = big * ((pivot / big).powi(2) + (lead / big).powi(2)).sqrt();
@@ -290,7 +301,7 @@ fn nearest(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize
     for &i in subset {
         match insert(&mut r, unit(&rows[i], norms[i]), distance, work) {
             Some(Insertion::Independent) => {}
-            _ if work.done > work.budget => return None,
+            _ if work.run_out() => return None,
             _ => { factored = false; break; }
         }
     }
@@ -469,30 +480,37 @@ const INVERSE_WORK: usize = 20_000_000;
 /// and call it clear. `None` when the linear bound runs out of work.
 fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
     if comparison_floor(r, work)? >= CERTAIN { return Some(true); }
-    let mut check = Work { done: 0, budget: CHECK_WORK.min(work.budget.saturating_sub(work.done) / 2), fill: work.fill };
+    let mut check = Work { done: 0, budget: CHECK_WORK.min(work.budget.saturating_sub(work.done) / 2), fill: work.fill, out: false };
     let clear = beyond_comparison(r, &mut check);
     work.done = work.done.saturating_add(check.done);
     Some(clear == Some(true))
 }
 
 /// Whether rank is clear by the rows of `T^-1` or by the rows' own singular values; `None` when
-/// the work runs out.
+/// the work runs out. Each step is checked before it is taken, so the work spent stays within
+/// `work.budget`.
 fn beyond_comparison(r: &[SparseRow], work: &mut Work) -> Option<bool> {
     if inverse_floor(r, work)? >= CERTAIN { return Some(true); }
     let pivots: Vec<usize> = (0..r.len()).filter(|&k| !r[k].is_empty()).collect();
     let m = pivots.len();
     if m > DENSE_RANK { return Some(false); }
+    let entries = r.len() + r.iter().map(|row| row.len()).sum::<usize>();
+    work.afford(entries)?;
     let mut columns: Vec<SparseRow> = vec![Vec::new(); r.len()];
     for (j, &k) in pivots.iter().enumerate() {
         for &(c, x) in &r[k] { columns[c].push((j, x)); }
     }
-    work.spend(r.len() + r.iter().map(|row| row.len()).sum::<usize>())?;
+    work.spend(entries)?;
     let Transposed::Factor(s) = transposed(columns, m, work)? else { return Some(false) };
     let mut dense = vec![vec![0.0; m]; m];
     for (j, row) in s.iter().enumerate() {
         for &(k, x) in row { dense[k][j] = x; }
     }
-    let (values, _, spent) = crate::dense::singular(&dense, work.budget.saturating_sub(work.done))?;
+    // A decomposition that runs out may have used all it was allowed.
+    let Some((values, _, spent)) = crate::dense::singular(&dense, work.budget.saturating_sub(work.done)) else {
+        work.done = work.done.max(work.budget);
+        return None;
+    };
     work.spend(spent)?;
     Some(values.last().is_some_and(|&least| least >= CERTAIN))
 }
@@ -569,7 +587,7 @@ fn inverse_floor(r: &[SparseRow], work: &mut Work) -> Option<f64> {
 /// constraint can lie in several groups, as with the two axes of a coincidence, so equations are
 /// set aside across all of them.
 pub fn labels(tags: &[usize], witnesses: &[Witness], budget: usize) -> Option<Vec<u8>> {
-    let mut work = Work { done: 0, budget, fill: usize::MAX };
+    let mut work = Work { done: 0, budget, fill: usize::MAX, out: false };
     // Equations of each one's constraint; tags never decrease, so each constraint is one run.
     let mut multiplicity = vec![0; tags.len()];
     let mut first = 0;

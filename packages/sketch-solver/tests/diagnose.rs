@@ -392,3 +392,21 @@ fn a_rank_check_that_runs_out_of_work_leaves_rank_unclear() {
     assert!(spent <= 160, "{spent}");
     assert_eq!(dependent(22, &entries, 100_000, 1_000).0, Some(vec![20]));
 }
+
+#[test]
+fn a_rank_check_spends_no_more_than_its_budget() {
+    // One row with a tiny lead: the bounds over its pivot columns fail and its singular values are
+    // computed when the work allows. Whatever the budget, a diagnosis found was paid for within it.
+    let rows = [Row { entries: vec![(0, 1e-8), (1, 1.0)], residual: 0.0, tolerance: 1e-10 }];
+    for budget in 0..200 {
+        let (found, spent) = sketch_solver::diagnose::diagnose(2, &rows, TAU, budget, 1_000);
+        if let Some(found) = found {
+            assert!(spent <= budget, "{budget}: {spent}");
+            assert_eq!(found.rank, 1);
+        }
+        let repeated = [rows[0].entries.clone(), rows[0].entries.clone()];
+        let (set_aside, spent) = dependent(2, &repeated, budget, 1_000);
+        if set_aside.is_some() { assert!(spent <= budget, "{budget}: {spent}"); }
+    }
+    assert!(sketch_solver::diagnose::diagnose(2, &rows, TAU, 1_000_000, 1_000).0.expect("diagnosed").certain);
+}

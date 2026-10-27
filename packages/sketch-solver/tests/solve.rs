@@ -184,6 +184,20 @@ fn long_chains_are_diagnosed_within_the_work_allowance() {
 }
 
 #[test]
+fn checking_rank_before_the_solve_leaves_it_work() {
+    // A point on a nearly flat line, held twice: setting the repeat aside needs rank shown clear,
+    // which the bounds over the pivot columns cannot, and the checks past them keep within half
+    // the work left, so a small allowance still solves.
+    let mut builder = Builder::new();
+    let p = builder.point(1.0, 1e-6, false);
+    let a = builder.point(0.0, 0.0, true);
+    let b = builder.point(1.0, -1e-8, true);
+    for _ in 0..2 { builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], a[0], a[1], b[0], b[1]]); }
+    let (outcome, _) = builder.outcome_within(Limits { fill: usize::MAX, work: 27 });
+    assert_eq!(outcome.status, Status::Converged);
+}
+
+#[test]
 fn accepts_satisfied_redundant_equations_without_moving() {
     let mut builder = Builder::new();
     let a = builder.point(0.0, 0.0, false);
