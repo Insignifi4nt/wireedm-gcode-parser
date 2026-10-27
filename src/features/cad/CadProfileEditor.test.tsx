@@ -79,6 +79,22 @@ describe('imported analytic profile editing', () => {
     ] }));
     expect(second.profiles[0].geometry).toMatchObject({ radius: 3 });
   });
+  it('starts again from each revision of the part that holds the profile, also where the revision kept its object', async () => {
+    const document = parseCadDocument({ ...createCadDocument('Revised part', 'cad_revised_part'), parameters: { size: 2 }, features: [
+      { id: 'sketch', name: 'Sketch', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+        profiles: [{ id: 'circle', name: 'Circle', construction: false, geometry: { kind: 'circle', x: 0, y: 0, radius: 'size' } }] }] });
+    const revised = parseCadDocument({ ...document, parameters: { size: 3 } }), [sketch] = revised.features;
+    if (sketch?.kind !== 'sketch' || sketch !== document.features[0]) throw new Error('Expected the revision to keep its sketch');
+    const pending = vi.fn<(pending: boolean) => void>();
+    const render = (part: CadDocument) => act(async () => root.render(<CadProfileEditor document={part} profile={sketch.profiles[0]}
+      onApply={() => undefined} onPendingChange={pending} onCancel={() => undefined} />));
+    await render(document);
+    await input(field('Radius'), '7');
+    expect(pending).toHaveBeenLastCalledWith(true);
+    await render(revised);
+    expect(field('Radius').value).toBe('size');
+    expect(pending).toHaveBeenLastCalledWith(false);
+  });
   it('navigates one bounded line/arc editor without starting a geometry workflow', async () => {
     await mount(); const before = session.getSnapshot();
     expect(field('Start X').value).toBe('0'); expect(field('End X').value).toBe('20'); expect(container.querySelectorAll('input')).toHaveLength(7);

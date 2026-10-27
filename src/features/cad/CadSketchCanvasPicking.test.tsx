@@ -109,6 +109,17 @@ describe('sketch canvas profile picking', () => {
     expect(first).toEqual([expect.closeTo(30, 10), expect.closeTo(30, 10)]);
     expect(second).toEqual([first[0], expect.closeTo(50, 10)]); expect(third).toEqual([expect.closeTo(50, 10), second[1]]);
   });
+  it('drops a hovered center once a parameter edit moves it, also when the sketch keeps its object', async () => {
+    const sketch = { id: 'sketch', name: 'Sketch', suppressed: false, kind: 'sketch' as const, plane: 'XY' as const, offset: 0,
+      profiles: [{ id: 'hole', name: 'Hole', construction: false, geometry: { kind: 'circle' as const, x: 'cx', y: 10, radius: 4 } }] };
+    const h = await fixture([], { sketch, parameters: { cx: 20 }, tool: 'polygon', onAddFreshSketch: vi.fn() });
+    const move = (x: number, y: number) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });
+    const hint = () => container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label') ?? null;
+    await move(20, 10); expect(hint()).toMatch(/Hole.*Center/);
+    await move(20.03, 50); expect(hint()).toBe('Vertical with point · No relation');
+    await h.render({ parameters: { cx: 60 } });
+    await move(20.03, 50); expect(hint()).toBeNull();
+  });
   it('reads out the unfinished size at the cursor and clears it once the shape is placed or cancelled', async () => {
     const h = await fixture([], { tool: 'rectangle' }), readout = () => container.querySelector('[data-cad-drawing-readout] text')?.textContent ?? null;
     const move = (x: number, y: number) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });

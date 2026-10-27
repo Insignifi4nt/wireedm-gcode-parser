@@ -22,15 +22,20 @@ export function cadImportDataFields(value: unknown): Readonly<Record<string, unk
   }
 }
 
-/** Complete acyclic own JSON data, checked before a schema can read any accessor. */
-export function isCadImportData(value: unknown): boolean {
+/**
+ * Complete acyclic own JSON data, checked before a schema can read any accessor. An object
+ * `accepted` vouches for, such as a parser's frozen detached output, is not walked again.
+ */
+export function isCadImportData(value: unknown, accepted?: (item: object) => boolean): boolean {
   interface Frame { item: object; names: readonly PropertyKey[]; index: number; arrayLength: number | null }
   const ancestors = new WeakSet<object>();
   const frames: Frame[] = [];
   let current = value;
   try {
     while (true) {
-      if (current !== null && typeof current === 'object') {
+      if (current !== null && typeof current === 'object' && accepted?.(current)) {
+        // Complete data already, and it holds only its own frozen copies, so it reaches no ancestor.
+      } else if (current !== null && typeof current === 'object') {
         if (ancestors.has(current)) return false;
         const array = Array.isArray(current), prototype: unknown = Object.getPrototypeOf(current);
         if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) return false;

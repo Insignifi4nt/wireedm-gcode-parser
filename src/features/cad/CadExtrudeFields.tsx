@@ -23,16 +23,18 @@ function distanceDraft(feature: ExtrudeFeature): DistanceDraft {
 }
 
 /** Keep dormant form values locally; saved features contain only their active extent. */
-export function CadExtrudeFields({ feature, initialFeature, document, sketches, bodies, onChange }: {
+export function CadExtrudeFields({ feature, initialFeature, revision, document, sketches, bodies, onChange }: {
   feature: ExtrudeFeature;
   initialFeature: ExtrudeFeature;
+  /** Changes with each revision the form starts again from, also where it kept `initialFeature`'s object. */
+  revision?: unknown;
   document: CadDocument;
   sketches: readonly Option[];
   bodies: readonly Option[];
   onChange(feature: ExtrudeFeature): void;
 }) {
   const rememberedDistance = useRef<DistanceDraft | null>(initialFeature.kind === 'extrude' ? distanceDraft(initialFeature) : null);
-  useEffect(() => { rememberedDistance.current = initialFeature.kind === 'extrude' ? distanceDraft(initialFeature) : null; }, [initialFeature]);
+  useEffect(() => { rememberedDistance.current = initialFeature.kind === 'extrude' ? distanceDraft(initialFeature) : null; }, [initialFeature, revision]);
   const operation = feature.kind === 'pocket' ? 'cut' : feature.operation;
   const base = { id: feature.id, name: feature.name, suppressed: feature.suppressed, sketchId: feature.sketchId,
     ...(feature.regionSelection ? { regionSelection: feature.regionSelection } : {}) };
