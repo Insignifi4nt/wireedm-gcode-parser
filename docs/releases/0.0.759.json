@@ -1,0 +1,24 @@
+{
+  "version": "0.0.759",
+  "previousVersion": "0.0.758",
+  "postCompatibility": "preserved-output-solver-refactor",
+  "summary": "Prepares the sketch solver to eliminate simple equalities without changing any answer. A connected group can now be solved through a column map: a column moves one parameter by a scale times its step, followers held at fixed offsets are set from it, and a row over several of them sums their derivatives, each times the scale, in that column. Nothing builds a map yet, so every group is solved with one column per parameter as before; drags and the move toward the nearest solution require that. Unit tests check that a map moving each parameter alone solves bit for bit as no map, that a scaled column carries its members' derivatives and that a column moving two offset parameters solves the rows left. Against the 0.0.757 baseline module every answer on the frozen corpus, both fuzz generators and every solver benchmark call is the same bit for bit, and the A/B timing's median ratio over its 58 groups was 0.99, within the host's noise. The module grows from 210,230 to 211,351 bytes.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Sketch answers are unchanged bit for bit; the native module's bytes change.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or worker reply change. The native module is rebuilt; its wire protocol stays 5. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Rust solver tests with three new column map unit tests, solver:check, the baseline comparison against the 0.0.757 module (no difference on 3,245 corpus and fuzz inputs and every solver benchmark call), the A/B timing over 58 groups, the full Vitest suite, lint, ui:check, build and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Internal sketch solver preparation; sketches solve exactly as before.",
+    "changes": [
+      "Prepares the sketch solver for faster solving of simple relations."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
