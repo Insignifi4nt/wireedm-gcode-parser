@@ -117,6 +117,7 @@ export const reviewedCorpusDifferences = new Map<string, Reviewed>([
   ['e81d347a49251d1d', { differs: ['ids-differ'], native: 'redundant success dof=4 redundant=r10,r12,r13', why: why.repeatNaming }],
   ['ed53ebeb645dc253', { differs: ['ids-differ'], native: 'redundant success dof=4 redundant=r13,r16', why: why.repeatNaming }],
   ['fa50e2d9f82f2d54', { differs: ['ids-differ'], native: 'redundant success dof=4 redundant=r13,r16', why: why.repeatNaming }],
+  ['6892950b0a19c564', { differs: ['ids-differ'], native: 'redundant success dof=6 redundant=r13,r16', why: why.repeatNaming }],
   ['001919daf0945c9f', { differs: ['ids-differ'], native: 'conflicting failed dof=? conflicting=r22,r23', why: why.smallerConflict }],
   ['004c9a795b4c4d7c', { differs: ['ids-differ'], native: 'conflicting failed dof=? conflicting=r13,r18 redundant=r17', why: why.smallerConflict }],
   ['04fc0f1e14145988', { differs: ['ids-differ'], native: 'conflicting failed dof=? conflicting=r4,r7 redundant=r5,r6', why: why.smallerConflict }],
