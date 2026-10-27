@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { CadSketchEquationModel } from '../cadSketchEquationModel';
-import { loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketchNativeSolver } from '../cadSketchNativeSolver';
+import { CadSketchNativeProtocolError, loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketchNativeSolver } from '../cadSketchNativeSolver';
 
 export interface NativeBaselineManifest {
   readonly appVersion: string;
@@ -26,20 +26,22 @@ export function nativeBaselineBytes(manifest = nativeBaselineManifest) {
 let compiled: Promise<WebAssembly.Module> | undefined;
 export const loadNativeBaselineSolver = async () => loadCadSketchNativeSolver(await (compiled ??= WebAssembly.compile(nativeBaselineBytes())));
 
-/** One answer of a module: its solution, or the message it failed with. */
+/** One answer of a module: its solution, or what it failed with, a protocol error named apart as the runtime treats it apart. */
 export type NativeAnswer = { readonly solution: CadSketchNativeSolution } | { readonly error: string };
 
+const failure = (error: unknown): NativeAnswer => ({ error: `${error instanceof CadSketchNativeProtocolError ? 'protocol: ' : ''}${error instanceof Error ? error.message : String(error)}` });
+
 export function answerNatively(solver: CadSketchNativeSolver, model: CadSketchEquationModel): NativeAnswer {
-  try { return { solution: solver.solve(model) }; } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
+  try { return { solution: solver.solve(model) }; } catch (error) { return failure(error); }
 }
 
-/** A solver that passes each model it is asked, with its answer, to `onCall` before answering. */
+/** A solver that passes each model it is asked, with its answer, to `onCall`, then answers or throws as `solver` did. */
 export function recordNativeCalls(solver: CadSketchNativeSolver, onCall: (model: CadSketchEquationModel, answer: NativeAnswer) => void): CadSketchNativeSolver {
   return { memoryBytes: () => solver.memoryBytes(), solve(model) {
-    const answer = answerNatively(solver, model);
-    onCall(model, answer);
-    if ('error' in answer) throw new Error(answer.error);
-    return answer.solution;
+    let solution: CadSketchNativeSolution;
+    try { solution = solver.solve(model); } catch (error) { onCall(model, failure(error)); throw error; }
+    onCall(model, { solution });
+    return solution;
   } };
 }
 

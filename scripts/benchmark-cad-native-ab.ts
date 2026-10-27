@@ -58,14 +58,17 @@ const median = (values: readonly number[]) => { const sorted = [...values].sort(
 const results = [];
 for (const [name, recorded] of selected) {
   const models = [...recorded.values()];
-  const instances = Object.fromEntries(await Promise.all((Object.keys(modules) as ModuleId[]).map(async id => [id, await loadCadSketchNativeSolver(modules[id])] as const))) as Record<ModuleId, CadSketchNativeSolver>;
-  // The untimed pass warms both instances and compares their answers; a call either fails is not timed.
-  let differingCalls = 0;
-  const timed = models.filter(model => {
+  const fresh = async () => Object.fromEntries(await Promise.all((Object.keys(modules) as ModuleId[]).map(async id => [id, await loadCadSketchNativeSolver(modules[id])] as const))) as Record<ModuleId, CadSketchNativeSolver>;
+  let instances = await fresh(), differingCalls = 0;
+  // The untimed pass warms both instances and compares their answers. A call either fails is not
+  // timed, and as a failed instance never runs again, both are replaced after it, as the runtime does.
+  const timed: CadSketchEquationModel[] = [];
+  for (const model of models) {
     const answers = { baseline: answerNatively(instances.baseline, model), current: answerNatively(instances.current, model) };
     if (nativeAnswerDifferences(answers.baseline, answers.current).length) differingCalls += 1;
-    return !('error' in answers.baseline) && !('error' in answers.current);
-  });
+    if ('error' in answers.baseline || 'error' in answers.current) instances = await fresh();
+    else timed.push(model);
+  }
   if (!timed.length) { results.push({ group: name, calls: models.length, timedCalls: 0, differingCalls }); continue; }
   const pass = (instance: CadSketchNativeSolver) => { const started = performance.now(); for (const model of timed) instance.solve(model); return performance.now() - started; };
   // Short groups repeat within a round so each module's turn lasts about 25 ms; totals are per pass.

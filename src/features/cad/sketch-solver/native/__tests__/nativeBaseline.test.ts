@@ -11,8 +11,8 @@ import type { CadSketchSolveInput } from '../../cadSketchSolverTypes';
 import { createCadSketchFuzzCase } from '../../__tests__/cadSketchFuzz';
 import { loadCadSketchTestNativeSolver } from '../../__tests__/cadSketchTestSolver';
 import { corpusInput, corpusModelHash, readPlaneGcsCorpus } from '../../__tests__/planeGcsCorpus';
-import type { CadSketchNativeSolution } from '../cadSketchNativeSolver';
-import { loadPairedWithBaseline, nativeAnswerDifferences, nativeBaselineBytes, nativeBaselineManifest, type NativeAnswer } from './nativeBaseline';
+import { CadSketchNativeProtocolError, type CadSketchNativeSolution } from '../cadSketchNativeSolver';
+import { loadPairedWithBaseline, nativeAnswerDifferences, nativeBaselineBytes, nativeBaselineManifest, recordNativeCalls, type NativeAnswer } from './nativeBaseline';
 
 // The benchmarks' calls are compared here, not timed, so their CPU calibration is skipped.
 vi.mock('../../../benchmark/cadBenchmark', async original => ({ ...await original<typeof import('../../../benchmark/cadBenchmark')>(), cadBenchmarkCpuCalibrationMs: () => 1 }));
@@ -64,6 +64,14 @@ describe(`native answers against the ${nativeBaselineManifest.appVersion} baseli
     expect(nativeAnswerDifferences(answer(), answer({ status: 'not-converged', iterations: 4, residual: 2e-14 }))).toEqual(['status', 'iterations', 'residual']);
     expect(nativeAnswerDifferences({ error: 'trap' }, answer())).toEqual(['error']);
     expect(nativeAnswerDifferences({ error: 'trap' }, { error: 'trap' })).toEqual([]);
+  });
+
+  it('records a failure and rethrows it as it was, so the runtime recovers as it would', () => {
+    const thrown = new CadSketchNativeProtocolError('another version'), recorded: NativeAnswer[] = [];
+    const solver = recordNativeCalls({ memoryBytes: () => 0, solve: () => { throw thrown; } }, (_, answer) => recorded.push(answer));
+    expect(() => solver.solve({ values: [], fixed: [], pointParameters: new Map(), radiusParameters: new Map(), equations: [] })).toThrow(thrown);
+    expect(recorded).toEqual([{ error: 'protocol: another version' }]);
+    expect(nativeAnswerDifferences(recorded[0], { error: 'another version' })).toEqual(['error']);
   });
 
   it('answers every call for the corpus and the seeded sketches as the baseline module does', async () => {
