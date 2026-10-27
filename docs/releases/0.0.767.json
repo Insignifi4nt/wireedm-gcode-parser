@@ -1,0 +1,24 @@
+{
+  "version": "0.0.767",
+  "previousVersion": "0.0.766",
+  "postCompatibility": "preserved-output-closed-help-renders",
+  "summary": "Shared help renders only its control while it is closed. The shared Tooltip no longer wraps every control with help in a Radix tooltip provider, root, trigger and presence. It adds its handlers to the control itself, and only while help is open positions the help beside the control's current node with Radix Popper, which is now a direct dependency in place of the Radix tooltip package. Hover opens help after 400 ms, or at once within 300 ms of it closing; focus opens it except focus from a press; opening help closes any other; a press, click, blur, Escape, the pointer leaving or a scroll that moves the control close it, as before. Help that appears while its control keeps focus waits for the next focus or hover, as before. Releasing a 32-sketch drag in an unminified production build still makes 9 React commits, 4 of which render the whole workbench, but each of those now renders 414 to 427 components instead of 1,845 to 1,888.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Help shows the same text in the same places, describes its control in the same way and is still pointer-transparent.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. The app depends on @radix-ui/react-popper directly in place of @radix-ui/react-tooltip, which removes ten Radix packages from the lockfile.",
+    "verification": "tooltip.test.tsx checks the hover delay and reopen moment, touch, one help at a time, help appearing, changing and going on the same control node, help following a control replaced while it is open, from above or by the control itself, with the control's own object or callback ref kept, also when the control forwards it through its own callback, presses, clicks, blur, presses elsewhere, scrolling, focus from a press, controls that prevent the default, Escape reaching the focused field, and that removal leaves no timer or listener; each of 23 deliberate faults failed it. The existing shared control tests pass unchanged. e2e/shared-help.spec.ts checks in Chromium that help opens beside its control inside the viewport, flips below a control at the top, is the topmost element yet lets presses pass through it and its wrapper to the control below, describes its control, closes on Escape and when its control scrolls, and opens beside a menu item above the menu; it passes with both the earlier and the new tooltip, and fails with help on the wrong side or without its anchor. The commit probe counted components per render in four drag releases with each version. The full Vitest suite, lint, ui:check, build, solver:check and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Less rendering across the workbench.",
+    "changes": [
+      "Controls with help no longer render hidden help components while it is closed, so the part workbench renders about a quarter as many components each time it updates."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

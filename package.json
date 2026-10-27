@@ -1,7 +1,7 @@
 {
   "name": "wire-edm-workbench",
   "homepage": "https://insignifi4nt.github.io/wireedm-gcode-parser",
-  "version": "0.0.766",
+  "version": "0.0.767",
   "description": "A local-first Wire EDM workbench with controller-neutral CAM state and complete installable machine packages.",
   "type": "module",
   "scripts": {
@@ -60,8 +60,8 @@
   "author": "Wire EDM Development Team",
   "license": "MIT",
   "dependencies": {
+    "@radix-ui/react-popper": "^1.4.0",
     "@radix-ui/react-slot": "^1.2.4",
-    "@radix-ui/react-tooltip": "^1.4.1",
     "@sinclair/typebox": "^0.34.52",
     "@tailwindcss/vite": "^4.3.3",
     "@wire-edm/icons-react": "file:packages/icons-react",
