@@ -15,6 +15,7 @@ use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
 
 mod drag;
+mod eliminate;
 #[cfg(test)]
 mod tests;
 pub use drag::{DRAG_ITERATIONS, DragOutcome};
@@ -305,7 +306,15 @@ pub fn solve(problem: &Problem, values: &mut [f64]) -> Outcome { solve_within(pr
 /// `solve` with other limits. A group whose factor would exceed `limits.fill` is left where it
 /// is; one that spends `limits.work` stops where it got to. Either reports `TooLarge`, and
 /// diagnosis is then unavailable.
-pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Outcome {
+pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Outcome { solve_with(problem, values, limits, true) }
+
+/// `solve_within` with every group solved whole, as before simple equalities were eliminated, so
+/// tests can compare the two.
+#[doc(hidden)]
+pub fn solve_whole(problem: &Problem, values: &mut [f64], limits: Limits) -> Outcome { solve_with(problem, values, limits, false) }
+
+/// `solve_within`, eliminating simple equalities where `eliminating` (see `eliminate`).
+fn solve_with(problem: &Problem, values: &mut [f64], limits: Limits, eliminating: bool) -> Outcome {
     let (members, column) = groups(problem);
     let mut outcome = Outcome { status: Status::Converged, iterations: 0, residual: 0.0, diagnosis: Diagnosis::Diagnosed,
         degrees_of_freedom: None, labels: vec![0; problem.equations.len()], drag: None, target_distance: f64::NAN };
@@ -317,10 +326,19 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
     let (mut rank, mut witnesses) = (0, Vec::new());
     // A column map the drag's landings share, so each costs its own group's size.
     let mut held = if dragging { vec![usize::MAX; problem.values.len()] } else { Vec::new() };
+    // The column map of a group's classes, shared the same way.
+    let mut classes = if eliminating && !dragging { vec![usize::MAX; problem.values.len()] } else { Vec::new() };
     for (equations, unknowns) in members {
         let system = System { problem, column: &column, equations, unknowns, map: None };
         let start: Vec<f64> = if dragging { Vec::new() } else { system.unknowns.iter().map(|&p| values[p]).collect() };
-        let group = if dragging { drag::solve_group(&system, values, limits, &mut held) } else { solve_group(&system, values, limits) };
+        // A group solved through its classes was diagnosed where it ended, as below.
+        let (group, diagnosed_at_tau) = if dragging { (drag::solve_group(&system, values, limits, &mut held), None) } else {
+            let rows = system.rows(values, None);
+            match eliminating.then(|| eliminate::solve_group(&system, values, limits, &rows, &mut classes)).flatten() {
+                Some(eliminated) => (eliminated.group, Some((eliminated.diagnosis, eliminated.spent))),
+                None => (solve_group_from(&system, values, limits, MAX_ITERATIONS, rows), None),
+            }
+        };
         if let Some((kind, squared)) = group.drag {
             outcome.drag = Some(outcome.drag.map_or(kind, |worst| worst.max(kind)));
             squared_distance += squared;
@@ -357,7 +375,11 @@ pub fn solve_within(problem: &Problem, values: &mut [f64], limits: Limits) -> Ou
         // be diagnosed; otherwise it is diagnosed again at `STALLED`, as rank decides whether it
         // conflicts.
         let converged = group.status == Status::Converged;
-        let diagnosed = match diagnose_at(values, TAU, &mut work) {
+        let at_tau = match diagnosed_at_tau {
+            Some((found, spent)) => { work = work.saturating_add(spent); (Some(found), false) }
+            None => diagnose_at(values, TAU, &mut work),
+        };
+        let diagnosed = match at_tau {
             (Some(found), _) if found.2 => Some((found, Diagnosis::Diagnosed)),
             (Some(found), _) if converged => Some((found, Diagnosis::Uncertain)),
             (None, true) if converged => Some(((0, Vec::new(), false), Diagnosis::Incomplete)),
@@ -574,8 +596,13 @@ fn solve_group(system: &System, values: &mut [f64], limits: Limits) -> GroupOutc
 
 /// `solve_group` within `most` iterations.
 fn solve_group_within(system: &System, values: &mut [f64], limits: Limits, most: usize) -> GroupOutcome {
-    let n = system.unknowns.len();
     let rows = system.rows(values, None);
+    solve_group_from(system, values, limits, most, rows)
+}
+
+/// `solve_group_within` with the group's `rows` at `values`.
+fn solve_group_from(system: &System, values: &mut [f64], limits: Limits, most: usize, rows: Vec<Row>) -> GroupOutcome {
+    let n = system.unknowns.len();
     let progress = assess(&rows);
     let finish = |rows: &[Row], progress: Progress, iterations, exhausted: bool, position, work| GroupOutcome {
         status: if progress.accepted { Status::Converged } else if exhausted { Status::TooLarge } else { Status::NotConverged },
