@@ -6,7 +6,7 @@
 // Mismatches are collected and fail the suite after its tests, so suites that expect rejections
 // cannot swallow them.
 import { readFileSync } from 'node:fs';
-import { afterAll, expect, vi } from 'vitest';
+import { afterAll, afterEach, expect, vi } from 'vitest';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { cadSketchSolvedValues, checkCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchSolveInput, CadSketchSolveResult } from '../../cadSketchSolverTypes';
@@ -16,6 +16,7 @@ import { applyCadSketchEquationSolution, cadSketchEquationDiagnostics, type CadS
 import { loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketchNativeSolver } from '../cadSketchNativeSolver';
 import { planeGcsEquations, planeGcsValues } from './planeGcsEquations';
 import type { CadSketchSolveRecord } from '../../cadSketchNativeFirstRuntime';
+import { expectNoUnexpectedNativeFailures } from '../../__tests__/cadSketchNativeFailures';
 
 const wasm = readFileSync(new URL('../../../../../../packages/sketch-solver/wasm/sketch_solver.wasm', import.meta.url));
 const tally = { compared: 0, diagnosed: 0, reviewedDifferences: 0, unmetWithoutUnknowns: 0, wellConstrained: 0,
@@ -232,6 +233,8 @@ vi.mock('../../__tests__/cadSketchTestSolver', async importOriginal => {
     } };
   } };
 });
+
+afterEach(expectNoUnexpectedNativeFailures);
 
 afterAll(() => {
   if (process.env.NATIVE_DIFFERENTIAL_TALLY) console.log(`application runtime answers: ${JSON.stringify(answers)}`);

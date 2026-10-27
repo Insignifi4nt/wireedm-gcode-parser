@@ -7,6 +7,7 @@ import { measureCadResolvedProfile } from '@/domain/cad/cadMeasurements';
 import { createCadBenchmarkRectangleGraph } from '../benchmark/cadBenchmarkCases';
 import { cadSketchSolverWireResult, parseCadSketchSolveInput, parseCadSketchSolverReply } from './cadSketchSolverProtocol';
 import { circleReferencePart } from '@/domain/cad/__tests__/cadSketchExternalReferenceFixtures';
+import { expectNoUnexpectedNativeFailures } from './__tests__/cadSketchNativeFailures';
 import { createCadSketchTestSolver, loadCadSketchTestNativeSolver } from './__tests__/cadSketchTestSolver';
 import type { CadSketchNativeSolver } from './native/cadSketchNativeSolver';
 
@@ -176,6 +177,21 @@ describe('sketch solving', () => {
       source: { kind: 'entity', id: 'arc' }, code: 'arc-radius-mismatch', residualMm: expect.any(Number)
     }] } });
     expect('graph' in result).toBe(false);
+  });
+
+  it('fails a test whose native solve trapped, even where the test expects a rejection', async () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }], entities: [],
+      relations: [{ id: 'gap', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] });
+    const trapping = async (): Promise<CadSketchNativeSolver> => {
+      const native = await loadCadSketchTestNativeSolver();
+      return { ...native, solve: () => { throw new WebAssembly.RuntimeError('unreachable'); } };
+    };
+    await expect(createCadSketchTestSolver({ loadNative: trapping }).solve({ graph, parameters: {} })).rejects.toThrow('could not run');
+    // The setup files' check after each test; called here, it also clears what this test met.
+    expect(expectNoUnexpectedNativeFailures).toThrow(/met 1 native failure/);
+    expect(expectNoUnexpectedNativeFailures).not.toThrow();
+    expect(await createCadSketchTestSolver({ loadNative: trapping, allowNativeFailure: true }).solve({ graph, parameters: {} })).toMatchObject({ kind: 'rejected' });
+    expect(expectNoUnexpectedNativeFailures).not.toThrow();
   });
 });
 
