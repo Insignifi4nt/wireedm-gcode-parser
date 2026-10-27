@@ -16,15 +16,16 @@ fn distance(builder: &mut Builder, value: f64, p: [usize; 2], q: [usize; 2]) {
     builder.equation(Kind::Distance, value, &[p[0], p[1], q[0], q[1]]);
 }
 
-/// Points a and b 10 apart on a horizontal, dimensioned 10, 12 and 14 apart and 20 apart
-/// vertically, and with `repeat` 10 apart again.
-fn overlapping(repeat: bool) -> (Builder, [usize; 2], [usize; 2]) {
+/// Points a and b 10 apart on a horizontal, dimensioned 10, 12 and 14 apart, the 12 from b to a,
+/// and 20 apart vertically.
+fn overlapping() -> (Builder, [usize; 2], [usize; 2]) {
     let mut builder = Builder::new();
     let a = builder.point(0.0, 0.0, false);
     let b = builder.point(10.0, 0.0, false);
-    for value in [10.0, 12.0, 14.0] { distance(&mut builder, value, a, b); }
+    distance(&mut builder, 10.0, a, b);
+    distance(&mut builder, 12.0, b, a);
+    distance(&mut builder, 14.0, a, b);
     builder.equation(Kind::Difference, 20.0, &[a[1], b[1]]);
-    if repeat { distance(&mut builder, 10.0, a, b); }
     (builder, a, b)
 }
 
@@ -32,16 +33,21 @@ fn overlapping(repeat: bool) -> (Builder, [usize; 2], [usize; 2]) {
 fn distances_and_an_offset_that_cannot_agree_are_blamed_as_their_start_shows() {
     // The nearest point stands the pair upright, which the solve approaches only linearly, so rank
     // there is unclear at the exact distance, and the looser one suspects all four. At the start the
-    // distances repeat each other with other values, and each repetition holds alone where the solve
-    // stopped too, so they are blamed and the offset is not, as PlaneGCS diagnoses the start. A
-    // repeated 10 agrees and is redundant. The values stay where the solve stopped, upright at the
-    // mean of the dimensions.
+    // distances, the same function of a and b with other values, repeat each other, so they are
+    // blamed and the offset is not, as PlaneGCS diagnoses the start. Repeated, the 10 agrees and is
+    // redundant, and so is the offset from b down to a, the same function negated. The values stay
+    // where the solve stopped, upright at the mean of the dimensions.
     for repeat in [false, true] {
-        let (builder, a, b) = overlapping(repeat);
+        let (mut builder, a, b) = overlapping();
+        if repeat {
+            distance(&mut builder, 10.0, a, b);
+            builder.equation(Kind::Difference, -20.0, &[b[1], a[1]]);
+        }
         let (outcome, values) = builder.outcome();
-        let labels = if repeat { vec![C, C, C, 0, R] } else { vec![C, C, C, 0] };
+        let labels = if repeat { vec![C, C, C, 0, R, R] } else { vec![C, C, C, 0] };
         assert_eq!((outcome.status, outcome.diagnosis, outcome.degrees_of_freedom, outcome.labels), (Status::NotConverged, Diagnosis::FromStart, None, labels), "repeat {repeat}");
-        assert!((values[b[0]] - values[a[0]]).abs() < 1e-6 && (values[b[1]] - values[a[1]] - if repeat { 13.2 } else { 14.0 }).abs() < 1e-6, "{values:?}");
+        let upright = if repeat { (10.0 + 12.0 + 14.0 + 10.0 + 20.0 + 20.0) / 6.0 } else { 14.0 };
+        assert!((values[b[0]] - values[a[0]]).abs() < 1e-6 && (values[b[1]] - values[a[1]] - upright).abs() < 1e-6, "{values:?}");
     }
 }
 
@@ -49,7 +55,7 @@ fn distances_and_an_offset_that_cannot_agree_are_blamed_as_their_start_shows() {
 fn more_work_only_makes_a_stalled_diagnosis_more_definite() {
     // From the first limit that diagnoses the stall at all: unavailable, then suspected once the
     // looser diagnosis fits, then blamed from the start once its checks fit too, and never back.
-    let (builder, _, _) = overlapping(false);
+    let (builder, _, _) = overlapping();
     let kinds: Vec<_> = (0..8000).map(|work| builder.outcome_within(Limits { fill: usize::MAX, work }).0.diagnosis).collect();
     let suspected = kinds.iter().position(|&kind| kind == Diagnosis::Suspected).unwrap();
     let blamed = kinds.iter().position(|&kind| kind == Diagnosis::FromStart).unwrap();
@@ -62,22 +68,22 @@ fn more_work_only_makes_a_stalled_diagnosis_more_definite() {
 #[test]
 fn a_drag_of_conflicting_dimensions_is_still_suspected() {
     // A drag has no start of its own to diagnose, and its diagnoses fall back anyway.
-    let (mut builder, _, b) = overlapping(false);
+    let (mut builder, _, b) = overlapping();
     builder.temporary(Kind::Value, 3.0, &[b[0]]);
     let (outcome, _) = builder.outcome();
     assert_eq!((outcome.status, outcome.diagnosis, outcome.drag, outcome.labels), (Status::NotConverged, Diagnosis::Suspected, Some(DragOutcome::Stalled), vec![C, C, C, C, 0]));
 }
 
 #[test]
-fn a_dependency_the_start_shows_by_accident_leaves_the_suspicion() {
+fn a_dependency_the_start_shows_by_accident_is_not_blamed() {
     // p 5 from both o and q, 8 apart, starting nearly on their line, where the two distances read as
     // repeating each other with other values. Alone they solve at (4, 3) or (4, -3), where they are
-    // independent. Joined to r by conflicting distances and an offset, the start blames all four
-    // dimensions, but the pair at p is independent where the solve stopped, so the start does not
-    // stand and the stall stays suspected. Starting p off the line, the start blames only r's.
+    // independent. Joined to r by conflicting distances and an offset, the start shows all four
+    // dimensions dependent, but only r's are the same function, so only they are blamed, wherever p
+    // starts.
     for (lift, joined, expected) in [
         (1e-11, false, (Status::Converged, Diagnosis::Diagnosed, Some(0), vec![0, 0])),
-        (1e-11, true, (Status::NotConverged, Diagnosis::Suspected, None, vec![0, 0, C, C, C])),
+        (1e-11, true, (Status::NotConverged, Diagnosis::FromStart, None, vec![0, 0, C, C, 0])),
         (1.0, true, (Status::NotConverged, Diagnosis::FromStart, None, vec![0, 0, C, C, 0])),
     ] {
         let mut builder = Builder::new();
@@ -105,7 +111,7 @@ fn the_most_severe_group_decides_how_a_stalled_sketch_is_diagnosed() {
     // the suspicion decides the first and the blame from the start the second, and each group keeps
     // its own labels.
     for suspected in [true, false] {
-        let (mut builder, _, _) = overlapping(false);
+        let (mut builder, _, _) = overlapping();
         let expected = if suspected {
             let a = builder.point(100.0, 0.0, false);
             let b = builder.point(110.0, 0.0, false);
@@ -183,8 +189,7 @@ fn a_clear_conflict_is_diagnosed_exactly_and_blamed_alone_beside_a_bystander() {
     // x = 0 and x = 2 conflict; a line through (2, 0) leaning by `lean` per unit up holds the
     // point too, satisfiable with either. Leaning 5e-6, rank is clear and only the dimensions
     // conflict. Leaning 5e-8, it is unclear at the stall, where the looser distance would take in
-    // the line, but the dimensions repeat each other alone at the start and where the solve
-    // stopped, so only they are blamed.
+    // the line, but only the dimensions are the same function, of x, so only they are blamed.
     for (lean, expected) in [(5e-6, (Diagnosis::Diagnosed, vec![C, C, 0])), (5e-8, (Diagnosis::FromStart, vec![C, C, 0]))] {
         let mut builder = Builder::new();
         let p = builder.point(1.0, 0.5, false);
@@ -195,4 +200,24 @@ fn a_clear_conflict_is_diagnosed_exactly_and_blamed_alone_beside_a_bystander() {
         builder.equation(Kind::PointOnLine, 0.0, &[p[0], p[1], a[0], a[1], b[0], b[1]]);
         assert_eq!(diagnose(&builder), (Status::NotConverged, expected.0, None, expected.1), "lean {lean}");
     }
+}
+
+#[test]
+fn a_satisfiable_sketch_held_on_a_saddle_is_not_blamed() {
+    // p 5 from a and b, 8 apart, starts on their line, and is held there by symmetry, its x tied to
+    // q's on a nearly vertical line through (4, 0): the solve stops at (4, 0), where the distances
+    // repeat each other with other values as at the start. Yet (4, 3) meets every relation, so they
+    // are not blamed, and the stall stays suspected.
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 0.0, true);
+    let b = builder.point(8.0, 0.0, true);
+    let p = builder.point(3.0, 0.0, false);
+    let q = builder.point(4.0, 0.0, false);
+    let c = builder.point(4.0, 0.0, true);
+    let d = builder.point(4.00000005, 1.0, true);
+    distance(&mut builder, 5.0, a, p);
+    distance(&mut builder, 5.0, b, p);
+    builder.equation(Kind::Difference, 0.0, &[p[0], q[0]]);
+    builder.equation(Kind::PointOnLine, 0.0, &[q[0], q[1], c[0], c[1], d[0], d[1]]);
+    assert_eq!(diagnose(&builder), (Status::NotConverged, Diagnosis::Suspected, None, vec![C; 4]));
 }

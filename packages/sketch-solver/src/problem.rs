@@ -44,10 +44,10 @@ pub enum Diagnosis {
     /// A converged group's rank was unclear, as near a tangency: its labels are dependencies
     /// found, but more may exist, and freedom is unknown.
     Uncertain = 4,
-    /// A group that did not converge, suspected at its stall, is blamed as diagnosed at its start
-    /// instead: each dependency found there holds on its own rows alone, clear of every other
-    /// dependence and agreeing the same way, both at the start and where the solve stopped. Its
-    /// conflicts are those the start shows; others may exist where the solve stopped.
+    /// A group that did not converge, suspected at its stall, is blamed for the dependencies its
+    /// start shows between relations that are the same function of the same values, up to their
+    /// value and sign, as repeated dimensions are: those hold at every point, so their conflicts are
+    /// certain. Other conflicts may exist where the solve stopped.
     FromStart = 5,
     /// A converged group ran out of work, or was too large to factor, before it was diagnosed: it
     /// labels nothing and freedom is unknown, though other groups are diagnosed and labelled as

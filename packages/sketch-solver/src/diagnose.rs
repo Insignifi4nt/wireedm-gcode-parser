@@ -20,9 +20,9 @@
 //! that did not converge is then diagnosed again with rows within `STALLED` dependent; the
 //! sketch is rejected either way, but this blame is a suspicion: a row near a conflict without
 //! being in it can be blamed too, and a satisfiable sketch stuck at a stationary point is blamed
-//! as conflicting. Where the start shows a conflict whose every dependency holds on its own rows
-//! alone, agreeing the same way there and where the solve stopped, the group is blamed as its
-//! start diagnoses it instead, as PlaneGCS diagnoses a sketch where it begins.
+//! as conflicting. Where the start shows relations that are the same function of the same values,
+//! as repeated dimensions are, conflicting, the group is blamed for those instead, as PlaneGCS
+//! diagnoses a sketch where it begins: they depend on each other at every point.
 //!
 //! Near a singular configuration, as a point a little off where its circle touches its line, rank
 //! at `TAU` is unclear for a solved sketch too. A row whose insertion or witness cannot be decided

@@ -30,10 +30,10 @@ export type CadSketchNativeDragOutcome = 'reached' | 'projected' | 'stalled' | '
  * most severe kind, in the order diagnosed, uncertain, incomplete, from-start, suspected,
  * no-unknowns, unavailable. `suspected`: a group that did not converge stalled short of a collapsed
  * nearest point and was diagnosed with a looser dependence distance, so its conflicts are suspected
- * rather than certain and freedom is unknown. `from-start`: such a group is blamed as diagnosed at
- * its start instead, as PlaneGCS diagnoses a sketch, because each dependency found there holds on
- * its own rows alone and agrees the same way both there and where the solve stopped; its conflicts
- * are those the start shows, and others may exist where the solve stopped. `uncertain`: a converged
+ * rather than certain and freedom is unknown. `from-start`: such a group is blamed instead for the
+ * dependencies its start shows, as PlaneGCS diagnoses a sketch, between relations that are the same
+ * function of the same values up to their value and sign, as repeated dimensions are, so they hold
+ * at every point; others may exist where the solve stopped. `uncertain`: a converged
  * group's rank was too close to call, as near a tangency, so its labels are the dependencies found
  * but more may exist, and freedom is unknown. `incomplete`: a converged group ran out of work, or
  * was too large to factor, before it was diagnosed, so it labels nothing and freedom is unknown;

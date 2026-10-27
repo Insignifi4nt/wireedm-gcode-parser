@@ -9,7 +9,7 @@
 //! that weighting, in millimetres; the sketch graph checks remain the authority on every result.
 
 use crate::dual::{Dual, WIDTH};
-use crate::equations::{is_direction, reach, residual};
+use crate::equations::{Kind, is_direction, reach, residual};
 use crate::diagnose::{self, CONFLICTING, STALLED, TAU, Witness, diagnose};
 use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
@@ -459,55 +459,45 @@ fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance:
         rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect(), diagnosis.certain)), spent)
 }
 
-/// The witnesses of a group that did not converge as its `start` diagnoses them at `TAU`, when
-/// that stands: some disagree, and each holds with the same agreement on its own rows alone, clear
-/// of every other dependence, both at the start and at `values`, where the solve stopped. A
-/// dependency that holds at both points is not an accident of either, as a start that happens to be
-/// singular can be. This blames what PlaneGCS blames, as it diagnoses the start, where a collapsed
-/// stall cannot be diagnosed exactly; dependencies that only the stall shows go unblamed. `None`
-/// otherwise, or when the work would pass `limits.work`; `values` end as they began.
+/// The witnesses of a group that did not converge as its `start` diagnoses them at `TAU`, kept only
+/// where every row computes the same function of the same unknowns, up to its value and sign (see
+/// `repeats`). Such rows depend on each other at every point and their residuals combine to the
+/// same constant, so a kept witness that disagrees is a conflict wherever the sketch moves, and one
+/// that agrees a repetition. Other dependencies the start shows can be accidents of where it
+/// begins, as a point held by symmetry on the line between two centres it must be equally far
+/// from, so they are left out, as are those only the stall shows. This blames what PlaneGCS blames
+/// for repeated relations, as it diagnoses the start, where a collapsed stall cannot be diagnosed
+/// exactly. `None` unless some kept witness disagrees, or when the work would pass `limits.work`;
+/// `values` end as they began.
 fn blamed_from_start(system: &System, values: &mut [f64], start: &[f64], position: &[usize], limits: Limits, work: &mut usize) -> Option<Vec<Witness>> {
     let stopped: Vec<f64> = system.unknowns.iter().map(|&p| values[p]).collect();
     let place = |values: &mut [f64], at: &[f64]| for (&p, &value) in system.unknowns.iter().zip(at) { values[p] = value; };
     place(values, start);
-    let found = (|| {
-        let budget = limits.work.saturating_sub(*work);
-        let (found, spent) = diagnose_group(system, values, position, TAU, budget, limits.fill);
-        *work = work.saturating_add(spent);
-        let (_, witnesses, _) = found?;
-        if witnesses.iter().all(|witness| witness.agrees) { return None; }
-        let early = alone(system, values, position, &witnesses, limits, work)?;
-        Some((witnesses, early))
-    })();
+    let budget = limits.work.saturating_sub(*work);
+    let (found, spent) = diagnose_group(system, values, position, TAU, budget, limits.fill);
+    *work = work.saturating_add(spent);
     place(values, &stopped);
-    let (witnesses, early) = found?;
-    let late = alone(system, values, position, &witnesses, limits, work)?;
-    (early == late && early.iter().zip(&witnesses).all(|(&agrees, witness)| agrees == witness.agrees)).then_some(witnesses)
+    let (_, witnesses, _) = found?;
+    let kept: Vec<Witness> = witnesses.into_iter().filter(|witness| repeats(system.problem, &witness.rows)).collect();
+    kept.iter().any(|witness| !witness.agrees).then_some(kept)
 }
 
-/// Whether each of `witnesses` agrees when its rows alone are diagnosed at `TAU` at `values`, over
-/// their own columns; `None` unless every one is clear (its rows short of the last independent and
-/// shown clear of dependence, the last dependent on them) or when the work would pass
-/// `limits.work`.
-fn alone(system: &System, values: &[f64], position: &[usize], witnesses: &[Witness], limits: Limits, work: &mut usize) -> Option<Vec<bool>> {
-    let rows = system.rows(values, None);
-    let jacobian = system.jacobian(&rows, position);
-    witnesses.iter().map(|witness| {
-        // Group equations are in problem order, so each is found by bisection.
-        let local: Vec<usize> = witness.rows.iter().map(|e| system.equations.binary_search(e).ok()).collect::<Option<_>>()?;
-        // The rows' columns in their order, renumbered from zero, so the factor is as small as they are.
-        let mut columns: Vec<usize> = local.iter().flat_map(|&i| jacobian.rows[i].0.iter().map(|entry| entry.0)).collect();
-        columns.sort_unstable();
-        columns.dedup();
-        let subset: Vec<diagnose::Row> = local.iter().map(|&i| diagnose::Row {
-            entries: jacobian.rows[i].0.iter().map(|&(k, x)| (columns.binary_search(&k).unwrap(), x)).collect(),
-            residual: rows[i].residual, tolerance: rows[i].tolerance }).collect();
-        let budget = limits.work.saturating_sub(*work);
-        let (found, spent) = diagnose(columns.len(), &subset, TAU, budget, limits.fill);
-        *work = work.saturating_add(spent);
-        let found = found.filter(|found| found.certain && found.rank + 1 == subset.len() && found.witnesses.len() == 1)?;
-        (found.witnesses[0].rows.last() == Some(&(subset.len() - 1))).then_some(found.witnesses[0].agrees)
-    }).collect()
+/// Whether `rows`, two or more equations, compute the same function of the same values up to the
+/// value each is held at and its sign: one kind over the same operands, or a distance or a
+/// difference between the same two values either way round. A zero row depends on nothing, so a
+/// witness of rows that vanish where they were diagnosed is never one of these.
+fn repeats(problem: &Problem, rows: &[usize]) -> bool {
+    let [first, rest @ ..] = rows else { return false };
+    let first = &problem.equations[*first];
+    !rest.is_empty() && rest.iter().all(|&equation| {
+        let equation = &problem.equations[equation];
+        let (a, b) = (&equation.operands, &first.operands);
+        equation.kind == first.kind && (a == b || match equation.kind {
+            Kind::Distance => a[..2] == b[2..] && a[2..] == b[..2],
+            Kind::Difference => a[0] == b[1] && a[1] == b[0],
+            _ => false,
+        })
+    })
 }
 
 /// Rows that depend on earlier lasting rows at the start stay out of a first solve, as their
