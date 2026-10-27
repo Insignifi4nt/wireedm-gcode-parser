@@ -363,7 +363,7 @@ fn a_stretched_chain_is_certified_up_to_the_curvature_support() {
         let points: Vec<[f64; 2]> = (1..=joints).map(|k| [k as f64, 0.0]).collect();
         let (result, tip) = chain([0.0, 0.0], &points, [joints as f64 + 5.0, 0.0]);
         assert!(near(tip, [joints as f64, 0.0], 1e-9), "{joints} {tip:?}");
-        assert_eq!(result.drag, Some(outcome), "{joints}");
+        assert_eq!((result.status, result.drag), (Status::Converged, Some(outcome)), "{joints}");
     }
 }
 
@@ -906,6 +906,65 @@ fn a_drag_onto_a_tangency_stops_short_where_rank_is_still_clear() {
             assert!((moved[0] - (radius - 1.0)).abs() <= 1e-12 * radius && (moved[1] - (2.0 * radius - 1.0).sqrt()).abs() <= 1e-9 * radius, "{radius} {lift}: {moved:?}");
         }
     }
+}
+
+#[test]
+fn a_drag_that_stalls_where_its_relations_are_met_keeps_feasible_values() {
+    // At (10, 1e-5) both rows are met to 5e-12 but not polished, and nothing is free. Every trial's
+    // restoration polishes toward their double root at (10, 0), further than the trial moved, so a
+    // drag toward a point between cannot step: it stalls where it began, its relations met,
+    // diagnosed and blaming nothing, from the start and chained. The sketch it leaves solves again,
+    // polished toward the double root, where rank is too close to call, and edits again.
+    let start = [10.0, 1e-5];
+    let mut landed = start;
+    for k in [3.0, 2.0, 1.0] {
+        for from in [start, landed] {
+            let (dragged, end) = tangency_outcome(10.0, 10.0, from, Some([10.0, k * 2.5e-6]));
+            assert_eq!((dragged.status, dragged.drag, dragged.diagnosis, dragged.degrees_of_freedom, dragged.labels.clone()),
+                (Status::Converged, Some(DragOutcome::Stalled), Diagnosis::Diagnosed, Some(0), vec![0; 4]), "{k}");
+            assert_eq!(end, start, "{k}");
+            assert!((dragged.target_distance - (1e-5 - k * 2.5e-6)).abs() <= 1e-18, "{k}: {}", dragged.target_distance);
+            landed = end;
+        }
+    }
+    let (again, polished) = tangency_outcome(10.0, 10.0, landed, None);
+    assert_eq!((again.status, again.diagnosis, again.labels), (Status::Converged, Diagnosis::Uncertain, vec![0; 2]));
+    assert!((polished[0] - 10.0).abs() <= 1e-14 && polished[1].abs() < 1e-6, "{polished:?}");
+    let (edited, moved) = tangency_outcome(10.0, 9.0, landed, None);
+    assert_eq!((edited.status, edited.diagnosis, edited.degrees_of_freedom), (Status::Converged, Diagnosis::Diagnosed, Some(0)));
+    assert!((moved[0] - 9.0).abs() <= 1e-12 && (moved[1] - 19f64.sqrt()).abs() <= 1e-9, "{moved:?}");
+}
+
+#[test]
+fn a_stall_at_met_relations_out_of_work_is_too_large_at_its_start() {
+    // Stepping a stall back from a singular end counts dependent rows; at every budget the drag is
+    // either that stall or too large, and never leaves its start.
+    let (mut stalls, mut exhausted) = (0, 0);
+    for work in 0..=6000 {
+        let mut builder = Builder::new();
+        let p = tangency(&mut builder, 10.0, 10.0, [10.0, 1e-5], Some([10.0, 7.5e-6]));
+        let (outcome, values) = builder.outcome_within(Limits { fill: usize::MAX, work });
+        assert_eq!([values[p[0]], values[p[1]]], [10.0, 1e-5], "{work}");
+        match (outcome.status, outcome.drag) {
+            (Status::Converged, Some(DragOutcome::Stalled)) => stalls += 1,
+            (Status::TooLarge, Some(DragOutcome::Stalled)) => exhausted += 1,
+            other => panic!("{work}: {other:?}"),
+        }
+    }
+    assert!(stalls > 0 && exhausted > 0, "{stalls} {exhausted}");
+}
+
+#[test]
+fn a_feasible_stall_beside_a_landed_group_is_the_drag_outcome() {
+    // The worse group decides the drag; the free point beside the stalled one still lands.
+    let mut builder = Builder::new();
+    let p = tangency(&mut builder, 10.0, 10.0, [10.0, 1e-5], Some([10.0, 7.5e-6]));
+    let q = builder.point(50.0, 0.0, false);
+    builder.temporary(Kind::Value, 55.0, &[q[0]]);
+    builder.temporary(Kind::Value, 5.0, &[q[1]]);
+    let (outcome, values) = builder.outcome();
+    assert_eq!((outcome.status, outcome.drag, outcome.labels), (Status::Converged, Some(DragOutcome::Stalled), vec![0; 6]));
+    assert_eq!(([values[p[0]], values[p[1]]], [values[q[0]], values[q[1]]]), ([10.0, 1e-5], [55.0, 5.0]));
 }
 
 #[test]

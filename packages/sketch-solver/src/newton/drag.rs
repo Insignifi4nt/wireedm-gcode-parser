@@ -43,7 +43,9 @@
 //! back through the last accepted iterates, and bisects toward the end with restored points, for
 //! the closest to the targets that is no more singular than the start. Such a drag is `Limited`
 //! unless that point is still within reach of the targets; running out of work there restores the
-//! start and is too large.
+//! start and is too large. A drag that stalled where the lasting rows accept its values steps back
+//! the same way and stays `Stalled` short of reach, so its values are feasible and no more singular
+//! than its start, though nothing shows they are as close as the targets can be reached.
 
 use super::{Exhausted, GroupOutcome, Jacobian, Limits, MAX_ITERATIONS, System, assess, levenberg, solve_group as solve_whole, solve_group_within, worst};
 use crate::diagnose::{self, TAU};
@@ -64,7 +66,8 @@ pub enum DragOutcome {
     /// test resolves no direction along the lasting rows that gets closer to second order. A
     /// necessary condition up to the test's resolution, not a proof of the nearest point.
     Projected = 1,
-    /// Neither within the iterations allowed; the values are the last feasible ones.
+    /// None of the others. Where the lasting rows accept the values they are the last feasible
+    /// ones, no more singular than the start; otherwise the start could not be restored.
     Stalled = 2,
     /// Stopped short of where the drag ended, at the nearest feasible point found that is no
     /// more singular than the start (`SINGULAR_MARGIN`), as one landed on a tangency would be.
@@ -214,6 +217,9 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, h
     };
     let outcome = match outcome {
         Ok(ended @ (DragOutcome::Reached | DragOutcome::Projected)) => drag.no_more_singular(values, ended),
+        // A stall at accepted values steps back the same way and stays a stall short of reach.
+        Ok(DragOutcome::Stalled) if assess(&lasting.rows(values, None)).accepted => drag.no_more_singular(values, DragOutcome::Stalled)
+            .map(|ended| if ended == DragOutcome::Limited { DragOutcome::Stalled } else { ended }),
         other => other,
     };
     let rows = lasting.rows(values, None);
@@ -428,7 +434,8 @@ impl Drag<'_> {
     /// point restored onto the lasting rows and kept when accepted, closer to the targets and no
     /// more singular. That point is `Reached` when within reach and otherwise `Limited`; with no
     /// such point the drag stays where it began. A start whose dependence is unclear allows none.
-    /// Work that runs out decides nothing and restores the start.
+    /// Work that runs out decides nothing and restores the start. A stalled drag is checked the same
+    /// way, its caller keeping it stalled short of reach.
     fn no_more_singular(&mut self, values: &mut [f64], ended: DragOutcome) -> Result<DragOutcome, Exhausted> {
         let Some(begin) = self.history.first().cloned() else { return Ok(ended) };
         let margin = SINGULAR_MARGIN * TAU;

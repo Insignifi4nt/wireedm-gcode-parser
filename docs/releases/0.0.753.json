@@ -1,0 +1,24 @@
+{
+  "version": "0.0.753",
+  "previousVersion": "0.0.752",
+  "postCompatibility": "preserved-output-native-stalled-drags",
+  "summary": "A sketch drag that the app's own solver cannot carry further, but that stops where every relation is still met, now keeps that frame when the app runs on its own solver, instead of rejecting it. Such a drag is still reported as stalled: its values are feasible, but nothing shows they are as close to the target as the sketch allows. Before, its values were the last ones it accepted, whatever their rank. Now it steps back as a drag ending on a tangency does, to the nearest point it found that is no more singular than its start, so the sketch it leaves is never closer to a redundant reading than it began. While PlaneGCS is still bundled, the app asks it first, as before, and keeps the solver's own frame only when PlaneGCS does not solve or fails; the frame is checked like any solution, so one that moves fixed geometry or fails the graph checks is still rejected. A stall whose values are not accepted is rejected as before, and one whose step back runs out of work is too large and restores its start. On the tangency trajectory, a point on a circle held at the line touching it, with nothing free, met to 5e-12 mm at its start but not polished, every trial's restoration polishes toward the double root, further than the trial moved, so the drags toward 7.5e-6, 5e-6 and 2.5e-6 mm stay at the start; PlaneGCS polishes those frames to about 1.4e-7 mm.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. With PlaneGCS bundled, drags answer as before unless PlaneGCS cannot solve a stalled drag, which now keeps the frame where it stopped instead of rejecting it. The native-only mode answers such frames. A stalled drag may now stop at an earlier point of its path than before, no more singular than its start. Solve records name the new fallback reason stalled. No protocol change.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal, worker reply or native buffer protocol schema change. Post engine API remains 1 and saved-job engine remains 3. Solve records gain the fallback reason stalled.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "Rust tests drag the tangency trajectory's point toward 7.5e-6, 5e-6 and 2.5e-6 mm from the start and chained: each stalls at the start, accepted, diagnosed with freedom 0 and blaming nothing, at its exact distance; the sketch it leaves solves again with rank uncertain and moving the line to x = 9 solves at (9, sqrt 19) with freedom 0. At every work budget from 0 to 6,000 that drag either stalls at its start or is too large there, and both occur. A stalled group beside a free point that lands leaves the drag stalled and the point on its target. A 40-joint chain past the curvature support is stalled and accepted, and the geared far-side points still leave or stall. The runtime tests return the stalled frame natively when PlaneGCS fails or throws and in native-only mode without loading PlaneGCS, take PlaneGCS's answer when it solves, and still reject a stalled frame that fails the graph checks. The workload benchmark answers every tangency frame natively in native-only mode, three of them stalled at 2.5e-6, 5e-6 and 7.5e-6 mm from their targets. All Rust suites, the sketch-solver and benchmark Vitest suites, and the full test suite pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Sketch drags the app's own solver cannot carry further keep the frame where they stopped.",
+    "changes": [
+      "Keeps a sketch drag where it stopped, with every relation met, when the app's own solver cannot carry it further and PlaneGCS cannot solve it, instead of rejecting the frame."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

@@ -116,6 +116,30 @@ describe('native-first sketch solving', () => {
       .toMatchObject({ kind: 'rejected', reason: 'failed', message: 'The point could not be moved toward the target from this start.' });
   });
 
+  it('returns the frame where a drag stalled at feasible values only when PlaneGCS does no better', async () => {
+    // Stopped at (6, 8), 10 mm from a, on the way to (12, 2).
+    const stalled = { values: [0, 0, 6, 8], drag: { outcome: 'stalled' as const, targetDistance: Math.hypot(6, 6) } };
+    const drag = { ...input, drag: { pointId: 'b', position: [12, 2] as const } };
+    const solvedByPlaneGcs: CadSketchSolveResult = { kind: 'solved', graph, diagnostics: { ...noDiagnostics, status: 'success', degreesOfFreedom: 3 } };
+    const rescued = runtime(async () => fakeNative(() => stalled), planeGcsSolved(solvedByPlaneGcs));
+    expect(await rescued.solver.solve(drag)).toBe(solvedByPlaneGcs);
+    expect(rescued.records[0]).toMatchObject({ answeredBy: 'planegcs', native: 'stalled', planeGcs: 'solved', drag: stalled.drag });
+    const frame = { kind: 'solved', graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [6, 8] }] }, diagnostics: { status: 'success', degreesOfFreedom: 3, conflictingIds: [], issues: [] } };
+    for (const [planeGcs, outcome] of [[planeGcsSolved(failedResult), 'failed'], [{ solve: async () => { throw new Error('PlaneGCS failed.'); } }, 'threw']] as const) {
+      const unhelped = runtime(async () => fakeNative(() => stalled), planeGcs);
+      expect(await unhelped.solver.solve(drag)).toMatchObject(frame);
+      expect(unhelped.records[0]).toMatchObject({ answeredBy: 'native', native: 'stalled', planeGcs: outcome, drag: stalled.drag });
+    }
+    const nativeOnly = runtime(async () => fakeNative(() => stalled), planeGcsSolved(solvedByPlaneGcs), { mode: 'native-only' });
+    expect(await nativeOnly.solver.solve(drag)).toMatchObject(frame);
+    expect(nativeOnly.records[0]).toMatchObject({ answeredBy: 'native', native: 'stalled', drag: stalled.drag });
+    expect(nativeOnly.loadPlaneGcs).not.toHaveBeenCalled();
+    // The frame is checked as any solution: one that fails the graph checks is still rejected.
+    const broken = runtime(async () => fakeNative(() => ({ ...stalled, values: [0, 0, 5, 1] })), planeGcsSolved(failedResult), { mode: 'native-only' });
+    expect(await broken.solver.solve(drag)).toMatchObject({ kind: 'rejected', reason: 'invalid-solution' });
+    expect(broken.records[0]).toMatchObject({ native: 'graph-check' });
+  });
+
   it('keeps a four-bar dragged out of reach on its own assembly, in one jump as when chained', async () => {
     // c–b must stay between 6 and 16 mm, so c's circle about a holds two separate arcs: the linkage
     // assembled up, as it starts, and assembled down. The nearest place on the start's assembly is
