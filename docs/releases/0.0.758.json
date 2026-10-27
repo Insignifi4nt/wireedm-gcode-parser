@@ -1,0 +1,24 @@
+{
+  "version": "0.0.758",
+  "previousVersion": "0.0.757",
+  "postCompatibility": "preserved-tests-only",
+  "summary": "Sets up the measurements for eliminating simple equalities from the sketch solver, before any change to it. The module 0.0.757 shipped is kept in packages/sketch-solver/baseline, named by its size and sha256, and a test pairs every instance the production runtime loads with a fresh baseline instance and requires each answer to be the baseline's bit for bit (status, diagnosis, freedom, labels, drag outcome and distance, values, iterations, residual and any error) across the frozen corpus, both fuzz generators and every call of the solver benchmarks. The seeded fuzz generator gains an equalities mode, weighting horizontals, verticals, coincidences, equal radii, axis distances, fixed coordinates and rectangles, whose first 100 sketches are checked like the mixed ones; the mixed generator's inputs are unchanged. scripts/benchmark-cad-native-ab.ts times the baseline and current modules on the models the runtime sends in the solver benchmarks, taking turns to go first; with both modules the same, its ratios on the development laptop ranged from 0.96 to 1.10 for groups taking at least 3 ms.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. The app's sketch solving is unchanged: the native module and its source are byte for byte the same.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD, storage, journal or worker reply change. The native module is unchanged; its wire protocol stays 5. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. The baseline module is a repository fixture for tests and benchmarks and is not built into the app.",
+    "verification": "The baseline comparison (3,245 corpus and fuzz inputs and every solver benchmark call, no difference), the seeded fuzz with the equalities mode (1,250 solves), the A/B timing script over 58 groups with identical modules, solver:check, the full Vitest suite, lint, ui:check, build and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Internal solver measurements; no workbench behavior changes.",
+    "changes": [
+      "Adds checks that compare the sketch solver with the previous release's, answer by answer and in time."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

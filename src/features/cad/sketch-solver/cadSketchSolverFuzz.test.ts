@@ -7,14 +7,16 @@ import { describe, expect, it } from 'vitest';
 import { cadSketchSolvedValues, checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchSolveInput, CadSketchSolveResult } from './cadSketchSolverTypes';
 import {
-  CAD_SKETCH_FUZZ_VERSION, cadSketchFuzzFamilies, createCadSketchFuzzCase, minimizeCadSketchInput, type CadSketchFuzzCase
+  CAD_SKETCH_EQUALITY_FUZZ_VERSION, CAD_SKETCH_FUZZ_VERSION, cadSketchFuzzFamilies, createCadSketchFuzzCase, minimizeCadSketchInput, type CadSketchFuzzCase
 } from './__tests__/cadSketchFuzz';
 import { corpusDragAllowance, corpusDragDistance, corpusHash, corpusInput, decodeCorpusJson, encodeCorpusJson } from './__tests__/planeGcsCorpus';
 import { createCadSketchTestSolver } from './__tests__/cadSketchTestSolver';
 
-const SEEDS = 150;
-/** Every input the generator makes for these seeds, hashed: a change needs a new generator version. */
-const GENERATED = { version: 1, hash: '5a91d8083a8e7992' };
+const SEEDS = 150, EQUALITY_SEEDS = 100;
+/** Every input each generator makes for these seeds, hashed: a change needs a new generator version. */
+const GENERATED = { version: 1, hash: '5a91d8083a8e7992' }, GENERATED_EQUALITIES = { version: 1, hash: 'f8a182aaa2d945ea' };
+/** Relations the `equalities` generator weights, which compile to simple equalities. */
+const simpleKinds = new Set(['horizontal', 'vertical', 'coincident', 'equal-radius', 'axis-distance', 'fixed-point', 'fixed-axis']);
 
 /** The smallest inputs of failures the fuzz found, kept whatever later generators make. */
 const regressions = decodeCorpusJson(readFileSync(new URL('./__tests__/fixtures/sketch-fuzz-regressions.json', import.meta.url), 'utf8')) as readonly {
@@ -59,9 +61,11 @@ function violation(fuzz: CadSketchFuzzCase, role: Role, input: CadSketchSolveInp
 
 describe('seeded native sketch solves', () => {
   const cases = Array.from({ length: SEEDS }, (_, index) => createCadSketchFuzzCase(index + 1));
+  const equalityCases = Array.from({ length: EQUALITY_SEEDS }, (_, index) => createCadSketchFuzzCase(index + 1, 'equalities'));
+  const generated = (fuzzCases: readonly CadSketchFuzzCase[]) => corpusHash(fuzzCases.map(fuzz => roles.map(role => corpusInput(inputOf(fuzz, role)).hash).join()).join()).slice(0, 16);
 
   it('generates the frozen inputs, covering every relation family and kind of contradiction', () => {
-    expect({ version: CAD_SKETCH_FUZZ_VERSION, hash: corpusHash(cases.map(fuzz => roles.map(role => corpusInput(inputOf(fuzz, role)).hash).join()).join()).slice(0, 16) }).toEqual(GENERATED);
+    expect({ version: CAD_SKETCH_FUZZ_VERSION, hash: generated(cases) }).toEqual(GENERATED);
     const families = new Map<string, number>(), contradictions = new Map<string, number>();
     for (const fuzz of cases) {
       expect(checkCadSketchGraph(fuzz.witness.graph, fuzz.witness.parameters), `seed ${fuzz.seed}`).toEqual([]);
@@ -73,9 +77,19 @@ describe('seeded native sketch solves', () => {
     expect([...contradictions.keys()].sort()).toEqual(['axis-distance', 'distance', 'fixed-axis', 'line-angle', 'radial-size']);
   });
 
+  it('generates frozen sketches made mostly of simple equalities, every one consistent', () => {
+    expect({ version: CAD_SKETCH_EQUALITY_FUZZ_VERSION, hash: generated(equalityCases) }).toEqual(GENERATED_EQUALITIES);
+    let simple = 0, all = 0;
+    for (const fuzz of equalityCases) {
+      expect(checkCadSketchGraph(fuzz.witness.graph, fuzz.witness.parameters), `equalities seed ${fuzz.seed}`).toEqual([]);
+      for (const relation of fuzz.witness.graph.relations) { all += 1; if (simpleKinds.has(relation.kind)) simple += 1; }
+    }
+    expect(simple / all).toBeGreaterThan(.6);
+  });
+
   it('never calls a consistent sketch conflicting, never solves a contradiction, and keeps its instance clean', async () => {
     const solver = createCadSketchTestSolver(), problems: string[] = [], outcomes = new Map<string, number>();
-    for (const fuzz of cases) for (const role of roles) {
+    for (const fuzz of [...cases, ...equalityCases]) for (const role of roles) {
       const input = inputOf(fuzz, role), before = encodeCorpusJson(input);
       let found: string | undefined;
       try {
@@ -91,7 +105,7 @@ describe('seeded native sketch solves', () => {
       const smallest = await minimizeCadSketchInput(input, async candidate => {
         try { return violation(fuzz, role, candidate, await fresh.solve(candidate)) !== undefined; } catch { return true; }
       }, keep);
-      problems.push(`seed ${fuzz.seed} ${role}: ${found}; smallest failing input ${encodeCorpusJson(smallest)}`);
+      problems.push(`${fuzz.mode} seed ${fuzz.seed} ${role}: ${found}; smallest failing input ${encodeCorpusJson(smallest)}`);
     }
     expect(problems).toEqual([]);
     // Each property is exercised, not passed vacuously.
@@ -103,7 +117,7 @@ describe('seeded native sketch solves', () => {
       const input = inputOf(fuzz, role);
       expect(encodeCorpusJson(await solver.solve(input)), `seed ${fuzz.seed} ${role}`).toBe(encodeCorpusJson(await fresh.solve(input)));
     }
-  }, 120_000);
+  }, 240_000);
 
   // Two relations held the same coordinates to values that cannot agree, beside relations whose stall
   // native cannot diagnose; native once left them undiagnosed, where it now blames the repeats.
