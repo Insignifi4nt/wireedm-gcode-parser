@@ -33,7 +33,8 @@ export type CadSketchNativeDragOutcome = 'reached' | 'projected' | 'stalled' | '
  * rather than certain and freedom is unknown. `from-start`: such a group is blamed instead for the
  * dependencies its start shows, as PlaneGCS diagnoses a sketch, between relations that are the same
  * function of the same values up to their value and sign, as repeated dimensions are, so they hold
- * at every point; others may exist where the solve stopped. `uncertain`: a converged
+ * at every point; angles, whose residuals wrap, are left out, and others may exist where the solve
+ * stopped. `uncertain`: a converged
  * group's rank was too close to call, as near a tangency, so its labels are the dependencies found
  * but more may exist, and freedom is unknown. `incomplete`: a converged group ran out of work, or
  * was too large to factor, before it was diagnosed, so it labels nothing and freedom is unknown;

@@ -88,22 +88,25 @@ export function createCadSketchNativeFirstRuntime(options: {
       }
       // Compilation is PlaneGCS's to answer outright while both solvers exist.
       const own = attempt?.kind === 'fallback' && attempt.reason !== 'compile' ? attempt.own : undefined;
-      if (mode === 'native-only') {
+      const answerOwn = <T extends CadSketchSolveResult | undefined>(result: T): T => {
         record.answeredBy = 'native';
-        return (attempt?.kind === 'fallback' ? attempt.own : undefined) ?? { kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.',
+        if (result && attempt?.kind === 'fallback' && attempt.movedGroups !== undefined) { record.movedGroups = attempt.movedGroups; record.keptGroups = attempt.keptGroups; }
+        return result;
+      };
+      if (mode === 'native-only') {
+        return answerOwn(attempt?.kind === 'fallback' ? attempt.own : undefined) ?? { kind: 'rejected', reason: 'failed', message: 'The native sketch solver is unavailable.',
           diagnostics: { status: null, degreesOfFreedom: null, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
       }
       const started = performance.now();
       let result: CadSketchSolveResult;
       try { result = await (await planeGcsBackend()).solve(input); } catch (error) {
         record.planeGcs = 'threw';
-        if (own) { record.answeredBy = 'native'; return own; }
+        if (own) return answerOwn(own);
         throw error;
       } finally { record.planeGcsMs = performance.now() - started; }
       record.planeGcs = result.kind === 'solved' ? 'solved' : result.reason;
       if (!own || result.kind === 'solved' || result.reason === 'conflicting' || result.reason === 'redundant') return result;
-      record.answeredBy = 'native';
-      return own;
+      return answerOwn(own);
     } finally { options.onSolve?.(record); }
   }
 

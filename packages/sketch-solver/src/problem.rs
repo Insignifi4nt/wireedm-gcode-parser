@@ -47,7 +47,8 @@ pub enum Diagnosis {
     /// A group that did not converge, suspected at its stall, is blamed for the dependencies its
     /// start shows between relations that are the same function of the same values, up to their
     /// value and sign, as repeated dimensions are: those hold at every point, so their conflicts are
-    /// certain. Other conflicts may exist where the solve stopped.
+    /// certain. Angles, whose residuals wrap, are left out. Other conflicts may exist where the
+    /// solve stopped.
     FromStart = 5,
     /// A converged group ran out of work, or was too large to factor, before it was diagnosed: it
     /// labels nothing and freedom is unknown, though other groups are diagnosed and labelled as

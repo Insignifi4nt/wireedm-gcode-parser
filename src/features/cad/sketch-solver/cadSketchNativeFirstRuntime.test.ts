@@ -353,12 +353,12 @@ describe('native-first sketch solving', () => {
 
   it.each([
     ['start-diagnosis', { status: 'not-converged', diagnosis: { kind: 'from-start', labels: [2] } },
-      { kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'] } }],
+      { kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'] } }, 0],
     ['incomplete', { values: [0, 0, 6, 8], diagnosis: { kind: 'incomplete', labels: [0] } },
-      { kind: 'solved', graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [6, 8] }] }, diagnostics: { status: 'success', degreesOfFreedom: null, conflictingIds: [] } }],
+      { kind: 'solved', graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [6, 8] }] }, diagnostics: { status: 'success', degreesOfFreedom: null, conflictingIds: [] } }, 1],
     ['incomplete', { status: 'not-converged', diagnosis: { kind: 'incomplete', labels: [2] } },
-      { kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'] } }]
-  ] as const)('returns native\'s own answer on %s only when PlaneGCS does no better', async (reason, answer, own) => {
+      { kind: 'rejected', reason: 'conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'] } }, 0]
+  ] as const)('returns native\'s own answer on %s only when PlaneGCS does no better', async (reason, answer, own, movedGroups) => {
     // Blame as a stalled start shows it, and a sketch some group of which was not diagnosed, are
     // native's answers once PlaneGCS is gone; until then PlaneGCS is asked first.
     const native = async () => fakeNative(() => answer as Partial<CadSketchNativeSolution>);
@@ -369,11 +369,12 @@ describe('native-first sketch solving', () => {
     for (const [planeGcs, outcome] of [[planeGcsSolved(failedResult), 'failed'], [{ solve: async () => { throw new Error('PlaneGCS failed.'); } }, 'threw']] as const) {
       const unhelped = runtime(native, planeGcs);
       expect(await unhelped.solver.solve(input)).toMatchObject(own);
-      expect(unhelped.records[0]).toMatchObject({ answeredBy: 'native', native: reason, planeGcs: outcome });
+      // Native's own solution counts the groups it moved, as an answer does.
+      expect(unhelped.records[0]).toMatchObject({ answeredBy: 'native', native: reason, planeGcs: outcome, movedGroups, keptGroups: 0 });
     }
     const nativeOnly = runtime(native, planeGcsSolved(solvedByPlaneGcs), { mode: 'native-only' });
     expect(await nativeOnly.solver.solve(input)).toMatchObject(own);
-    expect(nativeOnly.records[0]).toMatchObject({ answeredBy: 'native', native: reason });
+    expect(nativeOnly.records[0]).toMatchObject({ answeredBy: 'native', native: reason, movedGroups, keptGroups: 0 });
     expect(nativeOnly.loadPlaneGcs).not.toHaveBeenCalled();
   });
 

@@ -484,15 +484,17 @@ fn blamed_from_start(system: &System, values: &mut [f64], start: &[f64], positio
 
 /// Whether `rows`, two or more equations, compute the same function of the same values up to the
 /// value each is held at and its sign: one kind over the same operands, or a distance or a
-/// difference between the same two values either way round. A zero row depends on nothing, so a
-/// witness of rows that vanish where they were diagnosed is never one of these.
+/// difference between the same two values either way round. Angles are left out: their residuals
+/// wrap by a turn, so two of them can combine at the start to nearly a turn and to nothing where
+/// they hold. A zero row depends on nothing, so a witness of rows that vanish where they were
+/// diagnosed is never one of these.
 fn repeats(problem: &Problem, rows: &[usize]) -> bool {
     let [first, rest @ ..] = rows else { return false };
     let first = &problem.equations[*first];
     !rest.is_empty() && rest.iter().all(|&equation| {
         let equation = &problem.equations[equation];
         let (a, b) = (&equation.operands, &first.operands);
-        equation.kind == first.kind && (a == b || match equation.kind {
+        equation.kind == first.kind && first.kind != Kind::Angle && (a == b || match equation.kind {
             Kind::Distance => a[..2] == b[2..] && a[2..] == b[..2],
             Kind::Difference => a[0] == b[1] && a[1] == b[0],
             _ => false,
