@@ -4,6 +4,7 @@ import { prepareCadDatumFrames, resolveCadSketchPlacement, resolveCadWorldDatum,
   type CadResolvedPlacement } from '@/domain/cad/cadDatumPlanes';
 import { cadFrameEntityBounds } from '@/domain/cad/cadFrameBounds';
 import { cadPlanePointToWorld } from '@/domain/cad/cadPlanes';
+import { cadScalarParameterNames } from '@/domain/cad/cadParameters';
 import { cadFeatureDependencies, cadFeatureProducesBody, isAcceptedCadSketchSource } from '@/domain/cad/cadSchema';
 import { readCadSketchGeometryParameters, sameCadSketchGeometryValues } from '@/domain/cad/cadSketchParameterReads';
 import { cadProfileToEntities, resolveCadProfile, type CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
@@ -99,8 +100,10 @@ export function prepareCadViewportReferences(features: readonly CadFeature[], pa
 function prepareSketchSources(feature: CadSketchFeature, parameters: Readonly<Record<string, number>>, frames: CadDatumFrameLookup,
   kept: Map<CadSketchFeature, PreparedSketchReferences>): PreparedSources {
   const place = () => resolveCadSketchPlacement(feature, parameters, frames);
-  // Own data is read once for both the key and the geometry. Other sketches, accessors and invalid values keep the ordinary path.
-  const reads = isAcceptedCadSketchSource(feature) ? readCadSketchGeometryParameters(feature, parameters) : null;
+  // Own data is read once for both the key and the geometry, and the offset reads only own data, so placing the sketch once
+  // stands for each time its sources would place it. Other sketches, accessors and invalid values keep the ordinary path.
+  const reads = isAcceptedCadSketchSource(feature) && cadScalarParameterNames(feature.offset).every(name => isOwnDataOrMissing(parameters, name))
+    ? readCadSketchGeometryParameters(feature, parameters) : null;
   if (!reads) return { sources: cadSketchSources(feature, parameters, place) };
   let placement: CadResolvedPlacement;
   try { placement = place(); } catch { return { sources: cadSketchSources(feature, parameters, place) }; }
@@ -135,6 +138,10 @@ function cadSketchSources(feature: CadSketchFeature, parameters: Readonly<Record
   } catch { return legacy; }
 }
 
+const isOwnDataOrMissing = (parameters: Readonly<Record<string, number>>, name: string) => {
+  const field = Object.getOwnPropertyDescriptor(parameters, name);
+  return !field || 'value' in field;
+};
 const sameNumbers = (left: readonly number[], right: readonly number[]) => left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
 function sameCadPlacement(left: CadResolvedPlacement, right: CadResolvedPlacement): boolean {
   return Object.is(left.offsetMm, right.offsetMm) && sameNumbers(left.frame.origin, right.frame.origin) && sameNumbers(left.frame.u, right.frame.u)

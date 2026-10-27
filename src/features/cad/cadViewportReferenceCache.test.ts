@@ -134,4 +134,42 @@ describe('viewport references of unchanged accepted sketches', () => {
     expect(of(second, 'plate').every(reference => reference.name === 'Renamed plate')).toBe(true);
     expect(of(first, 'plate').every(reference => reference.name === 'plate')).toBe(true);
   });
+
+  it('places a sketch whose offset reads an accessor as often as before, and never keeps it', () => {
+    const base = parseCadDocument({ ...createCadDocument('Lifted plate', 'lifted_plate'), parameters: { lift: 2 }, features: [
+      { id: 'plate', name: 'plate', kind: 'sketch', plane: 'XY', offset: 'lift', suppressed: false, profiles: [
+        { id: 'outline', name: 'Outline', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: 40, height: 30, cornerRadius: 0 } },
+        { id: 'hole', name: 'Hole', construction: false, geometry: { kind: 'circle', x: 20, y: 15, radius: 3 } }] }
+    ] as unknown as CadFeature[] });
+    let lift = 2, reads = 0;
+    const parameters = { get lift() { reads++; return lift; } };
+    const count = (features: readonly CadFeature[]) => { reads = 0; const references = prepareCadViewportReferences(features, parameters); return { references, reads }; };
+    const first = count(base.features);
+    expect(first).toEqual(count(structuredClone(base.features)));
+    expect(first.reads).toBe(2);
+    lift = 3;
+    const moved = count(base.features);
+    expect(moved).toEqual(count(structuredClone(base.features)));
+    expect(moved.references).not.toEqual(first.references);
+  });
+
+  it('rebuilds a graph sketch when a value only its relations read changes, or goes missing and comes back', () => {
+    const document = parseCadDocument({ ...createCadDocument('Span', 'span'), schemaVersion: 2, parameters: { span: 20 }, features: [
+      { id: 'section', name: 'Section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [],
+        graph: { points: [{ id: 'origin', position: [0, 0] }, { id: 'tip', position: [20, 0] }],
+          entities: [{ id: 'edge', kind: 'line', construction: false, startPointId: 'origin', endPointId: 'tip' }],
+          relations: [{ id: 'level', kind: 'horizontal', pointIds: ['origin', 'tip'] }, { id: 'length', kind: 'distance', pointIds: ['origin', 'tip'], value: 'span' }] } }
+    ] as unknown as CadFeature[] });
+    const initial = prepare(document), at = (parameters: Record<string, number>) => prepareCadViewportReferences(document.features, parameters);
+    expect(of(initial, 'section')).toHaveLength(1);
+    // Missing, the relation cannot be compiled, so the sketch shows nothing, as without kept references.
+    const missing = at({});
+    expect(missing).toEqual(fresh(document.features, {}));
+    expect(of(missing, 'section')).toEqual([]);
+    expect(same(at({ span: 20 }), initial)).toBe(true);
+    // A span the drawn edge does not meet fails the same way.
+    const unmet = at({ span: 25 });
+    expect(unmet).toEqual(fresh(document.features, { span: 25 }));
+    expect(of(unmet, 'section')).toEqual([]);
+  });
 });

@@ -365,7 +365,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           }
           installedReferences.set(reference.referenceId, { reference, line, patch });
         }
-        pickableReferences.length = 0; installedReferences.forEach(({ line }) => pickableReferences.push(line));
+        // In the order of the references, which a kept line would otherwise leave for the lines installed after it.
+        pickableReferences.length = 0;
+        for (const id of wanted.keys()) { const installed = installedReferences.get(id); if (installed) pickableReferences.push(installed.line); }
         uploadedReferences.current = data.current.references;
       }
       installedReferenceVersion = data.current.referenceVersion;

@@ -1,0 +1,24 @@
+{
+  "version": "0.0.764",
+  "previousVersion": "0.0.763",
+  "postCompatibility": "preserved-output-cad-viewport-reference-cache",
+  "summary": "prepareCadViewportReferences keeps the references it prepared for an accepted sketch and returns the same frozen objects while the sketch's profiles and graph read the same parameter values and its placement (offset and frame) is the same. The references of the last two preparations that kept any are held, enough for a preview and its document, so undo history keeps none alive. Any other sketch, curve and datum glyph is prepared as before. The viewport already keeps the lines of references whose objects did not change, so a revision now uploads only the lines of the sketches it changed. VIEWPORT_NUMBERS",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. The viewport shows the same references in the same order; only unchanged sketches keep their objects.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Saved CAD files are byte for byte the same.",
+    "verification": "VERIFICATION_TEXT"
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Faster release of sketch drags in parts with many sketches.",
+    "changes": [
+      "Finishing a sketch drag or edit no longer redraws the unchanged sketches of the part in the 3D view, so the part responds sooner when it has many sketches."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
