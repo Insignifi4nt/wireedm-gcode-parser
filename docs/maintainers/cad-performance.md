@@ -86,7 +86,7 @@ From 0.0.762 `parseCadDocument` remembers every feature of a document it accepte
 
 - A feature a revision did not change now keeps its object, where each parse used to make a new one. The feature and profile forms therefore compare revisions, not objects, and still start again from each revision of the part that holds what they edit.
 - A transparent proxy around an envelope or feature list that holds accepted features is read once through its descriptors, length included, and copied, so it is accepted. The copy is walked again, so a proxy that answers differently the second time cannot pass anything the walk would reject. Any other proxy is still rejected when it is copied, as before.
-- `cadAcceptedFeatures.test.ts` parses each document of a corpus and its variants both as they are and as structured clones, and requires the same document or the same error. While the whole suite ran, all 1,508 parses that reused features matched a full parse of a structured clone, apart from the deliberate getter and proxy cases of that test.
+- `cadAcceptedFeatures.test.ts` parses each document of a corpus and its variants both as they are and as structured clones, and requires the same document or the same error. While the whole suite ran, 1,513 parses reused features: 1,508 matched a full parse of a structured clone, and the other 5 are that test's deliberate getter and proxy cases.
 
 ## Native sketch solver
 
