@@ -449,17 +449,36 @@ fn two_product(a: f64, b: f64) -> (f64, f64) {
 /// columns leaves rank unclear; with more, rank stays unclear.
 const DENSE_RANK: usize = 32;
 
+/// Most counted entries the checks past the linear bound may take, and the share of the work left
+/// they may take at most: they only decide whether rank is clear, so they leave the rest to the
+/// solve and the diagnosis around them. Past it, rank stays unclear.
+const CHECK_WORK: usize = 64_000_000;
+/// Most counted entries of those the rows of `T^-1` may take.
+const INVERSE_WORK: usize = 20_000_000;
+
 /// Whether the independent unit rows that `r` factors are clear of dependence: their smallest
 /// singular value is at least `CERTAIN`. Leaving out the columns without pivots can only lower it,
-/// so a lower bound over the pivot columns that reaches `CERTAIN` decides. A row whose lead is
-/// small beside its entries in columns without pivots, as a nearly straight arm's, leaves the pivot
-/// columns ill conditioned though the rows are not, so below it the rows' singular values are
+/// so a lower bound over the pivot columns that reaches `CERTAIN` decides: first one in work
+/// linear in their entries, then one from the rows of their inverse. A row whose lead is small
+/// beside its entries in columns without pivots, as a nearly straight arm's, leaves the pivot
+/// columns ill conditioned though the rows are not, so below both the rows' singular values are
 /// computed: those of `S` in `R^T = Q S`, taken densely for at most `DENSE_RANK` rows and with an
-/// absolute accuracy of about `epsilon`. More rows, or an `S` that would hold more than `work.fill`
-/// entries, leave rank unclear. No estimate decides, since one from above can miss a weak
-/// direction and call it clear. `None` when the work runs out.
+/// absolute accuracy of about `epsilon`. More rows, an `S` that would hold more than `work.fill`
+/// entries, or checks past the linear bound that would take more than `CHECK_WORK` or half the work
+/// left, leave rank unclear. No estimate decides, since one from above can miss a weak direction
+/// and call it clear. `None` when the linear bound runs out of work.
 fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
-    if floor_over_pivots(r, work)? >= CERTAIN { return Some(true); }
+    if comparison_floor(r, work)? >= CERTAIN { return Some(true); }
+    let mut check = Work { done: 0, budget: CHECK_WORK.min(work.budget.saturating_sub(work.done) / 2), fill: work.fill };
+    let clear = beyond_comparison(r, &mut check);
+    work.done = work.done.saturating_add(check.done);
+    Some(clear == Some(true))
+}
+
+/// Whether rank is clear by the rows of `T^-1` or by the rows' own singular values; `None` when
+/// the work runs out.
+fn beyond_comparison(r: &[SparseRow], work: &mut Work) -> Option<bool> {
+    if inverse_floor(r, work)? >= CERTAIN { return Some(true); }
     let pivots: Vec<usize> = (0..r.len()).filter(|&k| !r[k].is_empty()).collect();
     let m = pivots.len();
     if m > DENSE_RANK { return Some(false); }
@@ -473,27 +492,17 @@ fn clear_of_dependence(r: &[SparseRow], work: &mut Work) -> Option<bool> {
     for (j, row) in s.iter().enumerate() {
         for &(k, x) in row { dense[k][j] = x; }
     }
-    let Some((values, _, spent)) = crate::dense::singular(&dense, work.budget.saturating_sub(work.done)) else {
-        work.done = work.budget.saturating_add(1);
-        return None;
-    };
+    let (values, _, spent) = crate::dense::singular(&dense, work.budget.saturating_sub(work.done))?;
     work.spend(spent)?;
     Some(values.last().is_some_and(|&least| least >= CERTAIN))
 }
 
-/// A lower bound on the smallest singular value of `R` over the columns with pivots, the upper
-/// triangle `T`, first in work linear in its entries and otherwise from the rows of its inverse.
-fn floor_over_pivots(r: &[SparseRow], work: &mut Work) -> Option<f64> {
-    let bound = comparison_floor(r, work)?;
-    if bound >= CERTAIN { return Some(bound); }
-    Some(inverse_floor(r, work))
-}
-
-/// `1 / sqrt(||C^-1||_1 ||C^-1||_inf)` for the comparison matrix `C` of `T`, `|T_ii|` on its
-/// diagonal and `-|T_ij|` off it: `|T^-1| <= C^-1` entrywise, so this bounds `1 / ||T^-1||_2`.
-/// `C^-1` is not negative, so its norms are the largest entries of `C^-1 1` and `C^-T 1`, sums
-/// without cancellation, and the bound allows for their rounding. It is far below the true value
-/// when entries of `T^-1` cancel, as along a chain whose links alternate in sign.
+/// `1 / sqrt(||C^-1||_1 ||C^-1||_inf)` for the comparison matrix `C` of `T`, the upper triangle of
+/// `R` over the columns with pivots, with `|T_ii|` on its diagonal and `-|T_ij|` off it:
+/// `|T^-1| <= C^-1` entrywise, so this bounds `1 / ||T^-1||_2`. `C^-1` is not negative, so its
+/// norms are the largest entries of `C^-1 1` and `C^-T 1`, sums without cancellation, and the bound
+/// allows for their rounding. It is far below the true value when entries of `T^-1` cancel, as
+/// along a chain whose links alternate in sign.
 fn comparison_floor(r: &[SparseRow], work: &mut Work) -> Option<f64> {
     let n = r.len();
     // `C z = 1` from the last pivot back, and `C^T w = 1` by rows of `C` from the first.
@@ -520,15 +529,11 @@ fn comparison_floor(r: &[SparseRow], work: &mut Work) -> Option<f64> {
     Some(if product.is_finite() && slack < 1.01 { (product * slack * slack).sqrt().recip() } else { 0.0 })
 }
 
-/// Most counted entries the rows of `T^-1` may take; past them the bound is not shown, which
-/// leaves rank unclear without spending the group's work allowance.
-const INVERSE_WORK: usize = 20_000_000;
-
 /// `1 / ||T^-1||_F`, since `||T^-1||_2 <= ||T^-1||_F`, which is at most `sqrt(rank)` times larger.
 /// Each row of `T^-1` comes from a triangular solve, backward stable, that visits only the pivots
 /// it reaches, so a chain costs the square of its length. Zero once the bound falls below
-/// `CERTAIN` or the work would pass `INVERSE_WORK` or the allowance left.
-fn inverse_floor(r: &[SparseRow], work: &mut Work) -> f64 {
+/// `CERTAIN`; `None` when a row of `T` would pass `INVERSE_WORK` or the work allowance.
+fn inverse_floor(r: &[SparseRow], work: &mut Work) -> Option<f64> {
     use std::{cmp::Reverse, collections::BinaryHeap};
     let n = r.len();
     let allowed = INVERSE_WORK.min(work.budget.saturating_sub(work.done));
@@ -539,6 +544,10 @@ fn inverse_floor(r: &[SparseRow], work: &mut Work) -> f64 {
         (b[j], queued[j]) = (1.0, true);
         reached.push(Reverse(j));
         while let Some(Reverse(k)) = reached.pop() {
+            if spent + r[k].len() > allowed {
+                work.done += spent;
+                return None;
+            }
             let y = b[k] / r[k][0].1;
             (b[k], queued[k]) = (0.0, false);
             total += y * y;
@@ -549,14 +558,10 @@ fn inverse_floor(r: &[SparseRow], work: &mut Work) -> f64 {
                 if !queued[c] { queued[c] = true; reached.push(Reverse(c)); }
             }
         }
-        if spent > allowed {
-            work.done += allowed;
-            return 0.0;
-        }
         if !(total <= limit) { break; }
     }
     work.done += spent;
-    if total <= limit { total.sqrt().recip() } else { 0.0 }
+    Some(if total <= limit { total.sqrt().recip() } else { 0.0 })
 }
 
 /// Labels for equations with constraint `tags`, which never decrease, from the witnesses of all

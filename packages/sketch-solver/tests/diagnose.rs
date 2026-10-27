@@ -371,3 +371,24 @@ fn rows_whose_inverse_cancels_are_clear_beyond_the_dense_rank() {
     assert_eq!((found.rank, found.witnesses.len(), found.certain), (m, 0, true));
     assert!(spent < 100_000, "{spent}");
 }
+
+#[test]
+fn a_rank_check_that_runs_out_of_work_leaves_rank_unclear() {
+    // Twenty rows 1, 2, 2 in consecutive columns: the linear bound fails, and the checks past it
+    // may take only half of what is left, so rank stays unclear rather than the diagnosis
+    // unavailable.
+    // With enough work, their singular values show rank clear.
+    let rows: Vec<Row> = (0..20).map(|i| Row { entries: vec![(i, 1.0), (i + 1, 2.0), (i + 2, 2.0)], residual: 0.0, tolerance: 1e-10 }).collect();
+    let (found, spent) = sketch_solver::diagnose::diagnose(22, &rows, TAU, 140, 1_000);
+    let found = found.expect("diagnosed");
+    assert_eq!((found.rank, found.certain), (20, false));
+    assert!(spent <= 140, "{spent}");
+    assert!(sketch_solver::diagnose::diagnose(22, &rows, TAU, 100_000, 1_000).0.expect("diagnosed").certain);
+    // Before a solve, a repeat is then not set aside, and the work left stays with the solve.
+    let mut entries: Vec<Vec<(usize, f64)>> = rows.iter().map(|row| row.entries.clone()).collect();
+    entries.push(entries[0].clone());
+    let (set_aside, spent) = dependent(22, &entries, 200, 1_000);
+    assert_eq!(set_aside, None);
+    assert!(spent <= 160, "{spent}");
+    assert_eq!(dependent(22, &entries, 100_000, 1_000).0, Some(vec![20]));
+}
