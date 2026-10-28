@@ -1,0 +1,26 @@
+{
+  "version": "0.0.769",
+  "previousVersion": "0.0.768",
+  "postCompatibility": "preserved-output-sketch-trim",
+  "summary": "Sketch Trim removes the piece between the nearest cuts around the pick, including where edges overlap, touch or meet at one point. Before, any edge overlapping the clicked one, two boundaries at the same point without a declared joint, or a tangent contact anywhere on it rejected the whole edge with an ambiguous-intersection error, so rectangles snapped to each other could not be trimmed. The ends of an overlapping collinear line or concentric arc inside the source are now cuts, boundaries at one point make one cut that reuses an existing endpoint, a tangent contact blocks only the pieces it bounds, and an edge covered by another is removed whole. Relations that only describe the removed piece now leave with it instead of blocking the trim: those naming a removed edge or a point nothing else uses, Midpoint and Equal length on a line whose length changes, and the tangent joint, fillet or chamfer at a removed end. The preview names them, and the edit lists them in removedRelationIds. A horizontal or vertical relation shared with another edge stays on its points instead of blocking. A cut inside a cutting line can keep a Point on line relation to it, so the trimmed outline stays closed when that line moves; the editor adds it. Contacts at shared or touching corners of rotated edges no longer fail with a precision error.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output; saved sketches are not rewritten, and the Point on line relation a trim may add already exists in the schema. Potentially breaking for agents using the trim-sketch-entity edit: a trim that removes relations must send exactly the trimPreview.target removedRelationIds, or it rejects with unconfirmed-sketch-trim-removals; requests for trims that remove nothing keep their old shape. Trims that rejected with dependent-sketch-trim or ambiguous-sketch-trim may now succeed with listed removals, a tangent contact rejects with tangent-sketch-trim, and dependent-sketch-trim now only reports linear-pattern and preceding-sketch owners. trimPreview gains attachLineId or attachLineIds, and the edit accepts optional attachRelationId or attachRelationIds.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. The trim-sketch-entity edit gains optional removedRelationIds, attachRelationId and attachRelationIds fields; its preview receipt gains attachLineId or attachLineIds. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. The trim edit keeps its exact stale-witness checks; a request whose relation removals differ from the preview rejects with unconfirmed-sketch-trim-removals and names the expected IDs.",
+    "capabilities": "No post or machine capability change and no new application controls. The edge menu and Trim tool use the same operation and describe the removed relations and how each cut joins its boundary.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "cadSketchTrimOverlaps.test.ts trims both rectangles of a corner-snapped pair with an overlapping edge, cuts rotated triangles at shared and touching corners at three angles, and keeps a fresh cut on its cutting line while refusing that relation for a circle. The trim, middle, circle, arc radius, midpoint, reference dimension, region inspection, arrangement and edit suites now check the listed removals, their confirmation, shared horizontal relations, tangent rejection and the moved angle rays. Canvas tests submit the attachment and removal fields from the preview. The full Vitest suite, lint, ui:check, build, solver:check, the release check and the arc trim, circle trim and constraint browser journeys."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Trim works between overlapping and touching sketch edges.",
+    "changes": [
+      "Trim removes the piece between the nearest cuts, including where rectangles or other edges overlap, touch or meet at one point, and removes an edge that another edge fully covers.",
+      "Relations that only described the removed piece are removed with it, and the preview names them, instead of blocking the trim.",
+      "A cut inside a cutting line stays on that line, so the outline stays closed when you move the line later."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged. Agents that trim sketches must send the relation removals the trim preview lists.",
+    "action": "No action needed. Agent scripts that trim sketch edges should copy removedRelationIds from the trim preview."
+  }
+}

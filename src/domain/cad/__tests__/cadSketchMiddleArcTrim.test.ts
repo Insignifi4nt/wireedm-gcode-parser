@@ -70,7 +70,7 @@ describe('exact middle-arc Trim', () => {
       .toThrowError(expect.objectContaining({ code: 'sketch-trim-precision' }));
   });
 
-  it('retains center, original outer-point and radius drivers while keeping whole-edge deletion strict', () => {
+  it('retains center, original outer-point and radius drivers, and deletes a later piece with its support relation', () => {
     const document = middleArcTrimPart(true), sketch = document.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Expected fixed D source.');
     const retained = parseCadSketchGraph({ ...sketch.graph, relations: [
@@ -87,8 +87,8 @@ describe('exact middle-arc Trim', () => {
     const ownedResult = trimCadSketchEntity({ graph: owned, parameters: document.parameters, trim: { ...ownedPreview.target,
       cutPointIds: ['p', 'q'], newEntityId: 'after', supportRelationId: 'same' } });
     expect(ownedResult.graph.relations.slice(0, owned.relations.length)).toEqual(owned.relations);
-    expect(() => prepareCadSketchTrim({ graph: result.graph, parameters: document.parameters, entityId: 'arc', parameter: .5 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: expect.arrayContaining(['same']) }));
+    expect(prepareCadSketchTrim({ graph: result.graph, parameters: document.parameters, entityId: 'arc', parameter: .5 }).target)
+      .toMatchObject({ kind: 'delete', entityId: 'arc', removedRelationIds: expect.arrayContaining(['same']) });
   });
 
   it('rejects changed receipts, forged cut identities and namespace collisions instead of retargeting or reusing nearby points', () => {

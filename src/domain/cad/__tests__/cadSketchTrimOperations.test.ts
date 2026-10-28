@@ -19,11 +19,14 @@ describe('checked end-trim edit integration', () => {
     expect(JSON.stringify(source)).toBe(before);
   });
 
-  it('requires explicit whole-edge owner removal in the same batch and keeps failed edits atomic', () => {
+  it('requires confirmed or explicit owner removal in the same batch and keeps failed edits atomic', () => {
     const source = applyCadEdits(trimPart(), [{ kind: 'set-sketch-relation', sketchId: 'sketch',
       relation: { id: 'size', kind: 'equal-length', lineIds: ['ab', 'cd'] } }]), before = JSON.stringify(source);
     const trim = { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: endTrim } as const;
-    expect(() => applyCadEdits(source, [trim])).toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['size'] }));
+    expect(() => applyCadEdits(source, [trim])).toThrowError(expect.objectContaining({ code: 'unconfirmed-sketch-trim-removals' }));
+    const confirmed = applyCadEdits(source, [{ ...trim, trim: { ...endTrim, removedRelationIds: ['size'] } }]), sketch = confirmed.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing graph.');
+    expect(sketch.graph.relations.map(relation => relation.id)).not.toContain('size'); expect(measureCadSketch(confirmed, 'sketch').materialAreaMm2).toBe(200);
     const result = applyCadEdits(source, [{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'size' }, trim]);
     expect(measureCadSketch(result, 'sketch').materialAreaMm2).toBe(200);
     expect(() => applyCadEdits(source, [{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'size' },

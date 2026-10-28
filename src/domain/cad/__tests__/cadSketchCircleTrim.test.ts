@@ -94,31 +94,35 @@ describe('exact free-circle Trim', () => {
     expect(preview.removed.sweepRadians + preview.survivor.sweepRadians).toBe(2 * Math.PI);
   });
 
-  it('combines only declared shared boundary contacts and rejects close distinct contacts across the cyclic seam', () => {
+  it('cuts once where several boundaries meet, preferring a shared endpoint, including across the cyclic seam', () => {
     const base = cap(), extra = parseCadSketchGraph({ ...base, points: [...base.points, { id: 'alias-b', position: [8, 6] }, { id: 'out', position: [8, 0] }],
       entities: [...base.entities, { id: 'radial-cut', kind: 'line', startPointId: 'alias-b', endPointId: 'out', construction: true }] });
-    expect(() => prepareCadSketchTrim({ graph: extra, parameters, entityId: 'rim', parameter: .25 }))
-      .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+    const undeclared = prepareCadSketchTrim({ graph: extra, parameters, entityId: 'rim', parameter: .25 });
     const declared = parseCadSketchGraph({ ...extra, relations: [...extra.relations, { id: 'declared', kind: 'coincident', pointIds: ['b', 'alias-b'] }] });
     const preview = prepareCadSketchTrim({ graph: declared, parameters, entityId: 'rim', parameter: .25 });
     if (preview.target.kind !== 'circle') throw new Error('Expected two declared circle contacts.');
+    expect(undeclared.target).toEqual(preview.target);
+    expect(preview.target.boundaries.map(boundary => boundary.endpointPointId)).toEqual(['b', 'a']);
     const result = trimCadSketchEntity({ graph: declared, parameters, trim: { ...preview.target, cutPointIds: ['b', 'a'] } });
     expect(result.graph.relations).toEqual(declared.relations); expect(result.graph.points).toEqual(declared.points);
     const near = parseCadSketchGraph({ ...base, points: [...base.points, { id: 'left', position: [-20, 0] }, { id: 'right', position: [20, 0] },
       { id: 'inside', position: [0, 0] }, { id: 'below', position: [20, -1e-14] }], entities: [...base.entities,
       { id: 'diameter', kind: 'line', startPointId: 'left', endPointId: 'right', construction: true },
       { id: 'near-seam', kind: 'line', startPointId: 'inside', endPointId: 'below', construction: true }] });
-    expect(() => prepareCadSketchTrim({ graph: near, parameters, entityId: 'rim', parameter: .25 }))
-      .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+    const seam = prepareCadSketchTrim({ graph: near, parameters, entityId: 'rim', parameter: .25 });
+    expect(seam.target).toMatchObject({ kind: 'circle', boundaries: [{ entityId: 'chord', endpointPointId: 'b' }, { entityId: 'chord', endpointPointId: 'a' }] });
+    const below = prepareCadSketchTrim({ graph: near, parameters, entityId: 'rim', parameter: .9 });
+    if (below.target.kind !== 'circle') throw new Error('Expected circle trim.');
+    expect(below.target.boundaries.map(boundary => boundary.entityId)).toEqual(['diameter', 'diameter']);
   });
 
-  it('keeps retained center-only owners, blocks actual curve/radius drivers and deletes only a genuinely isolated eligible circle', () => {
+  it('keeps center and curve owners while a trimmed circle stays an arc, and deletes an isolated circle with its center owner', () => {
     const graph = cap(), isolated = parseCadSketchGraph({ ...graph, entities: [graph.entities[0]] }), before = JSON.stringify(graph);
     const deletion = prepareCadSketchTrim({ graph: isolated, parameters, entityId: 'rim', parameter: 1 });
-    expect(deletion.target).toEqual({ kind: 'delete', entityId: 'rim', parameter: 1 });
+    expect(deletion.target).toEqual({ kind: 'delete', entityId: 'rim', parameter: 1, removedRelationIds: ['center-driver'] });
     if (deletion.target.kind !== 'delete') throw new Error('Expected whole free-circle deletion.');
     const deleted = trimCadSketchEntity({ graph: isolated, parameters, trim: deletion.target });
-    expect(deleted.graph).toEqual({ ...isolated, entities: [] });
+    expect(deleted.graph).toEqual({ points: isolated.points.filter(point => point.id !== 'o'), entities: [], relations: [] });
     const guide = parseCadSketchGraph({ ...graph, points: [...graph.points, { id: 'g0', position: [-2, 0] }, { id: 'g1', position: [2, 0] }],
       entities: [...graph.entities, { id: 'guide', kind: 'line', startPointId: 'g0', endPointId: 'g1', construction: true }],
       relations: [...graph.relations, { id: 'center-midpoint', kind: 'midpoint', pointId: 'o', lineId: 'guide' }] });
@@ -131,26 +135,32 @@ describe('exact free-circle Trim', () => {
     // Deleting a whole isolated circle keeps no radius support, so its expression cannot block it.
     const drivenIsolated = parseCadSketchGraph({ ...isolated, entities: [{ ...isolated.entities[0], radius: ' 10 ' }] as typeof isolated.entities });
     const drivenDeletion = prepareCadSketchTrim({ graph: drivenIsolated, parameters, entityId: 'rim', parameter: .25 });
-    expect(drivenDeletion.target).toEqual({ kind: 'delete', entityId: 'rim', parameter: .25 });
+    expect(drivenDeletion.target).toEqual({ kind: 'delete', entityId: 'rim', parameter: .25, removedRelationIds: ['center-driver'] });
     if (drivenDeletion.target.kind !== 'delete') throw new Error('Expected whole driven-circle deletion.');
     expect(trimCadSketchEntity({ graph: drivenIsolated, parameters, trim: drivenDeletion.target }).graph.entities).toEqual([]);
+    // A radius owner keeps driving the arc that remains.
     const radial = parseCadSketchGraph({ ...graph, relations: [...graph.relations, { id: 'radius-driver', kind: 'radial-size', entityId: 'rim', quantity: 'radius', value: ' 10 ' }] });
-    expect(() => prepareCadSketchTrim({ graph: radial, parameters, entityId: 'rim', parameter: .25 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['radius-driver'], pointIds: [] }));
+    const radialTrim = prepareCadSketchTrim({ graph: radial, parameters, entityId: 'rim', parameter: .25 });
+    if (radialTrim.target.kind !== 'circle') throw new Error('Expected circle trim.');
+    expect(radialTrim.target.removedRelationIds).toBeUndefined();
+    const radialResult = trimCadSketchEntity({ graph: radial, parameters, trim: { ...radialTrim.target, cutPointIds: ['b', 'a'] } }).graph;
+    expect(radialResult.relations).toEqual(radial.relations);
+    expect(radialResult.entities.find(entity => entity.id === 'rim')).toMatchObject({ kind: 'arc', startPointId: 'a', endPointId: 'b' });
     const equal = parseCadSketchGraph({ ...graph, points: [...graph.points, { id: 'other-center', position: [30, 0] }],
       entities: [...graph.entities, { id: 'other-circle', kind: 'circle', centerPointId: 'other-center', radius: 10, construction: true }],
       relations: [...graph.relations, { id: 'equal-driver', kind: 'equal-radius', curveIds: ['rim', 'other-circle'] }] });
-    expect(() => prepareCadSketchTrim({ graph: equal, parameters, entityId: 'rim', parameter: .25 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['equal-driver'] }));
+    const equalTrim = prepareCadSketchTrim({ graph: equal, parameters, entityId: 'rim', parameter: .25 });
+    if (equalTrim.target.kind !== 'circle') throw new Error('Expected circle trim.');
+    expect(trimCadSketchEntity({ graph: equal, parameters, trim: { ...equalTrim.target, cutPointIds: ['b', 'a'] } }).graph.relations).toEqual(equal.relations);
     for (const points of [[[10, 0], [20, 0]], [[-20, 10], [20, 10]]] as const) {
       const blocked = parseCadSketchGraph({ ...graph, points: [graph.points[0], { id: 'u', position: points[0] }, { id: 'v', position: points[1] }],
         entities: [graph.entities[0], { id: 'boundary', kind: 'line', startPointId: 'u', endPointId: 'v', construction: true }] });
       expect(() => prepareCadSketchTrim({ graph: blocked, parameters, entityId: 'rim', parameter: .25 }))
         .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
     }
+    // A duplicate circle covers the whole rim, so Trim removes the clicked copy.
     const overlap = parseCadSketchGraph({ ...isolated, entities: [...isolated.entities, { ...isolated.entities[0], id: 'duplicate' }] });
-    expect(() => prepareCadSketchTrim({ graph: overlap, parameters, entityId: 'rim', parameter: .25 }))
-      .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+    expect(prepareCadSketchTrim({ graph: overlap, parameters, entityId: 'rim', parameter: .25 }).target).toEqual({ kind: 'delete', entityId: 'rim', parameter: .25 });
     expect(JSON.stringify(graph)).toBe(before);
   });
 

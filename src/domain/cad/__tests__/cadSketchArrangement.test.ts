@@ -177,7 +177,7 @@ describe('analytic sketch arrangement', () => {
       expect(result.cells, `${offset} ${degrees}° r${radius}`).toEqual([]);
       expect(result.issues.some(issue => issue.code === 'ambiguous-tangency')).toBe(true);
       expect(() => prepareCadSketchTrim({ graph, parameters: {}, entityId: 'pq', parameter: 0.1 }))
-        .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+        .toThrowError(expect.objectContaining({ code: 'tangent-sketch-trim' }));
     }
   });
 

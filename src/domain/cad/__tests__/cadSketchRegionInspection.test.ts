@@ -221,7 +221,7 @@ describe('prepared closed-cell inspection and physical selection', () => {
     session.redo(); expect(session.getSnapshot().document).toBe(accepted.document);
   });
 
-  it('refuses mixed or stale trim proposals and reports exact endpoint-driver owners without editing accepted data', () => {
+  it('refuses mixed or stale trim proposals and drops a driven detached end without editing accepted data', () => {
     const document = trimPart(), feature = document.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Missing trim sketch.');
     const original = JSON.stringify(document);
     for (const proposal of [{ trim: endTrim, sketch: feature }, { trim: endTrim, split },
@@ -229,9 +229,8 @@ describe('prepared closed-cell inspection and physical selection', () => {
       expect(() => inspectCadSketchRegions(document, 'sketch', { proposal: proposal as unknown as CadSketchRegionProposal })).toThrow();
     const driven = parseCadDocument({ ...document, features: [{ ...feature, graph: { ...feature.graph,
       points: feature.graph.points.map(point => point.id === 'a' ? { ...point, position: [' 0 ', 0] } : point) } }] });
-    expect(() => inspectCadSketchRegions(driven, 'sketch', { proposal: { trim: endTrim } })).toThrowError(expect.objectContaining({
-      code: 'dependent-sketch-trim', relationIds: [], pointIds: ['a']
-    }));
+    const areas = (source: typeof document) => inspectCadSketchRegions(source, 'sketch', { proposal: { trim: endTrim } }).items.map(item => item.areaMm2);
+    expect(areas(driven)).toEqual(areas(document)); expect(areas(document).length).toBeGreaterThan(0);
     expect(JSON.stringify(document)).toBe(original);
   });
 

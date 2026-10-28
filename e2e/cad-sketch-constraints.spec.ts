@@ -332,7 +332,10 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   expect(human.graph.points.slice(0, sketch.graph.points.length)).toEqual(sketch.graph.points);
   expect(human.graph.points.find((point: { id: string }) => point.id === cutPointId).position).toEqual([10, 0]);
   expect(human.graph.entities[0]).toEqual({ ...sketch.graph.entities[0], startPointId: cutPointId });
-  expect(human.graph.relations).toEqual([{ ...sketch.graph.relations[0], pointIds: [cutPointId, 'b'] }, ...sketch.graph.relations.slice(1)]);
+  // The cut inside the fence stays on it, so the reconnected outline keeps following that line.
+  const attachment = human.graph.relations.at(-1);
+  expect(attachment).toEqual({ id: expect.any(String), kind: 'point-on-line', pointId: cutPointId, lineId: 'fence' });
+  expect(human.graph.relations).toEqual([{ ...sketch.graph.relations[0], pointIds: [cutPointId, 'b'] }, ...sketch.graph.relations.slice(1), attachment]);
   expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(4000, 7);
   await page.keyboard.press('Control+z'); current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
@@ -341,7 +344,8 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   expect(query.items).toHaveLength(1);
   expect(query.trimPreview.target).toEqual({ kind: 'end', entityId: 'ab', parameter: .1, end: 'start',
     boundary: { entityId: 'fence', index: 0, parameter: .25, position: [10, 0] } });
-  const trim = { ...query.trimPreview.target, cutPointId };
+  expect(query.trimPreview.attachLineId).toBe('fence');
+  const trim = { ...query.trimPreview.target, cutPointId, attachRelationId: attachment.id };
   const openProposal = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal: { trim } });
   expect(openProposal.items).toEqual([]);
   const replacement = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal: { sketch: human } });
