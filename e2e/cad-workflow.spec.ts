@@ -1499,13 +1499,13 @@ test('human Curve creation keeps name, plane and geometry atomic and uses the ex
   expect(importedFeatures).toMatchObject({ items: [{ kind: 'curve', source: { text: bytes.toString('utf8') } }] });
 });
 
-test('human mixed path drawing retains invalid points and commits one exact undo step', async ({ page }) => {
+test('human mixed polyline drawing retains invalid points and commits one exact undo step', async ({ page }) => {
   await prepare(page);
   await page.getByRole('button', { name: 'Design in CAD' }).click();
   await createSketchOnCanvasPlane(page);
   const blank = await context(page);
   const blankFeatures = await call(page, 'cad_read_features', { expectedVersion: blank.version });
-  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click();
   await page.getByRole('button', { name: '3-point Arc', exact: true }).click();
   const canvas = page.getByLabel('Sketch drawing canvas');
   await canvas.focus(); await canvas.press('Space');

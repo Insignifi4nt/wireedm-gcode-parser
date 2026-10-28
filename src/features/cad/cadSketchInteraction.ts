@@ -1,7 +1,8 @@
 import type { CadProfile } from '@/domain/cad/cadDocument';
 
 export type SketchPoint = readonly [number, number];
-export type SketchTool = 'select' | 'trim' | 'rectangle' | 'circle' | 'slot' | 'polygon' | 'path';
+/** `path` is the Polyline tool; curves draw with it too. */
+export type SketchTool = 'select' | 'trim' | 'line' | 'arc' | 'rectangle' | 'circle' | 'slot' | 'path';
 
 export function snapSketchPoint(point: SketchPoint, gridStep: number, enabled: boolean): SketchPoint {
   if (!enabled) return point;
@@ -28,12 +29,7 @@ export function magnetSketchValue(value: number, step: number, enabled: boolean,
 }
 
 /** Rectangle origin is always its lower left corner, regardless of drawing direction. */
-export function twoPointSketchProfile(tool: 'rectangle' | 'circle' | 'slot', start: SketchPoint, end: SketchPoint): CadProfile {
-  if (tool === 'slot') {
-    const halfLength = Math.hypot(end[0] - start[0], end[1] - start[1]);
-    if (halfLength < 0.001) throw new Error('Click a different point to define the slot axis.');
-    return { kind: 'slot', x: start[0], y: start[1], length: halfLength * 2, width: Math.min(10, halfLength), angle: Math.atan2(end[1] - start[1], end[0] - start[0]) * 180 / Math.PI };
-  }
+export function twoPointSketchProfile(tool: 'rectangle' | 'circle', start: SketchPoint, end: SketchPoint): CadProfile {
   if (tool === 'circle') {
     const radius = Math.hypot(end[0] - start[0], end[1] - start[1]);
     if (radius < 0.001) throw new Error('Click a different point to define a circle radius.');
@@ -45,7 +41,24 @@ export function twoPointSketchProfile(tool: 'rectangle' | 'circle' | 'slot', sta
   return { kind: 'rectangle', x: Math.min(start[0], end[0]), y: Math.min(start[1], end[1]), width, height, cornerRadius: 0 };
 }
 
-export function closeSketchPolygon(points: readonly SketchPoint[]): CadProfile {
-  if (points.length < 3) throw new Error('A closed profile needs at least three vertices.');
-  return { kind: 'polygon', points };
+/** Below this, two slot centers or a slot width are treated as one click and rejected. */
+const SLOT_MINIMUM = 0.001;
+
+/** A slot's third click sets its width: twice the distance from the line through both arc centers. */
+export function slotSketchWidth(first: SketchPoint, second: SketchPoint, cursor: SketchPoint): number {
+  const length = Math.hypot(second[0] - first[0], second[1] - first[1]);
+  if (length < SLOT_MINIMUM) throw new Error('Click a different point for the second arc center.');
+  return 2 * Math.abs((second[0] - first[0]) * (cursor[1] - first[1]) - (second[1] - first[1]) * (cursor[0] - first[0])) / length;
+}
+
+/**
+ * The saved slot profile spanning two arc centers, for sketches that keep profiles rather than connected edges:
+ * centered between them, as long as their distance plus the width.
+ */
+export function slotSketchProfile(first: SketchPoint, second: SketchPoint, width: number): Extract<CadProfile, { kind: 'slot' }> {
+  const length = Math.hypot(second[0] - first[0], second[1] - first[1]);
+  if (length < SLOT_MINIMUM) throw new Error('Click a different point for the second arc center.');
+  if (!(width >= SLOT_MINIMUM) || !Number.isFinite(width)) throw new Error('Move away from the line between the arc centers to set the slot width.');
+  return { kind: 'slot', x: (first[0] + second[0]) / 2, y: (first[1] + second[1]) / 2, length: length + width, width,
+    angle: Math.atan2(second[1] - first[1], second[0] - first[0]) * 180 / Math.PI };
 }

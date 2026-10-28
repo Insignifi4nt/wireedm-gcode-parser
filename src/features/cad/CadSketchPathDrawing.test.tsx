@@ -51,22 +51,24 @@ async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>
 }
 
 describe('mixed line and three-point arc drawing', () => {
-  it.each([true, false])('connects deliberate existing-point snaps while honoring disabled snapping (%s)', async enabled => {
+  it.each([true, false])('attaches deliberate existing-point snaps while honoring disabled snapping (%s)', async enabled => {
     const onAddPath = vi.fn();
     const h = await fixture({ onAddPath, sketch: { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
       points: [{ id: 'a', position: ['anchorX', 3.2] }, { id: 'b', position: [22.1, 3.2] },
         { id: 'bottom', position: ['anchorX', 0] }, { id: 'top', position: ['anchorX', 6.4] }],
       entities: [{ id: 'fence', kind: 'line', construction: true, startPointId: 'bottom', endPointId: 'top' }], relations: []
     } }, parameters: { anchorX: 2.1 } });
+    // Relations are on by default, so an accepted snap attaches without touching the box.
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]')!.checked).toBe(true);
     if (!enabled) await h.click('Toggle snapping');
     await h.point(2.2, 3.3, 'pointermove');
     expect(container.querySelector('[data-cad-sketch-snap="a"]') !== null).toBe(enabled);
     // Space accepts the displayed snap, just as a pointer click does.
-    await h.key(' '); await h.point(22.2, 3.3); await h.click('Finish path');
+    await h.key(' '); await h.point(22.2, 3.3); await h.click('Finish polyline');
     expect(h.error).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(onAddPath).toHaveBeenCalledTimes(1);
     const draft = onAddPath.mock.calls[0][0];
-    expect(draft.kind).toBe('ready'); expect(draft.startPointId).toBe(enabled ? 'a' : undefined);
-    expect(draft.segments[0].endPointId).toBe(enabled ? 'b' : undefined);
+    expect(draft.kind).toBe('ready'); expect(draft.startPick?.sourcePointId).toBe(enabled ? 'a' : undefined);
+    expect(draft.segments[0].endPick?.sourcePointId).toBe(enabled ? 'b' : undefined);
     expect(draft.start[0]).toBeCloseTo(enabled ? 2.1 : 2.2, 10);
     expect(draft.segments[0].end[0]).toBeCloseTo(enabled ? 22.1 : 22.2, 10);
   });
@@ -141,19 +143,21 @@ describe('mixed line and three-point arc drawing', () => {
     await h.key('Enter'); expect(h.added).toHaveBeenCalledTimes(1); expect(h.error).not.toHaveBeenCalled();
   });
 
-  it.each([0, -Math.log(2) * 1000])('snaps to an off-grid anchor within six pixels without automatically saving at zoom %s', async deltaY => {
+  it.each([0, -Math.log(2) * 1000])('closes on its off-grid start within six pixels at zoom %s', async deltaY => {
     const h = await fixture(); await h.click('Toggle snapping');
     await h.point(2.1, 3.2); await h.point(22.1, 3.2); await h.point(22.1, 23.2);
     await act(async () => h.svg.dispatchEvent(new WheelEvent('wheel', { deltaY, bubbles: true })));
     const span = Number(h.svg.getAttribute('viewBox')!.split(' ')[3]);
-    await h.point(2.1 + 5 * span / 600, 3.2); expect(h.added).not.toHaveBeenCalled();
-    expect(h.button('Close profile').textContent).not.toContain('Close with line');
-    await h.click('Close profile'); const geometry = h.added.mock.calls[0][0];
-    if (geometry.kind !== 'path') throw new Error('Expected path');
-    expect(geometry.segments).toHaveLength(3);
-    const first = geometry.segments[0], last = geometry.segments[2];
-    if (first.kind !== 'line' || last.kind !== 'line') throw new Error('Expected straight closure');
-    expect(last.end).toEqual(first.start); expect(Number(last.end[0])).toBeCloseTo(2.1); expect(Number(last.end[1])).toBeCloseTo(3.2);
+    expect(h.button('Close profile').textContent).toContain('Close with line');
+    await h.point(2.1 + 7 * span / 600, 3.2); expect(h.added).not.toHaveBeenCalled();
+    await h.click('Undo last'); await h.point(2.1 + 5 * span / 600, 3.2);
+    // Clicking the start saves the closed shape; a sketch of profiles keeps straight edges as an editable polygon.
+    expect(h.added).toHaveBeenCalledTimes(1); expect(h.error).not.toHaveBeenCalled();
+    const geometry = h.added.mock.calls[0][0];
+    if (geometry.kind !== 'polygon') throw new Error('Expected polygon');
+    expect(geometry.points).toHaveLength(3);
+    expect(Number(geometry.points[0][0])).toBeCloseTo(2.1); expect(Number(geometry.points[0][1])).toBeCloseTo(3.2);
+    expect(h.session.getSnapshot().workflowOpen).toBe(false);
   });
 
   it('cancels the entire local draft on Escape or external cancellation and preserves property locks', async () => {

@@ -40,12 +40,13 @@ const splitLine = { kind: 'split-sketch-entity', sketchId: 'sketch', split: { ki
   splitPointId: 'cut', newEntityId: 'after', supportRelationId: 'support' } } satisfies CadEdit;
 
 describe('shared CAD edit preparation with the real sketch solver', () => {
-  it('moves a whole connected slot when its center is placed at the origin', async () => {
-    const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [12, 8] }, end: [12, 28], width: 10 }, construction: false, createId: (() => { let next = 0; return () => `slot-${++next}`; })() });
+  it('moves a whole connected slot when an arc center is placed at the origin', async () => {
+    const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', first: { kind: 'position', point: [12, 8] }, second: { kind: 'position', point: [12, 38] }, width: 10 },
+      construction: false, createId: (() => { let next = 0; return () => `slot-${++next}`; })() });
     if (created.kind !== 'slot') throw new Error('Expected slot role map.');
     const empty = parseCadDocument({ ...createCadDocument('Slot', 'slot'), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] }] });
     const drawn = (await prepareCadEdits(empty, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: created.geometry }], solver)).document;
-    const relations = (['x', 'y'] as const).map(axis => ({ id: `origin-${axis}`, kind: 'fixed-axis' as const, pointId: created.centerPointId, axis, value: 0 }));
+    const relations = (['x', 'y'] as const).map(axis => ({ id: `origin-${axis}`, kind: 'fixed-axis' as const, pointId: created.centerPointIds[0], axis, value: 0 }));
     const placement = cadSketchRelationPlacement(graphOf(drawn), relations);
     if (!placement) throw new Error('Expected the free slot to be carried.');
     const centered = (await prepareCadEdits(drawn, [{ kind: 'translate-sketch-geometry', sketchId: 'sketch', ...placement },
@@ -55,6 +56,25 @@ describe('shared CAD edit preparation with the real sketch solver', () => {
       const [x, y] = point.position as readonly [number, number], [sourceX, sourceY] = before.get(point.id) ?? [NaN, NaN];
       expect(x).toBeCloseTo(sourceX - 12, 6); expect(y).toBeCloseTo(sourceY - 8, 6);
     }
+  });
+
+  it('keeps an arc drawn on attached line ends following them when a line end moves', async () => {
+    const createId = (() => { let next = 0; return () => `drawn-${++next}`; })();
+    const empty = parseCadDocument({ ...createCadDocument('Attached', 'attached'), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] }] });
+    const line = createCadFreshSketchDrawing({ drawing: { kind: 'line', start: { kind: 'position', point: [10, 10] }, end: { kind: 'position', point: [50, 10] } }, construction: false, createId });
+    if (line.kind !== 'line') throw new Error('Expected line role map.');
+    const drawn = (await prepareCadEdits(empty, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: line.geometry }], solver)).document;
+    // The picks an attached snap makes: new arc ends held on the line's ends by coincident relations.
+    const arc = createCadFreshSketchDrawing({ drawing: { kind: 'arc', through: [30, 40],
+      start: { kind: 'coincident', point: [10, 10], sourcePointId: line.pointIds.start, relationId: 'join-start' },
+      end: { kind: 'coincident', point: [50, 10], sourcePointId: line.pointIds.end, relationId: 'join-end' } }, construction: false, createId, existingGraph: graphOf(drawn) });
+    if (arc.kind !== 'arc') throw new Error('Expected arc role map.');
+    const attached = (await prepareCadEdits(drawn, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: arc.geometry }], solver)).document;
+    const moved = graphOf((await prepareCadEdits(attached, [{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: line.pointIds.start, translation: [-5, 0] }], solver)).document);
+    const position = (id: string) => (moved.points.find(point => point.id === id)?.position ?? []).map(Number);
+    const [x, y] = position(line.pointIds.start), [arcX, arcY] = position(arc.pointIds.start);
+    expect(x).not.toBeCloseTo(10, 3); expect(arcX).toBeCloseTo(x, 6); expect(arcY).toBeCloseTo(y, 6);
+    expect(position(arc.pointIds.end)).toEqual(position(line.pointIds.end));
   });
 
   it('constructs a middle trim from the preceding solved cutters and atomically rejects any later cut-point projection', async () => {

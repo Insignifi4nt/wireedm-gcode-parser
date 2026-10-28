@@ -10,7 +10,7 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { CadWorkbench, type CadWorkbenchProps } from './CadWorkbench';
-import { closeSketchPolygon, snapSketchPoint, twoPointSketchProfile } from './cadSketchInteraction';
+import { slotSketchProfile, slotSketchWidth, snapSketchPoint, twoPointSketchProfile } from './cadSketchInteraction';
 import { CadSession } from './cadSession';
 import { getCadPreferences, setCadPreferences } from './cadPreferences';
 import { cadFeatureCandidateKey, type CadFeaturePreviewState } from './cadFeaturePreview';
@@ -202,6 +202,12 @@ async function canvasClick(x: number, y: number) {
 async function snapToGrid() {
   const toggle = container.querySelector<HTMLInputElement>('input[aria-label="Snap to grid"]'); if (!toggle) throw new Error('Grid snap toggle missing.');
   await act(async () => toggle.click());
+}
+/** Sets Create relations, which starts on, to the state a flow needs. */
+async function drawingRelations(enabled: boolean) {
+  const toggle = container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]'); if (!toggle) throw new Error('Relation drawing control missing.');
+  if (toggle.checked !== enabled) await act(async () => toggle.click());
+  expect(toggle.checked).toBe(enabled);
 }
 async function canvasKey(key: string, shiftKey = false) {
   const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]');
@@ -1401,6 +1407,13 @@ describe('CAD sketch interaction', () => {
     await press('m'); expect(button('Mirror copy').disabled).toBe(true); expect(button('Rectangle').getAttribute('aria-pressed')).toBe('true');
     await press('t'); expect(button('Trim').disabled).toBe(true); expect(button('Rectangle').getAttribute('aria-pressed')).toBe('true');
     await press('s'); expect(button('Select').getAttribute('aria-pressed')).toBe('true');
+    for (const [key, label] of [['l', 'Line'], ['a', 'Arc'], ['p', 'Polyline'], ['o', 'Slot']] as const) {
+      await press(key); expect(button(label).getAttribute('aria-pressed')).toBe('true');
+      expect(button(label).getAttribute('aria-keyshortcuts')).toBe(key.toUpperCase());
+    }
+    const drawingTools = [...container.querySelectorAll('.cad-command-primary-tools button')].map(entry => entry.getAttribute('aria-label'));
+    expect(drawingTools.slice(drawingTools.indexOf('Select'), drawingTools.indexOf('Select') + 7)).toEqual(['Select', 'Line', 'Arc', 'Polyline', 'Rectangle', 'Circle', 'Slot']);
+    expect(drawingTools).not.toContain('Path');
   });
 
   it('enters Trim from T on a connected sketch and Escape returns to Select without editing', async () => {
@@ -1492,8 +1505,15 @@ describe('CAD sketch interaction', () => {
     expect(twoPointSketchProfile('rectangle', [40, 30], [0, -10])).toEqual({ kind: 'rectangle', x: 0, y: -10, width: 40, height: 40, cornerRadius: 0 });
     expect(() => twoPointSketchProfile('rectangle', [0, 0], [0, 30])).toThrow('nonzero');
     expect(twoPointSketchProfile('circle', [5, 5], [8, 9])).toEqual({ kind: 'circle', x: 5, y: 5, radius: 5 });
-    expect(twoPointSketchProfile('slot', [0, 0], [0, 20])).toEqual({ kind: 'slot', x: 0, y: 0, length: 40, width: 10, angle: 90 });
-    expect(() => closeSketchPolygon([[0, 0], [20, 0]])).toThrow('three');
+  });
+
+  it('measures a slot width across its center axis and keeps legacy slots centered between both arc centers', () => {
+    expect(slotSketchWidth([0, 0], [20, 0], [5, 3])).toBe(6); expect(slotSketchWidth([0, 0], [20, 0], [-40, -3])).toBe(6);
+    expect(slotSketchWidth([0, 0], [0, 20], [4, 50])).toBe(8);
+    expect(slotSketchProfile([0, 0], [0, 20], 10)).toEqual({ kind: 'slot', x: 0, y: 10, length: 30, width: 10, angle: 90 });
+    expect(() => slotSketchWidth([3, 4], [3, 4], [10, 10])).toThrow('different point');
+    expect(() => slotSketchProfile([0, 0], [20, 0], 0)).toThrow('Move away');
+    expect(() => slotSketchProfile([0, 0], [20, 0], Number.NaN)).toThrow('Move away');
   });
 
   it('snaps both signs and preserves precision when snapping is disabled', () => {
@@ -1548,7 +1568,10 @@ describe('CAD sketch interaction', () => {
     expect(sketch.profiles).toEqual([]);
     expect(sketch.graph?.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 40], [0, 40]]);
     expect(sketch.graph?.entities.map(entity => entity.kind)).toEqual(['line', 'line', 'line', 'line']);
-    expect(sketch.graph?.relations.map(relation => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical']);
+    // The corner drawn on the origin stays fixed there, because Create relations starts on.
+    expect(sketch.graph?.relations.map(relation => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'fixed-axis', 'fixed-axis']);
+    expect(sketch.graph?.relations.slice(4)).toEqual([{ id: expect.any(String), kind: 'fixed-axis', pointId: sketch.graph?.points[0].id, axis: 'x', value: 0 },
+      { id: expect.any(String), kind: 'fixed-axis', pointId: sketch.graph?.points[0].id, axis: 'y', value: 0 }]);
     expect(currentDocument.schemaVersion).toBe(2);
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph?.entities[0].id }]);
     expect(workflow).toHaveBeenLastCalledWith(false);
@@ -1593,7 +1616,7 @@ describe('CAD sketch interaction', () => {
     await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' })); await click('Circle');
     const infer = container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]');
     if (!infer) throw new Error('Coincident drawing control missing.');
-    expect(infer.checked).toBe(false); await act(async () => infer.click());
+    expect(infer.checked).toBe(true);
     await canvasClick(300, 200); await canvasClick(450, 200);
     expect(pending).toHaveLength(1); expect(currentDocument).toBe(original);
     expect(currentSession.getSnapshot().workflowOpen).toBe(true);
@@ -1629,9 +1652,11 @@ describe('CAD sketch interaction', () => {
     expect(workflow).toHaveBeenLastCalledWith(false);
   });
 
-  it('closes a free polygon into shared point identities and changes only a selected edge to construction', async () => {
+  it('closes a free polyline on its start into shared point identities and changes only a selected edge to construction', async () => {
     await mount(); await startSketch(); await snapToGrid(); await click('Polyline');
-    await canvasClick(300, 200); await canvasClick(450, 200); await canvasClick(375, 100); await canvasKey('Enter');
+    // Unticked, the start on the origin only copies its position.
+    await drawingRelations(false);
+    await canvasClick(300, 200); await canvasClick(450, 200); await canvasClick(375, 100); await canvasClick(300, 200);
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
     expect(sketch.profiles).toEqual([]);
@@ -1701,7 +1726,7 @@ describe('CAD sketch interaction', () => {
       return element;
     };
     const pick = async (id: string) => act(async () => point(id).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
-    const accepted = currentSession.getSnapshot(); await click('Path'); await click('Dimension');
+    const accepted = currentSession.getSnapshot(); await click('Polyline'); await click('Dimension');
     expect(button('Finish sketch').disabled).toBe(true); await pick('origin');
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'origin' }]);
     expect(currentDocument).toBe(source); expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
@@ -1709,7 +1734,7 @@ describe('CAD sketch interaction', () => {
     await act(async () => point('origin').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })));
     expect(currentDocument).toBe(source); await canvasKey('Escape');
     expect(currentSession.getSnapshot()).toEqual(accepted); expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
-    expect(button('Path').getAttribute('aria-pressed')).toBe('true');
+    expect(button('Polyline').getAttribute('aria-pressed')).toBe('true');
     await click('Dimension'); await pick('origin'); await pick('center');
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'origin' }, { kind: 'point', id: 'center' }]);
     expect(currentDocument).toBe(source); await click('Horizontal distance'); await input(field('Horizontal distance'), '18'); expect(button('Apply').disabled).toBe(false); await click('Apply');
@@ -1928,17 +1953,17 @@ describe('CAD sketch interaction', () => {
     expect(field('Length').value).toBe('50');
     expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
     await click('Cancel');
-    expect(currentDocument.features[0]).toMatchObject({ graph: { relations: Array.from({ length: 4 }, () => expect.any(Object)) } });
+    expect(currentDocument.features[0]).toMatchObject({ graph: { relations: Array.from({ length: 6 }, () => expect.any(Object)) } });
     await click('Dimension'); await canvasKey('Enter'); await relation('Length', 'plateWidth'); await click('Apply');
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
-    expect(sketch.graph.relations.map(item => item.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'distance']);
+    expect(sketch.graph.relations.map(item => item.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'fixed-axis', 'fixed-axis', 'distance']);
     expect(sketch.graph.relations.at(-1)).toMatchObject({ kind: 'distance', value: 'plateWidth' });
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
   it('blocks a new path while a parameter edit is pending without losing either field or history', async () => {
-    await mount(); await startSketch(); await click('Path');
+    await mount(); await startSketch(); await click('Polyline');
     const before = currentSession.getSnapshot();
     await parameterMenu('New parameter'); const pendingField = field('Name'); await input(pendingField, 'wall'); await input(field('Value'), '3');
     const pendingValue = pendingField.value;
@@ -1949,31 +1974,31 @@ describe('CAD sketch interaction', () => {
     expect(container.querySelector('[data-cad-path-segments]')).toBeNull(); expect(pendingField.value).toBe(pendingValue);
     expect(currentSession.getSnapshot()).toMatchObject({ document: before.document, version: before.version, canUndo: before.canUndo, workflowOpen: true });
     await click('Cancel');
-    expect(currentSession.getSnapshot()).toEqual(before); expect(button('Line').disabled).toBe(false);
+    expect(currentSession.getSnapshot()).toEqual(before); expect(button('Line segment').disabled).toBe(false);
     await canvasKey(' '); await canvasKey('ArrowRight'); await canvasKey(' ');
     expect(container.querySelector('[data-cad-path-segments]')).not.toBeNull(); expect(button('Undo last').disabled).toBe(false);
     await click('Cancel drawing'); expect(currentSession.getSnapshot()).toEqual(before);
   });
 
   it('locks shared actions during a mixed path and cancels it without a document or history change', async () => {
-    await mount(); await startSketch(); await click('Path');
+    await mount(); await startSketch(); await click('Polyline');
     const before = currentSession.getSnapshot();
     await click('3-point Arc'); await canvasKey(' '); await canvasKey('ArrowUp'); await canvasKey('ArrowUp'); await canvasKey(' ');
     expect(currentSession.getSnapshot().workflowOpen).toBe(true);
-    for (const label of ['Finish sketch', 'Undo', 'Save', 'Rectangle', 'Polyline']) expect(button(label).disabled).toBe(true);
+    for (const label of ['Finish sketch', 'Undo', 'Save', 'Line', 'Arc', 'Rectangle', 'Polyline', 'Slot']) expect(button(label).disabled).toBe(true);
     await canvasKey('z');
     const controlUndo = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
     await act(async () => container.querySelector('[aria-label="Sketch drawing canvas"]')!.dispatchEvent(controlUndo));
     expect(controlUndo.defaultPrevented).toBe(true); expect(undo).not.toHaveBeenCalled();
-    await click('Undo last'); expect(button('Line').disabled).toBe(false); expect(button('Finish sketch').disabled).toBe(true);
+    await click('Undo last'); expect(button('Line segment').disabled).toBe(false); expect(button('Finish sketch').disabled).toBe(true);
     await canvasKey('Escape'); expect(currentSession.getSnapshot()).toEqual(before);
     expect(button('Finish sketch').disabled).toBe(false); expect(button('Rectangle').disabled).toBe(false);
   });
 
-  it('finishes an open path without inventing material and edits one of its shared joints', async () => {
-    await mount(); await startSketch(); await snapToGrid(); await click('Path');
+  it('finishes an open polyline with Enter without inventing material and edits one of its shared joints', async () => {
+    await mount(); await startSketch(); await snapToGrid(); await click('Polyline');
     await canvasClick(300, 200); await canvasClick(450, 200); await canvasClick(450, 100);
-    await click('Finish path');
+    expect(button('Finish polyline').disabled).toBe(false); await canvasKey('Enter');
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph path missing.');
     expect(sketch.profiles).toEqual([]); expect(sketch.graph.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 40]]);
@@ -1987,10 +2012,10 @@ describe('CAD sketch interaction', () => {
     expect(viewport().getState().selectedSketchGeometry).toEqual({ kind: 'point', id: sketch.graph.points[1].id });
   });
 
-  it('closes a freshly drawn mixed path with exact shared arc joints and analytic material', async () => {
-    await mount(); await startSketch(); await snapToGrid(); await click('Path');
+  it('closes a freshly drawn mixed polyline with exact shared arc joints and analytic material', async () => {
+    await mount(); await startSketch(); await snapToGrid(); await click('Polyline');
     await canvasClick(300, 200); await canvasClick(360, 200); await click('3-point Arc');
-    await canvasClick(360, 150); await canvasClick(390, 175); await click('Line'); await canvasClick(300, 150);
+    await canvasClick(360, 150); await canvasClick(390, 175); await click('Line segment'); await canvasClick(300, 150);
     await click('Close profile');
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph path missing.');
@@ -1998,6 +2023,54 @@ describe('CAD sketch interaction', () => {
     expect(sketch.graph.entities.map(entity => entity.kind)).toEqual(['line', 'arc', 'line', 'line']);
     expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBeCloseTo(400 + 50 * Math.PI, 8);
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('draws one separate line per two clicks and attaches a three-point arc with its own center to existing ends by default', async () => {
+    await mount(); await startSketch(); await snapToGrid(); await click('Line');
+    // Clicks away from existing geometry and the axes have nothing to attach to.
+    await canvasClick(330, 175); expect(workflow).toHaveBeenLastCalledWith(true);
+    await canvasClick(450, 175); await canvasClick(330, 100); await canvasClick(450, 100);
+    let sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    expect(sketch.graph.entities.map(entity => entity.kind)).toEqual(['line', 'line']);
+    expect(sketch.graph.points.map(point => point.position)).toEqual([[10, 10], [50, 10], [10, 40], [50, 40]]);
+    expect(sketch.graph.relations).toEqual([]); expect(button('Line').getAttribute('aria-pressed')).toBe('true');
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    await act(async () => currentSession.undo()); sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    const [lineStart, lineEnd] = sketch.graph.points;
+    await click('Arc'); await canvasClick(330, 175); await canvasClick(450, 175); expect(workflow).toHaveBeenLastCalledWith(true);
+    await canvasClick(390, 100);
+    sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    const arc = sketch.graph.entities[1];
+    if (arc?.kind !== 'arc') throw new Error('Expected the drawn arc.');
+    expect(sketch.graph.points).toHaveLength(5); expect(sketch.graph.points.map(point => point.id)).toContain(arc.centerPointId);
+    expect([arc.startPointId, arc.endPointId]).not.toContain(lineStart.id);
+    expect(sketch.graph.relations).toEqual([{ id: expect.any(String), kind: 'coincident', pointIds: [arc.startPointId, lineStart.id] },
+      { id: expect.any(String), kind: 'coincident', pointIds: [arc.endPointId, lineEnd.id] }]);
+    // The attached arc and the line close one area together; cadEditPreparation.test.ts checks the arc follows a moved line end.
+    expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBeGreaterThan(0);
+    expect(button('Arc').getAttribute('aria-pressed')).toBe('true'); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('draws a slot from both arc centers and a width click as two tangent lines and two equal arcs', async () => {
+    await mount(); await startSketch(); await snapToGrid(); await click('Slot');
+    await canvasClick(300, 200); await canvasClick(450, 200); expect(currentDocument.features[0]).toMatchObject({ profiles: [] });
+    await canvasClick(375, 175);
+    const sketch = currentDocument.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    expect(sketch.profiles).toEqual([]);
+    expect(sketch.graph.entities.map(entity => entity.kind)).toEqual(['line', 'arc', 'line', 'arc']);
+    // The first center, drawn on the origin, stays fixed there because Create relations starts on.
+    expect(sketch.graph.relations.map(relation => relation.kind)).toEqual(['tangent-joint', 'tangent-joint', 'tangent-joint', 'tangent-joint', 'equal-radius', 'fixed-axis', 'fixed-axis']);
+    const [first, second] = sketch.graph.points;
+    expect(sketch.graph.relations.slice(5).map(relation => relation.kind === 'fixed-axis' && relation.pointId)).toEqual([first.id, first.id]);
+    expect([first.position, second.position]).toEqual([[0, 0], [50, 0]]);
+    const width = 2 * Math.abs(Number(sketch.graph.points[2].position[1]));
+    expect(width).toBeGreaterThan(0);
+    expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBeCloseTo(50 * width + Math.PI * width * width / 4, 8);
+    expect(button('Slot').getAttribute('aria-pressed')).toBe('true'); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
   it('edits a profile with a named expression and leaves Ctrl+Z to focused inputs', async () => {
