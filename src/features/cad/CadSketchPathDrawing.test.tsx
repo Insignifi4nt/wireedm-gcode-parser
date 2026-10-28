@@ -58,7 +58,8 @@ describe('mixed line and three-point arc drawing', () => {
         { id: 'bottom', position: ['anchorX', 0] }, { id: 'top', position: ['anchorX', 6.4] }],
       entities: [{ id: 'fence', kind: 'line', construction: true, startPointId: 'bottom', endPointId: 'top' }], relations: []
     } }, parameters: { anchorX: 2.1 } });
-    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]')!.click());
+    // Relations are on by default, so an accepted snap attaches without touching the box.
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]')!.checked).toBe(true);
     if (!enabled) await h.click('Toggle snapping');
     await h.point(2.2, 3.3, 'pointermove');
     expect(container.querySelector('[data-cad-sketch-snap="a"]') !== null).toBe(enabled);

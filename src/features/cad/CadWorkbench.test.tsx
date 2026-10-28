@@ -203,6 +203,12 @@ async function snapToGrid() {
   const toggle = container.querySelector<HTMLInputElement>('input[aria-label="Snap to grid"]'); if (!toggle) throw new Error('Grid snap toggle missing.');
   await act(async () => toggle.click());
 }
+/** Sets Create relations, which starts on, to the state a flow needs. */
+async function drawingRelations(enabled: boolean) {
+  const toggle = container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]'); if (!toggle) throw new Error('Relation drawing control missing.');
+  if (toggle.checked !== enabled) await act(async () => toggle.click());
+  expect(toggle.checked).toBe(enabled);
+}
 async function canvasKey(key: string, shiftKey = false) {
   const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]');
   if (!canvas) throw new Error('Sketch canvas missing.');
@@ -1562,7 +1568,10 @@ describe('CAD sketch interaction', () => {
     expect(sketch.profiles).toEqual([]);
     expect(sketch.graph?.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [50, 40], [0, 40]]);
     expect(sketch.graph?.entities.map(entity => entity.kind)).toEqual(['line', 'line', 'line', 'line']);
-    expect(sketch.graph?.relations.map(relation => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical']);
+    // The corner drawn on the origin stays fixed there, because Create relations starts on.
+    expect(sketch.graph?.relations.map(relation => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'fixed-axis', 'fixed-axis']);
+    expect(sketch.graph?.relations.slice(4)).toEqual([{ id: expect.any(String), kind: 'fixed-axis', pointId: sketch.graph?.points[0].id, axis: 'x', value: 0 },
+      { id: expect.any(String), kind: 'fixed-axis', pointId: sketch.graph?.points[0].id, axis: 'y', value: 0 }]);
     expect(currentDocument.schemaVersion).toBe(2);
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph?.entities[0].id }]);
     expect(workflow).toHaveBeenLastCalledWith(false);
@@ -1607,7 +1616,7 @@ describe('CAD sketch interaction', () => {
     await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' })); await click('Circle');
     const infer = container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]');
     if (!infer) throw new Error('Coincident drawing control missing.');
-    expect(infer.checked).toBe(false); await act(async () => infer.click());
+    expect(infer.checked).toBe(true);
     await canvasClick(300, 200); await canvasClick(450, 200);
     expect(pending).toHaveLength(1); expect(currentDocument).toBe(original);
     expect(currentSession.getSnapshot().workflowOpen).toBe(true);
@@ -1645,6 +1654,8 @@ describe('CAD sketch interaction', () => {
 
   it('closes a free polyline on its start into shared point identities and changes only a selected edge to construction', async () => {
     await mount(); await startSketch(); await snapToGrid(); await click('Polyline');
+    // Unticked, the start on the origin only copies its position.
+    await drawingRelations(false);
     await canvasClick(300, 200); await canvasClick(450, 200); await canvasClick(375, 100); await canvasClick(300, 200);
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
@@ -1942,11 +1953,11 @@ describe('CAD sketch interaction', () => {
     expect(field('Length').value).toBe('50');
     expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
     await click('Cancel');
-    expect(currentDocument.features[0]).toMatchObject({ graph: { relations: Array.from({ length: 4 }, () => expect.any(Object)) } });
+    expect(currentDocument.features[0]).toMatchObject({ graph: { relations: Array.from({ length: 6 }, () => expect.any(Object)) } });
     await click('Dimension'); await canvasKey('Enter'); await relation('Length', 'plateWidth'); await click('Apply');
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
-    expect(sketch.graph.relations.map(item => item.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'distance']);
+    expect(sketch.graph.relations.map(item => item.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'fixed-axis', 'fixed-axis', 'distance']);
     expect(sketch.graph.relations.at(-1)).toMatchObject({ kind: 'distance', value: 'plateWidth' });
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
@@ -2014,25 +2025,32 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
-  it('draws one separate line per two clicks and one three-point arc with its own center while each tool stays active', async () => {
+  it('draws one separate line per two clicks and attaches a three-point arc with its own center to existing ends by default', async () => {
     await mount(); await startSketch(); await snapToGrid(); await click('Line');
-    await canvasClick(300, 200); expect(workflow).toHaveBeenLastCalledWith(true);
-    await canvasClick(450, 200); await canvasClick(300, 100); await canvasClick(450, 100);
+    // Clicks away from existing geometry and the axes have nothing to attach to.
+    await canvasClick(330, 175); expect(workflow).toHaveBeenLastCalledWith(true);
+    await canvasClick(450, 175); await canvasClick(330, 100); await canvasClick(450, 100);
     let sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
-    expect(sketch.graph.entities.map(entity => entity.kind)).toEqual(['line', 'line']); expect(sketch.graph.points).toHaveLength(4);
+    expect(sketch.graph.entities.map(entity => entity.kind)).toEqual(['line', 'line']);
+    expect(sketch.graph.points.map(point => point.position)).toEqual([[10, 10], [50, 10], [10, 40], [50, 40]]);
     expect(sketch.graph.relations).toEqual([]); expect(button('Line').getAttribute('aria-pressed')).toBe('true');
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
     await act(async () => currentSession.undo()); sketch = currentDocument.features[0];
-    expect(sketch.kind === 'sketch' && sketch.graph?.entities).toHaveLength(1);
-    await click('Arc'); await canvasClick(300, 200); await canvasClick(450, 200); expect(workflow).toHaveBeenLastCalledWith(true);
-    await canvasClick(375, 100);
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
+    const [lineStart, lineEnd] = sketch.graph.points;
+    await click('Arc'); await canvasClick(330, 175); await canvasClick(450, 175); expect(workflow).toHaveBeenLastCalledWith(true);
+    await canvasClick(390, 100);
     sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
     const arc = sketch.graph.entities[1];
     if (arc?.kind !== 'arc') throw new Error('Expected the drawn arc.');
     expect(sketch.graph.points).toHaveLength(5); expect(sketch.graph.points.map(point => point.id)).toContain(arc.centerPointId);
-    expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBe(0);
+    expect([arc.startPointId, arc.endPointId]).not.toContain(lineStart.id);
+    expect(sketch.graph.relations).toEqual([{ id: expect.any(String), kind: 'coincident', pointIds: [arc.startPointId, lineStart.id] },
+      { id: expect.any(String), kind: 'coincident', pointIds: [arc.endPointId, lineEnd.id] }]);
+    // The attached arc and the line close one area together; cadEditPreparation.test.ts checks the arc follows a moved line end.
+    expect(measureCadSketch(currentDocument, sketch.id).materialAreaMm2).toBeGreaterThan(0);
     expect(button('Arc').getAttribute('aria-pressed')).toBe('true'); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
@@ -2044,8 +2062,10 @@ describe('CAD sketch interaction', () => {
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Graph sketch missing.');
     expect(sketch.profiles).toEqual([]);
     expect(sketch.graph.entities.map(entity => entity.kind)).toEqual(['line', 'arc', 'line', 'arc']);
-    expect(sketch.graph.relations.map(relation => relation.kind)).toEqual(['tangent-joint', 'tangent-joint', 'tangent-joint', 'tangent-joint', 'equal-radius']);
+    // The first center, drawn on the origin, stays fixed there because Create relations starts on.
+    expect(sketch.graph.relations.map(relation => relation.kind)).toEqual(['tangent-joint', 'tangent-joint', 'tangent-joint', 'tangent-joint', 'equal-radius', 'fixed-axis', 'fixed-axis']);
     const [first, second] = sketch.graph.points;
+    expect(sketch.graph.relations.slice(5).map(relation => relation.kind === 'fixed-axis' && relation.pointId)).toEqual([first.id, first.id]);
     expect([first.position, second.position]).toEqual([[0, 0], [50, 0]]);
     const width = 2 * Math.abs(Number(sketch.graph.points[2].position[1]));
     expect(width).toBeGreaterThan(0);

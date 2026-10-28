@@ -184,7 +184,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const instructionsId = useId();
   const [picks, setPicks] = useState<readonly CadFreshSketchPick[]>([]);
   const points = useMemo(() => picks.map(pick => pick.point), [picks]);
-  const [inferCoincidence, setInferCoincidence] = useState(false);
+  const [inferCoincidence, setInferCoincidence] = useState(true);
   const [pathDraft, setPathDraft] = useState(createCadPathDraft);
   const [cursorInput, setCursorInput] = useState<DrawingCursor>({ point: [0, 0], mode: 'position', suppressed: false });
   const [center, setCenter] = useState<SketchPoint>([0, 0]);

@@ -317,7 +317,7 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
     const box = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!box) throw new Error('Reconnection endpoint unavailable.');
     endpoints.push({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
   }
-  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await expect(page.getByRole('checkbox', { name: 'Create coincident relations', exact: true })).toBeChecked();
   for (const point of endpoints) await page.mouse.click(point.x, point.y);
   await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
@@ -414,7 +414,7 @@ test('removes a consumed middle span, attaches a bridge to both exact survivors 
   await page.keyboard.press('Control+z'); await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(sketch.graph.entities.length);
   await page.keyboard.press('Control+Shift+z'); await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(countAfterTrim);
   expect((await context(page)).version).toBe(base.version);
-  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await expect(page.getByRole('checkbox', { name: 'Create coincident relations', exact: true })).toBeChecked();
   const left = await page.locator('[data-cad-sketch-point="cut-left"]').boundingBox(); if (!left) throw new Error('Left retained endpoint unavailable.');
   await page.mouse.click(left.x + left.width / 2, left.y + left.height / 2);
   await page.keyboard.press('ArrowUp'); await page.keyboard.press('Space');
@@ -570,7 +570,7 @@ test('chooses exact stacked snap identities, preserves a cancelled path attempt 
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
     .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
-  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await expect(page.getByRole('checkbox', { name: 'Create coincident relations', exact: true })).toBeChecked();
   const openChoice = async (id: string) => {
     const bounds = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!bounds) throw new Error('Stacked source point unavailable.');
     await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
@@ -627,7 +627,8 @@ test('attaches reversed rectangle picks deliberately, follows their drivers and 
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: feature.id } });
   await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
-  const infer = page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }); await expect(infer).not.toBeChecked(); await infer.check();
+  // Create relations starts on, so snapped corners attach without touching the box.
+  await expect(page.getByRole('checkbox', { name: 'Create coincident relations', exact: true })).toBeChecked();
   const canvas = page.getByLabel('Sketch drawing canvas');
   for (const [x, y] of [[22.2, 13.3], [2.2, 3.3]]) {
     const state = await call(page, 'cad_get_viewport', { expectedVersion: current.version });
@@ -681,7 +682,7 @@ test('draws from a legacy slot position without inventing a joint, then moves th
     .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
   await page.getByRole('button', { name: 'Circle', exact: true }).click();
-  await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
+  await expect(page.getByRole('checkbox', { name: 'Create coincident relations', exact: true })).toBeChecked();
   const profile = await page.getByRole('button', { name: 'Select Reference slot profile', exact: true }).boundingBox();
   if (!profile) throw new Error('Legacy source geometry unavailable.');
   const x = profile.x + profile.width / 2, y = profile.y + profile.height / 2;
@@ -740,6 +741,8 @@ test('places a plate and bore from off-grid geometry snaps, then extrudes and re
       y: box.y + box.height / 2 - (y - state.view.centerMm[1]) * box.height / state.view.heightSpanMm };
   };
   await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
+  // Unticked, snaps copy their exact off-grid positions and add no relation.
+  await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).uncheck();
   let at = await project(2.2, 3.3); await page.mouse.move(at.x, at.y);
   await expect(page.locator('[data-cad-sketch-snap="a"]')).toBeVisible(); await page.mouse.click(at.x, at.y);
   at = await project(22.2, 13.3); await page.mouse.click(at.x, at.y);
@@ -1277,9 +1280,10 @@ test('draws and constrains fresh geometry through the UI, then extrudes, exports
   const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
   const sketch = features.items[0];
   expect(sketch.profiles).toEqual([]); expect(sketch.graph.points).toHaveLength(4);
-  expect(sketch.graph.relations.map((relation: { kind: string }) => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical']);
+  // Create relations starts on, so the corner drawn on the origin stays fixed there.
+  expect(sketch.graph.relations.map((relation: { kind: string }) => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'fixed-axis', 'fixed-axis']);
   await page.getByRole('button', { name: 'Select', exact: true }).click();
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('4 DOF');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('2 DOF');
   // Dimension starts with the selected line; picking it again asks for its length.
   await page.getByRole('button', { name: 'Dimension', exact: true }).click(); await page.locator('[data-cad-sketch-entity].is-selected').press('Enter');
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('30');
@@ -1293,7 +1297,7 @@ test('draws and constrains fresh geometry through the UI, then extrudes, exports
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   current = await context(page);
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('3 DOF');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('1 DOF');
   const resized = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
   expect(resized.graph.points.map((point: { id: string }) => point.id)).toEqual(sketch.graph.points.map((point: { id: string }) => point.id));
   expect(resized.graph.relations.at(-1)).toMatchObject({ kind: 'distance', value: 30 });
@@ -1418,12 +1422,14 @@ test('keeps an authored polyline open, moves one joint and closes a separate ana
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
   const sketch = (await call(page, 'cad_read_features', { expectedVersion: current.version })).items[0];
   expect(sketch.graph.entities).toHaveLength(2); expect(sketch.graph.points.map((point: { position: number[] }) => point.position)).toEqual([[0, 0], [20, 0], [20, 20]]);
+  // Create relations starts on, so the start drawn on the origin stays fixed there.
+  expect(sketch.graph.relations.map((relation: { kind: string; pointId: string }) => [relation.kind, relation.pointId])).toEqual([['fixed-axis', sketch.graph.points[0].id], ['fixed-axis', sketch.graph.points[0].id]]);
   expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: sketch.id })).materialAreaMm2).toBe(0);
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   await page.getByRole('button', { name: `Point 2 in ${sketch.name}`, exact: true }).press('ArrowRight');
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('6 DOF');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('4 DOF');
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature.graph.points.map((point: { position: number[] }) => point.position))
     .toEqual([[0, 0], [25, 0], [20, 20]]);
   await page.keyboard.press('Control+z');
@@ -1664,7 +1670,7 @@ test('edits a consumed sketch privately with local history, rejected Finish, exa
     if (!box) throw new Error('Sketch endpoint unavailable.');
     endpoints.push({ x: box.x + box.width / 2 + 1, y: box.y + box.height / 2 + 1 });
   }
-  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await expect(page.getByRole('checkbox', { name: 'Create coincident relations', exact: true })).toBeChecked();
   for (const point of endpoints) await page.mouse.click(point.x, point.y);
   await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(4);
@@ -1716,7 +1722,7 @@ test('reselects explicit extrusion areas after replacing a consumed boundary wit
     const box = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!box) throw new Error('Endpoint unavailable.');
     endpoints.push({ x: box.x + box.width / 2 + 1, y: box.y + box.height / 2 + 1 });
   }
-  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await expect(page.getByRole('checkbox', { name: 'Create coincident relations', exact: true })).toBeChecked();
   for (const point of endpoints) await page.mouse.click(point.x, point.y);
   await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();

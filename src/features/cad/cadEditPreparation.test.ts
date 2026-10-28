@@ -58,6 +58,25 @@ describe('shared CAD edit preparation with the real sketch solver', () => {
     }
   });
 
+  it('keeps an arc drawn on attached line ends following them when a line end moves', async () => {
+    const createId = (() => { let next = 0; return () => `drawn-${++next}`; })();
+    const empty = parseCadDocument({ ...createCadDocument('Attached', 'attached'), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] }] });
+    const line = createCadFreshSketchDrawing({ drawing: { kind: 'line', start: { kind: 'position', point: [10, 10] }, end: { kind: 'position', point: [50, 10] } }, construction: false, createId });
+    if (line.kind !== 'line') throw new Error('Expected line role map.');
+    const drawn = (await prepareCadEdits(empty, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: line.geometry }], solver)).document;
+    // The picks an attached snap makes: new arc ends held on the line's ends by coincident relations.
+    const arc = createCadFreshSketchDrawing({ drawing: { kind: 'arc', through: [30, 40],
+      start: { kind: 'coincident', point: [10, 10], sourcePointId: line.pointIds.start, relationId: 'join-start' },
+      end: { kind: 'coincident', point: [50, 10], sourcePointId: line.pointIds.end, relationId: 'join-end' } }, construction: false, createId, existingGraph: graphOf(drawn) });
+    if (arc.kind !== 'arc') throw new Error('Expected arc role map.');
+    const attached = (await prepareCadEdits(drawn, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: arc.geometry }], solver)).document;
+    const moved = graphOf((await prepareCadEdits(attached, [{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: line.pointIds.start, translation: [-5, 0] }], solver)).document);
+    const position = (id: string) => (moved.points.find(point => point.id === id)?.position ?? []).map(Number);
+    const [x, y] = position(line.pointIds.start), [arcX, arcY] = position(arc.pointIds.start);
+    expect(x).not.toBeCloseTo(10, 3); expect(arcX).toBeCloseTo(x, 6); expect(arcY).toBeCloseTo(y, 6);
+    expect(position(arc.pointIds.end)).toEqual(position(line.pointIds.end));
+  });
+
   it('constructs a middle trim from the preceding solved cutters and atomically rejects any later cut-point projection', async () => {
     const source = middleTrimPart(), feature = source.features[0];
     if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Middle source missing.');

@@ -63,6 +63,8 @@ describe('sketch canvas profile picking', () => {
     const checkbox = container.querySelector<HTMLInputElement>('[aria-label="Create coincident relations"]');
     if (!checkbox) throw new Error('Missing relation inference control'); return checkbox;
   };
+  /** Sets Create relations to the state a test needs, through the visible checkbox. */
+  const relations = async (enabled: boolean) => { if (inference().checked !== enabled) await act(async () => inference().click()); expect(inference().checked).toBe(enabled); };
   const ambiguousSketch = () => ({ ...graphSketch, graph: { ...graphSketch.graph, points: [...graphSketch.graph.points,
     { id: 'ghost-a', position: [2.1, 3.2] as const }, { id: 'ghost-b', position: [22.1, 3.2] as const }] } });
   const snapChoice = (point: number) => {
@@ -82,9 +84,9 @@ describe('sketch canvas profile picking', () => {
       await h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });
       const found = container.querySelector('.cad-sketch-snap-hint'); return [found?.getAttribute('data-cad-sketch-snap-kind'), found?.getAttribute('aria-label')];
     };
-    expect(await hint(.05, .05)).toEqual(['origin', 'Origin · No relation']);
-    await act(async () => inference().click());
-    expect(await hint(.05, .05)).toEqual(['origin', 'Origin · Fixed at origin']); await h.click(.05, .05);
+    expect(inference().checked).toBe(true); expect(await hint(.05, .05)).toEqual(['origin', 'Origin · Fixed at origin']);
+    await relations(false); expect(await hint(.05, .05)).toEqual(['origin', 'Origin · No relation']);
+    await relations(true); expect(await hint(.05, .05)).toEqual(['origin', 'Origin · Fixed at origin']); await h.click(.05, .05);
     expect(await hint(8, 3.25)).toEqual(['on-entity', 'On line · Point on line']); await h.click(8, 3.25);
     expect(await hint(.03, 20)).toEqual(['on-axis', 'On Y axis · Fixed X at 0']); await h.click(.03, 20);
     expect(container.querySelector('[aria-label="Pending relations"]')?.textContent).toBe('3 attached');
@@ -151,7 +153,7 @@ describe('sketch canvas profile picking', () => {
   });
   it('keeps legacy positions detached with inference enabled and preserves modifier bypass', async () => {
     const onAddFreshSketch = vi.fn(), h = await fixture([legacySlot], { tool: 'rectangle', onAddFreshSketch });
-    await act(async () => inference().click()); await h.click(2.2, 3.3);
+    await relations(true); await h.click(2.2, 3.3);
     expect(container.querySelector('[data-cad-sketch-attachment]')).toBeNull();
     await h.click(22.1, 13.2, h.svg, { ctrlKey: true });
     expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'rectangle', first: { kind: 'position', point: [2.1, 3.2] },
@@ -185,7 +187,7 @@ describe('sketch canvas profile picking', () => {
   });
   it('attaches the chosen exact Polyline point and preserves its first point when an ambiguous endpoint is dismissed', async () => {
     const onAddPath = vi.fn(), source = ambiguousSketch(), h = await fixture([], { sketch: source, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
-    await act(async () => inference().click());
+    await relations(true);
     const before = h.frame(); await h.click(2.2, 3.3);
     expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(true);
     // Workbench locks camera navigation while this canvas owns a pending drawing.
@@ -220,12 +222,13 @@ describe('sketch canvas profile picking', () => {
     expect(h.pending).toHaveBeenLastCalledWith(false);
   });
 
-  it('keeps chosen Circle centers opt-in, radius choices position-only and Ctrl acceptance independent', async () => {
+  it('attaches a chosen Circle center only with relations on, keeps radius choices position-only and Ctrl acceptance independent', async () => {
     const onAddFreshSketch = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
-    await h.click(2.2, 3.3); await act(async () => snapChoice(4).click());
+    // Unticked, a chosen point only supplies its position.
+    await relations(false); await h.click(2.2, 3.3); await act(async () => snapChoice(4).click());
     await h.click(22.2, 3.3); await act(async () => snapChoice(2).click());
     expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'circle', center: { kind: 'position', point: [2.1, 3.2] }, radius: 20 }, expect.any(AbortSignal));
-    await act(async () => inference().click());
+    await relations(true);
     await h.click(2.2, 3.3); await act(async () => snapChoice(1).click());
     await h.click(22.2, 3.3); await act(async () => snapChoice(5).click());
     expect(onAddFreshSketch).toHaveBeenNthCalledWith(2, { kind: 'circle', center: { kind: 'coincident', point: [2.1, 3.2], sourcePointId: 'a', relationId: expect.any(String) }, radius: 20 }, expect.any(AbortSignal));
@@ -237,7 +240,7 @@ describe('sketch canvas profile picking', () => {
   it('pages every ambiguous point with bounded rendering and retains canvas focus ownership through dismissal', async () => {
     const source = { ...graphSketch, graph: { points: Array.from({ length: 30 }, (_, index) => ({ id: `point_${String(index + 1).padStart(2, '0')}`, position: [2.1, 3.2] as const })), entities: [], relations: [] } };
     const onAddPath = vi.fn(), h = await fixture([], { sketch: source, tool: 'path', onAddPath });
-    await act(async () => inference().click()); await h.click(2.2, 3.3);
+    await relations(true); await h.click(2.2, 3.3);
     const next = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === 'Next candidates')!;
     expect(document.querySelectorAll('[role="menuitem"]').length).toBeLessThanOrEqual(14);
     await act(async () => next().click()); expect(document.activeElement).toBe(snapChoice(13));
@@ -249,7 +252,8 @@ describe('sketch canvas profile picking', () => {
   it('retains deliberate first/opposite attachment roles while drawing a rectangle in reverse', async () => {
     const onAddFreshSketch = vi.fn(), original = structuredClone(graphSketch);
     const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle', onAddFreshSketch });
-    expect(inference().checked).toBe(false); await act(async () => inference().click());
+    // Relations are on by default, so snapped corners attach without touching the box.
+    expect(inference().checked).toBe(true);
     await h.click(12.2, 13.3); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
     await h.click(2.2, 3.3);
     expect(onAddFreshSketch).toHaveBeenCalledWith({ kind: 'rectangle',
@@ -262,9 +266,9 @@ describe('sketch canvas profile picking', () => {
   it('applies inference only to future picks and explicitly clears pending links when switched off', async () => {
     const onAddPath = vi.fn();
     const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
-    await h.click(2.2, 3.3); await act(async () => inference().click()); await h.click(12.2, 13.3);
+    await relations(false); await h.click(2.2, 3.3); await relations(true); await h.click(12.2, 13.3);
     expect(container.querySelector('[data-cad-sketch-attachment="a"]')).toBeNull(); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
-    await act(async () => inference().click()); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).toBeNull();
+    await relations(false); expect(container.querySelector('[data-cad-sketch-attachment="c"]')).toBeNull();
     await h.click(22.2, 3.3); await h.click(2.2, 3.3);
     expect(onAddPath).toHaveBeenCalledWith({ kind: 'ready', mode: 'line', start: [2.1, 3.2], segments: [expect.objectContaining({ end: [12.1, 13.2] }),
       expect.objectContaining({ end: [22.1, 3.2] }), expect.objectContaining({ end: [2.1, 3.2] })] }, true, expect.any(AbortSignal));
@@ -272,7 +276,7 @@ describe('sketch canvas profile picking', () => {
   });
   it('attaches only a circle center while radius and midpoint picks remain position-only', async () => {
     const onAddFreshSketch = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
-    await act(async () => inference().click()); await h.click(12.2, 13.3); await h.click(2.2, 3.3);
+    await relations(true); await h.click(12.2, 13.3); await h.click(2.2, 3.3);
     expect(onAddFreshSketch).toHaveBeenNthCalledWith(1, { kind: 'circle',
       center: { kind: 'coincident', point: [12.1, 13.2], sourcePointId: 'c', relationId: expect.any(String) }, radius: Math.sqrt(200)
     }, expect.any(AbortSignal));
@@ -281,19 +285,19 @@ describe('sketch canvas profile picking', () => {
   });
   it('refuses to silently drop a pending attachment if the fresh editor becomes unavailable', async () => {
     const onAddFreshSketch = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'rectangle', onAddFreshSketch });
-    await act(async () => inference().click()); await h.click(12.2, 13.3); await h.render({ onAddFreshSketch: undefined }); await h.click(2.2, 3.3);
+    await relations(true); await h.click(12.2, 13.3); await h.render({ onAddFreshSketch: undefined }); await h.click(2.2, 3.3);
     expect(onAddFreshSketch).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(h.error).toHaveBeenCalledOnce();
     expect(container.querySelector('[data-cad-sketch-attachment="c"]')).not.toBeNull();
   });
   it.each(['sketch', 'version', 'parameters'] as const)('pins an earlier attached pick across a same-position %s replacement until its links are released', async changed => {
     const onAddFreshSketch = vi.fn();
     const h = await fixture([], { sketch: graphSketch, documentVersion: 'one', parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
-    await act(async () => inference().click()); await h.click(2.2, 3.3);
+    await relations(true); await h.click(2.2, 3.3);
     await h.render(changed === 'sketch' ? { sketch: structuredClone(graphSketch) } : changed === 'version' ? { documentVersion: 'two' } : { parameters: { anchor: 2.1 } });
     await h.click(12.2, 13.3);
     expect(onAddFreshSketch).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(h.error).toHaveBeenCalledOnce();
     expect(container.querySelector('[data-cad-sketch-attachment="a"]')).not.toBeNull();
-    await act(async () => inference().click()); await h.click(12.2, 13.3);
+    await relations(false); await h.click(12.2, 13.3);
     expect(onAddFreshSketch).toHaveBeenCalledOnce();
     expect(onAddFreshSketch.mock.calls[0][0]).toMatchObject({ kind: 'circle', center: { kind: 'position', point: [2.1, 3.2] } });
   });
@@ -301,7 +305,7 @@ describe('sketch canvas profile picking', () => {
     let resolve: () => void = () => { throw new Error('Pending append missing.'); };
     const onAddFreshSketch = vi.fn(() => new Promise<void>(accept => { resolve = accept; }));
     const h = await fixture([], { sketch: graphSketch, documentVersion: 'one', parameters: { anchor: 2.1 }, tool: 'circle', onAddFreshSketch });
-    await act(async () => inference().click()); await h.click(2.2, 3.3); await h.click(12.2, 13.3);
+    await relations(true); await h.click(2.2, 3.3); await h.click(12.2, 13.3);
     expect(onAddFreshSketch).toHaveBeenCalledOnce();
     await h.render({ sketch: structuredClone(graphSketch), documentVersion: 'two' });
     await act(async () => resolve());
@@ -355,7 +359,7 @@ describe('sketch canvas profile picking', () => {
   });
   it('clears a borrowed point hint when the accepted source changes before keyboard placement', async () => {
     const onAddPath = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
-    await act(async () => inference().click());
+    await relations(true);
     await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
     expect(container.querySelector('[data-cad-sketch-snap="a"]')).not.toBeNull();
     await h.render({ parameters: { anchor: 100 } });
@@ -367,7 +371,7 @@ describe('sketch canvas profile picking', () => {
   });
   it('retains an acquired off-grid Path endpoint after placement instead of inventing a grid segment on repeated Space', async () => {
     const onAddPath = vi.fn(); const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
-    await act(async () => inference().click());
+    await relations(true);
     await h.pointer('pointermove', { ...h.position(2.2, 3.3), buttons: 0 });
     const key = async (value: string) => act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })));
     await key(' '); await key(' ');
