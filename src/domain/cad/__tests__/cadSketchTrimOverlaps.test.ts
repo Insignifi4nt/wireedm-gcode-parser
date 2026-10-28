@@ -131,6 +131,17 @@ describe('Trim between overlapping and touching edges', () => {
       .toMatchObject({ kind: 'end', end: 'end', boundary: { entityId: 'cutter' } });
   });
 
+  it('still skips a shared arc corner whose other crossing lies far away', () => {
+    // Both arcs start at the origin; their second crossing lies across the line of centers, far from it.
+    const graph = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 1] }, { id: 'a', position: [0, 0] }, { id: 'e', position: [1, 1] },
+      { id: 'big', position: [250, 1250] }, { id: 'tip', position: [1500, 1000] }, { id: 'c0', position: [0, 1] }, { id: 'c1', position: [1, 0] }], entities: [
+      { id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 'a', endPointId: 'e', direction: 'ccw' },
+      { id: 'sweep', kind: 'arc', construction: false, centerPointId: 'big', startPointId: 'a', endPointId: 'tip', direction: 'ccw' },
+      { id: 'cutter', kind: 'line', construction: true, startPointId: 'c0', endPointId: 'c1' }], relations: [] });
+    expect(prepareCadSketchTrim({ graph, parameters: {}, entityId: 'arc', parameter: .25 }).target)
+      .toMatchObject({ kind: 'end', end: 'start', boundary: { entityId: 'cutter' } });
+  });
+
   it('refuses a second crossing beside a declared shared end instead of deleting the edge', () => {
     // The far line leaves the arc's start and crosses it again about 1e-6 away, inside the line's wide tolerance.
     const graph = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 1] }, { id: 'a', position: [0, 0] }, { id: 'e', position: [1, 1] },

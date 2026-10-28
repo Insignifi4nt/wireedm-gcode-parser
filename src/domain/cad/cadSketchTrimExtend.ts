@@ -330,16 +330,16 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
     if (undeclaredTangent(reach, other, tolerance)) throw ambiguous(operation);
   };
   /** Whether a trim contact is the source's own end. A far boundary widens the shared tolerance, so a contact only that wide
-   * tolerance places at an end is too uncertain to skip or cut at, unless a boundary line declares that end of a source line
-   * as its own: two distinct lines meet only once, so no other crossing can hide beside it. */
+   * tolerance places at an end is too uncertain to skip or cut at, unless the boundary declares that end as its own and their
+   * other meeting point lies well clear of it, so no second crossing can hide beside the shared one. */
   const ownEnd = (point: Point2, tolerance: number, other: PathSegment): boolean => {
     if (segment.kind === 'circle') return false;
     const gap = Math.min(distance(point, segment.start), distance(point, segment.end));
     if (gap <= cadPathClosureTolerance([...extent(segment), point])) return true;
     if (gap > tolerance) return false;
-    const own = endpointIds(segment.id);
-    if (segment.kind === 'line' && other.kind === 'line' && endpointIds(other.id)
-      .some(id => own.some(mine => joint(mine) === joint(id)) && numericPoints.has(id) && distance(numericPoints.get(id)!, point) <= tolerance)) return true;
+    const own = endpointIds(segment.id), shared = endpointIds(other.id).map(id => own.some(mine => joint(mine) === joint(id)) ? numericPoints.get(id) : undefined)
+      .find(saved => saved !== undefined && distance(saved, point) <= tolerance);
+    if (shared && secondMeeting(segment, other, shared) > 4 * tolerance) return true;
     throw precision(operation);
   };
   /** A contact strictly inside the source, away from its own ends; trims only. */
@@ -451,6 +451,20 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
     unique.sort((a, b) => a.witness.parameter - b.witness.parameter);
   }
   return unique;
+}
+
+/** How far two supports meeting at a shared point meet again: distinct lines never do, a line crosses a circle again along
+ * its chord, and two circles cross again mirrored across their line of centers. */
+function secondMeeting(left: PathSegment, right: PathSegment, shared: Point2): number {
+  if (left.kind === 'line' && right.kind === 'line') return Infinity;
+  if (left.kind !== 'line' && right.kind !== 'line') {
+    const dx = right.center.x - left.center.x, dy = right.center.y - left.center.y, length = Math.hypot(dx, dy);
+    return length === 0 ? 0 : 2 * Math.abs(dx * (shared.y - left.center.y) - dy * (shared.x - left.center.x)) / length;
+  }
+  const line = left.kind === 'line' ? left : right, circle = left.kind === 'line' ? right : left;
+  if (line.kind !== 'line' || circle.kind === 'line') return 0;
+  const dx = line.end.x - line.start.x, dy = line.end.y - line.start.y, length = Math.hypot(dx, dy);
+  return length === 0 ? 0 : 2 * Math.abs(dx * (shared.x - circle.center.x) + dy * (shared.y - circle.center.y)) / length;
 }
 
 /** Drop detached points nothing uses; a point a relation still names stays explicit. */
