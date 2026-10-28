@@ -329,10 +329,19 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
   const assertTransverse = (reach: PathSegment, other: PathSegment, tolerance: number) => {
     if (undeclaredTangent(reach, other, tolerance)) throw ambiguous(operation);
   };
+  /** Whether a trim contact is the source's own end. A far boundary widens the shared tolerance, so a contact only that wide
+   * tolerance places at an end is too uncertain to skip or cut at. */
+  const ownEnd = (point: Point2, tolerance: number): boolean => {
+    if (segment.kind === 'circle') return false;
+    const gap = Math.min(distance(point, segment.start), distance(point, segment.end));
+    if (gap <= cadPathClosureTolerance([...extent(segment), point])) return true;
+    if (gap <= tolerance) throw precision(operation);
+    return false;
+  };
   /** A contact strictly inside the source, away from its own ends; trims only. */
   const inside = (point: Point2, tolerance: number): number | null => {
     const t = trimParameter(segment, point, tolerance);
-    return t === null || segment.kind !== 'circle' && (distance(point, segment.start) <= tolerance || distance(point, segment.end) <= tolerance) ? null : t;
+    return t === null || ownEnd(point, tolerance) ? null : t;
   };
   for (const other of segments) {
     if (other.id === segment.id) continue;
@@ -364,7 +373,7 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
       const { hit, parameter: t } = candidate;
       if (t === null || !Number.isFinite(t)) throw precision(operation);
       // A contact at the source's own end is not a cut, however rounding places it along a rotated edge.
-      if (query.kind === 'trim' && segment.kind !== 'circle' && (distance(hit.point, segment.start) <= tolerance || distance(hit.point, segment.end) <= tolerance)) continue;
+      if (query.kind === 'trim' && ownEnd(hit.point, tolerance)) continue;
       if (query.kind === 'trim' ? t < 0 || t > 1 : query.end === 'start' ? t > 0 : t < 1) throw precision(operation);
       const total = query.kind === 'extend' && segment.kind === 'arc' ? Math.abs(segment.sweepRadians) * (query.end === 'start' ? 1 - t : t) : null;
       if (total !== null && total > fullTurn) continue;
@@ -432,7 +441,11 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
     if (previous && sameContact(previous, event)) { unique[unique.length - 1] = merge(previous, event); continue; }
     unique.push(event);
   }
-  if (segment.kind === 'circle' && unique.length > 1 && sameContact(unique[0], unique[unique.length - 1])) unique[0] = merge(unique[0], unique.pop()!);
+  if (segment.kind === 'circle' && unique.length > 1 && sameContact(unique[0], unique[unique.length - 1])) {
+    // The seam cut may keep the witness just below one, so restore parameter order around the circle.
+    unique[0] = merge(unique[0], unique.pop()!);
+    unique.sort((a, b) => a.witness.parameter - b.witness.parameter);
+  }
   return unique;
 }
 
@@ -603,8 +616,12 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
     const relations = kept.map((relation): CadSketchGraphRelation => {
       if (relation.kind === 'tangent-joint') return { ...relation, endpoints: [relation.endpoints[0], relation.endpoints[1]].map(endpoint =>
         endpoint.entityId === source.id && endpoint.pointId === end ? { ...endpoint, entityId: trim.newEntityId } : endpoint) as [typeof relation.endpoints[0], typeof relation.endpoints[1]] };
-      if ((relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') && relation.lineIds.includes(source.id) && cornerAt(graph, relation, '', end))
-        return { ...relation, lineIds: [moved(relation.lineIds[0]), moved(relation.lineIds[1])] };
+      if ((relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') && relation.lineIds.includes(source.id) && cornerAt(graph, relation, '', end)) {
+        const lineIds = [moved(relation.lineIds[0]), moved(relation.lineIds[1])], swap = lineIds[0] > lineIds[1];
+        const ordered: [string, string] = swap ? [lineIds[1], lineIds[0]] : [lineIds[0], lineIds[1]];
+        return relation.kind === 'fillet-corner' ? { ...relation, lineIds: ordered }
+          : { ...relation, lineIds: ordered, values: swap ? [relation.values[1], relation.values[0]] : relation.values };
+      }
       if (relation.kind === 'line-angle') return { ...relation, rays: [relation.rays[0], relation.rays[1]].map(ray =>
         ray.lineId === source.id && ray.towardPointId === end ? { ...ray, lineId: trim.newEntityId } : ray) as [typeof relation.rays[0], typeof relation.rays[1]] };
       return relation;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createCadFreshSketchDrawing, type CadFreshSketchPick } from '../cadFreshSketchGraph';
+import { createCadFreshSketchDrawing, createCadFreshSketchGraph, type CadFreshSketchPick } from '../cadFreshSketchGraph';
+import { createCadSketchCornerTreatment } from '../cadSketchCornerTreatment';
 import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
 import { compileCadSketchGraph } from '../cadSketchGraphGeometry';
 import { prepareCadSketchTrim, trimCadSketchEntity } from '../cadSketchTrimExtend';
@@ -90,5 +91,59 @@ describe('Trim between overlapping and touching edges', () => {
       .toContainEqual({ id: 'on-fence', kind: 'point-on-line', pointId: 'm0', lineId: 'fence' });
     expect(() => trimCadSketchEntity({ graph, parameters: {}, trim: { ...request, attachRelationIds: ['on-fence', 'on-ring'] } }))
       .toThrowError(expect.objectContaining({ code: 'invalid-sketch-trim-attachment' }));
+  });
+
+  it('removes the picked half of a circle when the seam cut keeps an endpoint just below one turn', () => {
+    // The diameter crosses at parameters 0 and .5; the spur ends at the seam with a witness just below 1.
+    const graph = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 0] }, { id: 'w', position: [-12, 0] }, { id: 'e', position: [12, 0] },
+      { id: 's0', position: [15, -5] }, { id: 's1', position: [10, -1e-14] }], entities: [
+      { id: 'ring', kind: 'circle', construction: false, centerPointId: 'o', radius: 10 },
+      { id: 'diameter', kind: 'line', construction: true, startPointId: 'w', endPointId: 'e' },
+      { id: 'spur', kind: 'line', construction: true, startPointId: 's0', endPointId: 's1' }], relations: [] });
+    for (const [parameter, side] of [[.25, 1], [.75, -1]] as const) {
+      const preview = prepareCadSketchTrim({ graph, parameters: {}, entityId: 'ring', parameter });
+      if (!('cuts' in preview) || preview.removed.kind !== 'arc') throw new Error('Expected circle trim.');
+      expect(Math.sign(Math.sin(preview.removed.startAngleRadians + preview.removed.sweepRadians / 2)), `${parameter}`).toBe(side);
+    }
+  });
+
+  it('refuses a cut that only a far boundary tolerance places at the source end instead of deleting the edge', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [1, 0] }, { id: 'c', position: [1e-6, -1e9] },
+      { id: 'd', position: [1e-6, 1e9] }], entities: [
+      { id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'fence', kind: 'line', construction: true, startPointId: 'c', endPointId: 'd' }], relations: [] });
+    expect(() => prepareCadSketchTrim({ graph, parameters: {}, entityId: 'edge', parameter: .5 }))
+      .toThrowError(expect.objectContaining({ code: 'sketch-trim-precision' }));
+  });
+
+  it('keeps a moved chamfer corner canonically ordered with each setback on its own line', () => {
+    let next = 0;
+    const createId = () => `m_${++next}`;
+    const base = createCadFreshSketchGraph({ geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 }, construction: false, createId });
+    const treated = createCadSketchCornerTreatment({ graph: base, parameters: {}, pointId: base.points[0].id, treatment: { kind: 'chamfer', setbacks: ['1', '2'] }, createId }).graph;
+    const corner = treated.relations.at(-1)!;
+    if (corner.kind !== 'chamfer-corner') throw new Error('Expected chamfer.');
+    const chamfer = treated.entities.find(entity => entity.id === corner.chamferId)!;
+    const source = treated.entities.find(entity => entity.kind === 'line' && corner.lineIds.includes(entity.id)
+      && chamfer.kind === 'line' && [chamfer.startPointId, chamfer.endPointId].includes(entity.endPointId))!;
+    const line = compileCadSketchGraph(treated, {}).segments.find(segment => segment.id === source.id)!;
+    if (line.kind !== 'line') throw new Error('Expected line.');
+    // Two fences across the corner line's interior leave a middle piece to trim.
+    const across = (t: number) => [line.start.x + t * (line.end.x - line.start.x), line.start.y + t * (line.end.y - line.start.y)];
+    const [x1, y1] = across(.3), [x2, y2] = across(.6), nx = -(line.end.y - line.start.y) / 4, ny = (line.end.x - line.start.x) / 4;
+    const graph = parseCadSketchGraph({ ...treated, points: [...treated.points, { id: 'f0', position: [x1 - nx, y1 - ny] }, { id: 'f1', position: [x1 + nx, y1 + ny] },
+      { id: 'g0', position: [x2 - nx, y2 - ny] }, { id: 'g1', position: [x2 + nx, y2 + ny] }], entities: [...treated.entities,
+      { id: 'fence', kind: 'line', construction: true, startPointId: 'f0', endPointId: 'f1' }, { id: 'gate', kind: 'line', construction: true, startPointId: 'g0', endPointId: 'g1' }] });
+    const preview = prepareCadSketchTrim({ graph, parameters: {}, entityId: source.id, parameter: .45 });
+    if (preview.target.kind !== 'middle') throw new Error('Expected middle trim.');
+    const setbacks = (relation: typeof corner, rename: (id: string) => string) => Object.fromEntries(relation.lineIds.map((id, index) => [rename(id), relation.values[index]]));
+    for (const newEntityId of ['a', 'zz']) {
+      const trimmed = trimCadSketchEntity({ graph, parameters: {}, trim: { ...preview.target, cutPointIds: ['c0', 'c1'], newEntityId, supportRelationId: 'support' } }).graph;
+      const moved = trimmed.relations.find(relation => relation.id === corner.id);
+      if (moved?.kind !== 'chamfer-corner') throw new Error('Expected moved chamfer.');
+      expect(moved.lineIds[0] < moved.lineIds[1], newEntityId).toBe(true);
+      expect(setbacks(moved, id => id)).toEqual(setbacks(corner, id => id === source.id ? newEntityId : id));
+      expect(checkCadSketchGraph(trimmed, {})).toEqual([]);
+    }
   });
 });
