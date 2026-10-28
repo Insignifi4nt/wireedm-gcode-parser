@@ -23,4 +23,17 @@ describe('line-circle discriminant rounding', () => {
     expect(relation.points[0].x).toBeLessThan(0); expect(relation.points[1].x).toBeGreaterThan(0);
     expect(relation.points[1].x - relation.points[0].x).toBeLessThan(1e-5);
   });
+  it('finds both crossings of a small circle by a long line at sketch tolerance', () => {
+    // The normalized quadratic used to place these to the line's reach squared over the chord, which missed fillet-sized circles.
+    for (const radius of [.05, .2, 2]) for (const reach of [100, 1000]) for (const degrees of [3, 41, 89]) for (const offset of [0, .6, .9]) {
+      const angle = degrees * Math.PI / 180, center = { x: 7.3, y: -2.1 }, across = { x: -Math.sin(angle) * offset * radius, y: Math.cos(angle) * offset * radius };
+      const line = createLineSegment({ id: 'line', source, start: { x: center.x + across.x - reach * Math.cos(angle), y: center.y + across.y - reach * Math.sin(angle) },
+        end: { x: center.x + across.x + reach * Math.cos(angle), y: center.y + across.y + reach * Math.sin(angle) } });
+      const circle = createCircleSegment({ id: 'circle', source: { ...source, sourceEntityType: 'circle' }, center, radius });
+      const relation = classifyPathSegmentIntersection(line, circle, 8 * Number.EPSILON * (reach + 10));
+      const label = `r=${radius} reach=${reach} ${degrees}° offset=${offset}`;
+      expect(relation.points, label).toHaveLength(2);
+      for (const point of relation.points) expect(Math.abs(Math.hypot(point.x - center.x, point.y - center.y) - radius), label).toBeLessThan(1e-11);
+    }
+  });
 });
