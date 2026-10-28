@@ -116,6 +116,21 @@ describe('Trim between overlapping and touching edges', () => {
       .toThrowError(expect.objectContaining({ code: 'sketch-trim-precision' }));
   });
 
+  it('still skips a declared shared end that rounding along a long boundary moves past the source tolerance', () => {
+    const turn = 18 * Math.PI / 180, wide = 20 * Math.PI / 180, b = [Math.cos(turn), Math.sin(turn)];
+    // A 1 mm source shares its end with a 1 m line; a cutter crosses the source halfway.
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: b },
+      { id: 'far', position: [b[0] + 1000 * Math.cos(wide), b[1] + 1000 * Math.sin(wide)] },
+      { id: 'c0', position: [.5 * b[0] - .2 * b[1], .5 * b[1] + .2 * b[0]] }, { id: 'c1', position: [.5 * b[0] + .2 * b[1], .5 * b[1] - .2 * b[0]] }], entities: [
+      { id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+      { id: 'long', kind: 'line', construction: false, startPointId: 'far', endPointId: 'b' },
+      { id: 'cutter', kind: 'line', construction: true, startPointId: 'c0', endPointId: 'c1' }], relations: [] });
+    expect(prepareCadSketchTrim({ graph, parameters: {}, entityId: 'edge', parameter: .25 }).target)
+      .toMatchObject({ kind: 'end', end: 'start', boundary: { entityId: 'cutter' } });
+    expect(prepareCadSketchTrim({ graph, parameters: {}, entityId: 'edge', parameter: .75 }).target)
+      .toMatchObject({ kind: 'end', end: 'end', boundary: { entityId: 'cutter' } });
+  });
+
   it('keeps a moved chamfer corner canonically ordered with each setback on its own line', () => {
     let next = 0;
     const createId = () => `m_${++next}`;
