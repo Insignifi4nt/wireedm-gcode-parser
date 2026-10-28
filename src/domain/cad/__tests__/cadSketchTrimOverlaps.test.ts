@@ -131,6 +131,16 @@ describe('Trim between overlapping and touching edges', () => {
       .toMatchObject({ kind: 'end', end: 'end', boundary: { entityId: 'cutter' } });
   });
 
+  it('refuses a second crossing beside a declared shared end instead of deleting the edge', () => {
+    // The far line leaves the arc's start and crosses it again about 1e-6 away, inside the line's wide tolerance.
+    const graph = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 1] }, { id: 'a', position: [0, 0] }, { id: 'e', position: [1, 1] },
+      { id: 'far', position: [1e9, 500] }], entities: [
+      { id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 'a', endPointId: 'e', direction: 'ccw' },
+      { id: 'ray', kind: 'line', construction: true, startPointId: 'a', endPointId: 'far' }], relations: [] });
+    expect(() => prepareCadSketchTrim({ graph, parameters: {}, entityId: 'arc', parameter: .5 }))
+      .toThrowError(expect.objectContaining({ code: 'sketch-trim-precision' }));
+  });
+
   it('keeps a moved chamfer corner canonically ordered with each setback on its own line', () => {
     let next = 0;
     const createId = () => `m_${++next}`;
