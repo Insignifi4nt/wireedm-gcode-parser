@@ -5,7 +5,7 @@ import { CadIdentifierSchema } from './cadPrimitives';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { isCadImportData } from './cadImportData';
-import { parseCadSketchGraph, type CadSketchExternalReference, type CadSketchGraph } from './cadSketchGraph';
+import { isAcceptedCadSketchGraph, parseCadSketchGraph, type CadSketchExternalReference, type CadSketchGraph } from './cadSketchGraph';
 import { cadSketchEntityPointIds } from './cadSketchGraphReferences';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { appendCadSketchEntities } from './cadSketchGraphEdits';
@@ -24,7 +24,30 @@ function readonlyIds(ids: readonly string[]): ReadonlySet<string> {
     forEach: (callback: (value: string, key: string, set: ReadonlySet<string>) => void, thisArg?: unknown) => values.forEach(value => callback.call(thisArg, value, value, result)) });
   return result;
 }
+type ReferenceOwners = { readonly entity: ReadonlyMap<string, CadSketchExternalReference>; readonly point: ReadonlyMap<string, CadSketchExternalReference> };
+// An accepted graph cannot change, so the references owning its edges and points are listed once instead of scanned for at
+// each lookup, keeping the first in relation order as the scan does.
+const referenceOwners = new WeakMap<CadSketchGraph, ReferenceOwners>();
+function acceptedReferenceOwners(graph: CadSketchGraph): ReferenceOwners {
+  const listed = referenceOwners.get(graph);
+  if (listed) return listed;
+  const entity = new Map<string, CadSketchExternalReference>(), point = new Map<string, CadSketchExternalReference>();
+  const references = graph.relations.filter(relation => relation.kind === 'external-reference');
+  const owned = new Set(references.map(relation => relation.entityId)), entityPoints = new Map<string, string[]>();
+  for (const item of graph.entities) if (owned.has(item.id)) entityPoints.set(item.id, [...entityPoints.get(item.id) ?? [], ...cadSketchEntityPointIds(item)]);
+  for (const relation of references) {
+    if (!entity.has(relation.entityId)) entity.set(relation.entityId, relation);
+    for (const id of entityPoints.get(relation.entityId) ?? []) if (!point.has(id)) point.set(id, relation);
+  }
+  const owners = Object.freeze({ entity, point });
+  referenceOwners.set(graph, owners);
+  return owners;
+}
 export function cadSketchExternalReferenceForSelection(graph: CadSketchGraph, selection: CadSketchGraphSelection): CadSketchExternalReference | undefined {
+  if (isAcceptedCadSketchGraph(graph)) {
+    const owners = acceptedReferenceOwners(graph);
+    return (selection.kind === 'entity' ? owners.entity : owners.point).get(selection.id);
+  }
   for (const relation of graph.relations) if (relation.kind === 'external-reference' && (selection.kind === 'entity' ? relation.entityId === selection.id
     : graph.entities.some(entity => entity.id === relation.entityId && cadSketchEntityPointIds(entity).includes(selection.id)))) return relation;
 }

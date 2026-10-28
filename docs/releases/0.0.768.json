@@ -1,0 +1,24 @@
+{
+  "version": "0.0.768",
+  "previousVersion": "0.0.767",
+  "postCompatibility": "preserved-output-sketch-lookups",
+  "summary": "Large sketches render faster while they are edited. Finding the linear pattern or preceding-sketch reference that owns a point or edge scanned every relation of the sketch, and the sketch layer asks this for every point it draws, so each render of a sketch took time that grew with the square of its size. A sketch graph accepted by the parser, or solved from one, cannot change, so its owners are now listed once per graph and each lookup reads that list; other graphs are still scanned. Separating parallel dimension labels sized and turned each label again for every other label it was compared with, and now does so once per label. Dragging a point over 90 moves in a 400-point sketch spent 1,822 ms of main-thread time with 0.0.767 and 1,492 ms with 0.0.768; in a 1,000-point sketch, 1,020 to 1,059 ms and 696 to 700 ms.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Lookups give the same owners, labels are placed in the same positions and sketches are drawn the same.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools keep their arguments and result fields.",
+    "capabilities": "No post or machine capability change and no new application controls.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "cadSketchLinearPattern.test.ts and cadSketchExternalReferences.test.ts compare every point, edge, omitted occurrence and missing identity of accepted graphs with a scan of an unaccepted structured clone, and check that each accepted graph answers for itself and that a graph that can still change is read again; each of 9 deliberate faults in the lists failed them. A tenth, keeping the last reference listed for a point instead of the first, passes, since the parser gives each reference its own edge and points, so an accepted graph cannot tell the two apart. cadSketchGraphDimensionLayout.test.ts now checks that a wide label moves a parallel dimension that a narrow one leaves in place, and the exact clearance between turned labels; one label size for all, an ignored angle and swapped width and height each failed it. Profiled point drags of unminified production builds in Chromium, in sketches of 100 and 250 rectangles. The full Vitest suite, lint, ui:check, build, solver:check and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Faster editing of large sketches.",
+    "changes": [
+      "Dragging and redrawing sketches with hundreds of points takes much less time, so large imported outlines stay responsive while you edit them."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

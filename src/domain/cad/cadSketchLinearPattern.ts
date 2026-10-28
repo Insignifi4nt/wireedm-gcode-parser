@@ -2,7 +2,7 @@ import { Value } from '@sinclair/typebox/value';
 import type { CadSketchFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
-import { parseCadSketchGraph, type CadSketchGraph, type CadSketchLinearPattern, type CadSketchGraphIssue } from './cadSketchGraph';
+import { isAcceptedCadSketchGraph, parseCadSketchGraph, type CadSketchGraph, type CadSketchLinearPattern, type CadSketchGraphIssue } from './cadSketchGraph';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
@@ -19,7 +19,34 @@ export function cadSketchLinearPatternInstances(relation: CadSketchLinearPattern
     return Object.freeze({ index, pointId: `${relation.idPrefix}_i${index}_p0`, entityId: `${relation.idPrefix}_i${index}_e0`, inRange, omitted, active: inRange && !omitted });
   }));
 }
-export function cadSketchLinearPatternForSelection(graph: CadSketchGraph, selection: CadSketchGraphSelection) {
+type PatternOwner = { readonly relation: CadSketchLinearPattern; readonly index: number };
+type PatternOwners = { readonly entity: ReadonlyMap<string, PatternOwner>; readonly point: ReadonlyMap<string, PatternOwner> };
+// An accepted graph cannot change, so its owners are listed once instead of scanned for at each of its points and edges.
+// The list keeps what the scan finds first: the first owning pattern in relation order, and within it the seed, then the
+// lowest occurrence.
+const patternOwners = new WeakMap<CadSketchGraph, PatternOwners>();
+function acceptedPatternOwners(graph: CadSketchGraph): PatternOwners {
+  const listed = patternOwners.get(graph);
+  if (listed) return listed;
+  const entity = new Map<string, PatternOwner>(), point = new Map<string, PatternOwner>();
+  const own = (owners: Map<string, PatternOwner>, id: string, owner: PatternOwner) => { if (!owners.has(id)) owners.set(id, owner); };
+  for (const relation of graph.relations) if (relation.kind === 'linear-pattern') {
+    const seed = Object.freeze({ relation, index: 0 });
+    own(entity, relation.seed.entityId, seed); own(point, relation.seed.centerPointId, seed);
+    for (const member of cadSketchLinearPatternInstances(relation)) if (member.active) {
+      const owner = Object.freeze({ relation, index: member.index });
+      own(entity, member.entityId, owner); own(point, member.pointId, owner);
+    }
+  }
+  const owners = Object.freeze({ entity, point });
+  patternOwners.set(graph, owners);
+  return owners;
+}
+export function cadSketchLinearPatternForSelection(graph: CadSketchGraph, selection: CadSketchGraphSelection): PatternOwner | null {
+  if (isAcceptedCadSketchGraph(graph)) {
+    const owners = acceptedPatternOwners(graph);
+    return (selection.kind === 'entity' ? owners.entity : owners.point).get(selection.id) ?? null;
+  }
   for (const relation of graph.relations) if (relation.kind === 'linear-pattern') {
     if (selection.id === (selection.kind === 'entity' ? relation.seed.entityId : relation.seed.centerPointId)) return { relation, index: 0 } as const;
     const member = cadSketchLinearPatternInstances(relation).find(member => member.active && selection.id === (selection.kind === 'entity' ? member.entityId : member.pointId));
