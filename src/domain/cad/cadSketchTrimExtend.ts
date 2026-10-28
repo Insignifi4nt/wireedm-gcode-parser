@@ -329,23 +329,23 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
   const assertTransverse = (reach: PathSegment, other: PathSegment, tolerance: number) => {
     if (undeclaredTangent(reach, other, tolerance)) throw ambiguous(operation);
   };
-  /** Whether a trim contact is the source's own end. A far boundary widens the shared tolerance, so unless the boundary
-   * declares that end as its own, a contact only that wide tolerance places at an end is too uncertain to skip or cut at.
-   * Only one of the boundary's contacts can be that declared end; another beside it is a crossing too close to place. */
-  const ownEnd = (point: Point2, tolerance: number, otherId: string, contacts: readonly Point2[] = [point]): boolean => {
+  /** Whether a trim contact is the source's own end. A far boundary widens the shared tolerance, so a contact only that wide
+   * tolerance places at an end is too uncertain to skip or cut at, unless a boundary line declares that end of a source line
+   * as its own: two distinct lines meet only once, so no other crossing can hide beside it. */
+  const ownEnd = (point: Point2, tolerance: number, other: PathSegment): boolean => {
     if (segment.kind === 'circle') return false;
     const gap = Math.min(distance(point, segment.start), distance(point, segment.end));
     if (gap <= cadPathClosureTolerance([...extent(segment), point])) return true;
     if (gap > tolerance) return false;
-    const own = endpointIds(segment.id), shared = endpointIds(otherId).map(id => own.some(mine => joint(mine) === joint(id)) ? numericPoints.get(id) : undefined)
-      .find(saved => saved !== undefined && distance(saved, point) <= tolerance);
-    if (shared && contacts.filter(contact => distance(contact, shared) <= tolerance).length === 1) return true;
+    const own = endpointIds(segment.id);
+    if (segment.kind === 'line' && other.kind === 'line' && endpointIds(other.id)
+      .some(id => own.some(mine => joint(mine) === joint(id)) && numericPoints.has(id) && distance(numericPoints.get(id)!, point) <= tolerance)) return true;
     throw precision(operation);
   };
   /** A contact strictly inside the source, away from its own ends; trims only. */
-  const inside = (point: Point2, tolerance: number, otherId: string): number | null => {
+  const inside = (point: Point2, tolerance: number, other: PathSegment): number | null => {
     const t = trimParameter(segment, point, tolerance);
-    return t === null || ownEnd(point, tolerance, otherId) ? null : t;
+    return t === null || ownEnd(point, tolerance, other) ? null : t;
   };
   for (const other of segments) {
     if (other.id === segment.id) continue;
@@ -357,14 +357,14 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
       // A shared stretch has no crossing of its own: the overlapping edge's own ends inside the source bound its pieces.
       const owner = graph.entities.find(item => item.id === other.id);
       if (owner && owner.kind !== 'circle') for (const [index, pointId] of [owner.startPointId, owner.endPointId].entries()) {
-        const point = numericPoints.get(pointId), t = point ? inside(point, tolerance, other.id) : null;
+        const point = numericPoints.get(pointId), t = point ? inside(point, tolerance, other) : null;
         if (point && t !== null) events.push({ witness: { entityId: other.id, index, parameter: t, position: [point.x, point.y], endpointPointId: pointId }, boundary: other, point });
       }
       continue;
     }
     if (query.kind === 'trim') {
       // A tangent contact cannot be cut at, but it only blocks the pieces it bounds.
-      const contact = undeclaredTangent(segment, other, tolerance), t = contact ? inside(contact, tolerance, other.id) : null;
+      const contact = undeclaredTangent(segment, other, tolerance), t = contact ? inside(contact, tolerance, other) : null;
       if (contact && t !== null) events.push({ witness: { entityId: other.id, index: 0, parameter: t, position: [contact.x, contact.y] }, boundary: other, point: contact, tangent: true });
       if (contact) continue;
     // A line extension's span is only known per hit; arc supports also catch rounded near-misses.
@@ -377,7 +377,7 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
       const { hit, parameter: t } = candidate;
       if (t === null || !Number.isFinite(t)) throw precision(operation);
       // A contact at the source's own end is not a cut, however rounding places it along a rotated edge.
-      if (query.kind === 'trim' && ownEnd(hit.point, tolerance, other.id, hits.map(candidate => candidate.hit.point))) continue;
+      if (query.kind === 'trim' && ownEnd(hit.point, tolerance, other)) continue;
       if (query.kind === 'trim' ? t < 0 || t > 1 : query.end === 'start' ? t > 0 : t < 1) throw precision(operation);
       const total = query.kind === 'extend' && segment.kind === 'arc' ? Math.abs(segment.sweepRadians) * (query.end === 'start' ? 1 - t : t) : null;
       if (total !== null && total > fullTurn) continue;

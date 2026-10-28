@@ -139,6 +139,16 @@ describe('Trim between overlapping and touching edges', () => {
       { id: 'ray', kind: 'line', construction: true, startPointId: 'a', endPointId: 'far' }], relations: [] });
     expect(() => prepareCadSketchTrim({ graph, parameters: {}, entityId: 'arc', parameter: .5 }))
       .toThrowError(expect.objectContaining({ code: 'sketch-trim-precision' }));
+    // Rounding can merge both crossings into one contact when the line only meets the arc through a coincident joint.
+    for (const direction of ['ccw', 'cw'] as const) {
+      const joined = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 1] }, { id: 'a', position: [0, 0] }, { id: 'e', position: direction === 'ccw' ? [1, 1] : [-1, 1] },
+        { id: 'near', position: [1e-13, 0] }, { id: 'far', position: [1e9, 100] }], entities: [
+        { id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 'a', endPointId: 'e', direction },
+        { id: 'ray', kind: 'line', construction: true, startPointId: 'near', endPointId: 'far' }],
+        relations: [{ id: 'joint', kind: 'coincident', pointIds: ['a', 'near'] }] });
+      expect(() => prepareCadSketchTrim({ graph: joined, parameters: {}, entityId: 'arc', parameter: .5 }), direction)
+        .toThrowError(expect.objectContaining({ code: 'sketch-trim-precision' }));
+    }
   });
 
   it('keeps a moved chamfer corner canonically ordered with each setback on its own line', () => {
