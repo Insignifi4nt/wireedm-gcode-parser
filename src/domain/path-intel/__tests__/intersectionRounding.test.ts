@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { classifyPathSegmentIntersection } from '../intersections';
-import { createCircleSegment, createLineSegment } from '../segments';
+import { createArcSegment, createCircleSegment, createLineSegment } from '../segments';
 
 const source = { sourceEntityIndex: 0, sourceEntityType: 'line', layer: 'CUT', exact: true };
 describe('line-circle discriminant rounding', () => {
@@ -35,5 +35,12 @@ describe('line-circle discriminant rounding', () => {
       expect(relation.points, label).toHaveLength(2);
       for (const point of relation.points) expect(Math.abs(Math.hypot(point.x - center.x, point.y - center.y) - radius), label).toBeLessThan(1e-11);
     }
+  });
+  it('keeps a tangent endpoint contact that polishing would push past the line end', () => {
+    // The line ends exactly on the circle along its tangent, a near-double root that Newton steps drift across.
+    const line = createLineSegment({ id: 'line', source, start: { x: 8.00059992, y: 5.99919994 }, end: { x: 8, y: 6 } });
+    const circle = createCircleSegment({ id: 'circle', source: { ...source, sourceEntityType: 'circle' }, center: { x: 0, y: 0 }, radius: 10 });
+    const arc = createArcSegment({ id: 'arc', source: { ...source, sourceEntityType: 'arc' }, center: { x: 0, y: 0 }, start: { x: 10, y: 0 }, end: { x: 0, y: 10 }, clockwise: false });
+    for (const curve of [circle, arc]) expect(classifyPathSegmentIntersection(line, curve, 1e-12).points, curve.kind).toHaveLength(1);
   });
 });

@@ -508,8 +508,8 @@ function intersectLineCircular(
   if (anchoredCandidates == null && discriminant < -discriminantTolerance) return noIntersection();
   const roots = Math.abs(discriminant) <= discriminantTolerance
     ? [closestParameter]
-    : polishLineCircleRoots(stableQuadraticRoots(quadraticA, quadraticB, quadraticC, Math.max(0, discriminant)), localStart, lineVector, circular.radius);
-  const candidates = anchoredCandidates ?? roots.map((parameter) => {
+    : stableQuadraticRoots(quadraticA, quadraticB, quadraticC, Math.max(0, discriminant));
+  const candidate = (parameter: number) => {
     const radial = {
       x: (start.x + delta.x * parameter) * scale,
       y: (start.y + delta.y * parameter) * scale
@@ -519,20 +519,21 @@ function intersectLineCircular(
       radial,
       parameter
     };
-  });
+  };
+  // A polished root may only add a crossing the quadratic placed too coarsely; each root keeps its original as a fallback.
+  const polished = roots.length === 2 ? polishLineCircleRoots(roots, localStart, lineVector, circular.radius) : roots;
+  const choices = anchoredCandidates?.map((anchored) => [anchored])
+    ?? roots.map((root, index) => polished[index] === root ? [candidate(root)] : [candidate(polished[index]), candidate(root)]);
   const parameterTolerance = tolerance / Math.max(lineLength, Number.MIN_VALUE);
   const minimum = range === 'start' ? -Infinity : range === 'end' ? 1 : 0;
   const maximum = range === 'end' ? Infinity : range === 'start' ? 0 : 1;
-  const points = candidates
-    .filter(
-      ({ parameter }) =>
-        Number.isFinite(parameter) &&
-        parameter >= minimum - parameterTolerance &&
-        parameter <= maximum + parameterTolerance
-    )
-    .filter(({ point, radial }) =>
-      pointIsOnCircularSegment(point, circular, tolerance, epsilon, radial)
-    )
+  const accepted = ({ point, radial, parameter }: ReturnType<typeof candidate>) =>
+    Number.isFinite(parameter) &&
+    parameter >= minimum - parameterTolerance &&
+    parameter <= maximum + parameterTolerance &&
+    pointIsOnCircularSegment(point, circular, tolerance, epsilon, radial);
+  const points = choices
+    .flatMap((options) => options.filter(accepted).slice(0, 1))
     .map(({ point, radial, parameter }) => ({
       point,
       leftParameter: parameter,
