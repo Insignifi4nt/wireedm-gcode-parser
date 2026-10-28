@@ -1,0 +1,24 @@
+{
+  "version": "0.0.770",
+  "previousVersion": "0.0.769",
+  "postCompatibility": "preserved-posts-with-crossing-correctness-fix",
+  "summary": "Shared geometry analysis now finds where a line crosses a small arc or circle reliably. The line and circle crossing solver placed its two points only to roughly the line's reach squared over the chord, so a fillet-sized arc crossed by a long line was often reported as not crossing at all. In tests, about half the crossings of a 0.2 mm arc by a 200 mm line were missed, and most of a 0.05 mm arc's crossings by a 100 mm line. Sketch Trim and Extend, sketch regions and profile checks, Mirror, sweep clearance, DXF cleanup, lead and positioning checks and editor measurement now see these crossings. Each crossing is refined on the unscaled distance from the circle's center, and keeps its original placement as a fallback, so no crossing found before is lost. Tangency and arc endpoint handling are unchanged.",
+  "warning": "No post, machine package, saved revision or storage change, and installed post packages are not rewritten. Potentially output-affecting for drawings where a line truly crosses a small arc or circle that analysis previously missed: such a crossing is now treated like any other crossing. A sketch may report a crossing or a different region, an imported drawing may be cleaned or checked differently, and lead or positioning checks may now refuse a placement that crossed the contour. Saved revisions keep their existing output until they are generated again.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change.",
+    "capabilities": "No post or machine capability change and no new application controls or agent tools.",
+    "auditAndOutput": "Generation, audit, numbering, encoding, line endings, feeds and controller-file rules are unchanged. Output can differ only where a line crossed a small arc or circle that the old solver missed; those crossings are now reported, as they always should have been.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "intersectionRounding.test.ts checks both crossings of circles of radius 0.05, 0.2 and 2 by lines reaching 100 and 1000 units at three angles and three offsets, each within 1e-11 of the circle; it fails without the change. A tangent line ending on a circle or arc keeps its single contact. The existing endpoint-tangent and near-tangent crossing tests still pass. A 120000-pair differential run against the previous solver, over circles and arcs of radius 0.05 to 20 with random, tangent, rim-crossing and rim-ending lines at three tolerances, lost no crossing and found 1386 more. Probes found no missed crossings for arcs of radius 0.05 to 2 against lines reaching up to 1000 units, against up to 26 of 28 missed before; small arcs against large circles were already found and are unchanged. The full Vitest suite, lint, ui:check, build, solver:check and the release check."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Lines crossing small arcs and circles are found reliably.",
+    "changes": [
+      "Trim, regions, profile checks and imported drawing checks now see where a long line crosses a small arc or circle, such as a fillet, instead of sometimes missing it."
+    ],
+    "compatibility": "Installed machine packages, posts and saved revisions are unchanged. A drawing where a line really crosses a small arc may now report that crossing.",
+    "action": "No action needed. If a sketch or import now reports a crossing at a small arc, check that geometry."
+  }
+}

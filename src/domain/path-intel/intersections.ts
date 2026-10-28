@@ -509,7 +509,7 @@ function intersectLineCircular(
   const roots = Math.abs(discriminant) <= discriminantTolerance
     ? [closestParameter]
     : stableQuadraticRoots(quadraticA, quadraticB, quadraticC, Math.max(0, discriminant));
-  const candidates = anchoredCandidates ?? roots.map((parameter) => {
+  const candidate = (parameter: number) => {
     const radial = {
       x: (start.x + delta.x * parameter) * scale,
       y: (start.y + delta.y * parameter) * scale
@@ -519,20 +519,21 @@ function intersectLineCircular(
       radial,
       parameter
     };
-  });
+  };
+  // A polished root may only add a crossing the quadratic placed too coarsely; each root keeps its original as a fallback.
+  const polished = roots.length === 2 ? polishLineCircleRoots(roots, localStart, lineVector, circular.radius) : roots;
+  const choices = anchoredCandidates?.map((anchored) => [anchored])
+    ?? roots.map((root, index) => polished[index] === root ? [candidate(root)] : [candidate(polished[index]), candidate(root)]);
   const parameterTolerance = tolerance / Math.max(lineLength, Number.MIN_VALUE);
   const minimum = range === 'start' ? -Infinity : range === 'end' ? 1 : 0;
   const maximum = range === 'end' ? Infinity : range === 'start' ? 0 : 1;
-  const points = candidates
-    .filter(
-      ({ parameter }) =>
-        Number.isFinite(parameter) &&
-        parameter >= minimum - parameterTolerance &&
-        parameter <= maximum + parameterTolerance
-    )
-    .filter(({ point, radial }) =>
-      pointIsOnCircularSegment(point, circular, tolerance, epsilon, radial)
-    )
+  const accepted = ({ point, radial, parameter }: ReturnType<typeof candidate>) =>
+    Number.isFinite(parameter) &&
+    parameter >= minimum - parameterTolerance &&
+    parameter <= maximum + parameterTolerance &&
+    pointIsOnCircularSegment(point, circular, tolerance, epsilon, radial);
+  const points = choices
+    .flatMap((options) => options.filter(accepted).slice(0, 1))
     .map(({ point, radial, parameter }) => ({
       point,
       leftParameter: parameter,
@@ -870,6 +871,30 @@ function sameCircularSupport(
 function isFullCircularSegment(segment: CircularPathSegment, epsilon: number) {
   if (segment.kind === 'circle') return true;
   return Math.abs(FULL_TURN - Math.abs(segment.sweepRadians)) * segment.radius <= epsilon;
+}
+
+/**
+ * The normalized quadratic places two crossings only to the line's scale squared over the chord, so a small circle beside
+ * a long line can lose them to the radial check. Newton steps on the unscaled center-local distance restore each root
+ * to the line's own coordinate precision; a step is kept only while it shrinks the miss and stays on its own root's side.
+ */
+function polishLineCircleRoots(roots: number[], localStart: Point2, lineVector: Point2, radius: number) {
+  if (roots.length !== 2) return roots;
+  const midpoint = (roots[0] + roots[1]) / 2;
+  const miss = (parameter: number) => {
+    const x = localStart.x + lineVector.x * parameter, y = localStart.y + lineVector.y * parameter;
+    return { value: (x - radius) * (x + radius) + y * y, slope: 2 * (x * lineVector.x + y * lineVector.y) };
+  };
+  return roots.map((root) => {
+    let parameter = root, current = miss(parameter);
+    for (let step = 0; step < 3 && current.value !== 0 && current.slope !== 0; step++) {
+      const next = parameter - current.value / current.slope, candidate = miss(next);
+      if (!Number.isFinite(next) || Math.abs(candidate.value) >= Math.abs(current.value)
+        || Math.sign(next - midpoint) !== Math.sign(root - midpoint)) break;
+      parameter = next; current = candidate;
+    }
+    return parameter;
+  });
 }
 
 function stableQuadraticRoots(a: number, b: number, c: number, discriminant: number) {
