@@ -6,6 +6,9 @@ import { applyCadEdits } from '../cadOperations';
 import { measureCadSketch } from '../cadMeasurements';
 
 function idFactory() { let next = 0; return () => `fresh-${++next}`; }
+function polyline([start, ...ends]: readonly CadFreshSketchPick[], closed: boolean): CadFreshSketchDrawing {
+  return { kind: 'polyline', start, steps: ends.map(end => ({ kind: 'line', end })), closed };
+}
 
 describe('fresh authored sketch picks', () => {
   it.each([
@@ -54,7 +57,7 @@ describe('fresh authored sketch picks', () => {
     expect(JSON.stringify(existingGraph)).toBe(before);
   });
 
-  it.each([false, true])('preserves polygon vertex roles and nearly adjacent distinct identities, reversed=%s', reversed => {
+  it.each([false, true])('preserves closed polyline point roles and nearly adjacent distinct identities, reversed=%s', reversed => {
     const authored: readonly CadFreshSketchPick[] = [
       { kind: 'coincident', point: [0, 0], sourcePointId: 'origin', relationId: 'join-origin' },
       { kind: 'coincident', point: [6, 0], sourcePointId: 'edge', relationId: 'join-edge' },
@@ -62,17 +65,73 @@ describe('fresh authored sketch picks', () => {
     ];
     const vertices = reversed ? [...authored].reverse() : authored, before = JSON.stringify(vertices);
     const existingGraph = parseCadSketchGraph({ points: [{ id: 'origin', position: [0, 0] }, { id: 'edge', position: [6, 0] }], entities: [], relations: [] });
-    const created = createCadFreshSketchDrawing({ drawing: { kind: 'polygon', vertices }, construction: false, createId: idFactory(), existingGraph });
-    if (created.kind !== 'polygon') throw new Error('Expected polygon role map.');
+    const created = createCadFreshSketchDrawing({ drawing: polyline(vertices, true), construction: false, createId: idFactory(), existingGraph });
+    if (created.kind !== 'polyline') throw new Error('Expected polyline role map.');
     expect(created.geometry.points.map(point => point.position)).toEqual(vertices.map(vertex => vertex.point));
-    expect(created.vertexPointIds).toEqual(created.geometry.points.map(point => point.id));
-    expect(created.geometry.points).toHaveLength(5); expect(new Set(created.vertexPointIds).size).toBe(5);
-    expect(created.geometry.relations.find(relation => relation.id === 'join-origin')).toEqual({ id: 'join-origin', kind: 'coincident', pointIds: [created.vertexPointIds[reversed ? 4 : 0], 'origin'] });
-    expect(created.geometry.relations.find(relation => relation.id === 'join-edge')).toEqual({ id: 'join-edge', kind: 'coincident', pointIds: [created.vertexPointIds[reversed ? 3 : 1], 'edge'] });
+    expect(created.pointIds).toEqual(created.geometry.points.map(point => point.id));
+    expect(created.geometry.points).toHaveLength(5); expect(new Set(created.pointIds).size).toBe(5);
+    // Four drawn lines and one closing line back to the start.
+    expect(created.geometry.entities.map(entity => entity.kind)).toEqual(['line', 'line', 'line', 'line', 'line']);
+    expect(created.geometry.relations.find(relation => relation.id === 'join-origin')).toEqual({ id: 'join-origin', kind: 'coincident', pointIds: [created.pointIds[reversed ? 4 : 0], 'origin'] });
+    expect(created.geometry.relations.find(relation => relation.id === 'join-edge')).toEqual({ id: 'join-edge', kind: 'coincident', pointIds: [created.pointIds[reversed ? 3 : 1], 'edge'] });
     const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: existingGraph }] });
     const accepted = applyCadEdits(source, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: created.geometry }]);
     expect(measureCadSketch(accepted, 'sketch')).toMatchObject({ materialAreaMm2: 12, boundaryLengthMm: 16 });
-    expect(Object.isFrozen(created.vertexPointIds)).toBe(true); expect(JSON.stringify(vertices)).toBe(before);
+    expect(Object.isFrozen(created.pointIds)).toBe(true); expect(JSON.stringify(vertices)).toBe(before);
+  });
+
+  it('draws one line or one three-point arc whose picked ends attach with removable relations', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 20] }, { id: 'b', position: [40, 20] }],
+      entities: [{ id: 'top', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] }), before = JSON.stringify(existingGraph);
+    const line = createCadFreshSketchDrawing({ drawing: { kind: 'line', start: { kind: 'coincident', point: [0, 20], sourcePointId: 'a', relationId: 'join-a' },
+      end: { kind: 'on-line', point: [10, 20], lineId: 'top', relationId: 'on-top' } }, construction: false, createId: idFactory(), existingGraph });
+    if (line.kind !== 'line') throw new Error('Expected line roles.');
+    expect(line.geometry.points).toEqual([{ id: line.pointIds.start, position: [0, 20] }, { id: line.pointIds.end, position: [10, 20] }]);
+    expect(line.geometry.entities).toEqual([{ id: expect.any(String), kind: 'line', construction: false, startPointId: line.pointIds.start, endPointId: line.pointIds.end }]);
+    expect(line.geometry.relations).toEqual([{ id: 'join-a', kind: 'coincident', pointIds: [line.pointIds.start, 'a'] },
+      { id: 'on-top', kind: 'point-on-line', pointId: line.pointIds.end, lineId: 'top' }]);
+    const arc = createCadFreshSketchDrawing({ drawing: { kind: 'arc', start: { kind: 'datum', point: [0, 0], datum: 'origin', relationIds: ['at-x', 'at-y'] },
+      end: { kind: 'position', point: [20, 0] }, through: [10, -10] }, construction: true, createId: idFactory(), existingGraph });
+    if (arc.kind !== 'arc') throw new Error('Expected arc roles.');
+    expect(arc.geometry.points.find(point => point.id === arc.pointIds.center)?.position).toEqual([10, 0]);
+    expect(arc.geometry.entities).toEqual([{ id: expect.any(String), kind: 'arc', construction: true, centerPointId: arc.pointIds.center,
+      startPointId: arc.pointIds.start, endPointId: arc.pointIds.end, direction: 'ccw' }]);
+    expect(arc.geometry.relations).toEqual([{ id: 'at-x', kind: 'fixed-axis', pointId: arc.pointIds.start, axis: 'x', value: 0 },
+      { id: 'at-y', kind: 'fixed-axis', pointId: arc.pointIds.start, axis: 'y', value: 0 }]);
+    // A through point picked on other geometry only shapes the arc, and collinear picks are rejected before any ID is used.
+    let allocations = 0;
+    expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'arc', start: { kind: 'position', point: [0, 0] }, end: { kind: 'position', point: [20, 0] }, through: [10, 0] },
+      construction: false, createId: () => `unused-${++allocations}` })).toThrow();
+    expect(allocations).toBe(0); expect(JSON.stringify(existingGraph)).toBe(before);
+  });
+
+  it('keeps an open polyline open, shares an exact closing return and rejects a return attached elsewhere', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'anchor', position: [0, 0] }, { id: 'other', position: [5, 5] }], entities: [], relations: [] });
+    const start: CadFreshSketchPick = { kind: 'coincident', point: [0, 0], sourcePointId: 'anchor', relationId: 'join-start' };
+    const steps = [{ kind: 'line', end: { kind: 'position', point: [20, 0] } }, { kind: 'arc', end: { kind: 'position', point: [20, 10] }, through: [25, 5] }] as const;
+    const open = createCadFreshSketchDrawing({ drawing: { kind: 'polyline', start, steps, closed: false }, construction: false, createId: idFactory(), existingGraph });
+    if (open.kind !== 'polyline') throw new Error('Expected polyline roles.');
+    expect(open.geometry.entities.map(entity => entity.kind)).toEqual(['line', 'arc']);
+    expect(open.pointIds).toHaveLength(3); expect(open.geometry.points).toHaveLength(4);
+    const arc = open.geometry.entities[1];
+    if (arc.kind !== 'arc') throw new Error('Expected arc.');
+    expect([arc.startPointId, arc.endPointId]).toEqual(open.pointIds.slice(1));
+    expect(open.geometry.points.find(point => point.id === arc.centerPointId)?.position).toEqual([20, 5]);
+    // Clicking the start again closes on the start point itself and keeps only its own attachment.
+    for (const end of [{ kind: 'position', point: [0, 0] }, { ...start, relationId: 'join-again' }] as const) {
+      const closed = createCadFreshSketchDrawing({ drawing: { kind: 'polyline', start, steps: [...steps, { kind: 'line', end }], closed: true }, construction: false, createId: idFactory(), existingGraph });
+      if (closed.kind !== 'polyline') throw new Error('Expected polyline roles.');
+      expect(closed.pointIds.at(-1)).toBe(closed.pointIds[0]); expect(closed.geometry.entities).toHaveLength(3);
+      expect(closed.geometry.relations).toEqual([{ id: 'join-start', kind: 'coincident', pointIds: [closed.pointIds[0], 'anchor'] }]);
+    }
+    // Without an exact return, a closed polyline gets one more line back to its start.
+    const bridged = createCadFreshSketchDrawing({ drawing: { kind: 'polyline', start, steps, closed: true }, construction: false, createId: idFactory(), existingGraph });
+    expect(bridged.geometry.entities.map(entity => entity.kind)).toEqual(['line', 'arc', 'line']);
+    let allocations = 0;
+    expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'polyline', start: { kind: 'position', point: [5, 5] }, steps: [...steps,
+      { kind: 'line', end: { kind: 'coincident', point: [5, 5], sourcePointId: 'other', relationId: 'join-other' } }], closed: true },
+    construction: false, createId: () => `unused-${++allocations}`, existingGraph })).toThrowError(expect.objectContaining({ code: 'ambiguous-path-closure' }));
+    expect(allocations).toBe(0);
   });
 
   it('retains the exact picked rectangle axes through cancellation instead of reconstructing an attached corner from width', () => {
@@ -119,7 +178,9 @@ describe('fresh authored sketch picks', () => {
   it.each<CadFreshSketchDrawing>([
     { kind: 'rectangle', first: { kind: 'position', point: [0, 0] }, opposite: { kind: 'position', point: [20, 10] } },
     { kind: 'circle', center: { kind: 'position', point: [0, 0] }, radius: 3 },
-    { kind: 'polygon', vertices: [{ kind: 'position', point: [0, 0] }, { kind: 'position', point: [20, 0] }, { kind: 'position', point: [20, 10] }] }
+    polyline([{ kind: 'position', point: [0, 0] }, { kind: 'position', point: [20, 0] }, { kind: 'position', point: [20, 10] }], true),
+    { kind: 'line', start: { kind: 'position', point: [0, 0] }, end: { kind: 'position', point: [20, 10] } },
+    { kind: 'slot', first: { kind: 'position', point: [0, 0] }, second: { kind: 'position', point: [20, 10] }, width: 4 }
   ])('retains purely numeric picks as fresh independent topology without inferring same-coordinate joins: %j', drawing => {
     const existingGraph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 10] }], entities: [], relations: [] });
     const created = createCadFreshSketchDrawing({ drawing, construction: false, createId: idFactory(), existingGraph });
@@ -131,7 +192,12 @@ describe('fresh authored sketch picks', () => {
   it.each<CadFreshSketchDrawing>([
     { kind: 'rectangle', first: { kind: 'position', point: [0, 0] }, opposite: { kind: 'position', point: [0, 10] } },
     { kind: 'circle', center: { kind: 'position', point: [0, 0] }, radius: 0 },
-    { kind: 'polygon', vertices: [{ kind: 'position', point: [0, 0] }, { kind: 'position', point: [5, 0] }, { kind: 'position', point: [5, 0] }, { kind: 'position', point: [0, 5] }] }
+    polyline([{ kind: 'position', point: [0, 0] }, { kind: 'position', point: [5, 0] }, { kind: 'position', point: [5, 0] }, { kind: 'position', point: [0, 5] }], true),
+    polyline([{ kind: 'position', point: [0, 0] }, { kind: 'position', point: [0, 0] }], true),
+    { kind: 'line', start: { kind: 'position', point: [3, 4] }, end: { kind: 'position', point: [3, 4] } },
+    { kind: 'polyline', start: { kind: 'position', point: [0, 0] }, steps: [], closed: false },
+    { kind: 'slot', first: { kind: 'position', point: [3, 4] }, second: { kind: 'position', point: [3, 4] }, width: 4 },
+    { kind: 'slot', first: { kind: 'position', point: [0, 0] }, second: { kind: 'position', point: [10, 0] }, width: 0 }
   ])('rejects degenerate authored geometry before consuming IDs: %j', drawing => {
     let allocations = 0;
     expect(() => createCadFreshSketchDrawing({ drawing, construction: false, createId: () => `unused-${++allocations}` })).toThrow();
@@ -141,13 +207,13 @@ describe('fresh authored sketch picks', () => {
   it('places fresh points on an existing line or the plane origin and axes with removable relations', () => {
     const existingGraph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 20] }, { id: 'b', position: [40, 20] }],
       entities: [{ id: 'top', kind: 'line', construction: true, startPointId: 'a', endPointId: 'b' }], relations: [] });
-    const drawing: CadFreshSketchDrawing = { kind: 'polygon', vertices: [
+    const drawing = polyline([
       { kind: 'datum', point: [0, 0], datum: 'origin', relationIds: ['at-x', 'at-y'] },
       { kind: 'datum', point: [30, 0], datum: 'x-axis', relationIds: ['on-x'] },
-      { kind: 'on-line', point: [25, 20], lineId: 'top', relationId: 'on-top' }] };
+      { kind: 'on-line', point: [25, 20], lineId: 'top', relationId: 'on-top' }], true);
     const created = createCadFreshSketchDrawing({ drawing, construction: false, createId: idFactory(), existingGraph });
-    if (created.kind !== 'polygon') throw new Error('Expected polygon role map.');
-    const [origin, axis, top] = created.vertexPointIds;
+    if (created.kind !== 'polyline') throw new Error('Expected polyline role map.');
+    const [origin, axis, top] = created.pointIds;
     expect(created.geometry.relations.filter(relation => !relation.id.startsWith('fresh-'))).toEqual([
       { id: 'at-x', kind: 'fixed-axis', pointId: origin, axis: 'x', value: 0 }, { id: 'at-y', kind: 'fixed-axis', pointId: origin, axis: 'y', value: 0 },
       { id: 'on-x', kind: 'fixed-axis', pointId: axis, axis: 'y', value: 0 }, { id: 'on-top', kind: 'point-on-line', pointId: top, lineId: 'top' }]);
@@ -160,22 +226,27 @@ describe('fresh authored sketch picks', () => {
     expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'on-line', point: [5, 20], lineId: 'gone', relationId: 'r' }, radius: 2 },
       construction: false, createId: idFactory(), existingGraph })).toThrow('A picked line changed or no longer exists');
   });
-  it('builds a slot from tangent lines, equal end arcs and a center held at the middle of its axis', () => {
-    const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [12, 8] }, end: [12, 28], width: 10 }, construction: false, createId: idFactory() });
+  it('builds a slot from two tangent lines and equal end arcs about the two picked centers', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'anchor', position: [12, 8] }], entities: [], relations: [] });
+    const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', first: { kind: 'coincident', point: [12, 8], sourcePointId: 'anchor', relationId: 'join-first' },
+      second: { kind: 'position', point: [12, 28] }, width: 10 }, construction: false, createId: idFactory(), existingGraph });
     if (created.kind !== 'slot') throw new Error('Expected slot role map.');
-    const { geometry, centerPointId } = created;
-    expect(geometry.entities.map(entity => [entity.kind, entity.construction])).toEqual([['line', false], ['arc', false], ['line', false], ['arc', false], ['line', true]]);
-    expect(geometry.relations.map(relation => relation.kind)).toEqual(['tangent-joint', 'tangent-joint', 'tangent-joint', 'tangent-joint', 'equal-radius', 'midpoint']);
-    expect(geometry.points.find(point => point.id === centerPointId)?.position).toEqual([12, 8]);
-    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] }] });
+    const { geometry, centerPointIds: [first, second] } = created;
+    expect(geometry.points).toHaveLength(6);
+    expect(geometry.entities.map(entity => [entity.kind, entity.construction])).toEqual([['line', false], ['arc', false], ['line', false], ['arc', false]]);
+    expect(geometry.entities.filter(entity => entity.kind === 'arc').map(entity => entity.centerPointId)).toEqual([second, first]);
+    expect(geometry.relations.map(relation => relation.kind)).toEqual(['tangent-joint', 'tangent-joint', 'tangent-joint', 'tangent-joint', 'equal-radius', 'coincident']);
+    expect(geometry.relations.at(-1)).toEqual({ id: 'join-first', kind: 'coincident', pointIds: [first, 'anchor'] });
+    expect(geometry.points.find(point => point.id === first)?.position).toEqual([12, 8]);
+    expect(geometry.points.find(point => point.id === second)?.position).toEqual([12, 28]);
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: existingGraph }] });
     const drawn = applyCadEdits(source, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry }]);
-    // A 40 mm slot 10 mm wide: a 30 x 10 band between centers plus one full 5 mm circle.
-    const area = 30 * 10 + Math.PI * 25;
-    expect(measureCadSketch(drawn, 'sketch').materialAreaMm2).toBeCloseTo(area, 6);
-    expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [0, 0] }, end: [4, 0], width: 10 }, construction: false, createId: idFactory() }))
-      .toThrow('A slot needs its end beyond half of its width');
+    // Centers 20 mm apart, 10 mm wide: a 20 x 10 band between the centers plus one full 5 mm circle.
+    expect(measureCadSketch(drawn, 'sketch').materialAreaMm2).toBeCloseTo(20 * 10 + Math.PI * 25, 6);
+    const guide = createCadFreshSketchDrawing({ drawing: { kind: 'slot', first: { kind: 'position', point: [0, 0] }, second: { kind: 'position', point: [10, 0] }, width: 2 }, construction: true, createId: idFactory() });
+    expect(guide.geometry.entities.every(entity => entity.construction)).toBe(true);
     // Far from the origin, rounding alone turns the short tangent supports of a rotated slot by more than 1e-12 radians.
-    const far = createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [100000, 100000] }, end: [100012, 100020], width: 10 }, construction: false, createId: idFactory() });
+    const far = createCadFreshSketchDrawing({ drawing: { kind: 'slot', first: { kind: 'position', point: [100000, 100000] }, second: { kind: 'position', point: [100012, 100020] }, width: 10 }, construction: false, createId: idFactory() });
     expect(far.geometry.relations.filter(relation => relation.kind === 'tangent-joint')).toHaveLength(4);
   });
 });

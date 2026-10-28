@@ -317,9 +317,9 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
     const box = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!box) throw new Error('Reconnection endpoint unavailable.');
     endpoints.push({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
   }
-  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
   for (const point of endpoints) await page.mouse.click(point.x, point.y);
-  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByRole('form', { name: 'Update dependent sketch areas', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Choose areas for Trim plate', exact: true }).click();
@@ -332,10 +332,12 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   expect(human.graph.points.slice(0, sketch.graph.points.length)).toEqual(sketch.graph.points);
   expect(human.graph.points.find((point: { id: string }) => point.id === cutPointId).position).toEqual([10, 0]);
   expect(human.graph.entities[0]).toEqual({ ...sketch.graph.entities[0], startPointId: cutPointId });
+  expect(human.graph.relations.slice(0, sketch.graph.relations.length)).toEqual([{ ...sketch.graph.relations[0], pointIds: [cutPointId, 'b'] }, ...sketch.graph.relations.slice(1)]);
   // The cut inside the fence stays on it, so the reconnected outline keeps following that line.
-  const attachment = human.graph.relations.at(-1);
+  const [attachment, ...joins] = human.graph.relations.slice(sketch.graph.relations.length);
   expect(attachment).toEqual({ id: expect.any(String), kind: 'point-on-line', pointId: cutPointId, lineId: 'fence' });
-  expect(human.graph.relations).toEqual([{ ...sketch.graph.relations[0], pointIds: [cutPointId, 'b'] }, ...sketch.graph.relations.slice(1), attachment]);
+  // The connector has its own two points, each attached to a survivor by a removable coincident relation.
+  expect(joins.map((relation: { kind: string; pointIds: readonly string[] }) => [relation.kind, relation.pointIds[1]])).toEqual([['coincident', 'a'], ['coincident', cutPointId]]);
   expect((await call(page, 'cad_build', { expectedVersion: current.version })).bodies[0].volumeMm3).toBeCloseTo(4000, 7);
   await page.keyboard.press('Control+z'); current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
@@ -352,8 +354,10 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   const changedPad = { ...pad, regionSelection: [replacement.items[0].reference] };
   const connector = human.graph.entities.find((entity: { id: string }) => !sketch.graph.entities.some(original => original.id === entity.id));
   expect(connector).toBeDefined();
+  const connectorPoints = human.graph.points.filter((point: { id: string }) => point.id !== cutPointId && !sketch.graph.points.some(original => original.id === point.id));
+  expect(connectorPoints.map((point: { id: string }) => point.id)).toEqual([connector.startPointId, connector.endPointId]);
   const edits = [{ kind: 'trim-sketch-entity', sketchId: sketch.id, trim },
-    { kind: 'append-sketch-entities', sketchId: sketch.id, geometry: { points: [], entities: [connector], relations: [] } },
+    { kind: 'append-sketch-entities', sketchId: sketch.id, geometry: { points: connectorPoints, entities: [connector], relations: joins } },
     { kind: 'update-feature', feature: changedPad }];
   const failed = await rawCall(page, 'cad_edit_document', { expectedVersion: current.version, edits: edits.slice(0, 1) }); expect(failed.ok).toBe(false);
   expect((await context(page)).version).toBe(current.version);
@@ -366,7 +370,7 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
 });
 
-test('removes a consumed middle span, reconnects both exact survivors and matches the same agent repair through save', async ({ page }) => {
+test('removes a consumed middle span, attaches a bridge to both exact survivors and matches the same agent repair through save', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const sketch = { id: 'outline', kind: 'sketch', name: 'Notched plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
     points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: ['20.0000', '10.00'] }, { id: 'd', position: [0, 10] },
@@ -410,14 +414,14 @@ test('removes a consumed middle span, reconnects both exact survivors and matche
   await page.keyboard.press('Control+z'); await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(sketch.graph.entities.length);
   await page.keyboard.press('Control+Shift+z'); await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(countAfterTrim);
   expect((await context(page)).version).toBe(base.version);
-  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
   const left = await page.locator('[data-cad-sketch-point="cut-left"]').boundingBox(); if (!left) throw new Error('Left retained endpoint unavailable.');
   await page.mouse.click(left.x + left.width / 2, left.y + left.height / 2);
   await page.keyboard.press('ArrowUp'); await page.keyboard.press('Space');
   await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Space');
   const right = await page.locator('[data-cad-sketch-point="cut-right"]').boundingBox(); if (!right) throw new Error('Right retained endpoint unavailable.');
   await page.mouse.click(right.x + right.width / 2, right.y + right.height / 2);
-  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByRole('form', { name: 'Update dependent sketch areas', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Choose areas for Notched blank', exact: true }).click();
@@ -432,6 +436,8 @@ test('removes a consumed middle span, reconnects both exact survivors and matche
   expect(human.graph.points.slice(0, sketch.graph.points.length)).toEqual(sketch.graph.points);
   expect(human.graph.relations.slice(0, sketch.graph.relations.length)).toEqual(sketch.graph.relations);
   const support = human.graph.relations.find((relation: { kind: string }) => relation.kind === 'collinear'); expect(support).toBeDefined();
+  expect(human.graph.relations.filter((relation: { kind: string; pointIds?: readonly string[] }) => relation.kind === 'coincident').map((relation: { pointIds: readonly string[] }) => relation.pointIds[1]))
+    .toEqual(['cut-left', 'cut-right']);
   expect(support.lineIds[0]).toBe('ab');
   expect(human.graph.entities[0]).toEqual({ ...sketch.graph.entities[0], endPointId: 'cut-left' });
   expect(human.graph.entities.find((entity: { id: string }) => entity.id === support.lineIds[1]))
@@ -564,7 +570,7 @@ test('chooses exact stacked snap identities, preserves a cancelled path attempt 
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
     .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: sketch.id } });
-  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
   const openChoice = async (id: string) => {
     const bounds = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!bounds) throw new Error('Stacked source point unavailable.');
     await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
@@ -579,14 +585,18 @@ test('chooses exact stacked snap identities, preserves a cancelled path attempt 
   await openChoice('a'); await page.getByRole('menuitem', { name: /^Point 1\b/ }).click();
   await openChoice('b'); await page.keyboard.press('Escape');
   expect((await context(page))).toMatchObject({ version: initialVersion, workflowOpen: true });
-  await expect(page.getByRole('button', { name: 'Finish path', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Finish polyline', exact: true })).toBeDisabled();
   await openChoice('b'); await page.getByRole('menuitem', { name: /^Point 2\b/ }).click();
-  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
   const human = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
-  expect(human.graph.points).toEqual(sketch.graph.points); expect(human.graph.relations).toEqual(sketch.graph.relations);
+  // The chosen points keep their identity: the connector gets its own points, attached to exactly the chosen ones.
+  expect(human.graph.points.slice(0, sketch.graph.points.length)).toEqual(sketch.graph.points); expect(human.graph.points).toHaveLength(sketch.graph.points.length + 2);
+  expect(human.graph.relations.slice(0, sketch.graph.relations.length)).toEqual(sketch.graph.relations);
   expect(human.graph.entities.slice(0, 3)).toEqual(sketch.graph.entities); expect(human.graph.entities).toHaveLength(4);
-  const connector = human.graph.entities[3]; expect(connector).toMatchObject({ kind: 'line', startPointId: 'a', endPointId: 'b', construction: false });
+  const [start, end] = human.graph.points.slice(sketch.graph.points.length), joins = human.graph.relations.slice(sketch.graph.relations.length);
+  const connector = human.graph.entities[3]; expect(connector).toMatchObject({ kind: 'line', startPointId: start.id, endPointId: end.id, construction: false });
+  expect(joins).toEqual([{ id: expect.any(String), kind: 'coincident', pointIds: [start.id, 'a'] }, { id: expect.any(String), kind: 'coincident', pointIds: [end.id, 'b'] }]);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(sketch);
@@ -595,7 +605,7 @@ test('chooses exact stacked snap identities, preserves a cancelled path attempt 
   const pad = { id: 'pad', kind: 'extrude', name: 'Joined plate', suppressed: false, sketchId: sketch.id, distance: ' 5e0 ',
     symmetric: false, operation: 'new', targetId: null, regionSelection: [regions.items[0].reference] };
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [
-    { kind: 'append-sketch-entities', sketchId: sketch.id, geometry: { points: [], entities: [connector], relations: [] } }, { kind: 'add-feature', feature: pad }
+    { kind: 'append-sketch-entities', sketchId: sketch.id, geometry: { points: [start, end], entities: [connector], relations: joins } }, { kind: 'add-feature', feature: pad }
   ] }); current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature).toEqual(human);
   const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
@@ -1385,7 +1395,7 @@ test('moves one shared graph point over an enclosing profile, with cancel, undo 
   await expect.poll(source).toMatchObject({ feature: { graph: { points: [{ position: ['0', '0'] }, { position: [25, 0] }, { position: [20, 10] }, { position: [0, 10] }] } } });
 });
 
-test('keeps an authored path open, moves one joint and closes a separate analytic line-arc boundary', async ({ page }) => {
+test('keeps an authored polyline open, moves one joint and closes a separate analytic line-arc boundary', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   let current = await context(page);
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
@@ -1393,7 +1403,7 @@ test('keeps an authored path open, moves one joint and closes a separate analyti
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-reference-plane', plane: 'XY' } });
   await page.getByRole('button', { name: 'Sketch', exact: true }).click();
   await enableGridSnap(page);
-  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click();
   const canvas = page.getByLabel('Sketch drawing canvas');
   const clickPoint = async (x: number, y: number) => {
     const point = await canvas.evaluate((element, [x, y]) => {
@@ -1404,7 +1414,7 @@ test('keeps an authored path open, moves one joint and closes a separate analyti
     await page.mouse.click(point.x, point.y);
   };
   await clickPoint(0, 0); await clickPoint(20, 0); await clickPoint(20, 20);
-  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
   const sketch = (await call(page, 'cad_read_features', { expectedVersion: current.version })).items[0];
   expect(sketch.graph.entities).toHaveLength(2); expect(sketch.graph.points.map((point: { position: number[] }) => point.position)).toEqual([[0, 0], [20, 0], [20, 20]]);
@@ -1419,11 +1429,11 @@ test('keeps an authored path open, moves one joint and closes a separate analyti
   await page.keyboard.press('Control+z');
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   current = await context(page);
-  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click();
   await clickPoint(40, 0); await clickPoint(60, 0);
   await page.getByRole('button', { name: '3-point Arc', exact: true }).click();
   await clickPoint(60, 20); await clickPoint(70, 10);
-  await page.getByRole('button', { name: 'Line', exact: true }).click(); await clickPoint(40, 20);
+  await page.getByRole('button', { name: 'Line segment', exact: true }).click(); await clickPoint(40, 20);
   await page.getByRole('button', { name: 'Close profile', exact: true }).click();
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
@@ -1654,13 +1664,14 @@ test('edits a consumed sketch privately with local history, rejected Finish, exa
     if (!box) throw new Error('Sketch endpoint unavailable.');
     endpoints.push({ x: box.x + box.width / 2 + 1, y: box.y + box.height / 2 + 1 });
   }
-  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
   for (const point of endpoints) await page.mouse.click(point.x, point.y);
-  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await expect(page.locator('[data-cad-sketch-entity]')).toHaveCount(4);
   expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: 'outline' })).feature).toEqual(original);
   await page.getByRole('button', { name: 'Select', exact: true }).click();
-  await expect(page.locator('[data-cad-sketch-point]')).toHaveCount(4);
+  // The replacement edge has its own two points, held on the survivors by coincident relations.
+  await expect(page.locator('[data-cad-sketch-point]')).toHaveCount(6);
   await page.getByRole('button', { name: 'Point 2 in Outline', exact: true }).press('ArrowRight');
   await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/25, 0 mm/);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
@@ -1705,9 +1716,9 @@ test('reselects explicit extrusion areas after replacing a consumed boundary wit
     const box = await page.locator(`[data-cad-sketch-point="${id}"]`).boundingBox(); if (!box) throw new Error('Endpoint unavailable.');
     endpoints.push({ x: box.x + box.width / 2 + 1, y: box.y + box.height / 2 + 1 });
   }
-  await page.getByRole('button', { name: 'Path', exact: true }).click();
+  await page.getByRole('button', { name: 'Polyline', exact: true }).click(); await page.getByRole('checkbox', { name: 'Create coincident relations', exact: true }).check();
   for (const point of endpoints) await page.mouse.click(point.x, point.y);
-  await page.getByRole('button', { name: 'Finish path', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish polyline', exact: true }).click();
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByRole('form', { name: 'Update dependent sketch areas', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeDisabled();

@@ -40,12 +40,13 @@ const splitLine = { kind: 'split-sketch-entity', sketchId: 'sketch', split: { ki
   splitPointId: 'cut', newEntityId: 'after', supportRelationId: 'support' } } satisfies CadEdit;
 
 describe('shared CAD edit preparation with the real sketch solver', () => {
-  it('moves a whole connected slot when its center is placed at the origin', async () => {
-    const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', center: { kind: 'position', point: [12, 8] }, end: [12, 28], width: 10 }, construction: false, createId: (() => { let next = 0; return () => `slot-${++next}`; })() });
+  it('moves a whole connected slot when an arc center is placed at the origin', async () => {
+    const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', first: { kind: 'position', point: [12, 8] }, second: { kind: 'position', point: [12, 38] }, width: 10 },
+      construction: false, createId: (() => { let next = 0; return () => `slot-${++next}`; })() });
     if (created.kind !== 'slot') throw new Error('Expected slot role map.');
     const empty = parseCadDocument({ ...createCadDocument('Slot', 'slot'), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [] }] });
     const drawn = (await prepareCadEdits(empty, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: created.geometry }], solver)).document;
-    const relations = (['x', 'y'] as const).map(axis => ({ id: `origin-${axis}`, kind: 'fixed-axis' as const, pointId: created.centerPointId, axis, value: 0 }));
+    const relations = (['x', 'y'] as const).map(axis => ({ id: `origin-${axis}`, kind: 'fixed-axis' as const, pointId: created.centerPointIds[0], axis, value: 0 }));
     const placement = cadSketchRelationPlacement(graphOf(drawn), relations);
     if (!placement) throw new Error('Expected the free slot to be carried.');
     const centered = (await prepareCadEdits(drawn, [{ kind: 'translate-sketch-geometry', sketchId: 'sketch', ...placement },

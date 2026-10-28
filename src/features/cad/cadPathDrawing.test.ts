@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CadError } from '@/domain/cad/cadError';
-import { closeCadPathDraft, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, updateCadPathDraft, type CadPathDraft } from './cadPathDrawing';
+import type { CadConstructionPoint } from '@/domain/cad/cadPathConstruction';
+import { cadPathDraftPicks, closeCadPathDraft, closeCadPolylineProfile, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft,
+  type CadPathDraft, type CadPathDraftPick } from './cadPathDrawing';
+
+const join = (point: CadConstructionPoint, sourcePointId: string): CadPathDraftPick => ({ kind: 'coincident', point, sourcePointId, relationId: `join-${sourcePointId}` });
 
 describe('pending mixed path drawing', () => {
   it('finishes an open curve without closure, strips transient picks and retains failed drafts', () => {
@@ -55,6 +59,16 @@ describe('pending mixed path drawing', () => {
     for (const point of [[5, 5], [0, 5], [5, 0]] as const) crossing = updateCadPathDraft(crossing, { kind: 'point', point });
     const before = JSON.stringify(crossing); expect(() => closeCadPathDraft(crossing)).toThrow(CadError); expect(JSON.stringify(crossing)).toBe(before);
   });
+  it('keeps a line-only legacy polyline an editable polygon and any arc contour a path', () => {
+    const draw = (points: readonly CadConstructionPoint[]) => points.reduce<CadPathDraft>((draft, point) => updateCadPathDraft(draft, { kind: 'point', point }), createCadPathDraft());
+    expect(closeCadPolylineProfile(draw([[0, 0], [20, 0], [20, 10]]))).toEqual({ kind: 'polygon', points: [[0, 0], [20, 0], [20, 10]] });
+    expect(closeCadPolylineProfile(draw([[0, 0], [20, 0], [20, 10], [0, 0]]))).toEqual({ kind: 'polygon', points: [[0, 0], [20, 0], [20, 10]] });
+    expect(() => closeCadPolylineProfile(draw([[0, 0], [20, 0]]))).toThrow('three');
+    expect(() => closeCadPolylineProfile(draw([[0, 0], [20, 0], [0, 0]]))).toThrow('three');
+    let arc = updateCadPathDraft(draw([[0, 0], [20, 0]]), { kind: 'mode', mode: 'arc' });
+    arc = updateCadPathDraft(updateCadPathDraft(arc, { kind: 'point', point: [0, 0] }), { kind: 'point', point: [10, 10] });
+    expect(closeCadPolylineProfile(arc)).toMatchObject({ kind: 'path', segments: [{ kind: 'line' }, { kind: 'arc' }] });
+  });
   it('copies points so event-owned arrays cannot mutate the draft', () => {
     const point: [number, number] = [1, 2];
     const draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point }); point[0] = 42;
@@ -62,24 +76,41 @@ describe('pending mixed path drawing', () => {
     if (draft.kind === 'idle') throw new Error('Expected anchor'); expect(Object.isFrozen(draft.start)).toBe(true);
   });
 
-  it('retains deliberately picked endpoint identities through modes and undo while ignoring arc through-point identities', () => {
-    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [5, 0], existingPointId: 'start' });
-    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 0], existingPointId: 'line-end' });
+  it('retains deliberately picked endpoint attachments through modes and undo while ignoring arc through-point picks', () => {
+    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [5, 0], pick: join([5, 0], 'start') });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 0], pick: join([10, 0], 'line-end') });
     draft = updateCadPathDraft(draft, { kind: 'mode', mode: 'arc' });
-    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], existingPointId: 'arc-end' });
-    expect(draft).toMatchObject({ startPointId: 'start', endPointId: 'arc-end', segments: [{ endPointId: 'line-end' }] });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], pick: join([10, 10], 'arc-end') });
+    expect(draft).toMatchObject({ startPick: join([5, 0], 'start'), endPick: join([10, 10], 'arc-end'), segments: [{ endPick: join([10, 0], 'line-end') }] });
     draft = updateCadPathDraft(draft, { kind: 'undo-last' });
-    expect(draft).toMatchObject({ kind: 'ready', startPointId: 'start', segments: [{ endPointId: 'line-end' }] });
-    expect(draft).not.toHaveProperty('endPointId');
-    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], existingPointId: 'arc-end' });
-    draft = updateCadPathDraft(draft, { kind: 'point', point: [15, 5], existingPointId: 'through-only' });
-    expect(draft).toMatchObject({ kind: 'ready', startPointId: 'start', segments: [{ endPointId: 'line-end' }, { endPointId: 'arc-end' }] });
+    expect(draft).toMatchObject({ kind: 'ready', startPick: join([5, 0], 'start'), segments: [{ endPick: join([10, 0], 'line-end') }] });
+    expect(draft).not.toHaveProperty('endPick');
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], pick: join([10, 10], 'arc-end') });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [15, 5], pick: join([15, 5], 'through-only') });
+    expect(draft).toMatchObject({ kind: 'ready', segments: [{ endPick: join([10, 0], 'line-end') }, { endPick: join([10, 10], 'arc-end') }] });
     expect(JSON.stringify(draft)).not.toContain('through-only');
+    expect(cadPathDraftPicks(draft).map(pick => pick.kind === 'coincident' && pick.sourcePointId)).toEqual(['start', 'line-end', 'arc-end']);
     const curve = finishCadCurveDraft(draft);
-    expect(curve).toHaveLength(2); expect(JSON.stringify(curve)).not.toContain('PointId');
+    expect(curve).toHaveLength(2); expect(JSON.stringify(curve)).not.toContain('Pick');
     draft = updateCadPathDraft(draft, { kind: 'undo-last' });
-    expect(draft).toMatchObject({ startPointId: 'start', segments: [{ endPointId: 'line-end' }] });
+    expect(draft).toMatchObject({ startPick: join([5, 0], 'start'), segments: [{ endPick: join([10, 0], 'line-end') }] });
     expect(updateCadPathDraft(draft, { kind: 'cancel' })).toEqual({ kind: 'idle', mode: 'arc' });
+  });
+
+  it('keeps plain positions unattached, rejects a moved pick and releases every attachment without moving a point', () => {
+    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [0, 0], pick: { kind: 'position', point: [0, 0] } });
+    expect(draft).not.toHaveProperty('startPick');
+    const before = JSON.stringify(draft);
+    expect(() => updateCadPathDraft(draft, { kind: 'point', point: [10, 0], pick: join([10, 1e-9], 'moved') })).toThrow(CadError);
+    expect(JSON.stringify(draft)).toBe(before);
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 0], pick: { kind: 'on-line', point: [10, 0], lineId: 'edge', relationId: 'on-edge' } });
+    draft = updateCadPathDraft(draft, { kind: 'mode', mode: 'arc' });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], pick: { kind: 'datum', point: [10, 10], datum: 'origin', relationIds: [] } });
+    expect(cadPathDraftPicks(draft).map(pick => pick.kind)).toEqual(['on-line', 'datum']);
+    const released = releaseCadPathDraftPicks(draft);
+    expect(cadPathDraftPicks(released)).toEqual([]); expect(JSON.stringify(released)).not.toContain('Pick');
+    expect(released).toMatchObject({ kind: 'arc-through', start: [0, 0], end: [10, 10], segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }] });
+    expect(releaseCadPathDraftPicks(released)).toBe(released);
   });
   it('computes hover previews without traversing or regenerating previous segments', () => {
     // The endpoint lookup is the only allowed read of a large committed chain.
