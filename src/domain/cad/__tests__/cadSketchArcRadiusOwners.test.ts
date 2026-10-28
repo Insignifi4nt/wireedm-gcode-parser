@@ -68,7 +68,7 @@ describe('retained arc radius ownership in exact boundary edits', () => {
     expect(JSON.stringify(graph)).toBe(before);
   });
 
-  it('does not release detached coordinate/point drivers, a peer-only radius owner, a corner owner, or a deleted arc owner', () => {
+  it('does not release detached coordinate/point drivers, a peer-only radius owner or a corner owner, and deletes an arc with its owner', () => {
     const source = drivenStartSource(), parameters = source.parameters, graph = source.graph, before = JSON.stringify(graph);
     const explicit = parseCadSketchGraph({ ...graph, relations: [...graph.relations,
       { id: 'endpoint-driver', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: ' 0 ' }] });
@@ -83,8 +83,8 @@ describe('retained arc radius ownership in exact boundary edits', () => {
     expect(() => prepareCadSketchExtend({ graph: peer, parameters, entityId: 'arc', end: 'start' }))
       .toThrowError(expect.objectContaining({ code: 'dependent-sketch-extend', relationIds: ['peer-radius'], pointIds: ['b'] }));
     const isolated = parseCadSketchGraph({ ...graph, entities: graph.entities.filter(entity => entity.id === 'arc') });
-    expect(() => prepareCadSketchTrim({ graph: isolated, parameters, entityId: 'arc', parameter: .5 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['radius'] }));
+    expect(prepareCadSketchTrim({ graph: isolated, parameters, entityId: 'arc', parameter: .5 }).target)
+      .toEqual({ kind: 'delete', entityId: 'arc', parameter: .5, removedRelationIds: ['radius'] });
     let next = 0;
     const corner = createCadSketchCornerTreatment({ graph: parseCadSketchGraph({ points: [
       { id: 'v', position: [0, 0] }, { id: 'x', position: [20, 0] }, { id: 'y', position: [0, 20] }], entities: [

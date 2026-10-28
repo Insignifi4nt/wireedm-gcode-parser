@@ -55,7 +55,7 @@ describe('exact middle-line Trim', () => {
     }
   });
 
-  it('retains unchanged outer-point dimensions and whole-support owners while rejecting finite entity owners', () => {
+  it('retains unchanged outer-point dimensions and whole-support owners, removes finite length owners and moves end rays', () => {
     const original = fourCuts(), graph = parseCadSketchGraph({ ...original,
       points: [...original.points, { id: 'r1', position: [-5, -4] }, { id: 'r2', position: [30, -4] },
         { id: 's1', position: [40, 0] }, { id: 's2', position: [45, 0] }, { id: 'alias', position: [-5, 0] }],
@@ -70,12 +70,19 @@ describe('exact middle-line Trim', () => {
     if (!('survivors' in prepared)) throw new Error('Middle preparation missing.');
     const result = trimCadSketchEntity({ graph, parameters, trim: { ...prepared.target, cutPointIds: ['cut', 'c2'], newEntityId: 'after', supportRelationId: 'support' } });
     expect(result.graph.relations.slice(0, graph.relations.length)).toEqual(graph.relations);
-    for (const owner of [{ id: 'size', kind: 'equal-length', lineIds: ['edge', 'parallel-line'] },
-      { id: 'angle', kind: 'line-angle', rays: [{ lineId: 'edge', towardPointId: 'b' }, { lineId: 'fence2', towardPointId: 'd2' }], sense: 'ccw', value: 90 }]) {
-      const blocked = parseCadSketchGraph({ ...graph, relations: [...graph.relations, owner] });
-      expect(() => prepareCadSketchTrim({ graph: blocked, parameters, entityId: 'edge', parameter: .5 }))
-        .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: [owner.id], pointIds: [] }));
-    }
+    const sized = parseCadSketchGraph({ ...graph, relations: [...graph.relations, { id: 'size', kind: 'equal-length', lineIds: ['edge', 'parallel-line'] }] });
+    const sizedPreview = prepareCadSketchTrim({ graph: sized, parameters, entityId: 'edge', parameter: .5 });
+    if (sizedPreview.target.kind !== 'middle') throw new Error('Expected middle trim.');
+    expect(sizedPreview.target.removedRelationIds).toEqual(['size']);
+    expect(trimCadSketchEntity({ graph: sized, parameters, trim: { ...sizedPreview.target, cutPointIds: ['cut', 'c2'], newEntityId: 'after', supportRelationId: 'support' } })
+      .graph.relations.slice(0, graph.relations.length)).toEqual(graph.relations);
+    const angle = { id: 'angle', kind: 'line-angle' as const, rays: [{ lineId: 'edge', towardPointId: 'b' }, { lineId: 'fence2', towardPointId: 'd2' }] as const, sense: 'ccw' as const, value: 90 };
+    const angled = parseCadSketchGraph({ ...graph, relations: [...graph.relations, angle] });
+    const angledPreview = prepareCadSketchTrim({ graph: angled, parameters, entityId: 'edge', parameter: .5 });
+    if (angledPreview.target.kind !== 'middle') throw new Error('Expected middle trim.');
+    expect(angledPreview.target.removedRelationIds).toBeUndefined();
+    expect(trimCadSketchEntity({ graph: angled, parameters, trim: { ...angledPreview.target, cutPointIds: ['cut', 'c2'], newEntityId: 'after', supportRelationId: 'support' } })
+      .graph.relations.find(relation => relation.id === 'angle')).toEqual({ ...angle, rays: [{ lineId: 'after', towardPointId: 'b' }, angle.rays[1]] });
   });
 
   it('rejects stale/forged witnesses and colliding or malformed named edits atomically', () => {

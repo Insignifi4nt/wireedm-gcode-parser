@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
 import { compileCadSketchGraph } from '../cadSketchGraphGeometry';
-import { CadSketchTrimDependencyError, prepareCadSketchTrim, trimCadSketchEntity } from '../cadSketchTrimExtend';
+import { prepareCadSketchTrim, trimCadSketchEntity } from '../cadSketchTrimExtend';
 import { cadAnalyticSegments } from '../cadAnalyticSegments';
 import { signedAreaOfPath } from '@/domain/path-intel/segments';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
@@ -40,23 +40,36 @@ describe('exact sketch end Trim', () => {
     expect(JSON.stringify(graph)).toBe(before);
   });
 
-  it('keeps ambiguous shared endpoint-pair ownership, arc direction pairs and no-hit line deletion blocked', () => {
+  it('keeps a shared endpoint-pair axis relation, and removes only the relations of deleted edges and detached ends', () => {
     const original = fences(), horizontal = { id: 'direction', kind: 'horizontal' as const, pointIds: ['b', 'a'] as const };
     const shared = parseCadSketchGraph({ ...original, points: [...original.points, { id: 'center', position: [10, 0] }],
       entities: [...original.entities, { id: 'other-arc', kind: 'arc', construction: false, centerPointId: 'center', startPointId: 'a', endPointId: 'b', direction: 'ccw' }],
       relations: [horizontal] });
-    expect(() => prepareCadSketchTrim({ graph: shared, parameters: {}, entityId: 'edge', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['direction'] }));
+    const kept = prepareCadSketchTrim({ graph: shared, parameters: {}, entityId: 'edge', parameter: 0.1 });
+    if (kept.target.kind !== 'end') throw new Error('Expected end trim.');
+    expect(kept.target.removedRelationIds).toBeUndefined();
+    const keptResult = trimCadSketchEntity({ graph: shared, parameters: {}, trim: { ...kept.target, cutPointId: 'cut' } });
+    expect(keptResult.graph.relations).toEqual([horizontal]); expect(keptResult.graph.points.map(point => point.id)).toContain('a');
     const deleted = parseCadSketchGraph({ ...original, entities: [original.entities[0]], relations: [horizontal] });
-    expect(() => prepareCadSketchTrim({ graph: deleted, parameters: {}, entityId: 'edge', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['direction'] }));
+    const deletion = prepareCadSketchTrim({ graph: deleted, parameters: {}, entityId: 'edge', parameter: 0.1 });
+    expect(deletion.target).toEqual({ kind: 'delete', entityId: 'edge', parameter: 0.1, removedRelationIds: ['direction'] });
+    if (deletion.target.kind !== 'delete') throw new Error('Expected complete deletion.');
+    const { removedRelationIds: confirmed, ...unconfirmed } = deletion.target;
+    expect(confirmed).toEqual(['direction']);
+    expect(() => trimCadSketchEntity({ graph: deleted, parameters: {}, trim: unconfirmed }))
+      .toThrowError(expect.objectContaining({ code: 'unconfirmed-sketch-trim-removals' }));
+    const emptied = trimCadSketchEntity({ graph: deleted, parameters: {}, trim: deletion.target }).graph;
+    expect(emptied).toEqual({ points: without(deleted.points, 'a', 'b'), entities: [], relations: [] });
     const arc = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 0] }, { id: 'a', position: [10, 0] }, { id: 'b', position: [-10, 0] },
       { id: 'c', position: [5, -20] }, { id: 'd', position: [5, 20] }], entities: [
       { id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 'a', endPointId: 'b', direction: 'ccw' },
       { id: 'fence', kind: 'line', construction: true, startPointId: 'c', endPointId: 'd' }], relations: [horizontal,
       { id: 'radius', kind: 'radial-size', entityId: 'arc', quantity: 'radius', value: ' 10 ' }] });
-    expect(() => prepareCadSketchTrim({ graph: arc, parameters: {}, entityId: 'arc', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['direction'], pointIds: ['a'] }));
+    const arcTrim = prepareCadSketchTrim({ graph: arc, parameters: {}, entityId: 'arc', parameter: 0.1 });
+    expect(arcTrim.target).toMatchObject({ kind: 'end', end: 'start', removedRelationIds: ['direction'] });
+    if (arcTrim.target.kind !== 'end') throw new Error('Expected end trim.');
+    const trimmedArc = trimCadSketchEntity({ graph: arc, parameters: {}, trim: { ...arcTrim.target, cutPointId: 'cut' } }).graph;
+    expect(trimmedArc.relations).toEqual([arc.relations[1]]); expect(trimmedArc.points.map(point => point.id)).not.toContain('a');
   });
 
   it('rejects an out-of-range cut on a legal arc bulge rather than exposing a malformed ready witness', () => {
@@ -187,28 +200,32 @@ describe('exact sketch end Trim', () => {
     expect(JSON.stringify(graph)).toBe(before);
   });
 
-  it('reports actual whole-entity and detached-end drivers, while preserving unrelated exact relation text', () => {
+  it('removes detached-end and redefined whole-entity relations only when confirmed, while preserving unrelated exact relation text', () => {
     const original = fences(), graph = parseCadSketchGraph({ ...original, relations: [
       { id: 'span', kind: 'distance', pointIds: ['a', 'b'], value: ' length ' },
       { id: 'horizontal', kind: 'horizontal', pointIds: ['a', 'b'] }] });
-    try { prepareCadSketchTrim({ graph, parameters: { length: 20 }, entityId: 'edge', parameter: 0.1 }); throw new Error('Expected blocker.'); }
-    catch (error) {
-      expect(error).toBeInstanceOf(CadSketchTrimDependencyError);
-      if (!(error instanceof CadSketchTrimDependencyError)) throw error;
-      expect(error.relationIds).toEqual(['span']); expect(error.pointIds).toEqual(['a']);
-      expect(Object.isFrozen(error.relationIds)).toBe(true); expect(error.message).not.toContain('span');
-    }
+    const preview = prepareCadSketchTrim({ graph, parameters: { length: 20 }, entityId: 'edge', parameter: 0.1 });
+    if (preview.target.kind !== 'end') throw new Error('Expected end trim.');
+    const target = preview.target, { removedRelationIds, ...unconfirmed } = target;
+    expect(removedRelationIds).toEqual(['span']);
+    expect(() => trimCadSketchEntity({ graph, parameters: { length: 20 }, trim: { ...unconfirmed, cutPointId: 'cut' } }))
+      .toThrowError(expect.objectContaining({ code: 'unconfirmed-sketch-trim-removals', message: expect.stringContaining('span') }));
+    expect(() => trimCadSketchEntity({ graph, parameters: { length: 20 }, trim: { ...target, removedRelationIds: ['horizontal'], cutPointId: 'cut' } }))
+      .toThrowError(expect.objectContaining({ code: 'unconfirmed-sketch-trim-removals' }));
+    expect(trimCadSketchEntity({ graph, parameters: { length: 20 }, trim: { ...preview.target, cutPointId: 'cut' } }).graph.relations)
+      .toEqual([{ id: 'horizontal', kind: 'horizontal', pointIds: ['cut', 'b'] }]);
     const driven = parseCadSketchGraph({ ...original, points: original.points.map(point => point.id === 'a' ? { ...point, position: [' origin ', 0] } : point) });
-    expect(() => prepareCadSketchTrim({ graph: driven, parameters: { origin: 0 }, entityId: 'edge', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: [], pointIds: ['a'] }));
+    const drivenPreview = prepareCadSketchTrim({ graph: driven, parameters: { origin: 0 }, entityId: 'edge', parameter: 0.1 });
+    if (drivenPreview.target.kind !== 'end') throw new Error('Expected end trim.');
+    expect(trimCadSketchEntity({ graph: driven, parameters: { origin: 0 }, trim: { ...drivenPreview.target, cutPointId: 'cut' } }).graph.points.map(point => point.id))
+      .not.toContain('a');
     const owned = parseCadSketchGraph({ ...original, points: original.points.map(point => point.id === 'c' ? { ...point, position: [5, -10] }
       : point.id === 'd' ? { ...point, position: [5, 10] } : point), relations: [{ id: 'equal', kind: 'equal-length', lineIds: ['edge', 'left'] }] });
-    expect(() => prepareCadSketchTrim({ graph: owned, parameters: {}, entityId: 'edge', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'dependent-sketch-trim', relationIds: ['equal'] }));
+    expect(prepareCadSketchTrim({ graph: owned, parameters: {}, entityId: 'edge', parameter: 0.1 }).target).toMatchObject({ removedRelationIds: ['equal'] });
     const unrelated = parseCadSketchGraph({ ...original, relations: [{ id: 'height', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: ' 0 ' }] });
-    const preview = prepareCadSketchTrim({ graph: unrelated, parameters: {}, entityId: 'edge', parameter: 0.1 });
-    if (preview.target.kind !== 'end') throw new Error('Expected end trim.');
-    expect(trimCadSketchEntity({ graph: unrelated, parameters: {}, trim: { ...preview.target, cutPointId: 'cut' } }).graph.relations).toEqual(unrelated.relations);
+    const kept = prepareCadSketchTrim({ graph: unrelated, parameters: {}, entityId: 'edge', parameter: 0.1 });
+    if (kept.target.kind !== 'end') throw new Error('Expected end trim.');
+    expect(trimCadSketchEntity({ graph: unrelated, parameters: {}, trim: { ...kept.target, cutPointId: 'cut' } }).graph.relations).toEqual(unrelated.relations);
   });
 
   it('rejects stale, forged, colliding and nonportable requests without retargeting or mutating source', () => {
@@ -227,23 +244,25 @@ describe('exact sketch end Trim', () => {
     expect(JSON.stringify(graph)).toBe(before);
   });
 
-  it('never turns tangent, overlapping, tied undeclared or unrepresentable cuts into whole-edge deletion', () => {
+  it('cuts at overlap ends and tied contacts, but never turns tangent or unrepresentable cuts into whole-edge deletion', () => {
     const original = fences(), overlap = parseCadSketchGraph({ ...original, points: original.points.map(point => point.id === 'c' ? { ...point, position: [5, 0] }
       : point.id === 'd' ? { ...point, position: [10, 0] } : point), entities: original.entities.filter(entity => entity.id !== 'right') });
-    expect(() => prepareCadSketchTrim({ graph: overlap, parameters: {}, entityId: 'edge', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+    expect(prepareCadSketchTrim({ graph: overlap, parameters: {}, entityId: 'edge', parameter: 0.1 }).target)
+      .toMatchObject({ kind: 'end', end: 'start', boundary: { entityId: 'left', endpointPointId: 'c', position: [5, 0] } });
+    expect(prepareCadSketchTrim({ graph: overlap, parameters: {}, entityId: 'edge', parameter: 0.375 }).target)
+      .toMatchObject({ kind: 'middle', boundaries: [{ entityId: 'left', endpointPointId: 'c' }, { entityId: 'left', endpointPointId: 'd' }] });
+    expect(prepareCadSketchTrim({ graph: overlap, parameters: {}, entityId: 'left', parameter: 0.5 }).target).toMatchObject({ kind: 'delete', entityId: 'left' });
     const tangent = parseCadSketchGraph({ points: [{ id: 'a', position: [-10, 5] }, { id: 'b', position: [10, 5] }, { id: 'o', position: [0, 0] }], entities: [
       { id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
       { id: 'ring', kind: 'circle', construction: true, centerPointId: 'o', radius: 5 }], relations: [] });
     expect(() => prepareCadSketchTrim({ graph: tangent, parameters: {}, entityId: 'edge', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+      .toThrowError(expect.objectContaining({ code: 'tangent-sketch-trim' }));
     const endpointTangent = parseCadSketchGraph({ ...tangent, points: tangent.points.map(point => point.id === 'b' ? { ...point, position: [0, 5] } : point) });
-    expect(() => prepareCadSketchTrim({ graph: endpointTangent, parameters: {}, entityId: 'edge', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+    expect(prepareCadSketchTrim({ graph: endpointTangent, parameters: {}, entityId: 'edge', parameter: 0.1 }).target).toMatchObject({ kind: 'delete' });
     const tied = parseCadSketchGraph({ ...original, points: original.points.map(point => point.id === 'c' || point.id === 'e' ? { ...point, position: [5, 0] }
       : point.id === 'd' ? { ...point, position: [5, 10] } : point.id === 'f' ? { ...point, position: [5, -10] } : point) });
-    expect(() => prepareCadSketchTrim({ graph: tied, parameters: {}, entityId: 'edge', parameter: 0.1 }))
-      .toThrowError(expect.objectContaining({ code: 'ambiguous-sketch-trim' }));
+    expect(prepareCadSketchTrim({ graph: tied, parameters: {}, entityId: 'edge', parameter: 0.1 }).target)
+      .toMatchObject({ kind: 'end', boundary: { entityId: 'left', endpointPointId: 'c' } });
     const declared = parseCadSketchGraph({ ...tied, relations: [{ id: 'joint', kind: 'coincident', pointIds: ['c', 'e'] }] });
     const preview = prepareCadSketchTrim({ graph: declared, parameters: {}, entityId: 'edge', parameter: 0.1 });
     expect(preview.target).toMatchObject({ kind: 'end', boundary: { entityId: 'left', endpointPointId: 'c' } });

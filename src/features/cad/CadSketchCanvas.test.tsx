@@ -593,16 +593,17 @@ describe('graph spatial selection', () => {
     expect(Number(preview?.querySelector('.is-removed')?.getAttribute('x2')) + view.centerMm[0]).toBe(4);
     expect(Number(preview?.querySelector('.is-retained')?.getAttribute('x1')) + view.centerMm[0]).toBe(4);
     const pointId = preview?.querySelector('[data-cad-sketch-trim-point]')?.getAttribute('data-cad-sketch-trim-point');
-    expect(trim?.getAttribute('aria-description')).toMatch(/one-time|one time/i);
+    expect(trim?.getAttribute('aria-description')).toMatch(/stays on the cutting line/);
     await act(async () => trim?.click());
     expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'trim-sketch-entity', sketchId: h.feature.id, trim: {
-      kind: 'end', entityId: 'ab', parameter: expect.closeTo(.2, 12), end: 'start', cutPointId: pointId,
+      kind: 'end', entityId: 'ab', parameter: expect.closeTo(.2, 12), end: 'start', cutPointId: pointId, attachRelationId: expect.any(String),
       boundary: { entityId: 'fence', index: 0, parameter: .4, position: [4, 0] }
     } }], expect.any(AbortSignal));
     const acceptedDocument = applyCadEdits(h.props().graphControls!.document, h.edited.mock.calls[0][0]), accepted = acceptedDocument.features[0];
     if (accepted.kind !== 'sketch') throw new Error('Accepted trim missing.');
     expect(accepted.graph?.entities[0]).toMatchObject({ id: 'ab', startPointId: pointId, endPointId: 'b' });
     expect(accepted.graph?.points.filter(point => point.id !== pointId)).toEqual(h.feature.graph?.points.filter(point => point.id !== 'a'));
+    expect(accepted.graph?.relations).toContainEqual({ id: h.edited.mock.calls[0][0][0].trim.attachRelationId, kind: 'point-on-line', pointId, lineId: 'fence' });
     await h.show({ sketch: accepted, documentVersion: 'accepted', graphControls: { ...h.props().graphControls!, document: acceptedDocument } });
     await act(async () => operation.resolve(undefined));
     expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId }); expect(h.pending).toHaveBeenLastCalledWith(false);
@@ -722,6 +723,7 @@ describe('graph spatial selection', () => {
     expect(h.edited).not.toHaveBeenCalled(); await act(async () => h.trim().click());
     expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'trim-sketch-entity', sketchId: h.feature.id, trim: {
       kind: 'middle', entityId: 'ab', parameter: expect.closeTo(.53, 12), cutPointIds: ids, newEntityId: expect.any(String), supportRelationId: expect.any(String),
+      attachRelationIds: [null, expect.any(String)],
       boundaries: [{ entityId: 'cutter1', index: 0, parameter: .4, position: [4, 0], endpointPointId: 'cut1a' },
         { entityId: 'cutter2', index: 0, parameter: .6, position: [6, 0] }]
     } }], expect.any(AbortSignal));
@@ -730,7 +732,8 @@ describe('graph spatial selection', () => {
     const target = h.edited.mock.calls[0][0][0].trim;
     expect(accepted.graph.entities[0]).toMatchObject({ id: 'ab', startPointId: 'a', endPointId: 'cut1a' });
     expect(accepted.graph.entities.find(entity => entity.id === target.newEntityId)).toMatchObject({ startPointId: ids[1], endPointId: 'b' });
-    expect(accepted.graph.relations).toEqual([{ id: target.supportRelationId, kind: 'collinear', lineIds: ['ab', target.newEntityId] }]);
+    expect(accepted.graph.relations).toEqual([{ id: target.supportRelationId, kind: 'collinear', lineIds: ['ab', target.newEntityId] },
+      { id: target.attachRelationIds[1], kind: 'point-on-line', pointId: ids[1], lineId: 'cutter2' }]);
     expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: ids[0] }); expect(h.feature).toEqual(original); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
   it('dismisses a middle removal without changing source and cancels its deferred completion after the actual frame changes', async () => {
@@ -877,12 +880,12 @@ describe('graph spatial selection', () => {
     await act(async () => operation.resolve(undefined));
     expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled(); expect(h.feature).toEqual(original);
   });
-  it('blocks end Trim with the actual detached endpoint owner and cancels a late trim receipt on blur', async () => {
+  it('names the detached endpoint owner end Trim removes and cancels a late trim receipt on blur', async () => {
     const h = await trimFixture(), feature = { ...h.feature, graph: { ...h.feature.graph!, relations: [{ id: 'anchor', kind: 'fixed-axis' as const, pointId: 'a', axis: 'x' as const, value: 0 }] } };
     await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
     await h.open();
     let trim = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
-    expect(trim).toBeDefined(); expect(trim?.disabled).toBe(true); expect(trim?.getAttribute('aria-description')).toMatch(/Point 1/);
+    expect(trim).toBeDefined(); expect(trim?.disabled).toBe(false); expect(trim?.getAttribute('aria-description')).toMatch(/Also removes .*Point 1/);
     await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     await h.show({ sketch: h.feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [h.feature] } } });
     const operation = deferred<void>(); h.edited.mockReturnValue(operation.promise); await h.open();

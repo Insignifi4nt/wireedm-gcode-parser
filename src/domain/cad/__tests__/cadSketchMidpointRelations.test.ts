@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '../cadSketchGraph';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds, mapCadSketchRelationScalars } from '../cadSketchGraphReferences';
 import { splitCadSketchEntity, CadSketchSplitDependencyError } from '../cadSketchSplit';
-import { prepareCadSketchTrim, prepareCadSketchExtend, CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '../cadSketchTrimExtend';
+import { prepareCadSketchTrim, prepareCadSketchExtend, CadSketchExtendDependencyError } from '../cadSketchTrimExtend';
 import { deleteCadSketchElements } from '../cadSketchGraphEdits';
 import type { CadSketchFeature } from '../cadDocument';
 
@@ -46,14 +46,14 @@ describe('persistent line midpoint intent', () => {
     expect(reversed.points[0].position[0]).toBe(' origin ');
   });
 
-  it('blocks midpoint line surgery and point detachment while cascade deletion remains deliberate', () => {
+  it('blocks midpoint line Split and Extend, removes it only with a confirmed Trim, and keeps cascade deletion deliberate', () => {
     const raw = source(), graph = parseCadSketchGraph({ ...raw,
       points: [...raw.points, ...[2, 8, 15].flatMap(x => [{ id: `low${x}`, position: [x, -2] }, { id: `high${x}`, position: [x, 2] }])],
       entities: [...raw.entities, ...[2, 8, 15].map(x => ({ id: `cutter${x}`, kind: 'line', construction: true, startPointId: `low${x}`, endPointId: `high${x}` }))] });
     const before = JSON.stringify(graph);
     expect(() => splitCadSketchEntity({ graph, parameters: {}, split: { kind: 'line', entityId: 'line', parameter: .5,
       splitPointId: 'split', newEntityId: 'second', supportRelationId: 'direction' } })).toThrow(CadSketchSplitDependencyError);
-    for (const parameter of [.1, .5]) expect(() => prepareCadSketchTrim({ graph, parameters: {}, entityId: 'line', parameter })).toThrow(CadSketchTrimDependencyError);
+    for (const parameter of [.1, .5]) expect(prepareCadSketchTrim({ graph, parameters: {}, entityId: 'line', parameter }).target.removedRelationIds).toEqual(['mid']);
     expect(() => prepareCadSketchExtend({ graph, parameters: {}, entityId: 'line', end: 'end' })).toThrow(CadSketchExtendDependencyError);
     const sketch: CadSketchFeature = { id: 's', kind: 'sketch', name: 'Midpoint', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph };
     expect(() => deleteCadSketchElements({ sketch, entityIds: ['line'], pointIds: [], relationIds: [], cascade: false })).toThrow(/depend/i);
@@ -63,7 +63,8 @@ describe('persistent line midpoint intent', () => {
     const branch = parseCadSketchGraph({ ...raw, points: [...raw.points, { id: 'end', position: [5, 10] }, { id: 'cut-a', position: [3, 5] }, { id: 'cut-b', position: [7, 5] }],
       entities: [...raw.entities, { id: 'branch', kind: 'line', construction: false, startPointId: 'm', endPointId: 'end' },
         { id: 'cross', kind: 'line', construction: true, startPointId: 'cut-a', endPointId: 'cut-b' }] });
-    expect(() => prepareCadSketchTrim({ graph: branch, parameters: {}, entityId: 'branch', parameter: .1 })).toThrow(CadSketchTrimDependencyError);
+    // Trimming away the branch end on the midpoint leaves that point unused, so its midpoint intent leaves with it.
+    expect(prepareCadSketchTrim({ graph: branch, parameters: {}, entityId: 'branch', parameter: .1 }).target.removedRelationIds).toEqual(['mid']);
     expect(JSON.stringify(graph)).toBe(before);
   });
 });
