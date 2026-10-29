@@ -1884,6 +1884,38 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
+  it('keeps a point on an arc or circle with Coincident, picked after the tool or from the selection, and removes it from the selection menu', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Curves', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'o', position: [0, 0] }, { id: 's', position: [10, 0] }, { id: 'e', position: [0, 10] }, { id: 'c', position: [30, 0] }, { id: 'p', position: [6, 8] }, { id: 'q', position: [34, 3] }],
+      entities: [{ id: 'bow', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 's', endPointId: 'e', direction: 'ccw' },
+        { id: 'ring', kind: 'circle', construction: false, centerPointId: 'c', radius: 5 }], relations: [] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const pick = async (selector: string) => {
+      const target = container.querySelector(selector); if (!target) throw new Error(`${selector} missing.`);
+      await act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    };
+    const menuItem = async (role: string, label: string) => {
+      await click('Constrain');
+      const item = [...document.querySelectorAll<HTMLElement>(`[role="${role}"]`)].find(entry => entry.textContent?.trim() === label);
+      if (!item) throw new Error(`${label} missing.`); return item;
+    };
+    const relations = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.relations; };
+    const coincident = await menuItem('menuitem', 'Coincident'); await act(async () => coincident.click());
+    await pick('[data-cad-sketch-entity="bow"]'); expect(container.textContent).toContain('Coincident · Choose a point to keep on this arc');
+    await pick('[data-cad-sketch-point="p"]');
+    expect(relations()).toEqual([{ id: expect.any(String), kind: 'point-on-curve', pointId: 'p', curveId: 'bow' }]);
+    await canvasKey('Escape');
+    const select = () => act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'point', id: 'q' }, { kind: 'entity', id: 'ring' }] }));
+    await select(); const offered = await menuItem('menuitemcheckbox', 'Coincident');
+    expect(offered.getAttribute('aria-checked')).toBe('false'); await act(async () => offered.click());
+    const held = relations()[1];
+    expect(held).toEqual({ id: expect.any(String), kind: 'point-on-curve', pointId: 'q', curveId: 'ring' });
+    await select(); const applied = await menuItem('menuitemcheckbox', 'Coincident');
+    expect(applied.getAttribute('aria-checked')).toBe('true'); await act(async () => applied.click());
+    expect(relations()).toEqual([expect.objectContaining({ curveId: 'bow' })]);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
   it('dimensions a point from the sketch origin or an axis in either pick order', async () => {
     const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Line', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
       points: [{ id: 'a', position: [12, -7] }, { id: 'b', position: [30, 5] }], entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] } }] });

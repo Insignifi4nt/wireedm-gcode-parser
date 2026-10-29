@@ -34,11 +34,16 @@ describe('Trim between overlapping and touching edges', () => {
     const shared = lineAt(graph, 100, 40), covered = lineAt(graph, 100, 40, shared.entityId);
     // The longer edge loses only the stretch the other rectangle's edge also covers.
     const end = prepareCadSketchTrim({ graph, parameters: {}, ...shared });
-    if (end.target.kind !== 'end') throw new Error('Expected end trim.');
+    if (end.target.kind !== 'end' || !('attachment' in end)) throw new Error('Expected end trim.');
     const corner = pointAt(graph, 100, 30);
     expect(end.target.boundary).toMatchObject({ position: [100, 30], endpointPointId: corner });
     expect(end.target.removedRelationIds).toBeUndefined();
     const trimmed = trimCadSketchEntity({ graph, parameters: {}, trim: { ...end.target, cutPointId: corner } }).graph;
+    // A cut at an existing endpoint already shares that point, so it takes no attachment relation.
+    expect(end.attachment).toBeNull();
+    const target = end.target;
+    expect(() => trimCadSketchEntity({ graph, parameters: {}, trim: { ...target, cutPointId: corner, attachRelationId: 'on-corner' } }))
+      .toThrowError(expect.objectContaining({ code: 'invalid-sketch-trim-attachment' }));
     const edge = compileCadSketchGraph(trimmed, {}).segments.find(segment => segment.id === shared.entityId);
     expect(edge?.kind === 'line' && [edge.start, edge.end].map(point => [point.x, point.y]).sort((a, b) => a[1] - b[1])).toEqual([[100, 0], [100, 30]]);
     expect(checkCadSketchGraph(trimmed, {})).toEqual([]);
@@ -71,26 +76,33 @@ describe('Trim between overlapping and touching edges', () => {
     }
   });
 
-  it('keeps a fresh cut on the cutting line, and refuses that relation for a curved cutter', () => {
+  it('keeps a fresh cut on the cutting line or circle', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [5, -5] },
       { id: 'd', position: [5, 5] }, { id: 'o', position: [15, 0] }], entities: [
       { id: 'edge', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
       { id: 'fence', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
       { id: 'ring', kind: 'circle', construction: false, centerPointId: 'o', radius: 2 }], relations: [] });
     const end = prepareCadSketchTrim({ graph, parameters: {}, entityId: 'edge', parameter: .1 });
-    if (end.target.kind !== 'end' || !('attachLineId' in end)) throw new Error('Expected end trim.');
-    expect(end.attachLineId).toBe('fence');
+    if (end.target.kind !== 'end' || !('attachment' in end)) throw new Error('Expected end trim.');
+    expect(end.attachment).toEqual({ kind: 'point-on-line', lineId: 'fence' });
     const attached = trimCadSketchEntity({ graph, parameters: {}, trim: { ...end.target, cutPointId: 'cut', attachRelationId: 'on-fence' } }).graph;
     expect(attached.relations).toEqual([{ id: 'on-fence', kind: 'point-on-line', pointId: 'cut', lineId: 'fence' }]);
     expect(checkCadSketchGraph(attached, {})).toEqual([]);
+    const tail = prepareCadSketchTrim({ graph, parameters: {}, entityId: 'edge', parameter: .95 });
+    if (tail.target.kind !== 'end' || !('attachment' in tail)) throw new Error('Expected end trim.');
+    expect(tail.attachment).toEqual({ kind: 'point-on-curve', curveId: 'ring' });
+    const onRing = trimCadSketchEntity({ graph, parameters: {}, trim: { ...tail.target, cutPointId: 'cut', attachRelationId: 'on-ring' } }).graph;
+    expect(onRing.relations).toEqual([{ id: 'on-ring', kind: 'point-on-curve', pointId: 'cut', curveId: 'ring' }]);
+    expect(checkCadSketchGraph(onRing, {})).toEqual([]);
     const middle = prepareCadSketchTrim({ graph, parameters: {}, entityId: 'edge', parameter: .5 });
-    if (middle.target.kind !== 'middle' || !('attachLineIds' in middle)) throw new Error('Expected middle trim.');
-    expect(middle.attachLineIds).toEqual(['fence', null]);
+    if (middle.target.kind !== 'middle' || !('attachments' in middle)) throw new Error('Expected middle trim.');
+    expect(middle.attachments).toEqual([{ kind: 'point-on-line', lineId: 'fence' }, { kind: 'point-on-curve', curveId: 'ring' }]);
     const request = { ...middle.target, cutPointIds: ['m0', 'm1'] as [string, string], newEntityId: 'after', supportRelationId: 'support' };
     expect(trimCadSketchEntity({ graph, parameters: {}, trim: { ...request, attachRelationIds: ['on-fence', null] } }).graph.relations)
       .toContainEqual({ id: 'on-fence', kind: 'point-on-line', pointId: 'm0', lineId: 'fence' });
-    expect(() => trimCadSketchEntity({ graph, parameters: {}, trim: { ...request, attachRelationIds: ['on-fence', 'on-ring'] } }))
-      .toThrowError(expect.objectContaining({ code: 'invalid-sketch-trim-attachment' }));
+    const both = trimCadSketchEntity({ graph, parameters: {}, trim: { ...request, attachRelationIds: ['on-fence', 'on-ring'] } }).graph;
+    expect(both.relations).toContainEqual({ id: 'on-ring', kind: 'point-on-curve', pointId: 'm1', curveId: 'ring' });
+    expect(checkCadSketchGraph(both, {})).toEqual([]);
   });
 
   it('removes the picked half of a circle when the seam cut keeps an endpoint just below one turn', () => {

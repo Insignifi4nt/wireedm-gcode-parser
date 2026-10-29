@@ -346,7 +346,7 @@ test('trims a consumed edge, reconnects deliberately and matches the same guarde
   expect(query.items).toHaveLength(1);
   expect(query.trimPreview.target).toEqual({ kind: 'end', entityId: 'ab', parameter: .1, end: 'start',
     boundary: { entityId: 'fence', index: 0, parameter: .25, position: [10, 0] } });
-  expect(query.trimPreview.attachLineId).toBe('fence');
+  expect(query.trimPreview.attachment).toEqual({ kind: 'point-on-line', lineId: 'fence' });
   const trim = { ...query.trimPreview.target, cutPointId, attachRelationId: attachment.id };
   const openProposal = await call(page, 'cad_inspect_sketch_regions', { expectedVersion: current.version, sketchId: sketch.id, proposal: { trim } });
   expect(openProposal.items).toEqual([]);

@@ -20,7 +20,7 @@ const boundary = Type.Object({ entityId: id, index: Type.Integer({ minimum: 0, m
   position: Type.Tuple([CadNumberSchema, CadNumberSchema]), endpointPointId: Type.Optional(id) }, strict);
 // The relations a trim removes with its piece; a request that omits them confirms that none are removed.
 const removedRelationIds = Type.Optional(Type.Array(id, { uniqueItems: true }));
-// A fresh point-on-line relation that keeps a cut on the interior of a cutting line; null leaves that cut numeric.
+// A fresh relation that keeps a cut inside a cutting edge on that edge's support; null leaves that cut numeric.
 const attachRelationIds = Type.Optional(Type.Tuple([Type.Union([id, Type.Null()]), Type.Union([id, Type.Null()])]));
 export const CadSketchTrimTargetSchema = Type.Union([
   Type.Object({ kind: Type.Literal('delete'), entityId: id, parameter, removedRelationIds }, strict),
@@ -36,6 +36,8 @@ export type CadSketchTrimTarget = Immutable<Static<typeof CadSketchTrimTargetSch
 export type CadSketchEndTrimTarget = Extract<CadSketchTrimTarget, { kind: 'end' }>;
 export type CadSketchMiddleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'middle' }>;
 export type CadSketchCircleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'circle' }>;
+/** The relation a fresh cut inside a cutting edge keeps: on a line's support, or on an arc's or circle's full circle. */
+export type CadSketchTrimAttachment = { readonly kind: 'point-on-line'; readonly lineId: string } | { readonly kind: 'point-on-curve'; readonly curveId: string };
 export const CadSketchExtendTargetSchema = Type.Object({ kind: Type.Union([Type.Literal('line'), Type.Literal('arc')]), entityId: id,
   end: Type.Union([Type.Literal('start'), Type.Literal('end')]),
   boundary: Type.Object({ ...boundary.properties, parameter: Type.Number() }, strict), endPointId: id }, strict);
@@ -68,14 +70,14 @@ export interface CadSketchEndTrimPreparation {
   readonly survivor: PathSegment | null;
   readonly boundary: PathSegment | null;
   readonly point: readonly [number, number] | null;
-  /** The cutting line a fresh cut point can stay on, or null for an existing endpoint, a curved cutter or no cut. */
-  readonly attachLineId: string | null;
+  /** How a fresh cut point can stay on its cutting edge, or null for an existing endpoint or no cut. */
+  readonly attachment: CadSketchTrimAttachment | null;
 }
 interface MiddleTrimContacts {
   readonly target: Omit<CadSketchMiddleTrimTarget, 'cutPointIds' | 'newEntityId' | 'supportRelationId' | 'attachRelationIds'>;
   readonly cuts: readonly [{ readonly boundary: PathSegment; readonly point: readonly [number, number] },
     { readonly boundary: PathSegment; readonly point: readonly [number, number] }];
-  readonly attachLineIds: readonly [string | null, string | null];
+  readonly attachments: readonly [CadSketchTrimAttachment | null, CadSketchTrimAttachment | null];
 }
 export type CadSketchMiddleTrimPreparation = MiddleTrimContacts & (
   { readonly removed: LinePathSegment; readonly survivors: readonly [LinePathSegment, LinePathSegment] }
@@ -85,7 +87,7 @@ export interface CadSketchCircleTrimPreparation {
   readonly removed: ArcPathSegment;
   readonly survivor: ArcPathSegment;
   readonly cuts: CadSketchMiddleTrimPreparation['cuts'];
-  readonly attachLineIds: CadSketchMiddleTrimPreparation['attachLineIds'];
+  readonly attachments: CadSketchMiddleTrimPreparation['attachments'];
 }
 export type CadSketchTrimPreparation = CadSketchEndTrimPreparation | CadSketchMiddleTrimPreparation | CadSketchCircleTrimPreparation;
 export interface CadSketchEndTrimResult {
@@ -210,7 +212,7 @@ type TrimShape = { readonly kind: 'delete' } | { readonly kind: 'end'; readonly 
 function relationPointOperands(relation: CadSketchGraphRelation): readonly string[] {
   switch (relation.kind) {
     case 'coincident': case 'horizontal': case 'vertical': case 'distance': case 'axis-distance': case 'symmetric': return relation.pointIds;
-    case 'fixed-point': case 'fixed-axis': case 'midpoint': case 'point-on-line': case 'fillet-corner': case 'chamfer-corner': return [relation.pointId];
+    case 'fixed-point': case 'fixed-axis': case 'midpoint': case 'point-on-line': case 'point-on-curve': case 'fillet-corner': case 'chamfer-corner': return [relation.pointId];
     case 'reference-dimension': return relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds : [];
     case 'tangent-joint': return relation.endpoints.map(endpoint => endpoint.pointId);
     case 'line-angle': return relation.rays.map(ray => ray.towardPointId);
@@ -229,10 +231,11 @@ function cornerAt(graph: CadSketchGraph, relation: CadSketchGraphRelation, entit
 /**
  * The relations and points that only describe the piece a trim removes; everything else stays. A point leaves with the
  * source only when no remaining edge uses it or a point coincident with it, and its relations leave with it. Relations of
- * the source itself stay while its support does, except those its changed extent would redefine. Pattern and
- * preceding-sketch owners generate the source, so they must be detached first.
+ * the source itself stay while its support does, except those its changed extent would redefine. A cut at an existing point
+ * becomes an endpoint of the source or its new piece, so a relation holding that point on the source's support leaves too.
+ * Pattern and preceding-sketch owners generate the source, so they must be detached first.
  */
-function trimRemovals(graph: CadSketchGraph, entity: SourceEntity, shape: TrimShape): { readonly relationIds: readonly string[]; readonly pointIds: readonly string[] } {
+function trimRemovals(graph: CadSketchGraph, entity: SourceEntity, shape: TrimShape, cuts: readonly Witness[] = []): { readonly relationIds: readonly string[]; readonly pointIds: readonly string[] } {
   const owners = graph.relations.filter(relation => (relation.kind === 'linear-pattern' || relation.kind === 'external-reference') && namesEntity(relation, entity.id));
   if (owners.length) throw new CadSketchTrimDependencyError(owners.map(relation => relation.id), []);
   const old = entity.kind === 'circle' ? null : shape.kind === 'end' ? shape.end === 'start' ? entity.startPointId : entity.endPointId : null;
@@ -242,8 +245,10 @@ function trimRemovals(graph: CadSketchGraph, entity: SourceEntity, shape: TrimSh
   const orphans = new Set(leaving.filter(id => !used.has(id) && !live.has(identity(id))));
   const line = entity.kind === 'line' ? entity : null;
   const ownAxis = (relation: CadSketchGraphRelation) => line !== null && (relation.kind === 'horizontal' || relation.kind === 'vertical') && sameEndpointPair(line, relation.pointIds);
+  const cutKeys = new Set(cuts.flatMap(witness => witness.endpointPointId === undefined ? [] : [identity(witness.endpointPointId)]));
   const removed = graph.relations.filter(relation => {
     const named = namesEntity(relation, entity.id);
+    if (named && (relation.kind === 'point-on-line' || relation.kind === 'point-on-curve') && cutKeys.has(identity(relation.pointId))) return true;
     if (shape.kind === 'delete') {
       if (named) return true;
       if (ownAxis(relation) && 'pointIds' in relation && !graph.entities.some(other => other.id !== entity.id && other.kind !== 'circle' && sameEndpointPair(other, relation.pointIds))) return true;
@@ -511,11 +516,12 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
     if (events.some(event => event.tangent)) throw new CadError('tangent-sketch-trim', 'Trim cannot cut where an edge only touches this one. Choose a piece between crossing edges.');
     for (const event of events) assertEndpointRange(event.point, 'trim');
   };
-  // A fresh cut inside a cutting line can stay on that line; curved cutters have no such relation yet.
-  const attachLine = (event: Event) => event.witness.endpointPointId === undefined && event.boundary.kind === 'line' ? event.boundary.id : null;
+  // A fresh cut inside a cutting edge can stay on that edge's line or circle.
+  const attach = (event: Event): CadSketchTrimAttachment | null => event.witness.endpointPointId !== undefined ? null
+    : event.boundary.kind === 'line' ? { kind: 'point-on-line', lineId: event.boundary.id } : { kind: 'point-on-curve', curveId: event.boundary.id };
   if (!unique.length) {
     const result: CadSketchEndTrimPreparation = { target: { kind: 'delete', entityId, parameter: pick, ...removals(trimRemovals(graph, entity, { kind: 'delete' })) }, removed: segment,
-      survivor: null, boundary: null, point: null, attachLineId: null };
+      survivor: null, boundary: null, point: null, attachment: null };
     deepFreezeCadData(result); return result;
   }
   if (segment.kind === 'circle') {
@@ -534,9 +540,9 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
     bounds(previous, next);
     const [removed, survivor] = circlePieces(segment, previous, next);
     const result: CadSketchCircleTrimPreparation = { target: { kind: 'circle', entityId, parameter: pick,
-      boundaries: [previous.witness, next.witness], ...removals(trimRemovals(graph, entity, { kind: 'circle' })) }, removed, survivor,
+      boundaries: [previous.witness, next.witness], ...removals(trimRemovals(graph, entity, { kind: 'circle' }, [previous.witness, next.witness])) }, removed, survivor,
       cuts: [{ boundary: previous.boundary, point: [previous.point.x, previous.point.y] }, { boundary: next.boundary, point: [next.point.x, next.point.y] }],
-      attachLineIds: [attachLine(previous), attachLine(next)] };
+      attachments: [attach(previous), attach(next)] };
     deepFreezeCadData(result); return result;
   }
   if (entity.kind === 'circle') throw precision();
@@ -550,9 +556,9 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
     const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, left.point, right.point, segment.end]));
     if (distance(segment.start, left.point) <= minimum || distance(left.point, right.point) <= minimum || distance(right.point, segment.end) <= minimum) throw precision();
     const contacts: MiddleTrimContacts = {
-      target: { kind: 'middle', entityId, parameter: pick, boundaries: [left.witness, right.witness], ...removals(trimRemovals(graph, entity, { kind: 'middle' })) },
+      target: { kind: 'middle', entityId, parameter: pick, boundaries: [left.witness, right.witness], ...removals(trimRemovals(graph, entity, { kind: 'middle' }, [left.witness, right.witness])) },
       cuts: [{ boundary: left.boundary, point: [left.point.x, left.point.y] }, { boundary: right.boundary, point: [right.point.x, right.point.y] }],
-      attachLineIds: [attachLine(left), attachLine(right)]
+      attachments: [attach(left), attach(right)]
     };
     const result: CadSketchMiddleTrimPreparation = segment.kind === 'line' ? { ...contacts,
       removed: createLineSegment({ ...segment, start: left.point, end: right.point }),
@@ -563,9 +569,9 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
   const event = end === 'start' ? first : last;
   bounds(event);
   const pieces = partition(segment, event.point, event.witness.parameter);
-  const result: CadSketchEndTrimPreparation = { target: { kind: 'end', entityId, parameter: pick, end, boundary: event.witness, ...removals(trimRemovals(graph, entity, { kind: 'end', end })) },
+  const result: CadSketchEndTrimPreparation = { target: { kind: 'end', entityId, parameter: pick, end, boundary: event.witness, ...removals(trimRemovals(graph, entity, { kind: 'end', end }, [event.witness])) },
     removed: pieces[end === 'start' ? 0 : 1], survivor: pieces[end === 'start' ? 1 : 0], boundary: event.boundary,
-    point: [event.point.x, event.point.y], attachLineId: attachLine(event) };
+    point: [event.point.x, event.point.y], attachment: attach(event) };
   deepFreezeCadData(result); return result;
 }
 
@@ -585,10 +591,10 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
   }
   const source = graph.entities.find(entity => entity.id === trim.entityId)!, removed = new Set(removedRelationIds);
   const kept = graph.relations.filter(relation => !removed.has(relation.id));
-  const attach = (relationId: string | null | undefined, lineId: string | null, pointId: string): CadSketchGraphRelation[] => {
+  const attach = (relationId: string | null | undefined, attachment: CadSketchTrimAttachment | null, pointId: string): CadSketchGraphRelation[] => {
     if (relationId === undefined || relationId === null) return [];
-    if (lineId === null) throw new CadError('invalid-sketch-trim-attachment', 'Only a new cut inside a cutting line can stay on that line.');
-    return [{ id: relationId, kind: 'point-on-line', pointId, lineId }];
+    if (attachment === null) throw new CadError('invalid-sketch-trim-attachment', 'Only a new cut inside a cutting edge can stay on that edge.');
+    return [{ id: relationId, pointId, ...attachment }];
   };
   if (trim.kind === 'delete') {
     const orphans = new Set(trimRemovals(graph, source, { kind: 'delete' }).pointIds);
@@ -596,8 +602,8 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
       entities: graph.entities.filter(entity => entity.id !== trim.entityId), relations: kept }), cadSketchEntityPointIds(source)),
     retainedEntityId: null, removedEntityId: trim.entityId, cutPointId: null });
   }
-  const attachments = (ids: readonly [string | null, string | null] | undefined, cutPointIds: readonly [string, string]) => 'attachLineIds' in prepared
-    ? ids?.flatMap((relationId, index) => attach(relationId, prepared.attachLineIds[index], cutPointIds[index])) ?? [] : [];
+  const attachments = (ids: readonly [string | null, string | null] | undefined, cutPointIds: readonly [string, string]) => 'attachments' in prepared
+    ? ids?.flatMap((relationId, index) => attach(relationId, prepared.attachments[index], cutPointIds[index])) ?? [] : [];
   if (trim.kind === 'circle') {
     const circle = source;
     if (circle.kind !== 'circle' || !('survivor' in prepared) || prepared.survivor?.kind !== 'arc') throw precision();
@@ -662,7 +668,7 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
   const old = trim.end === 'start' ? source.startPointId : source.endPointId;
   const relations = kept.map((relation): CadSketchGraphRelation => relation.kind === 'line-angle' ? { ...relation, rays: [relation.rays[0], relation.rays[1]].map(ray =>
     ray.lineId === source.id && ray.towardPointId === old ? { ...ray, towardPointId: trim.cutPointId } : ray) as [typeof relation.rays[0], typeof relation.rays[1]] } : relation);
-  const candidate = replaceEndpoint({ ...graph, relations: [...relations, ...attach(trim.attachRelationId, 'attachLineId' in prepared ? prepared.attachLineId : null, trim.cutPointId)] },
+  const candidate = replaceEndpoint({ ...graph, relations: [...relations, ...attach(trim.attachRelationId, 'attachment' in prepared ? prepared.attachment : null, trim.cutPointId)] },
     parameters, trim.entityId, trim.end, trim.boundary, trim.cutPointId, 'trim');
   return Object.freeze({ graph: candidate, retainedEntityId: trim.entityId, removedEntityId: null, cutPointId: trim.cutPointId });
 }

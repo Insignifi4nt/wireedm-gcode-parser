@@ -8,6 +8,7 @@ import { cadSketchAngleTarget, resolveCadSketchAngleRays } from '../../../../dom
 import { resolveCadSketchMidpointOperands } from '../../../../domain/cad/cadSketchMidpointRelations';
 import { resolveCadSketchSymmetryOperands } from '../../../../domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands } from '../../../../domain/cad/cadSketchPointOnLineRelations';
+import { resolveCadSketchPointOnCurveOperands } from '../../../../domain/cad/cadSketchPointOnCurveRelations';
 import { resolveCadSketchTangentJoint } from '../../../../domain/cad/cadSketchTangentRelations';
 import { cadSketchLinearPatternInstances } from '../../../../domain/cad/cadSketchLinearPattern';
 import type { Point2 } from '../../../../domain/path-intel/types';
@@ -87,6 +88,13 @@ export function compileCadSketchEquations(input: CadSketchSolveInput): CadSketch
         const { line: guide } = resolveCadSketchPointOnLineOperands(graph, relation);
         directed(guide, 'A point-on-line guide has no numeric endpoints.');
         add('point-on-line', [...point(relation.pointId), ...line(guide)], 0, id); break;
+      }
+      case 'point-on-curve': {
+        // The full supporting circle: the point's spoke matches an arc's start spoke, or a circle's radius.
+        const { curve } = resolveCadSketchPointOnCurveOperands(graph, relation), spoke = line({ startPointId: curve.centerPointId, endPointId: relation.pointId });
+        if (curve.kind === 'arc') add('equal-length', [...spoke, ...line({ startPointId: curve.centerPointId, endPointId: curve.startPointId })], 0, id);
+        else add('distance-to-parameter', [...spoke, radius(curve.id)], 0, id);
+        break;
       }
       case 'tangent-joint': {
         const { line: segment, arc, linePointId, arcPointId, otherLineEndId } = resolveCadSketchTangentJoint(graph, relation);

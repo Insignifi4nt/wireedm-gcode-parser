@@ -28,7 +28,8 @@ describe('cadSketchConstraintStep', () => {
     expect(step('parallel')).toMatchObject({ status: 'more', prompt: 'Choose a line, or an axis', entityIds: ['ab', 'cd', 'bc'], pointIds: [], datums: ['x-axis', 'y-axis'] });
     expect(step('parallel', 'ab')).toMatchObject({ status: 'more', entityIds: ['cd', 'bc'] });
     expect(step('equal', 'c1')).toMatchObject({ status: 'more', prompt: 'Choose the second arc or circle', entityIds: ['arc', 'c2'] });
-    expect(step('coincident', 'a')).toMatchObject({ status: 'more', entityIds: ['ab', 'cd', 'bc'], pointIds: expect.not.arrayContaining(['a']) });
+    expect(step('coincident', 'a')).toMatchObject({ status: 'more', entityIds: ['ab', 'cd', 'bc', 'arc', 'c1', 'c2'], pointIds: expect.not.arrayContaining(['a']) });
+    expect(step('coincident', 'arc')).toMatchObject({ status: 'more', prompt: 'Choose a point to keep on this arc', entityIds: [], datums: [] });
     expect(step('symmetric', 'o1', 'a')).toMatchObject({ status: 'more', prompt: 'Choose the line to mirror about' });
   });
 
@@ -36,6 +37,8 @@ describe('cadSketchConstraintStep', () => {
     expect(step('parallel', 'ab', 'cd')).toMatchObject({ status: 'ready', relations: [{ kind: 'parallel', lineIds: ['ab', 'cd'] }] });
     expect(step('horizontal', 'ab')).toMatchObject({ status: 'ready', relations: [{ kind: 'horizontal', pointIds: ['a', 'b'] }] });
     expect(step('coincident', 'd', 'ab')).toMatchObject({ status: 'ready', relations: [{ kind: 'point-on-line', pointId: 'd', lineId: 'ab' }] });
+    expect(step('coincident', 'c1', 'd')).toMatchObject({ status: 'ready', relations: [{ kind: 'point-on-curve', pointId: 'd', curveId: 'c1' }] });
+    expect(step('coincident', 'a', 'arc')).toMatchObject({ status: 'ready', relations: [{ kind: 'point-on-curve', pointId: 'a', curveId: 'arc' }] });
     expect(step('equal', 'c1', 'c2')).toMatchObject({ status: 'ready', relations: [{ kind: 'equal-radius', curveIds: ['c1', 'c2'] }] });
     expect(step('concentric', 'c1', 'c2')).toMatchObject({ status: 'ready', relations: [{ kind: 'coincident', pointIds: ['o1', 'o2'] }] });
     expect(step('tangent', 'ab', 'arc')).toMatchObject({ status: 'ready', relations: [{ kind: 'tangent-joint', endpoints: [{ entityId: 'ab', pointId: 'b' }, { entityId: 'arc', pointId: 'b' }] }] });
@@ -49,6 +52,12 @@ describe('cadSketchConstraintStep', () => {
     expect(step('equal', 'ab', 'c1')).toEqual({ status: 'invalid', reason: 'Choose two lines, or two arcs or circles.' });
     expect(step('tangent', 'cd', 'arc')).toMatchObject({ status: 'invalid', reason: 'Join these endpoints with Coincident before adding Tangent.' });
     expect(step('concentric', 'arc', 'c2')).toEqual({ status: 'invalid', reason: 'These already share a center.' });
+    // A curve's own center and arc ends already sit on it.
+    for (const [point, curve] of [['e', 'arc'], ['o2', 'arc'], ['o1', 'c1']]) expect(step('coincident', point, curve)).toEqual({ status: 'invalid',
+      reason: 'The point must be distinct from the curve center, its arc endpoints and their declared coincident aliases.' });
+    const held: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'on', kind: 'point-on-curve', pointId: 'd', curveId: 'c1' }] };
+    expect(stepIn(held, 'coincident', 'c1', 'd')).toEqual({ status: 'invalid', reason: 'Coincident is already applied here.', applied: ['on'] });
+    expect(stepIn(held, 'coincident', 'd', 'c2')).toMatchObject({ status: 'ready', relations: [{ kind: 'point-on-curve', pointId: 'd', curveId: 'c2' }] });
   });
 
   it('constrains geometry to the plane origin and axes in either pick order', () => {
@@ -89,6 +98,8 @@ describe('cadSketchConstraintChoices', () => {
     expect(choices(graph, 'ab', 'cd')).toEqual([{ tool: 'parallel', state: 'available', kinds: ['parallel'] },
       { tool: 'perpendicular', state: 'available', kinds: ['perpendicular'] }, { tool: 'equal', state: 'available', kinds: ['equal-length'] }]);
     expect(choices(graph, 'o1', 'cd', 'a').map(choice => choice.tool)).toEqual(['symmetric']);
+    expect(choices(graph, 'c1', 'd')).toEqual([{ tool: 'coincident', state: 'available', kinds: ['point-on-curve'] }]);
+    expect(choices(graph, 'a', 'arc')).toEqual([{ tool: 'coincident', state: 'available', kinds: ['point-on-curve'] }]);
     // A selection no constraint takes in full offers nothing rather than a constraint on part of it.
     expect(choices(graph, 'a', 'b', 'e')).toEqual([]);
     expect(choices(graph, 'origin')).toEqual([]);
@@ -99,6 +110,10 @@ describe('cadSketchConstraintChoices', () => {
     const placed: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'ex', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 0 }, { id: 'ey', kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 0 }] };
     expect(choices(placed, 'origin', 'e')).toEqual([{ tool: 'coincident', state: 'applied', ids: ['ex', 'ey'] },
       { tool: 'horizontal', state: 'applied', ids: ['ey'] }, { tool: 'vertical', state: 'applied', ids: ['ex'] }]);
+    const held: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'on', kind: 'point-on-curve', pointId: 'd', curveId: 'c1' }] };
+    expect(choices(held, 'd', 'c1')).toEqual([{ tool: 'coincident', state: 'applied', ids: ['on'] }]);
+    expect(choices(graph, 'e', 'arc')).toEqual([{ tool: 'coincident', state: 'blocked',
+      reason: 'The point must be distinct from the curve center, its arc endpoints and their declared coincident aliases.' }]);
   });
 });
 

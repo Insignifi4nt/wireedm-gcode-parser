@@ -226,6 +226,22 @@ describe('fresh authored sketch picks', () => {
     expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'on-line', point: [5, 20], lineId: 'gone', relationId: 'r' }, radius: 2 },
       construction: false, createId: idFactory(), existingGraph })).toThrow('A picked line changed or no longer exists');
   });
+  it('places fresh points along an existing arc or circle with removable point-on-curve relations', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 0] }, { id: 's', position: [10, 0] }, { id: 'e', position: [0, 10] }, { id: 'c', position: [30, 0] }],
+      entities: [{ id: 'bow', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 's', endPointId: 'e', direction: 'ccw' },
+        { id: 'ring', kind: 'circle', construction: true, centerPointId: 'c', radius: 5 },
+        { id: 'chord', kind: 'line', construction: true, startPointId: 's', endPointId: 'c' }], relations: [] });
+    const line = createCadFreshSketchDrawing({ drawing: { kind: 'line', start: { kind: 'on-curve', point: [6, 8], curveId: 'bow', relationId: 'on-bow' },
+      end: { kind: 'on-curve', point: [34, 3], curveId: 'ring', relationId: 'on-ring' } }, construction: false, createId: idFactory(), existingGraph });
+    if (line.kind !== 'line') throw new Error('Expected line roles.');
+    expect(line.geometry.relations).toEqual([{ id: 'on-bow', kind: 'point-on-curve', pointId: line.pointIds.start, curveId: 'bow' },
+      { id: 'on-ring', kind: 'point-on-curve', pointId: line.pointIds.end, curveId: 'ring' }]);
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: existingGraph }] });
+    expect(() => applyCadEdits(source, [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: line.geometry }])).not.toThrow();
+    for (const curveId of ['gone', 'chord'])
+      expect(() => createCadFreshSketchDrawing({ drawing: { kind: 'circle', center: { kind: 'on-curve', point: [6, 8], curveId, relationId: 'r' }, radius: 2 },
+        construction: false, createId: idFactory(), existingGraph })).toThrow('A picked arc or circle changed or no longer exists');
+  });
   it('builds a slot from two tangent lines and equal end arcs about the two picked centers', () => {
     const existingGraph = parseCadSketchGraph({ points: [{ id: 'anchor', position: [12, 8] }], entities: [], relations: [] });
     const created = createCadFreshSketchDrawing({ drawing: { kind: 'slot', first: { kind: 'coincident', point: [12, 8], sourcePointId: 'anchor', relationId: 'join-first' },
