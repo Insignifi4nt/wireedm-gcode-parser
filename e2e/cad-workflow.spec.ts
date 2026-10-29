@@ -1626,7 +1626,7 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   const ysAfter = dimensioned.graph.points.map(point => Number(point.position[1]));
   expect(Math.max(...xsAfter) - Math.min(...xsAfter)).toBeCloseTo(53, 8);
   expect(Math.max(...ysAfter) - Math.min(...ysAfter)).toBeCloseTo(freeHeight, 8);
-  await expect(canvas.locator(`[data-cad-sketch-dimension="${width.id}"]`).getByRole('button', { name: /^Configure distance / })).toBeVisible();
+  await expect(canvas.locator(`[data-cad-sketch-dimension="${width.id}"]`).getByRole('button', { name: /^Dimension distance / })).toBeVisible();
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   current = await context(page);

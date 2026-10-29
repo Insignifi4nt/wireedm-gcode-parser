@@ -55,6 +55,8 @@
   --ring: #67d1df;
   --surface-raised: #1c2a33;
   --surface-inset: #14212a;
+  /* Behind annotation text on a drawing; a drawing surface may set its own backdrop. */
+  --annotation-halo: var(--background);
   --control-radius: 4px;
   --control-hover-border: #668392;
   --popup-radius: 6px;

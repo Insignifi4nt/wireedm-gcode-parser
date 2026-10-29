@@ -18,7 +18,8 @@ const buttonVariants = cva(
         outline: 'ui-button-outline',
         danger: 'ui-button-danger',
         menu: 'ui-button-menu',
-        scrim: 'ui-button-scrim'
+        scrim: 'ui-button-scrim',
+        annotation: 'ui-button-annotation'
       },
       size: {
         compact: 'ui-button-compact',
