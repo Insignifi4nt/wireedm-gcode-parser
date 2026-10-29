@@ -1761,9 +1761,9 @@ describe('CAD sketch interaction', () => {
         { id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'side', towardPointId: 'c' }], sense: 'cw', value: 90 },
         { id: 'size', kind: 'radial-size', entityId: 'hole', quantity: 'diameter', value: 8 }, { id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 10 },
         { id: 'measured', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'side' } }] } }] });
-    const open = async (props?: Parameters<typeof mount>[1]) => {
+    const open = async (props?: Parameters<typeof mount>[1], source = bracket()) => {
       setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
-      const source = bracket(); await mount(source, props); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+      await mount(source, props); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
       return source;
     };
     const relations = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.relations; };
@@ -2178,6 +2178,39 @@ describe('CAD sketch interaction', () => {
       // A focused label elsewhere deletes the selected distance, and only that.
       await press('length', 'Delete');
       expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'angle', 'size', 'x', 'measured']); expect(selectedDimensions()).toEqual([]);
+    });
+
+    it('keeps a dimension selected when its editor converts a driver stored on a coincident alias, and drops one replaced by another measurement', async () => {
+      // The base line's length is stored on q, which a Coincident relation joins to a; the clearance runs from r, joined to the center o.
+      const aliased = () => { const source = bracket(), feature = source.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
+        return parseCadDocument({ ...source, features: [{ ...feature, graph: { ...feature.graph, points: [...feature.graph.points, { id: 'q', position: [0, 0] }, { id: 'r', position: [10, 10] }],
+          relations: [{ id: 'joint', kind: 'coincident', pointIds: ['q', 'a'] }, { id: 'center', kind: 'coincident', pointIds: ['r', 'o'] },
+            ...feature.graph.relations.map(relation => relation.id === 'length' ? { id: 'length', kind: 'distance' as const, pointIds: ['q', 'b'] as const, value: 40 } : relation),
+            { id: 'clearance', kind: 'point-line-distance', pointId: 'r', lineId: 'base', side: 'left', value: 10 }] } }] }); };
+      await open(undefined, aliased());
+      // The line's Dimension editor opens the driver on q, and Reference length stores the reference on the line itself.
+      await geometryMenu('base', 'Dimension'); expect(field('Length').value).toBe('40');
+      expect(selectedDimensions()).toEqual(['length']); expect(geometry()).toEqual([]);
+      await click('Reference length'); await click('Apply');
+      expect(relations().find(relation => relation.id === 'length')).toEqual({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' } });
+      expect(selectedDimensions()).toEqual(['length']);
+      // Make driving brings it back on the line's endpoints, still selected, so a canvas Delete removes it.
+      await press('length', 'ContextMenu'); await act(async () => menuItem('Make driving').click());
+      expect(relations().find(relation => relation.id === 'length')).toEqual({ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 40 }); expect(selectedDimensions()).toEqual(['length']);
+      await canvasKey('Delete'); expect(relations().some(relation => relation.id === 'length')).toBe(false);
+      // The circle double-pick opens the clearance stored on r, and Reference distance stores it on the center it picked.
+      const choose = (selector: string) => act(async () => {
+        const target = container.querySelector(selector); if (!target) throw new Error(`${selector} missing.`);
+        target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      });
+      await click('Dimension'); await choose('[data-cad-sketch-entity="hole"]'); await choose('[data-cad-sketch-entity="base"]');
+      expect(field('Point to line distance').value).toBe('10'); expect(selectedDimensions()).toEqual(['clearance']);
+      await click('Reference distance'); await click('Apply');
+      expect(relations().find(relation => relation.id === 'clearance')).toEqual({ id: 'clearance', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'o', lineId: 'base' } });
+      expect(selectedDimensions()).toEqual(['clearance']);
+      // A driver from the alias to another line under the same ID is a different dimension and drops the selection.
+      await swap({ id: 'clearance', kind: 'point-line-distance', pointId: 'r', lineId: 'side', side: 'left', value: 30 });
+      expect(label('clearance').getAttribute('aria-label')).toMatch(/^Dimension /); expect(selectedDimensions()).toEqual([]);
     });
 
     it('lets a datum selection and a dimension selection replace each other, and a focused label never deletes past a datum selection', async () => {

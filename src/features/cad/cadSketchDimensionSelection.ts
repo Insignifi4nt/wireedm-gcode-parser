@@ -1,4 +1,5 @@
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { cadSketchRelationEntityIds } from '@/domain/cad/cadSketchGraphReferences';
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import type { CadSketchDatum } from './cadSketchGraphSelection';
@@ -42,26 +43,42 @@ export function cadSketchDimensionIds(current: readonly CadSketchDimensionPick[]
 
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
   : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(',')}}` : JSON.stringify(value);
+// One resolver per graph, so a canvas of dimensions joins its Coincident relations once; a graph that names a missing point keeps raw IDs.
+const identities = new WeakMap<CadSketchGraph, (pointId: string) => string>();
+function pointIdentities(graph: CadSketchGraph): (pointId: string) => string {
+  let identity = identities.get(graph);
+  if (!identity) {
+    let root: (pointId: string) => string;
+    try { root = resolveCadSketchPointIdentities(graph); } catch { root = id => id; }
+    identity = id => { try { return root(id); } catch { return id; } };
+    identities.set(graph, identity);
+  }
+  return identity;
+}
 /**
  * The pick for a dimension relation, without its value. Editing the value keeps the selection, and so do Make reference and
  * Make driving, which keep the measured length, distance, radius or diameter. A relation that measures something else does not.
+ * The measured quantity names points through their Coincident joins, as the dimension lookups do, so a driver on a coincident alias of a
+ * line's endpoint and the line's reference measure the same length; the authored identity keeps the IDs it names.
  * A point to line distance names its point and line, not its side, which an edit that turns the line around flips to keep the point where it is.
  */
 export function cadSketchDimensionPickOf(graph: CadSketchGraph, relation: CadSketchDimensionRelation): CadSketchDimensionPick {
   const pair = (pointIds: readonly string[]) => [...pointIds].sort();
+  const joined = (pointIds: readonly string[]) => pair(pointIds.map(pointIdentities(graph)));
+  const joinedPoint = (pointId: string) => pointIdentities(graph)(pointId);
   const pick = (form: string, identity: unknown, measures: unknown = identity) => ({ id: relation.id, form, identity: canonical(identity), measures: canonical(measures) });
   switch (relation.kind) {
-    case 'distance': return pick('distance', pair(relation.pointIds), ['point-distance', pair(relation.pointIds)]);
-    case 'point-line-distance': return pick('point-line-distance', [relation.pointId, relation.lineId], ['point-line-distance', relation.pointId, relation.lineId]);
+    case 'distance': return pick('distance', pair(relation.pointIds), ['point-distance', joined(relation.pointIds)]);
+    case 'point-line-distance': return pick('point-line-distance', [relation.pointId, relation.lineId], ['point-line-distance', joinedPoint(relation.pointId), relation.lineId]);
     case 'radial-size': return pick('radial-size', [relation.entityId, relation.quantity], ['radial-size', relation.entityId, relation.quantity]);
     case 'reference-dimension': {
       const measurement = relation.measurement, form = `reference/${measurement.kind}`;
       if (measurement.kind === 'radial-size') return pick(form, [measurement.entityId, measurement.quantity], ['radial-size', measurement.entityId, measurement.quantity]);
-      if (measurement.kind === 'point-distance') return pick(form, pair(measurement.pointIds), ['point-distance', pair(measurement.pointIds)]);
-      if (measurement.kind === 'point-line-distance') return pick(form, [measurement.pointId, measurement.lineId], ['point-line-distance', measurement.pointId, measurement.lineId]);
+      if (measurement.kind === 'point-distance') return pick(form, pair(measurement.pointIds), ['point-distance', joined(measurement.pointIds)]);
+      if (measurement.kind === 'point-line-distance') return pick(form, [measurement.pointId, measurement.lineId], ['point-line-distance', joinedPoint(measurement.pointId), measurement.lineId]);
       // A line reference names its line; only its match with a driving distance goes through the line's current endpoints.
       const line = graph.entities.find(entity => entity.id === measurement.entityId);
-      return pick(form, measurement.entityId, line?.kind === 'line' ? ['point-distance', pair([line.startPointId, line.endPointId])] : [form, measurement.entityId]);
+      return pick(form, measurement.entityId, line?.kind === 'line' ? ['point-distance', joined([line.startPointId, line.endPointId])] : [form, measurement.entityId]);
     }
     default: return pick(relation.kind, Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id' && key !== 'value' && key !== 'values')));
   }

@@ -1,7 +1,8 @@
 /* Thin annotation styling: 1 px lines, slim arrows and haloed mono text, no label box. */
 .cad-sketch-graph-dimension { color: var(--muted-foreground); }
 .cad-sketch-graph-dimension.is-reference { color: color-mix(in srgb, var(--muted-foreground) 62%, transparent); }
-.cad-sketch-graph-dimension.is-interactive:hover, .cad-sketch-graph-dimension:has(.cad-sketch-graph-dimension-label:focus-visible) { color: var(--foreground); }
+/* Hover and focus brighten an unselected dimension only; a selected one keeps the selection colour, and focus keeps its underline. */
+.cad-sketch-graph-dimension:not(.is-selected):is(.is-interactive:hover, :has(.cad-sketch-graph-dimension-label:focus-visible)) { color: var(--foreground); }
 .cad-sketch-graph-dimension.is-selected { color: var(--primary); }
 .cad-sketch-graph-dimension.is-interactive { cursor: pointer; }
 .cad-sketch-graph-dimension-lines { fill: none; stroke: currentColor; }

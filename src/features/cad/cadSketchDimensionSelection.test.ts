@@ -102,6 +102,48 @@ describe('sketch dimension selection', () => {
     expect(reconcileCadSketchDimensionSelection(elsewhere, kept)).toBe(NO_SKETCH_DIMENSIONS);
   });
 
+  it('matches a driver and its reference through Coincident joins, and only through them', () => {
+    // q is joined to a and r to the center o; loose sits on a without a join.
+    const joined = parseCadSketchGraph({
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 30] }, { id: 'q', position: [0, 0] }, { id: 'loose', position: [0, 0] },
+        { id: 'o', position: [10, 10] }, { id: 'r', position: [10, 10] }],
+      entities: [{ id: 'base', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }, { id: 'side', kind: 'line', startPointId: 'b', endPointId: 'c', construction: false }],
+      relations: [{ id: 'joint', kind: 'coincident', pointIds: ['q', 'a'] }, { id: 'center', kind: 'coincident', pointIds: ['r', 'o'] },
+        { id: 'length', kind: 'distance', pointIds: ['q', 'b'], value: 40 }, { id: 'clearance', kind: 'point-line-distance', pointId: 'r', lineId: 'base', side: 'left', value: 10 }]
+    });
+    type Relation = (typeof joined.relations)[number];
+    const change = (source: typeof joined, relations: Readonly<Record<string, Relation>>) => ({ ...source, relations: source.relations.map(relation => relations[relation.id] ?? relation) });
+    const current = Object.freeze([cadSketchDimensionPick(joined, 'length')!, cadSketchDimensionPick(joined, 'clearance')!]);
+    // The line's Dimension editor stores Reference length on the line, and the circle double-pick's reference on the center it picked.
+    const referenced = change(joined, { length: { id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' } },
+      clearance: { id: 'clearance', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'o', lineId: 'base' } } });
+    const kept = reconcileCadSketchDimensionSelection(referenced, current);
+    expect(cadSketchDimensionIds(kept)).toEqual(['length', 'clearance']);
+    // Make driving on the line's endpoints and the center keeps them, and so does a driver back on the aliases.
+    const driving = change(referenced, { length: { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 40 },
+      clearance: { id: 'clearance', kind: 'point-line-distance', pointId: 'o', lineId: 'base', side: 'left', value: 10 } });
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(driving, kept))).toEqual(['length', 'clearance']);
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(joined, kept))).toEqual(['length', 'clearance']);
+    expect(isCadSketchDimensionPickCurrent(change(joined, { length: { id: 'length', kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['b', 'a'] } } }), current[0])).toBe(true);
+    // Another line, another point, or a point that only lies on a, is a different measurement under the same ID.
+    const replaced = (relation: Relation, pick: CadSketchDimensionPick) => isCadSketchDimensionPickCurrent(change(joined, { [relation.id]: relation }), pick);
+    expect(replaced({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'side' } }, current[0])).toBe(false);
+    expect(replaced({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['loose', 'b'] } }, current[0])).toBe(false);
+    expect(replaced({ id: 'clearance', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'o', lineId: 'side' } }, current[1])).toBe(false);
+    expect(replaced({ id: 'clearance', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'c', lineId: 'base' } }, current[1])).toBe(false);
+    // Without the join, the line's reference measures other points than the driver on q did.
+    const unjoined = { ...joined, relations: joined.relations.filter(relation => relation.id !== 'joint') };
+    expect(reconcileCadSketchDimensionSelection(change(unjoined, { length: referenced.relations.find(relation => relation.id === 'length')! }), [cadSketchDimensionPick(unjoined, 'length')!])).toBe(NO_SKETCH_DIMENSIONS);
+    // A line reference keeps its pick through a Trim that ends the line on a new point, and a later driver on that point's alias still matches it.
+    const trimmed = { ...referenced, points: [...referenced.points, { id: 'n', position: [25, 0] as const }, { id: 'm', position: [25, 0] as const }],
+      entities: referenced.entities.map(entity => entity.id === 'base' && entity.kind === 'line' ? { ...entity, endPointId: 'n' } : entity),
+      relations: [...referenced.relations, { id: 'end', kind: 'coincident' as const, pointIds: ['m', 'n'] as const }] };
+    const trimmedKept = reconcileCadSketchDimensionSelection(trimmed, [kept[0]]);
+    expect(cadSketchDimensionIds(trimmedKept)).toEqual(['length']);
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(change(trimmed, { length: { id: 'length', kind: 'distance', pointIds: ['q', 'm'], value: 25 } }), trimmedKept))).toEqual(['length']);
+    expect(reconcileCadSketchDimensionSelection(change(trimmed, { length: { id: 'length', kind: 'distance', pointIds: ['q', 'b'], value: 40 } }), trimmedKept)).toBe(NO_SKETCH_DIMENSIONS);
+  });
+
   it('keeps a mount key while the ID names the same dimension and renews it when a replacement takes the ID', () => {
     const keys = createCadSketchDimensionKeys(), first = keys(graph).get('length');
     expect(keys(withRelation({ id: 'length', kind: 'distance', pointIds: ['b', 'a'], value: 41 })).get('length')).toBe(first);
