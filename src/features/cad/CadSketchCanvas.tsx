@@ -16,7 +16,7 @@ import type { CadRenderedViewControls, CadRenderedViewState } from './cadViewpor
 import { DRAG_GRID_CATCH_PIXELS, magnetSketchPoint, slotSketchProfile, slotSketchWidth, snapSketchPoint, twoPointSketchProfile, type SketchPoint, type SketchTool } from './cadSketchInteraction';
 import { CadSketchProfileGeometry } from './CadSketchProfileGeometry';
 import { createCadSketchHandlePicker, createCadSketchProfilePicker, type CadSketchHandlePick } from './cadSketchPicking';
-import { cadPathDraftEndpoint, cadPathDraftPicks, closeCadPolylineProfile, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft, type CadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
+import { cadPathDraftEndpoint, cadPathDraftPicks, closeCadPolylineProfile, closesCadPathChain, completedCadPathChain, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft, type CadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
 import { cadSketchDrawingInference, cadSketchDrawingInferenceLabel, cadSketchSnapRelation, cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { prepareCadSketchProfilePositionSnaps } from './cadSketchProfilePositionSnaps';
 import { cadSketchProfileSnapLabel } from './cadSketchSnapLabels';
@@ -55,6 +55,8 @@ const SNAP_PLACEMENTS: ReadonlySet<CadSketchSnapCandidate['target']['kind']> = n
 const ACQUIRED_POINTS = 4;
 /** A drawing press that travels farther than this is a drag, and a press this close to the last placed point grabs it. */
 const DRAWING_DRAG_PIXELS = 8;
+/** A second drawing press this soon after the previous one, within the drag slop of it, completes a double-click. */
+const DOUBLE_CLICK_MS = 500;
 /** The plane references each selection filter reaches: the origin counts as a point and the axes as edges. */
 const CAD_SKETCH_FILTER_DATUMS: Readonly<Record<CadSketchGraphPickFilter, readonly CadSketchDatum[]>> = { auto: CAD_SKETCH_DATUMS, points: ['origin'], edges: ['x-axis', 'y-axis'] };
 /** Picks whose relations name source geometry, so the source must not change while they are pending. */
@@ -63,22 +65,32 @@ type DrawingPick = { readonly point: SketchPoint } & (
   | { readonly candidates: readonly CadSketchSnapCandidate[]; readonly candidate?: never }
   | { readonly candidate?: CadSketchSnapCandidate; readonly candidates?: never }
 );
-/** A polyline click that returns to its start closes it once the closed chain can bound an area. */
-function closesCadPolyline(draft: CadPathDraft): boolean {
-  if (draft.kind !== 'ready' || draft.segments.length < 2) return false;
-  const end = cadPathDraftEndpoint(draft);
-  return end[0] === draft.start[0] && end[1] === draft.start[1] && (draft.segments.length > 2 || draft.segments.some(segment => segment.kind === 'arc'));
-}
 interface DrawingSnapChoice {
   readonly owner: object;
   readonly candidates: readonly CadSketchSnapCandidate[];
   readonly clientX: number; readonly clientY: number; readonly frame: string;
+  /** The choice ends a drag from an idle Line, so the one line it completes is saved at once. */
+  readonly saveLine?: boolean;
 }
+/** Where and when a drawing press or click happened, with its pointer type when it came from a pointer. */
+interface DrawingPlacement { readonly time: number; readonly clientX: number; readonly clientY: number; readonly pointerType?: string }
+/**
+ * A click while drawing and the draft change it left. `pointerId` is its pointer while the press is still down, then null;
+ * `finished` when the click saved a chain.
+ */
+interface DrawingClick extends DrawingPlacement { readonly changes: number; readonly pointerId: number | null; readonly finished: boolean }
 /** A pointer event on a dimension line or arrow, as the graph layer passes it. */
 type DimensionLineEvent = { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event };
 /** What one event found over a dimension line: the grip and datum the canvas hover shows, and whether either, or a profile edge, keeps the pick. */
 interface LineCover { readonly event: Event; readonly grip: CadSketchHandlePick | null; readonly datum: CadSketchDatum | null; readonly covered: boolean }
 interface DrawingCursor { readonly point: SketchPoint; readonly mode: 'pointer' | 'position'; readonly suppressed: boolean }
+/** What the workbench needs to finish or leave a drawing while the canvas is not focused. */
+export interface CadSketchDrawingControls {
+  /** One Escape for the drawing. False when nothing is pending, so the Escape leaves the tool. */
+  escape(): boolean;
+  /** Saves the pending line chain open and runs `after` once the save is accepted. False when no chain can be saved. */
+  finishChain(after: () => void): boolean;
+}
 export interface CadSketchContextMenuRequest {
   readonly clientX: number;
   readonly clientY: number;
@@ -153,7 +165,7 @@ function CadSketchAxes({ origin: [x, y], pixel, view: [width, height], datumProp
   </g>;
 }
 
-export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddFreshSketch, onAddPath, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onError, cancelSignal, interactionLocked: externalInteractionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, graphContextMenu, previewProfile, previewSketch, graphControls, inspection, dimensionControls, getFitArea }: {
+export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVersion, placementLabel, tool, selectedProfileId, onSelectProfile, onAddProfile, onAddFreshSketch, onAddPath, onTranslateProfile, onMoveHandle, onAddCurve, onCancelCurve, curveCreation = false, onPendingChange, onDrawingControls, onExitTool, onError, cancelSignal, interactionLocked: externalInteractionLocked = false, onControlsReady, viewLocked = false, navigationMode = 'mouse', onContextMenu, graphContextMenu, previewProfile, previewSketch, graphControls, inspection, dimensionControls, getFitArea }: {
   sketch: CadSketchFeature | CadCurveFeature;
   parameters: Readonly<Record<string, number>>;
   documentVersion?: string;
@@ -170,6 +182,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   onCancelCurve?(): void;
   curveCreation?: boolean;
   onPendingChange(pending: boolean): void;
+  /** The drawing's Escape and chain finish, and whether a pending chain could be saved open now, so a tool switch saves it first. */
+  onDrawingControls?(controls: CadSketchDrawingControls | null, chainSavable: boolean): void;
+  /** An Escape pressed while a chain was being saved leaves the tool once that save is accepted. */
+  onExitTool?(): void;
   onError(message: string): void;
   cancelSignal: number;
   interactionLocked?: boolean;
@@ -200,11 +216,17 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const overlapPending = overlap !== null;
   const choicePending = snapChoice !== null;
   const interactionLocked = baseInteractionLocked || overlapPending || choicePending;
+  /** A pending snap choice is only the chain's next point, so finishing a line chain drops it like a pending arc endpoint. */
+  const chainFinishLocked = baseInteractionLocked || overlapPending;
   /** Select and Trim pick existing geometry; every other tool places new points. */
   const drawing = tool !== 'select' && tool !== 'trim';
-  /** Line and Arc draw one segment of the Polyline draft and save it at once. */
-  const singleSegment = tool === 'line' || tool === 'arc';
-  const pathTool = tool === 'path' || singleSegment;
+  /** Line chains connected lines and three-point arcs in one draft until it is finished; `path`, Polyline's name, is its alias. */
+  const chainTool = tool === 'line' || tool === 'path';
+  /** Arc draws one segment of the path draft and saves it at once. */
+  const singleSegment = tool === 'arc';
+  const pathTool = chainTool || singleSegment;
+  /** Where connected edges are saved a chain can stay open, so Escape, a double-click or leaving the tool saves its segments. */
+  const chainOpen = chainTool && sourceSketch.kind === 'sketch' && Boolean(onAddPath);
   const idlePathDraft = () => createCadPathDraft(tool === 'arc' ? 'arc' : 'line');
   const svg = useRef<SVGSVGElement>(null);
   const host = useRef<HTMLDivElement>(null);
@@ -240,11 +262,21 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const suppressProfileClick = useRef(false);
   /**
    * A primary press while drawing. The press places its pick at once; a drag past the slop then places the next pick on
-   * release, so press-drag-release draws like two clicks. A press beside the last placed point is held until release:
-   * a drag draws from that point, and a plain click places it then. `changes` is the draft change the press left.
+   * release, so press-drag-release draws like two clicks. A held press places nothing until it is judged: one beside the
+   * last placed point (`last`) draws from that point if it drags and places its pick on a plain release, and one that could
+   * complete a double-click (`second`) places its own pick once it drags. `changes` is the draft change the press left.
+   * A drag that starts an idle Line saves its one line on release.
    */
-  const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; changes: number;
-    readonly held: { readonly last: SketchPoint; readonly raw: SketchPoint; readonly scale: SketchPoint } | null; dragged: boolean } | null>(null);
+  const drawingPress = useRef<DrawingPlacement & { readonly pointerId: number; changes: number; readonly fromIdle: boolean;
+    held: { readonly last: SketchPoint | null; readonly raw: SketchPoint; readonly scale: SketchPoint; readonly second: DrawingClick | null } | null; dragged: boolean } | null>(null);
+  /**
+   * The latest click while drawing, whether or not it placed a point, so a press there soon after reads as the second click
+   * of a double-click. A press is a click only once it completes, so one that is cancelled, loses its capture before its
+   * release or drags clears it, as does a press while drawing is paused, a tool change or a cancellation.
+   */
+  const lastClick = useRef<DrawingClick | null>(null);
+  /** The open chain save in flight, and what runs once it is accepted: the workbench's next tool, or leaving the tool. */
+  const chainSave = useRef<{ after?: () => void } | null>(null);
   /**
    * A plain-selection press on the origin or an axis. It selects the reference on release, so a press that travels past the
    * drag slop first still boxes or moves a profile exactly as it would away from the axes.
@@ -255,11 +287,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const abandonedPresses = useRef(new Set<number>());
   const dropDatumPress = useCallback(() => { if (!datumPress.current) return; abandonedPresses.current.add(datumPress.current.pointerId); datumPress.current = null; }, []);
   /**
-   * Counts drawing draft changes and whether the latest one added a point. A press keeps its release only while its own
-   * change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick during the press, ends it.
+   * Counts drawing draft changes, whether the latest one added a point and whether it saved a chain. A press keeps its
+   * release only while its own change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick
+   * during the press, ends it.
    */
-  const draftChanges = useRef({ count: 0, added: false });
-  const noteDraftChange = (added: boolean) => { draftChanges.current = { count: draftChanges.current.count + 1, added }; };
+  const draftChanges = useRef({ count: 0, added: false, finished: false });
+  const noteDraftChange = (added: boolean) => { draftChanges.current = { count: draftChanges.current.count + 1, added, finished: false }; };
   const pendingChange = useRef(onPendingChange);
   pendingChange.current = onPendingChange;
   const edgeSubmission = useRef<CadSketchOverlapPick | null>(null);
@@ -381,15 +414,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       ? handlePicker.handles.find(grip => grip.profileId === owned.profileId && cadSketchHandleKey(grip.handle) === cadSketchHandleKey(owned.handle)) : null;
     setDetailSelection(next ? { kind: 'handle', target: next } : { kind: 'none' });
   }, [documentVersion, sketch, profiles, handlePicker]);
-  useEffect(() => { edgeSubmission.current = null; submission.cancel(); setHoverHandle(null); setDetailSelection({ kind: 'profile' }); ownedHandleEdit.current = null; setDragPreview(null); }, [sketch.id, tool, cancelSignal, submission.cancel]);
+  useEffect(() => { edgeSubmission.current = null; chainSave.current = null; submission.cancel(); setHoverHandle(null); setDetailSelection({ kind: 'profile' }); ownedHandleEdit.current = null; setDragPreview(null); }, [sketch.id, tool, cancelSignal, submission.cancel]);
   const width = span * aspect;
   const drawingCandidate = (candidate: CadSketchSnapCandidate): DrawingPick => ({ point: candidate.point, candidate });
   const resolveDrawingPick = (raw: SketchPoint, suppressed: boolean, mode: DrawingCursor['mode'], mmPerPixel: SketchPoint = [width / viewportSize.width, span / viewportSize.height]): DrawingPick => {
     if (suppressed || mode === 'position') return { point: raw };
-    const draftStart = !positionPick && tool === 'path' && pathDraft.kind === 'ready' ? { point: pathDraft.start } : undefined;
+    // A chain's start is a target once a segment leaves it; before that it would only give a zero-length segment.
+    const draftStart = !positionPick && chainTool && pathDraft.kind === 'ready' && pathDraft.segments.length ? { point: pathDraft.start } : undefined;
     if (drawing || positionPick) {
-      if (draftStart && pathDraft.kind === 'ready' && pathDraft.segments.length) {
-        // Returning to the polyline's own start is explicit closing intent,
+      if (draftStart) {
+        // Returning to the chain's own start is explicit closing intent,
         // independent of other saved points at that same position.
         const closure = snapDraftStart({ cursor: raw, mmPerPixel, draftStart });
         if (closure.kind === 'hit') return { point: closure.candidate.point, candidate: closure.candidate };
@@ -406,12 +440,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     return point === raw ? null : point;
   };
   // Inference guides start from the drawing's own placed points and the points the pointer recently rested on.
-  const alignSources = (): readonly SketchPoint[] => {
-    const own = positionPick ? [] : pathTool ? pathDraft.kind === 'idle' ? [] : [pathDraft.start, ...pathDraft.segments.map(segment => segment.end), ...(pathDraft.kind === 'arc-through' ? [pathDraft.end] : [])]
-      // A rectangle's own first corner would only offer a zero-height or zero-width rectangle.
-      : tool === 'rectangle' ? [] : points;
-    return [...own, ...acquired.current];
-  };
+  // The draft's own points change only with the draft, never per pointer move.
+  const ownAlignSources = useMemo((): readonly SketchPoint[] => positionPick ? [] : pathTool ? pathDraft.kind === 'idle' ? []
+    : [pathDraft.start, ...pathDraft.segments.map(segment => segment.end), ...(pathDraft.kind === 'arc-through' ? [pathDraft.end] : [])]
+    // A rectangle's own first corner would only offer a zero-height or zero-width rectangle.
+    : tool === 'rectangle' ? [] : points, [positionPick, pathTool, pathDraft, tool, points]);
+  const alignSources = (): readonly SketchPoint[] => acquired.current.length ? [...ownAlignSources, ...acquired.current] : ownAlignSources;
   const cursorPick = resolveDrawingPick(cursorInput.point, cursorInput.suppressed, cursorInput.mode);
   const cursor = cursorPick.point;
   const snapHint = (drawing || positionPick) && !interactionLocked ? cursorPick.candidate : undefined;
@@ -429,7 +463,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const snapLabel = inferencePoint ? `Coincident with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === inferencePoint) ?? -1) + 1}`
     : snapHint ? snapHint.target.kind === 'profile-position' ? `${cadSketchProfileSnapLabel(snapHint.target, sourceProfiles)} · Position only · No relation`
     : snapHint.target.kind === 'draft-start' ? sketch.kind === 'curve' ? 'Curve start'
-      : pathDraft.kind === 'ready' && pathDraft.segments.length > (pathDraft.mode === 'line' ? 1 : 0) ? 'Close polyline' : 'Polyline start'
+      : pathDraft.kind === 'ready' && pathDraft.segments.length > (pathDraft.mode === 'line' ? 1 : 0) ? 'Close chain' : 'Chain start'
     : 'pointId' in snapHint.target || snapHint.target.kind === 'midpoint' ? `${snapHint.target.kind[0].toUpperCase()}${snapHint.target.kind.slice(1)} position · No relation`
     : inferredAxis ? cadSketchDrawingInferenceLabel(snapHint.target, inferredAxis)
     : `${cadSketchSnapTargetLabel(snapHint.target)} · ${inferenceRelation ?? 'No relation'}` : '';
@@ -478,10 +512,13 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     return () => element.removeEventListener('wheel', wheel);
   }, []);
   const renderedPlane = useMemo(() => typeof sketch.plane === 'string' ? sketch.plane : Object.freeze({ ...sketch.plane }), [sketch.plane]);
+  // The draft is immutable, so its identity stands for it in the view signature instead of serialising a long chain per move.
+  const draftRevision = useRef({ draft: pathDraft, revision: 0 });
+  if (draftRevision.current.draft !== pathDraft) draftRevision.current = { draft: pathDraft, revision: draftRevision.current.revision + 1 };
   const viewRevision = useRef({ signature: '', revision: 0 });
   const viewSignature = JSON.stringify([sketch.plane, center, span, aspect, grid, snap, gridSnap, gridStep, pickFilter, boxPending, graphPending, pickHighlight, choicePending,
     choiceHighlight ? [choiceHighlight.target, choiceHighlight.point, choiceHighlight.entityIds] : null,
-    overlap ? [overlap.clientX, overlap.clientY, overlap.target, overlap.split, overlap.trim, overlap.extend, overlap.extendEnds, overlap.extendEnd, overlap.action] : null, drawing || positionPick ? [cursor, picks, pathDraft] : null, tool === 'trim' ? trimHover?.preview : null,
+    overlap ? [overlap.clientX, overlap.clientY, overlap.target, overlap.split, overlap.trim, overlap.extend, overlap.extendEnds, overlap.extendEnd, overlap.action] : null, drawing || positionPick ? [cursor, picks, draftRevision.current.revision] : null, tool === 'trim' ? trimHover?.preview : null,
     snapHint ? [snapHint.target, snapHint.point, snapLabel] : null, previewProfile?.geometry, previewSketch ? [previewSketch.profiles, previewSketch.graph] : null,
     graphControls ? [graphControls.selection, graphControls.relation, graphControls.inspection, graphControls.degreesOfFreedom, graphControls.definition?.revision, graphControls.definitionLocked, graphControls.diagnosis?.revision, graphControls.showDimensions, placement] : null, inspection, dragPreview?.translation]);
   if (viewRevision.current.signature !== viewSignature) { viewRevision.current = { signature: viewSignature, revision: viewRevision.current.revision + 1 }; }
@@ -520,7 +557,24 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     onControlsReady?.(controls);
     return () => onControlsReady?.(null, controls);
   }, [onControlsReady]);
-  useEffect(() => { setPicks([]); setPathDraft(createCadPathDraft(tool === 'arc' ? 'arc' : 'line')); setTrimHover(null); }, [sketch.id, tool, cancelSignal]);
+  useEffect(() => {
+    setPicks([]); setPathDraft(createCadPathDraft(tool === 'arc' ? 'arc' : 'line')); setTrimHover(null);
+    // The press and click history, including a click spent by a chain save, belong to their tool and cancellation. A chain
+    // save changes neither, so its spent click outlives the save's acceptance.
+    drawingPress.current = null; lastClick.current = null; noteDraftChange(false);
+  }, [sketch.id, tool, cancelSignal]);
+  // The first revision after this canvas submits an edit is that edit's own, so a chain save keeps the click it spent. Any other
+  // revision, such as an undo, a redo or an agent edit, forgets the clicks before it: a press there soon after is an ordinary
+  // click, also one still held, and nothing the document no longer holds is spent.
+  const ownRevision = useRef(false), historyVersion = useRef(documentVersion);
+  useEffect(() => {
+    if (historyVersion.current === documentVersion) return;
+    historyVersion.current = documentVersion;
+    if (ownRevision.current) { ownRevision.current = false; return; }
+    lastClick.current = null; draftChanges.current = { ...draftChanges.current, finished: false };
+    const press = drawingPress.current;
+    if (press?.held?.second) press.held = { ...press.held, second: null };
+  }, [documentVersion]);
   useLayoutEffect(() => { setCursorInput(current => ({ ...current, mode: 'position' })); }, [sourceSketch, graphSourceParameters, tool, cancelSignal, center, span, aspect]);
   // Acquired points are positions, so a revision or a parameter change can move what they came from, also
   // where the sketch keeps its object.
@@ -756,9 +810,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const dimensionLineCover = useRef(measureLineCover); dimensionLineCover.current = measureLineCover;
   const coversDimensionLine = useCallback((event: DimensionLineEvent) => Boolean(dimensionLineCover.current(event)?.covered), []);
   const submitEdit = (apply: (signal: AbortSignal) => CadEditCompletion, accepted: () => void, fallback: string) => {
-    pendingChange.current(true);
+    pendingChange.current(true); ownRevision.current = true;
     submission.submit(apply, accepted, error => {
-      edgeSubmission.current = null; ownedHandleEdit.current = null; setDragPreview(null);
+      ownRevision.current = false; edgeSubmission.current = null; ownedHandleEdit.current = null; chainSave.current = null; setDragPreview(null);
       pendingChange.current(points.length > 0 || pathPending);
       onError(userFacingMessage(error, fallback));
     });
@@ -789,10 +843,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     } catch (error) { finishProfileDrag(); onError(userFacingMessage(error, 'Unable to move this contour.')); }
   };
   /**
-   * Line and Arc save their one segment, and a polyline click returning to its start saves it closed. The draft keeps
-   * its earlier state until the save is accepted, so a rejected save leaves the last click to repeat.
+   * Arc saves its one segment, a drag from an idle Line saves its one line, and a chain click returning to its start saves
+   * it closed. The draft keeps its earlier state until the save is accepted, so a rejected save leaves the last pick to repeat.
    */
-  const changePath = (action: CadPathDrawingAction, focus = false) => {
+  const changePath = (action: CadPathDrawingAction, focus = false, saveLine = false) => {
     if (interactionLocked && action.kind !== 'cancel') return;
     if (action.kind === 'cancel') submission.cancel();
     try {
@@ -800,7 +854,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       if (action.kind === 'point' && action.pick && referencesSource(action.pick) && !attachedSource.current)
         attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
       setCursorInput(current => ({ ...current, point: action.kind === 'point' ? action.point : cursor, mode: 'position' }));
-      if (action.kind === 'point' && next.kind === 'ready' && (singleSegment ? next.segments.length > 0 : sketch.kind === 'sketch' && closesCadPolyline(next))) finishPath(!singleSegment, next);
+      const closes = chainTool && sketch.kind === 'sketch' && closesCadPathChain(next);
+      if (action.kind === 'point' && next.kind === 'ready' && next.segments.length > 0 && (singleSegment || closes || saveLine && next.segments.length === 1)) finishPath(closes, next);
       else { setPathDraft(next); noteDraftChange(action.kind === 'point'); }
     }
     catch (error) { onError(userFacingMessage(error, 'Unable to draw this path.')); }
@@ -809,12 +864,13 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   const cancelDrawing = () => {
     noteDraftChange(false); closeSnapChoice();
-    edgeSubmission.current = null; submission.cancel(); ownedHandleEdit.current = null;
+    edgeSubmission.current = null; chainSave.current = null; submission.cancel(); ownedHandleEdit.current = null;
     setDragPreview(null); setPicks([]); setPathDraft(idlePathDraft()); setCursorInput(current => ({ ...current, mode: 'position' }));
     if (curveCreation) onCancelCurve?.();
   };
-  const finishPath = (closed: boolean, draft: CadPathDraft = pathDraft) => {
-    if (interactionLocked) return;
+  const finishPath = (closed: boolean, draft: CadPathDraft = pathDraft, after?: () => void) => {
+    // Every other caller is gated by the full lock; only finishing an open chain closes a pending snap choice first.
+    if (chainFinishLocked) return;
     noteDraftChange(false);
     const reset = () => setPathDraft(idlePathDraft());
     try {
@@ -824,9 +880,17 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         submitEdit(signal => onAddCurve(segments, signal), reset, 'Unable to finish this curve.');
       } else if (onAddPath) {
         if (!attachedSourceCurrent()) return;
-        submitEdit(signal => onAddPath(draft, closed, signal), reset, singleSegment ? `Unable to add this ${tool}.` : 'Unable to finish this polyline.');
+        // Escape or a tool switch during a chain's save runs its step once the chain is accepted, and never aborts the drawn segments.
+        const owned = singleSegment ? null : { after }; chainSave.current = owned;
+        // A click that saves the chain spends the double-click it begins.
+        if (owned) draftChanges.current = { ...draftChanges.current, finished: true };
+        submitEdit(signal => onAddPath(draft, closed, signal), () => {
+          reset();
+          if (!owned || chainSave.current !== owned) return;
+          chainSave.current = null; owned.after?.();
+        }, singleSegment ? 'Unable to add this arc.' : draft.kind !== 'idle' && draft.segments.length === 1 && !closed ? 'Unable to add this line.' : 'Unable to finish this line chain.');
       } else if (singleSegment) {
-        throw new Error('This sketch keeps closed profiles only. Draw a closed shape with Polyline.');
+        throw new Error('This sketch keeps closed profiles only. Draw a closed chain with Line.');
       } else {
         const profile = closeCadPolylineProfile(draft);
         submitEdit(signal => onAddProfile(profile, signal), reset, 'Unable to close this path.');
@@ -835,6 +899,76 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     catch (error) { onError(userFacingMessage(error, 'Unable to close this path.')); }
     svg.current?.focus();
   };
+  /**
+   * Saves a chain that can stay open with its completed segments, dropping a pending arc endpoint or snap choice, and runs
+   * `after` once the save is accepted. False with no completed segment. Curves and profile-only sketches keep their explicit finish.
+   */
+  const finishOpenChain = (after?: () => void) => {
+    const completed = chainOpen && !chainFinishLocked ? completedCadPathChain(pathDraft) : null;
+    if (!completed) return false;
+    if (snapChoice) closeSnapChoice();
+    finishPath(false, completed, after); return true;
+  };
+  /**
+   * The latest click, when a press soon after it and within the drag slop of it, with the draft unchanged since, could
+   * complete its double-click. Only a completed click begins one, so a press another pointer still holds never does, and a
+   * mouse, pen or touch click pairs only with a press of its own kind.
+   */
+  const secondPress = (press: DrawingPlacement, pointerId: number) => {
+    const previous = lastClick.current;
+    return previous && previous.changes === draftChanges.current.count && (previous.pointerId === null || previous.pointerId === pointerId)
+      && (!previous.pointerType || !press.pointerType || previous.pointerType === press.pointerType) && press.time - previous.time <= DOUBLE_CLICK_MS
+      && Math.hypot(press.clientX - previous.clientX, press.clientY - previous.clientY) <= DRAWING_DRAG_PIXELS ? previous : null;
+  };
+  /**
+   * Records a click after whatever it placed, so the next press can complete a double-click. A press records it while still
+   * down, with its `pointerId` until the release, so a cancel, a lost capture or a drag first can drop it. A press whose
+   * `pick` opens the snap chooser is no click: the chooser takes the next press, and a press outside that dismisses it is one.
+   */
+  const noteClick = (at: DrawingPlacement, pick?: DrawingPick, pointerId: number | null = null) => {
+    const change = draftChanges.current;
+    lastClick.current = pick?.candidates ? null : { time: at.time, clientX: at.clientX, clientY: at.clientY, pointerType: at.pointerType, changes: change.count, pointerId, finished: change.finished };
+  };
+  /** The latest click while the press that made it, by `pointerId`, is still down. */
+  const pressedClick = (pointerId: number) => {
+    const click = lastClick.current;
+    return click && click.pointerId !== null && click.pointerId === pointerId ? click : null;
+  };
+  /**
+   * A double-click finishes a chain that can stay open without a zero-length segment, and is then the click that saved it.
+   * False with nothing complete to save, so the click stays an ordinary one.
+   */
+  const finishDoubleClick = (at: DrawingPlacement) => {
+    lastClick.current = null;
+    if (!finishOpenChain()) return false;
+    noteClick(at); return true;
+  };
+  /**
+   * One Escape for the drawing. A chain that can stay open saves its completed segments and the tool stays; any other pending
+   * drawing is discarded. During a chain's save the Escape leaves the tool once the save is accepted, so it never aborts drawn
+   * segments. False with nothing pending, so the Escape can leave the tool.
+   */
+  const escapeDrawing = (): boolean => {
+    if (submission.applying) {
+      if (chainSave.current) chainSave.current.after = () => onExitTool?.(); else cancelDrawing();
+      return true;
+    }
+    if (interactionLocked) return false;
+    if (pathTool && pathPending) {
+      if (!finishOpenChain()) changePath({ kind: 'cancel' });
+      return true;
+    }
+    if (!points.length) return false;
+    setPicks([]); noteDraftChange(false); return true;
+  };
+  const drawingActions = useRef({ escape: escapeDrawing, finishChain: finishOpenChain });
+  drawingActions.current = { escape: escapeDrawing, finishChain: finishOpenChain };
+  const drawingControls = useMemo((): CadSketchDrawingControls => ({ escape: () => drawingActions.current.escape(), finishChain: after => drawingActions.current.finishChain(after) }), []);
+  const chainSavable = chainOpen && !chainFinishLocked && completedCadPathChain(pathDraft) !== null;
+  useLayoutEffect(() => {
+    onDrawingControls?.(drawingControls, chainSavable);
+    return () => onDrawingControls?.(null, false);
+  }, [onDrawingControls, drawingControls, chainSavable]);
   const add = (geometry: CadProfile, drawing?: CadFreshSketchDrawing) => {
     noteDraftChange(false);
     try {
@@ -899,9 +1033,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const instruction = positionPick ? `${positionPick.label} · Escape cancels` : geometryPick ? `${geometryPick.label} · ${geometryPick.escapeLabel ?? 'Escape cancels'}`
     : tool === 'trim' ? currentTrim?.kind === 'ready' ? 'Click to remove the red piece · Escape returns to Select' : currentTrim?.reason ?? 'Point at the piece of an edge to remove · Escape returns to Select'
     : pathTool && pathDraft.kind === 'arc-through' ? pathPreview.kind === 'invalid' ? pathPreview.message : 'Click a point on the arc.'
-    : tool === 'line' ? pathDraft.kind === 'idle' ? 'Click the line start.' : 'Click the line end.'
     : tool === 'arc' ? pathDraft.kind === 'idle' ? 'Click the arc start.' : 'Click the arc end.'
-    : tool === 'path' ? pathDraft.kind === 'idle' ? sketch.kind === 'curve' ? 'Click the curve start.' : 'Click the polyline start.' : pathMode === 'arc' ? 'Click the arc endpoint.' : sketch.kind === 'curve' ? 'Click the next endpoint; Finish curve to save.' : onAddPath ? 'Click the next point. Click the start to close, or press Enter to finish open.' : 'Click the next endpoint; Close profile to finish.'
+    : chainTool ? pathDraft.kind === 'idle' ? sketch.kind === 'curve' ? 'Click the curve start.' : chainOpen ? 'Click the line start, or drag to draw one line.' : 'Click the chain start.'
+      : pathMode === 'arc' ? 'Click the arc endpoint.' : sketch.kind === 'curve' ? 'Click the next endpoint; Finish curve to save.'
+      : !chainOpen ? 'Click the next endpoint; Close profile to finish.' : pathDraft.segments.length ? 'Click the next point. Click the start to close; double-click, Enter or Escape to finish open.' : 'Click the line end.'
     : tool === 'select' ? sketch.kind === 'curve' ? 'Edit curve dimensions in Properties.' : 'Select a profile to edit dimensions'
     : tool === 'slot' ? points.length > 1 ? 'Click to set the slot width' : points.length ? 'Click the second arc center' : 'Click the first arc center'
     : points.length ? tool === 'circle' ? 'Click to set the radius' : 'Click the opposite corner' : tool === 'circle' ? 'Click the circle center' : 'Click the first corner';
@@ -926,7 +1061,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     : preview?.kind === 'slot' && typeof preview.width === 'number' && typeof preview.angle === 'number'
       ? points.length > 1 ? `${readout(slotLength)} mm · width ${readout(preview.width)} mm` : `${readout(slotLength)} mm · ${readout(preview.angle)}°`
     : pathTool && pathPreview.kind === 'line' && pathEnd ? segmentReadout(pathEnd) : null;
-  const placePoint = (point: SketchPoint, candidate?: CadSketchSnapCandidate) => {
+  const placePoint = (point: SketchPoint, candidate?: CadSketchSnapCandidate, saveLine = false) => {
     if (interactionLocked) return;
     if (positionPick) {
       if (!isPreview && !viewLocked) positionPick.onPick(Object.freeze([...point] satisfies [number, number]));
@@ -947,7 +1082,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (pathTool) {
       // An arc's through point only shapes the arc.
       const pick = canInfer && pathDraft.kind !== 'arc-through' ? authoredPick() : undefined, axis = lineInference(candidate, point);
-      changePath({ kind: 'point', point, ...(pick && pick.kind !== 'position' ? { pick } : {}), ...(axis ? { inferred: { kind: axis, relationId: crypto.randomUUID() } } : {}) }); return;
+      changePath({ kind: 'point', point, ...(pick && pick.kind !== 'position' ? { pick } : {}), ...(axis ? { inferred: { kind: axis, relationId: crypto.randomUUID() } } : {}) }, false, saveLine); return;
     }
     const appendPick = (pick: CadFreshSketchPick) => {
       if (referencesSource(pick) && !attachedSource.current) attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
@@ -974,18 +1109,20 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   // CadContextMenu closes synchronously before invoking a chosen item. Use the
   // post-close handler so normal foreign-workflow and submission guards remain active.
-  const placeChosen = useRef<(candidate: CadSketchSnapCandidate) => void>(() => undefined);
-  placeChosen.current = candidate => placePoint(candidate.point, candidate);
-  const acceptDrawingPick = (pick: DrawingPick, anchor?: { clientX: number; clientY: number }) => {
+  const placeChosen = useRef<(candidate: CadSketchSnapCandidate, saveLine?: boolean) => void>(() => undefined);
+  placeChosen.current = (candidate, saveLine) => placePoint(candidate.point, candidate, saveLine);
+  /** `saveLine` ends a drag from an idle Line, so the line it completes saves at once, also through the snap chooser. */
+  const acceptDrawingPick = (pick: DrawingPick, anchor?: { clientX: number; clientY: number }, saveLine = false) => {
     if (interactionLocked) return;
-    if (!pick.candidates) { placePoint(pick.point, pick.candidate); return; }
+    if (!pick.candidates) { placePoint(pick.point, pick.candidate, saveLine); return; }
     const bounds = svg.current?.getBoundingClientRect();
     if (!bounds?.width || !bounds.height || !attachedSourceCurrent()) return;
     const at = anchor ?? { clientX: bounds.left + bounds.width / 2 + (pick.point[0] - center[0]) / width * bounds.width,
       clientY: bounds.top + bounds.height / 2 - (pick.point[1] - center[1]) / span * bounds.height };
     const projected = projectSelection(at); if (!projected) return;
-    pendingChange.current(true);
-    setSnapChoice({ owner: drawingOwner, candidates: pick.candidates, ...at, frame: projected.frame });
+    // Opening the chooser on any path, a key included, ends the click history, so no later press pairs with an earlier click.
+    pendingChange.current(true); lastClick.current = null;
+    setSnapChoice({ owner: drawingOwner, candidates: pick.candidates, clientX: at.clientX, clientY: at.clientY, frame: projected.frame, ...(saveLine ? { saveLine } : {}) });
   };
   const dimensionProfile = dragPreview?.profile ?? (sketch.kind === 'sketch' ? sketch.profiles.find(profile => profile.id === selectedProfileId) : undefined);
   const dimensionBounds = useMemo(() => {
@@ -999,11 +1136,18 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const y = (center[1] - dimensionBounds.minY) / span * viewportSize.height + viewportSize.height / 2 + 12;
     return { x: Math.max(125, Math.min(viewportSize.width - 125, x)), y: Math.max(60, Math.min(viewportSize.height - 220, y)) };
   }, [dimensionBounds, viewportSize, center, width, span]);
+  // A long chain's attachment markers change only with the draft and the view, never per pointer move.
+  const attachmentRadius = 6 * span / (viewportSize.height || 600);
+  const attachmentMarkers = useMemo(() => pendingPicks.map((pick, index) => <circle key={index} data-cad-sketch-attachment={pick.kind === 'coincident' ? pick.sourcePointId : pick.kind === 'on-line' ? pick.lineId : pick.kind === 'on-curve' ? pick.curveId : pick.datum}
+    cx={pick.point[0] - center[0]} cy={pick.point[1] - center[1]} r={attachmentRadius} className="cad-sketch-snap-target"><title>{pick.kind === 'coincident'
+      ? `Pending coincidence with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === pick.sourcePointId) ?? -1) + 1}`
+      : pick.kind === 'on-line' ? 'Pending point on line' : pick.kind === 'on-curve' ? 'Pending point on curve' : `Pending ${pick.datum === 'origin' ? 'fix at the origin' : `point on the ${pick.datum === 'x-axis' ? 'X' : 'Y'} axis`}`}</title></circle>),
+  [pendingPicks, center, attachmentRadius, sourceGraph]);
   // The view toolbar does not follow the cursor, so drawing moves reuse it instead of rendering its controls again.
   const latestFit = useRef(fit); latestFit.current = fit;
   const pickLocked = viewLocked || interactionLocked || Boolean(geometryPick || positionPick);
   const planeLabel = placementLabel ?? (typeof sketch.plane === 'string' ? sketch.plane : 'Datum plane');
-  const viewTools = useMemo(() => <CadViewTools label="Sketch controls">{sketch.kind === 'sketch' && <Select aria-label="Sketch selection filter" title="Auto includes points, edges and profiles. Points or Edges restrict direct picking and box selection; Shift toggles selection." density="compact" value={pickFilter} disabled={pickLocked} onChange={event => setPickFilter(event.target.value as CadSketchGraphPickFilter)}><option value="auto">Auto</option><option value="points">Points</option><option value="edges">Edges</option></Select>}<span className="cad-plane-label">{planeLabel}</span><Button aria-label={sketch.kind === 'curve' ? 'Fit curve' : 'Fit sketch'} disabled={viewLocked} onClick={() => latestFit.current()}><FitViewIcon size={14} /></Button><Button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><GridIcon size={14} /></Button><Button aria-label="Toggle snapping" title="Snap to endpoints, centers, midpoints and other geometry. Hold Ctrl or Cmd to temporarily disable snapping." disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button><label className="cad-grid-step">Grid <Input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label><label className="cad-check"><Input type="checkbox" aria-label="Snap to grid" title="Catch the pointer at grid nodes it passes close to. Off, the grid is only a visual reference." disabled={viewLocked} checked={gridSnap} onChange={event => setGridSnap(event.target.checked)} />Snap to grid</label><CadContextHelp label="Sketch navigation">{navigationMode === 'trackpad' ? 'Use two-finger scrolling to pan and pinch to zoom.' : 'Drag with the right mouse button to pan and use the wheel to zoom.'} Press F to fit the sketch and Escape to cancel unfinished drawing.</CadContextHelp></CadViewTools>, [sketch.kind, pickFilter, pickLocked, planeLabel, viewLocked, grid, snap, gridStep, gridSnap, navigationMode]);
+  const viewTools = useMemo(() => <CadViewTools label="Sketch controls">{sketch.kind === 'sketch' && <Select aria-label="Sketch selection filter" title="Auto includes points, edges and profiles. Points or Edges restrict direct picking and box selection; Shift toggles selection." density="compact" value={pickFilter} disabled={pickLocked} onChange={event => setPickFilter(event.target.value as CadSketchGraphPickFilter)}><option value="auto">Auto</option><option value="points">Points</option><option value="edges">Edges</option></Select>}<span className="cad-plane-label">{planeLabel}</span><Button aria-label={sketch.kind === 'curve' ? 'Fit curve' : 'Fit sketch'} disabled={viewLocked} onClick={() => latestFit.current()}><FitViewIcon size={14} /></Button><Button aria-label="Toggle sketch grid" disabled={viewLocked} aria-pressed={grid} onClick={() => setGrid(!grid)}><GridIcon size={14} /></Button><Button aria-label="Toggle snapping" title="Snap to endpoints, centers, midpoints and other geometry. Hold Ctrl or Cmd to temporarily disable snapping." disabled={viewLocked} aria-pressed={snap} onClick={() => setSnap(!snap)}><SnapIcon size={14} /></Button><label className="cad-grid-step">Grid <Input aria-label="Grid spacing" disabled={viewLocked} type="number" min="0.01" value={gridStep} onChange={(event) => { const value = Number(event.target.value); if (value > 0 && Number.isFinite(value)) setGridStep(value); }} /> mm</label><label className="cad-check"><Input type="checkbox" aria-label="Snap to grid" title="Catch the pointer at grid nodes it passes close to. Off, the grid is only a visual reference." disabled={viewLocked} checked={gridSnap} onChange={event => setGridSnap(event.target.checked)} />Snap to grid</label><CadContextHelp label="Sketch navigation">{navigationMode === 'trackpad' ? 'Use two-finger scrolling to pan and pinch to zoom.' : 'Drag with the right mouse button to pan and use the wheel to zoom.'} Press F to fit the sketch. Escape finishes a line chain or cancels unfinished drawing; with nothing pending it returns to Select.</CadContextHelp></CadViewTools>, [sketch.kind, pickFilter, pickLocked, planeLabel, viewLocked, grid, snap, gridStep, gridSnap, navigationMode]);
   return <div className={`cad-sketch-viewport ${sketch.kind === 'curve' ? 'cad-curve-viewport' : ''}`} ref={host}>
     <svg ref={svg} className={`cad-sketch-canvas ${drawing ? 'is-drawing' : tool === 'trim' ? 'is-trimming' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio="none"
       onContextMenu={(event) => event.preventDefault()}
@@ -1058,15 +1202,21 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             suppressProfileClick.current = true;
             const last = pathTool ? pathDraft.kind === 'arc-through' ? pathDraft.end : pathDraft.kind === 'ready' ? cadPathDraftEndpoint(pathDraft) : null : points.at(-1);
             const bounds = event.currentTarget.getBoundingClientRect(), pick = getDrawingPick(event);
-            // A tap followed by a tap-drag can arrive as a second press on the point the tap placed, so wait for the release.
-            const beside = last && bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
-              event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS;
-            const press = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, changes: draftChanges.current.count,
-              held: beside && last ? { last, raw: getRawPoint(event) ?? [0, 0], scale: [width / bounds.width, span / bounds.height] as SketchPoint } : null, dragged: false };
+            // A tap followed by a tap-drag can arrive as a second press on the point the tap placed, so wait for the release. So does
+            // a chain press whose pick snaps back onto its last point, which placing would only repeat.
+            const snapsBack = Boolean(chainOpen && last && !pick.candidates && pick.point[0] === last[0] && pick.point[1] === last[1]);
+            const beside = last && (snapsBack || bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
+              event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS);
+            // A press that could complete a double-click is judged on release too, wherever it lands, since only a still one
+            // finishes a chain. Once a chain has its start, a drag from that point adds a segment to the chain like any later drag.
+            const at = { clientX: event.clientX, clientY: event.clientY, time: event.timeStamp, pointerType: event.pointerType }, second = chainOpen ? secondPress(at, event.pointerId) : null;
+            const press = { pointerId: event.pointerId, ...at, changes: draftChanges.current.count, fromIdle: chainOpen && pathDraft.kind === 'idle' && pathMode === 'line',
+              held: beside || second ? { last: beside && last ? last : null, raw: getRawPoint(event) ?? [0, 0], scale: [width / bounds.width, span / bounds.height] as SketchPoint, second } : null, dragged: false };
             drawingPress.current = press;
             try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
-            if (beside) return;
+            if (press.held) return;
             acceptDrawingPick(pick, event);
+            noteClick(press, pick, event.pointerId);
             // Only a press that added a point draws on release; a finished, rejected or ambiguous pick ends the gesture.
             const change = draftChanges.current;
             if (change.count !== press.changes && change.added) press.changes = change.count; else drawingPress.current = null;
@@ -1102,21 +1252,39 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
               try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishProfileDrag(); }
             }
           }
+        } else if (event.button === 0 && drawing && !geometryPick && !positionPick) {
+          // A press while drawing is paused, such as during a chain's save, places nothing. It keeps its trailing click even when
+          // the pause ends before its release, so it never starts a chain, and it ends any double-click the last click began.
+          suppressProfileClick.current = true; lastClick.current = null;
         }
       }}
-      onPointerUpCapture={event => { if (abandonedPresses.current.delete(event.pointerId)) suppressProfileClick.current = true; }}
+      onPointerUpCapture={event => {
+        if (abandonedPresses.current.delete(event.pointerId)) suppressProfileClick.current = true;
+        // Its release completes a drawing click.
+        const click = pressedClick(event.pointerId);
+        if (click) lastClick.current = { ...click, pointerId: null };
+      }}
       onPointerUp={(event) => {
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
           drawingPress.current = null;
-          // Nothing more once the draft changed again during the press, for example by a cancel or a keyboard pick.
-          if (event.button !== 0 || interactionLocked || draftChanges.current.count !== press.changes || !(points.length > 0 || pathPending)) return;
-          if (press.dragged) acceptDrawingPick(getDrawingPick(event), event);
-          // A held press that did not drag is a deliberate short pick, unless it repeats the last point exactly.
-          // It resolves again at the pressed sketch position so Ctrl or Cmd pressed during the hold still releases snaps and relations.
-          else if (press.held) {
-            const pick = resolveDrawingPick(press.held.raw, event.ctrlKey || event.metaKey, 'pointer', press.held.scale);
-            if (pick.point[0] !== press.held.last[0] || pick.point[1] !== press.held.last[1]) acceptDrawingPick(pick, { clientX: press.clientX, clientY: press.clientY });
+          // Nothing more once the draft changed again during the press, for example by a cancel or a keyboard pick. A held press
+          // away from the last point placed nothing, so it may also begin a drawing or end an idle one.
+          const held = press.held;
+          if (event.button !== 0 || interactionLocked || draftChanges.current.count !== press.changes || !(points.length > 0 || pathPending || held && !held.last)) return;
+          if (press.dragged) {
+            // A drag is no click, so it never starts a double-click.
+            acceptDrawingPick(getDrawingPick(event), event, press.fromIdle); lastClick.current = null;
+          } else if (held) {
+            // A still second click finishes a chain with something to finish; its first click already placed its point. The
+            // second click after a click that saved the chain is spent and starts nothing.
+            if (held.second?.finished) { lastClick.current = null; return; }
+            if (held.second && finishDoubleClick(press)) return;
+            // Otherwise a held press is a deliberate short pick, unless it repeats the last point exactly. It resolves again at
+            // the pressed sketch position so Ctrl or Cmd pressed during the hold still releases snaps and relations.
+            const pick = resolveDrawingPick(held.raw, event.ctrlKey || event.metaKey, 'pointer', held.scale);
+            if (!held.last || pick.point[0] !== held.last[0] || pick.point[1] !== held.last[1]) acceptDrawingPick(pick, { clientX: press.clientX, clientY: press.clientY });
+            noteClick(press, pick);
           }
           return;
         }
@@ -1161,15 +1329,33 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (!geometryPick && !positionPick && pickFilter === 'auto' && point && rect.height) onContextMenu?.({ clientX: event.clientX, clientY: event.clientY, trigger: 'pointer', profileId: profilePicker.pick(point, span / rect.height), pointMm: point });
       }}
       onPointerCancel={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress();
-        // A cancelled pointer ends in no click.
+        // A cancelled pointer ends in no click, so its press cannot begin a double-click either.
+        if (pressedClick(event.pointerId)) lastClick.current = null;
         abandonedPresses.current.delete(event.pointerId); boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
-      onLostPointerCapture={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress(); boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
+      onLostPointerCapture={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress();
+        // Capture lost before the release ends the press in no click. After the release, the click no longer names its pointer.
+        if (pressedClick(event.pointerId)) lastClick.current = null;
+        boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
       onPointerMove={(event) => {
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
           if (!(event.buttons & 1)) drawingPress.current = null;
-          else if (!press.dragged && Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY) > DRAWING_DRAG_PIXELS) press.dragged = true;
+          else if (!press.dragged && Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY) > DRAWING_DRAG_PIXELS) {
+            press.dragged = true;
+            // A held second press away from the last point draws like any drag once it moves. Its own pick is placed now, and
+            // rendered at once, so the release places the next pick on the updated draft.
+            const held = press.held;
+            if (held && !held.last) {
+              press.held = null;
+              flushSync(() => acceptDrawingPick(resolveDrawingPick(held.raw, event.ctrlKey || event.metaKey, 'pointer', held.scale), { clientX: press.clientX, clientY: press.clientY }));
+              const change = draftChanges.current;
+              if (change.count !== press.changes && change.added) press.changes = change.count; else drawingPress.current = null;
+            }
+          }
         }
+        // A press that drags is no click.
+        const click = pressedClick(event.pointerId);
+        if (click && Math.hypot(event.clientX - click.clientX, event.clientY - click.clientY) > DRAWING_DRAG_PIXELS) lastClick.current = null;
         const reference = datumPress.current;
         if (reference && event.pointerId === reference.pointerId && (!(event.buttons & 1) || Math.hypot(event.clientX - reference.clientX, event.clientY - reference.clientY) > 4)) datumPress.current = null;
         if (boxSelection.active()) { boxSelection.move(event); return; }
@@ -1228,7 +1414,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (geometryPick && !interactionLocked && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); geometryPick.onCancel(); return; }
         if (event.key === 'Escape' && boxSelection.active()) { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; boxSelection.cancel(); return; }
         if (event.key === 'Escape' && submission.applying) {
-          event.preventDefault(); event.stopPropagation(); cancelDrawing(); return;
+          event.preventDefault(); event.stopPropagation(); escapeDrawing(); return;
         }
         if (event.key === 'Escape' && profileDrag.current) { event.preventDefault(); event.stopPropagation(); finishProfileDrag(); return; }
         if (event.key === 'ContextMenu' || event.key === 'F10' && event.shiftKey) {
@@ -1271,12 +1457,14 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         } else if ((event.key === 'Enter' || event.key === ' ') && (drawing || positionPick)) {
           event.preventDefault();
           if (positionPick) acceptDrawingPick(cursorPick);
-          // Enter keeps a polyline open; a sketch without connected edges can only close it.
-          else if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') finishPath(sketch.kind === 'sketch' && !onAddPath);
+          // Enter saves a line chain's completed segments open, dropping a pending arc endpoint, and adds a point while none is
+          // complete; a sketch without connected edges can only close its chain.
+          else if (event.key === 'Enter' && chainOpen && finishOpenChain()) return;
+          else if (event.key === 'Enter' && chainTool && !chainOpen && pathDraft.kind === 'ready') finishPath(sketch.kind === 'sketch' && !onAddPath);
           else acceptDrawingPick(cursorPick);
-        } else if (pathTool && pathPending && (event.key === 'Backspace' || event.key === 'Escape')) { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }); }
+        } else if (pathTool && pathPending && event.key === 'Backspace') { event.preventDefault(); changePath({ kind: 'undo-last' }); }
         else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPicks((current) => current.slice(0, -1)); noteDraftChange(false); }
-        else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPicks([]); noteDraftChange(false); }
+        else if (event.key === 'Escape' && escapeDrawing()) event.preventDefault();
         else if (event.key === 'Escape' && tool === 'select' && (graphControls?.selection.length || graphControls?.datumSelection?.length || graphControls?.dimensionSelection?.length)) { event.preventDefault(); event.stopPropagation(); graphControls.onSelect(null); }
       }}
       onClick={(event) => {
@@ -1294,7 +1482,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             setActiveHandle(grip);
             onSelectProfile(grip?.profileId ?? profilePicker.pick(point, span / rect.height));
           }
-        } else if (drawing) acceptDrawingPick(getDrawingPick(event), event);
+        } else if (drawing) {
+          // A double-click that no press placed, such as a synthetic one, finishes a chain on its second click.
+          if (chainOpen && event.detail >= 2 && pathDraft.kind !== 'idle') finishDoubleClick({ time: event.timeStamp, clientX: event.clientX, clientY: event.clientY });
+          else acceptDrawingPick(getDrawingPick(event), event);
+        }
       }}>
       <defs><pattern id="cad-sketch-grid" x={-center[0] % gridStep} y={center[1] % gridStep} width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" className="cad-sketch-grid-line" strokeWidth={span / 1000} /></pattern></defs>
       {grid && span / gridStep < 2000 && gridBands(-width / 2, width / 2, -center[0], gridStep / 2).flatMap(([left, right]) => gridBands(-span / 2, span / 2, center[1], gridStep / 2)
@@ -1388,10 +1580,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
               : choicePointId === undefined ? 'Choose midpoint' : `Choose Point ${(sourceGraph?.graph.points.findIndex(point => point.id === choicePointId) ?? -1) + 1}`} />
         </g>}
         {points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className="cad-sketch-vertex" />)}
-        {pendingPicks.map((pick, index) => <circle key={index} data-cad-sketch-attachment={pick.kind === 'coincident' ? pick.sourcePointId : pick.kind === 'on-line' ? pick.lineId : pick.kind === 'on-curve' ? pick.curveId : pick.datum}
-          cx={pick.point[0] - center[0]} cy={pick.point[1] - center[1]} r={6 * span / (viewportSize.height || 600)} className="cad-sketch-snap-target"><title>{pick.kind === 'coincident'
-            ? `Pending coincidence with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === pick.sourcePointId) ?? -1) + 1}`
-            : pick.kind === 'on-line' ? 'Pending point on line' : pick.kind === 'on-curve' ? 'Pending point on curve' : `Pending ${pick.datum === 'origin' ? 'fix at the origin' : `point on the ${pick.datum === 'x-axis' ? 'X' : 'Y'} axis`}`}</title></circle>)}
+        {attachmentMarkers}
       </g>
       {boxSelection.box && <rect className={`cad-sketch-selection-box is-${boxSelection.box.mode}`} pointerEvents="none"
         x={Math.min(boxSelection.box.start[0], boxSelection.box.end[0]) - center[0]} y={center[1] - Math.max(boxSelection.box.start[1], boxSelection.box.end[1])}
@@ -1399,8 +1588,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     </svg>
     {currentSnapChoice && <CadSketchSnapChooser anchor={{ x: currentSnapChoice.clientX, y: currentSnapChoice.clientY }} candidates={currentSnapChoice.candidates} graph={sourceGraph?.graph} profiles={sourceProfiles}
       onClose={closeSnapChoice} onHighlight={candidate => { if (choiceIsCurrent(currentSnapChoice)) setChoiceHighlight(candidate); }}
-      onChoose={candidate => { if (choiceIsCurrent(currentSnapChoice)) placeChosen.current(candidate); }}
-      onOutsidePointerDown={event => { suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation(); }} />}
+      onChoose={candidate => { if (choiceIsCurrent(currentSnapChoice)) placeChosen.current(candidate, currentSnapChoice.saveLine); }}
+      onOutsidePointerDown={event => {
+        suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation();
+        // The press that dismisses the chooser is still a click, so a double-click there finishes the chain.
+        if (chainOpen && event.button === 0) noteClick({ time: event.timeStamp, clientX: event.clientX, clientY: event.clientY, pointerType: event.pointerType }, undefined, event.pointerId);
+      }} />}
     {currentOverlap && <CadContextMenu anchor={{ x: currentOverlap.clientX + (currentOverlap.target ? 12 : 0), y: currentOverlap.clientY + (currentOverlap.target ? 12 : 0) }} title={currentOverlap.target ? currentOverlap.target.kind === 'point' ? 'Sketch point' : 'Sketch edge' : 'Select other'} items={overlapItems} onClose={closeOverlap}
       onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
     {currentPickMenu && pickMenuContent && <CadContextMenu anchor={{ x: currentPickMenu.clientX, y: currentPickMenu.clientY }} title={pickMenuContent.title} items={pickMenuContent.items} onClose={() => setPickMenu(null)}
@@ -1408,21 +1601,22 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !isPreview && <CadSketchDimensionControls {...dimensionControls} onError={onError} interactionLocked={dimensionControls.interactionLocked || submission.applying || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}
     {!isPreview && inspection && inspection.profileIds.length > 0 ? <div className="cad-sketch-context" role="status">Highlighted geometry · {inspection.profileIds.length} {inspection.profileIds.length === 1 ? 'profile' : 'profiles'}</div>
       : !isPreview && dimensionStatus && <div className="cad-sketch-context" role="status" data-cad-dimension-status="">{dimensionStatus}</div>}
-    <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : currentTrim?.kind === 'ready' ? `${instruction}. ${currentTrim.help}` : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter adds a point or finishes a ready polyline, Backspace undoes the last point or segment, Escape cancels drawing, F fits the sketch.</p>
+    <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : currentTrim?.kind === 'ready' ? `${instruction}. ${currentTrim.help}` : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter adds a point or finishes a line chain, Backspace undoes the last point or segment, Escape finishes a line chain or cancels drawing and, with nothing pending, returns to Select, F fits the sketch.</p>
     {viewTools}
-    {!externalInteractionLocked && (tool !== 'select' || points.length > 0) && <CadDrawingTools active={points.length > 0 || pathPending}><div className={`cad-sketch-instruction ${tool === 'path' ? 'cad-path-instruction' : ''}`} onKeyDown={event => {
+    {/* A chain that can stay open keeps the toolbar in view, since a tool switch saves it; its tools wait for a completed segment. */}
+    {!externalInteractionLocked && (tool !== 'select' || points.length > 0) && <CadDrawingTools active={points.length > 0 || pathPending && !chainOpen}><div className={`cad-sketch-instruction ${chainTool ? 'cad-path-instruction' : ''}`} onKeyDown={event => {
       if (event.nativeEvent.isComposing) return;
-      if (event.key === 'Escape' && submission.applying) { event.preventDefault(); event.stopPropagation(); cancelDrawing(); svg.current?.focus(); return; }
+      if (event.key === 'Escape' && (submission.applying || !event.ctrlKey && !event.metaKey && !event.altKey) && escapeDrawing()) { event.preventDefault(); event.stopPropagation(); svg.current?.focus(); return; }
       if (!pathTool || !pathPending || interactionLocked || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.key === 'Backspace' || event.key === 'Escape') { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }, true); }
+      if (event.key === 'Backspace') { event.preventDefault(); changePath({ kind: 'undo-last' }, true); }
     }}><span>{instruction}</span>
       {canInfer && <label className="cad-check"><Input type="checkbox" aria-label="Create relations" checked={inferCoincidence} disabled={interactionLocked}
         title="Attach future snapped points with removable relations: coincident with endpoints and centers, on a line, arc or circle, or on the origin and axes. A line drawn along its start's horizontal or vertical guide stays horizontal or vertical. Switching off releases pending relations; accepted geometry is unchanged."
         onChange={event => { const enabled = event.target.checked; setInferCoincidence(enabled); if (!enabled) { setPicks(current => current.map(pick => ({ kind: 'position', point: pick.point }))); setPathDraft(releaseCadPathDraftPicks); } }} />Create relations</label>}
       {pendingPicks.length > 0 && <span aria-label="Pending relations">{pendingPicks.length} attached</span>}
-      {tool === 'path' && <>
+      {chainTool && <>
         <div className="cad-path-modes" role="group" aria-label="Segment mode"><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-label="Line segment" aria-pressed={pathMode === 'line'} onClick={() => changePath({ kind: 'mode', mode: 'line' }, true)}>Line</Button><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-pressed={pathMode === 'arc'} onClick={() => changePath({ kind: 'mode', mode: 'arc' }, true)}>3-point Arc</Button></div>
-        {pathPending && <>{sketch.kind === 'sketch' && onAddPath && <Button aria-label="Finish polyline" title="Keep this polyline open without adding a closing edge (Enter)" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish polyline</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
+        {pathPending && <>{chainOpen && <Button aria-label="Finish chain" title="Save the completed segments open, without a closing edge (Enter, double-click or Escape)" disabled={chainFinishLocked || !completedCadPathChain(pathDraft)} onClick={() => finishOpenChain()}><ConfirmIcon size={13} /> Finish</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
       </>}
       {(points.length > 0 || singleSegment && pathPending) && <Button onClick={cancelDrawing}><CloseIcon size={13} /> Cancel drawing</Button>}</div></CadDrawingTools>}
     <div className="cad-view-caption">{geometryPick?.dimensionPreview && geometryPick.pointer ? <CadSketchPointerReadout pointer={geometryPick.pointer} fallback={cursor} /> : <>{formatCadQuantity(Number(cursor[0].toFixed(3)))}, {formatCadQuantity(Number(cursor[1].toFixed(3)))} mm</>}</div>

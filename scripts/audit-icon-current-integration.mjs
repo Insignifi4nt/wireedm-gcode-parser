@@ -21,6 +21,7 @@ const retiredSourceReferences = [
   {id:'use.1fb291d654a2',reason:'The welcome popup and its Close onboarding button were replaced by inline empty-project guidance at the user\'s request.'},
   {id:'use.351faffd1991',reason:'The dashboard brand icon was replaced by the user-selected broCAD/M image wordmark. The published icon export remains available.'},
   {id:'use.04dbc087560c',reason:'The separate Path tool was merged into Polyline, which keeps its line and three-point arc drawing under the polyline icon. The published closed-path export remains available.'},
+  {id:'use.23e14bc3b52c',reason:'The Polyline tool was merged into the chaining Line tool, which keeps its line and three-point arc drawing under the line icon. The published polyline export remains available.'},
 ];
 const integration = JSON.parse(readFileSync(path.join(root, 'docs/design/icon-integration-map.json'), 'utf8'));
 const intendedByUse = new Map(integration.directUsages.map(row=>[row.usageId,row.replacements]));

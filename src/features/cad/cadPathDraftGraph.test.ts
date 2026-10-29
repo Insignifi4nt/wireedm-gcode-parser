@@ -7,7 +7,7 @@ import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { MAX_CAD_PATH_CONSTRUCTION_EDGES } from '@/domain/cad/cadPathConstruction';
 import type { CadConstructionPoint } from '@/domain/cad/cadPathConstruction';
-import { createCadPathDraft, updateCadPathDraft, type CadPathDraft, type CadPathDraftPick } from './cadPathDrawing';
+import { completedCadPathChain, createCadPathDraft, updateCadPathDraft, type CadPathDraft, type CadPathDraftPick } from './cadPathDrawing';
 import { createCadPathDraftGraph } from './cadPathDraftGraph';
 
 function idFactory() {
@@ -156,6 +156,18 @@ describe('live path draft graph construction', () => {
     expect(compileCadSketchGraph({ ...graph, points: [...graph.points].reverse(), entities: [...graph.entities].reverse() }, {}).cycles).toEqual(compiled.cycles);
     expect(measureCadSketch(append(graph), 'sketch').materialAreaMm2).toBeCloseTo(18.75 * Math.PI + 12.5, 11);
     expect(JSON.stringify(draft)).toBe(before);
+  });
+
+  it('shares each chain point between the segments meeting there and saves a finished chain without its pending arc end', () => {
+    const geometry = createCadPathDraftGraph({ draft: lines([[0, 0], [10, 0], [10, 10]]), closed: false, construction: false, createId: idFactory() });
+    expect(geometry.points.map(point => point.position)).toEqual([[0, 0], [10, 0], [10, 10]]);
+    const [first, middle, last] = geometry.points.map(point => point.id);
+    expect(geometry.entities).toMatchObject([{ kind: 'line', startPointId: first, endPointId: middle }, { kind: 'line', startPointId: middle, endPointId: last }]);
+    // A chain finished while an arc waits for its through point keeps the lines before it.
+    let pending = updateCadPathDraft(lines([[0, 0], [10, 0], [10, 10]]), { kind: 'mode', mode: 'arc' });
+    pending = updateCadPathDraft(pending, { kind: 'point', point: [0, 10] });
+    const finished = completedCadPathChain(pending); if (!finished) throw new Error('Expected completed segments.');
+    expect(createCadPathDraftGraph({ draft: finished, closed: false, construction: false, createId: idFactory() })).toEqual(geometry);
   });
 
   it('keeps an open return separate and closes only the final exact authored return when requested', () => {

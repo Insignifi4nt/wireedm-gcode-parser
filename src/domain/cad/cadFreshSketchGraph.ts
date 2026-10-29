@@ -124,7 +124,7 @@ function allocatePolyline(start: CadConstructionPoint, steps: readonly { readonl
     throw new CadError('construction-limit', 'A path can contain at most 2048 edges including its closing edge.');
   let from = start;
   const arcs = steps.map(step => {
-    if (samePosition(step.end, from)) throw new CadError('invalid-fresh-sketch-geometry', 'Each polyline segment needs two different points.');
+    if (samePosition(step.end, from)) throw new CadError('invalid-fresh-sketch-geometry', 'Each chain segment needs two different points.');
     const arc = step.through ? createCadThreePointArc({ start: from, end: step.end, through: step.through }) : null;
     from = step.end; return arc;
   });
@@ -257,11 +257,11 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
       // A closing return is the start point itself, so it can only repeat the start's own attachment.
       const returns = drawing.closed && last !== undefined && samePosition(steps[steps.length - 1].end, start);
       if (returns && last.end.kind !== 'position' && !sameAttachment(last.end, drawing.start))
-        throw new CadError('ambiguous-path-closure', 'The last point attaches to different geometry than the start. Click the start itself to close the polyline.');
+        throw new CadError('ambiguous-path-closure', 'The last point attaches to different geometry than the start. Click the start itself to close the chain.');
       const inferences = drawing.steps.flatMap((step, index) => {
         if (step.kind !== 'line' || !step.inferred) return [];
         const { kind, relationId } = step.inferred, from = index ? steps[index - 1].end : start, to = steps[index].end;
-        if (returns && index === steps.length - 1) throw new CadError('invalid-fresh-sketch-inference', 'A line that closes a polyline cannot keep an inferred relation.');
+        if (returns && index === steps.length - 1) throw new CadError('invalid-fresh-sketch-inference', 'A line that closes a chain cannot keep an inferred relation.');
         if (kind === 'horizontal' ? from[1] !== to[1] : kind === 'vertical' ? from[0] !== to[0] : true)
           throw new CadError('invalid-fresh-sketch-inference', 'An inferred horizontal or vertical relation needs a line drawn exactly level or plumb.');
         return [{ index, kind, relationId }];
