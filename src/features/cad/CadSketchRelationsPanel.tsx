@@ -139,6 +139,8 @@ export interface CadSketchRelationsPanelProps {
   onPrepareEdits?: CadPrepareEdits;
   onPreviewDocument?(document: CadDocument | null): void;
   onInspectRelation?(relation: CadSketchGraphRelation | null): void;
+  /** Reports the ID of the row opened for editing, from a relation row, an add button or the initial command, or null once it closes. */
+  onEditRelation?(relationId: string | null): void;
   onInspectSubject?(subject: CadSketchConstraintFeedbackSubject | null): void;
   /** Hovering or focusing a relation or issue row highlights its geometry on the canvas, as hovering a dimension does. */
   highlight?: CadSketchHighlightStore;
@@ -157,7 +159,7 @@ export function CadSketchRelationsPanel(props: CadSketchRelationsPanelProps) {
   return <RelationsForm key={JSON.stringify([props.document.id, props.sketch.id, props.selection, props.cancelSignal])} {...props} graph={graph} />;
 }
 
-function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, highlight, onCornerAccepted, onEditPattern, onSelectPatternSeed, onPlaceGeometry, interactionLocked, dimensionOnly: dimensionRequested = false }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
+function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onEditRelation, onInspectSubject, highlight, onCornerAccepted, onEditPattern, onSelectPatternSeed, onPlaceGeometry, interactionLocked, dimensionOnly: dimensionRequested = false }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
   const submission = useCadEditSubmission();
   const highlightOwner = useId(), highlighted = useRef<CadSketchHighlightStore | null>(null);
   const showHighlight = (target: CadSketchHighlight) => { highlighted.current = highlight ?? null; highlight?.show(highlightOwner, { kind: 'geometry', ...target }); };
@@ -231,7 +233,9 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       .find(input => input.dataset.cadFieldKey?.startsWith(`${typedRelationId}/`) && !input.readOnly && !input.disabled);
     field?.focus({ preventScroll: true }); field?.select();
   }, [typedRelationId]);
-  const callbacks = useRef({ onPendingChange, onPreviewDocument, onInspectRelation, onInspectSubject }); callbacks.current = { onPendingChange, onPreviewDocument, onInspectRelation, onInspectSubject };
+  const callbacks = useRef({ onPendingChange, onPreviewDocument, onInspectRelation, onEditRelation, onInspectSubject }); callbacks.current = { onPendingChange, onPreviewDocument, onInspectRelation, onEditRelation, onInspectSubject };
+  // The owner keeps its selection on the edited row.
+  useLayoutEffect(() => { callbacks.current.onEditRelation?.(activeRelationId); }, [activeRelationId]);
   const reset = useCallback(() => {
     submission.cancel(); setSource(latest.current); setDraft(latest.current.graph); setGeometryDraft(null);
     setParameterEdits({}); setValueDrafts({}); setFieldIssues({}); setRelationPending({}); setRelationEdits({}); setError(null);

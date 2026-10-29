@@ -1793,6 +1793,23 @@ describe('CAD sketch interaction', () => {
     });
     const swap = (relation: Relation) => replace(current => current.map(item => item.id === relation.id ? relation : item));
     const entities = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.entities.map(entity => entity.id); };
+    const geometry = () => viewport().getState().selectedSketchGeometrySet;
+    const relationsPanel = () => container.querySelector('form[aria-label="Sketch relations"]');
+    /** A relations panel row, named by the start of its relation label, such as `Angle` or `Distance relation 2`. */
+    const relationRow = (name: string) => {
+      const rows = [...container.querySelectorAll<HTMLButtonElement>('ul[aria-label="Sketch relations"] > li button[aria-label^="Inspect "]')];
+      const found = rows.find(row => row.getAttribute('aria-label')?.startsWith(`Inspect ${name} `)); if (!found) throw new Error(`${name} row missing from ${rows.map(row => row.getAttribute('aria-label')).join(', ')}.`);
+      return found;
+    };
+    const editRow = (name: string) => act(async () => relationRow(name).click());
+    /** Opens a sketch edge's context menu from the keyboard and chooses an item. */
+    const geometryMenu = async (id: string, item: string) => {
+      const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Canvas missing.');
+      vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+      const target = container.querySelector<SVGGElement>(`[data-cad-sketch-entity="${id}"]`); if (!target) throw new Error(`Edge ${id} missing.`);
+      await act(async () => { target.focus(); target.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+      await act(async () => menuItem(item).click());
+    };
 
     it('highlights the measured geometry on hover without changing the document or the selection', async () => {
       const source = await open();
@@ -2014,6 +2031,74 @@ describe('CAD sketch interaction', () => {
       // The same right press on an unchanged label opens its menu.
       await right(label('size'), 'pointerdown'); await right(canvas, 'pointerup');
       expect(document.querySelector('[role="menu"]')).not.toBeNull(); expect(selectedDimensions()).toEqual(['size']);
+    });
+
+    it('moves the selection to the dimension row that the relations panel switches to, so Delete removes the dimension its editor shows', async () => {
+      await open();
+      await press('length', 'Enter'); expect(field('Length').value).toBe('40'); expect(selectedDimensions()).toEqual(['length']);
+      await editRow('Angle'); expect(field('Angle').value).toBe('90');
+      expect(relationRow('Angle').getAttribute('aria-pressed')).toBe('true'); expect(selectedDimensions()).toEqual(['angle']); expect(geometry()).toEqual([]);
+      await canvasKey('Delete');
+      expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'size', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
+      expect(relationsPanel()).toBeNull();
+    });
+
+    it('selects the dimension, not the geometry, that a geometry menu opens for editing', async () => {
+      await open();
+      await geometryMenu('base', 'Constraints and dimensions');
+      expect(geometry()).toEqual([{ kind: 'entity', id: 'base' }]); expect(selectedDimensions()).toEqual([]);
+      await editRow('Distance relation 1'); expect(field('Length').value).toBe('40');
+      expect(geometry()).toEqual([]); expect(selectedDimensions()).toEqual(['length']);
+      await canvasKey('Delete');
+      expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'angle', 'size', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
+      // The menu's Dimension on a dimensioned circle opens its existing dimension the same way.
+      await geometryMenu('hole', 'Dimension'); expect(field('Diameter').value).toBe('8');
+      expect(geometry()).toEqual([]); expect(selectedDimensions()).toEqual(['size']);
+      await canvasKey('Delete');
+      expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'angle', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
+    });
+
+    it('keeps the selection to the dimension being edited alone, and closes its editor once anything else takes the selection', async () => {
+      await open();
+      // Opening one of several selected dimensions selects that dimension alone.
+      await pick('length'); await pick('diagonal', true); expect(selectedDimensions()).toEqual(['length', 'diagonal']);
+      await press('diagonal', 'Enter'); expect(field('Distance').value).toBe('50');
+      expect(selectedDimensions()).toEqual(['diagonal']); expect(geometry()).toEqual([]);
+      // A row that is not a canvas dimension returns the selection to the geometry the panel works on; a dimension row takes it back.
+      await press('size', 'Enter'); expect(selectedDimensions()).toEqual(['size']);
+      await editRow('Fix X'); expect(relationsPanel()).not.toBeNull();
+      expect(selectedDimensions()).toEqual([]); expect(geometry()).toEqual([{ kind: 'entity', id: 'hole' }]);
+      await editRow('Diameter'); expect(field('Diameter').value).toBe('8'); expect(selectedDimensions()).toEqual(['size']); expect(geometry()).toEqual([]);
+      // Geometry or another dimension taking the selection closes the editor.
+      await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'o' } }));
+      expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]);
+      await press('length', 'Enter'); expect(relationsPanel()).not.toBeNull();
+      await pick('angle'); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual(['angle']);
+    });
+
+    it('closes a dimension editor when a legacy profile takes the selection', async () => {
+      setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+      const source = bracket(), sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Sketch missing.');
+      await mount(parseCadDocument({ ...source, features: [{ ...sketch, profiles: [{ id: 'plate', name: 'Plate', construction: false, role: 'outer',
+        geometry: { kind: 'rectangle', x: 0, y: 0, width: 50, height: 40, cornerRadius: 0 } }] }] }));
+      await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+      await press('size', 'Enter'); expect(field('Diameter').value).toBe('8');
+      await act(async () => viewport().apply({ kind: 'select-profile', profileId: 'plate' }));
+      expect(viewport().getState().selectedProfileId).toBe('plate'); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]);
+      expect(container.querySelector('button[aria-label="Add dimension"]')).not.toBeNull();
+    });
+
+    it('closes a dimension editor when another document opens under the same sketch and relation IDs', async () => {
+      await open();
+      await press('size', 'Enter'); expect(field('Diameter').value).toBe('8');
+      // The editor never renders against the new document, even before the switch clears the selection, so none of its fields takes focus there.
+      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
+      container.addEventListener('focusin', record);
+      await act(async () => replaceDocument({ ...currentDocument, id: 'other-document' }));
+      container.removeEventListener('focusin', record);
+      expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]); expect(refocused).toBe(0);
+      // The new document's dimension opens its own editor.
+      await press('size', 'Enter'); expect(field('Diameter').value).toBe('8'); expect(selectedDimensions()).toEqual(['size']);
     });
   });
 

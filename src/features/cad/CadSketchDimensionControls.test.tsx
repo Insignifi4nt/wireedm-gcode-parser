@@ -11,8 +11,9 @@ import { CadSketchDimensionControls, type CadSketchDimensionControlsProps } from
 let container: HTMLDivElement, root: Root, cancelControls: () => void = () => undefined;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
+/** Every fixture is the same part, so a replacement stands for an edit, undo or redo of it. */
 function makeDocument(geometry: CadProfile, parameters: Readonly<Record<string, number>> = {}, constraints?: CadSketchProfile['constraints']): CadDocument {
-  return { ...createCadDocument(), parameters, features: [{ id: 'sketch', name: 'Part section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
+  return { ...createCadDocument('Untitled part', 'cad_part'), parameters, features: [{ id: 'sketch', name: 'Part section', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0,
     profiles: [{ id: 'profile', name: 'Part', construction: false, geometry, ...(constraints ? { constraints } : {}) }] }] };
 }
 async function click(label: string) {
@@ -231,6 +232,24 @@ describe('on-part sketch dimension selection', () => {
     await input('Width value', '9'); await click('Apply'); widthSelected(9);
     await key('Width', 'Delete');
     expect(edit).toHaveBeenLastCalledWith([{ kind: 'remove-sketch-dimension', sketchId: 'sketch', profileId: 'profile', dimensionId: 'width' }], expect.any(AbortSignal));
+  });
+
+  it('selects only the chip its editor opens on, out of several selected chips', async () => {
+    const { edit } = await renderControls(slot());
+    await pick('Length'); await pick('Width', true); expect(pressed()).toHaveLength(2);
+    await key('Width', 'Enter'); expect(pressed()).toEqual(['Dimension width 8 mm, press Enter to edit']);
+    await click('Cancel'); await key('Width', 'Delete');
+    expect(edit).toHaveBeenCalledExactlyOnceWith([{ kind: 'remove-sketch-dimension', sketchId: 'sketch', profileId: 'profile', dimensionId: 'width' }], expect.any(AbortSignal));
+  });
+
+  it('closes a chip editor and clears the chip selection when another document opens under the same IDs', async () => {
+    const { session, edit } = await renderControls(slot());
+    await pick('Length'); await key('Width', 'Enter'); expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => session.replace({ ...session.getSnapshot().document, id: 'other-document' }));
+    expect(container.querySelector('[role="dialog"]')).toBeNull(); expect(pressed()).toEqual([]);
+    // Delete on the new document's chip removes that chip alone.
+    await key('Length', 'Delete');
+    expect(edit).toHaveBeenCalledExactlyOnceWith([{ kind: 'remove-sketch-dimension', sketchId: 'sketch', profileId: 'profile', dimensionId: 'length' }], expect.any(AbortSignal));
   });
 
   it('never carries a selection to a constraint added after the selected one went away', async () => {

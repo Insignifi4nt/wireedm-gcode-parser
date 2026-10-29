@@ -82,7 +82,7 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
   const [menu, setMenu] = useState<{ pick: CadSketchDimensionPick; document: CadDocument; cancel: number; x: number; y: number } | null>(null);
   const latest = useRef({ document: cadDocument, cancel: cancelSignal }); latest.current = { document: cadDocument, cancel: cancelSignal };
   const root = useRef<HTMLDivElement>(null), editorDocument = useRef<CadDocument | null>(null), previous = useRef<HTMLElement | null>(null), pendingCallback = useRef(onPendingChange), previousCancel = useRef(cancelSignal);
-  const previousProfile = useRef({ profileId: profile.id, sketchId: sketch.id });
+  const previousProfile = useRef({ documentId: cadDocument.id, profileId: profile.id, sketchId: sketch.id });
   const close = () => { submission.cancel(); setEditor(null); editorDocument.current = null; onInspectInput?.(null); };
   const commit = (edits: readonly CadEdit[]) => submission.submit(signal => {
     if (editorDocument.current !== cadDocument) throw new Error('The part changed. Cancel and reopen this dimension.');
@@ -97,13 +97,14 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
   useEffect(() => () => pendingCallback.current(false), []);
   useEffect(() => { if (cancelSignal !== previousCancel.current) { previousCancel.current = cancelSignal; close(); } }, [cancelSignal]);
   useEffect(() => {
-    if (previousProfile.current.profileId === profile.id && previousProfile.current.sketchId === sketch.id) return;
-    previousProfile.current = { profileId: profile.id, sketchId: sketch.id };
+    if (previousProfile.current.documentId === cadDocument.id && previousProfile.current.profileId === profile.id && previousProfile.current.sketchId === sketch.id) return;
+    previousProfile.current = { documentId: cadDocument.id, profileId: profile.id, sketchId: sketch.id };
     // A clean annotation must not erase inspection selected elsewhere. Only
-    // an actual dimension editor needs cancellation when its owner changes.
+    // an actual dimension editor needs cancellation when its owner changes,
+    // which includes another document opened under the same IDs.
     setSelection(NO_SKETCH_DIMENSIONS); setMenu(null);
     if (editor) close();
-  }, [profile.id, sketch.id]);
+  }, [cadDocument.id, profile.id, sketch.id]);
   const candidate = useMemo(() => {
     if (!editor || !active || !binding || binding.kind === 'expression' || !active.enabled) return { edits: null, issue: null };
     try {
@@ -139,12 +140,12 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
   useLayoutEffect(() => { if (selected !== selection) setSelection(selected); }, [selected, selection]);
   useLayoutEffect(() => { if (hovered && !dimensions.some(dimension => dimension.name === hovered)) setHovered(null); }, [hovered, dimensions]);
   const isSelected = (dimension: Dimension) => selected.some(pick => sameCadSketchDimensionPick(chipPick(dimension), pick));
-  // The edited chip stays selected, or becomes the selection, so after Apply or Cancel Delete removes the chip drawn selected.
+  // The edited chip becomes the whole selection, so after Apply or Cancel Delete removes the chip drawn selected and nothing else.
   const openEditor = (dimension: Dimension) => {
     if (interactionLocked || editor || submission.applying) return;
     let resolved: number; try { resolved = evaluateCadScalar(dimension.scalar, parameters) * dimension.scale; } catch { return; }
     editorDocument.current = cadDocument; previous.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (!isSelected(dimension)) setSelection(selectCadSketchDimension(NO_SKETCH_DIMENSIONS, chipPick(dimension)));
+    setSelection(selectCadSketchDimension(NO_SKETCH_DIMENSIONS, chipPick(dimension)));
     setMenu(null); setEditor({ name: dimension.name, value: String(resolved), error: '' }); onInspectInput?.(dimension.name);
   };
   // Delete on a selected chip removes every selected driving dimension; on another chip it removes just that one.
