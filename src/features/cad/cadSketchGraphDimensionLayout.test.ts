@@ -349,7 +349,7 @@ describe('point to line distance layout', () => {
   it('draws the perpendicular from the support to the point, extending the line to a foot beyond it', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'p', position: [5, 4] }, { id: 'q', position: [30, -6] }],
       entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'b', endPointId: 'a' }], relations: [
-        { id: 'gap', kind: 'point-line-distance', pointId: 'p', lineId: 'base', value: ' gap ' },
+        { id: 'gap', kind: 'point-line-distance', pointId: 'p', lineId: 'base', side: 'right', value: ' gap ' },
         { id: 'measured', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'q', lineId: 'base' } }] });
     const [driving, reference] = layoutCadSketchGraphDimensions(graph, { gap: 4 }, .1);
     if (driving?.kind !== 'point-line' || reference?.kind !== 'point-line') throw new Error('Point to line annotations missing.');

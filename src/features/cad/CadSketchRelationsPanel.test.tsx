@@ -921,7 +921,7 @@ describe('point to line distance dimensions', () => {
     expect(container.querySelector('[data-cad-angle-sector]')).toBeNull();
     expect([...container.querySelectorAll('button')].some(control => control.textContent?.trim() === 'Add angle')).toBe(false);
     await click('Apply');
-    expect(h.edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'point-line-distance', pointId: 'a', lineId: 'top', value: 10 }),
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'point-line-distance', pointId: 'a', lineId: 'top', side: 'right', value: 10 }),
       set({ kind: 'parallel', lineIds: ['top', 'base'] })], expect.any(AbortSignal));
     await act(async () => h.session.undo()); expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
   });
@@ -952,6 +952,30 @@ describe('point to line distance dimensions', () => {
     expect(container.textContent).not.toContain('Redundant');
     expect(session.getSnapshot().document.features[0]).toMatchObject({ graph: { relations: [...sketch.graph!.relations, expect.objectContaining({ kind: 'point-line-distance' })] } });
     await act(async () => session.undo()); expect(session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
+  it('reuses a distance the lines already have and still holds them parallel, unless a relation between them already does', async () => {
+    const rise = { id: 'rise', kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 10 } as const;
+    const withRelations = (relations: readonly object[]) => part('Parallel lines', { ...(() => { const sketch = parallelDocument().features[0]; if (sketch.kind !== 'sketch') throw new Error('Sketch fixture missing.'); return sketch.graph; })(), relations });
+    const h = await mount(withRelations([rise]), [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }], { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    expect(field('Point to line distance mm').value).toBe('10');
+    await input('Point to line distance mm', ' 15 '); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([set({ ...rise, value: 15 }), set({ kind: 'parallel', lineIds: ['base', 'top'] })]), expect.any(AbortSignal));
+    expect(h.edit.mock.calls[0][0]).toHaveLength(2);
+    await act(async () => root.unmount()); root = createRoot(container);
+    const kept = await mount(withRelations([rise, { id: 'kept', kind: 'parallel', lineIds: ['top', 'base'] }]), [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }],
+      { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    await input('Point to line distance mm', ' 15 '); await click('Apply');
+    expect(kept.edit).toHaveBeenCalledExactlyOnceWith([set({ ...rise, value: 15 })], expect.any(AbortSignal));
+  });
+
+  it('measures lines a hair off parallel with a distance alone, instead of an angle it cannot place', async () => {
+    const sketch = parallelDocument().features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
+    const source = part('Nearly parallel lines', { ...sketch.graph, points: sketch.graph.points.map(point => point.id === 'd' ? { ...point, position: [20, 10 + 1e-10] } : point) });
+    const h = await mount(source, [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }], { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    expect(container.textContent).not.toMatch(/parallel to measure|corner cannot be placed/);
+    expect(field('Point to line distance mm').value).toBe('10'); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 10 })], expect.any(AbortSignal));
   });
 
   it('measures parallel lines as a reference without holding them parallel', async () => {

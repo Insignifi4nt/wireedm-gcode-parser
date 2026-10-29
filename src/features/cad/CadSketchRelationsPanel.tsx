@@ -8,7 +8,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadS
 import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension, resolveCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { resolveCadSketchSymmetryOperands } from '@/domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands } from '@/domain/cad/cadSketchPointOnLineRelations';
-import { createCadSketchParallelLineDistance, createCadSketchPointLineDistance, resolveCadSketchPointLineDistanceOperands } from '@/domain/cad/cadSketchPointLineDistanceRelations';
+import { createCadSketchLinePairDistance, createCadSketchPointLineDistance, resolveCadSketchPointLineDistanceOperands } from '@/domain/cad/cadSketchPointLineDistanceRelations';
 import { resolveCadSketchTangentJoint } from '@/domain/cad/cadSketchTangentRelations';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { cadSketchRelationPointIds, mapCadSketchRelationScalars } from '@/domain/cad/cadSketchGraphReferences';
@@ -220,18 +220,20 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const entityPair = linePair ?? curvePair;
   const pointLineDistance = selectedPointLineDistance(selection, graph);
   const [angleId] = useState(() => crypto.randomUUID());
-  // Lines too close to parallel for an angle take a distance instead, held parallel unless they already are.
+  // Lines too close to parallel for an angle take a distance instead. Parallel lines are held parallel unless a relation
+  // between them already does; an existing distance between them is reused. Lines a hair off parallel keep their directions.
   const [initialLineDistance] = useState(() => {
     if (initialCommand?.kind !== 'line-angle' || !linePair || graph.relations.some(relation => relation.kind === 'line-angle' && sameEntityPair(relation, linePair))) return null;
     try {
-      const created = createCadSketchParallelLineDistance({ graph, parameters: cadDocument.parameters, lineIds: linePair, relationId: angleId });
+      const created = createCadSketchLinePairDistance({ graph, parameters: cadDocument.parameters, lineIds: linePair, relationId: angleId });
       if (!created) return null;
       const ends = (id: string) => { const line = graph.entities.find(entity => entity.id === id); return line?.kind === 'line' ? [line.startPointId, line.endPointId] : []; };
       const existing = graph.relations.find(relation => relation.kind === 'point-line-distance'
         && (relation.lineId === linePair[0] && ends(linePair[1]).includes(relation.pointId) || relation.lineId === linePair[1] && ends(linePair[0]).includes(relation.pointId)));
       const oriented = graph.relations.some(relation => (relation.kind === 'parallel' || relation.kind === 'collinear') && sameEntityPair(relation, linePair));
-      return { relation: existing ?? created, parallel: existing || oriented ? null : { id: crypto.randomUUID(), kind: 'parallel' as const, lineIds: linePair }, error: null };
-    } catch (cause) { return { relation: null, parallel: null, error: userFacingMessage(cause, 'Unable to read this distance.') }; }
+      return { relation: existing ?? created.relation, parallelLines: created.parallel,
+        parallel: !created.parallel || oriented ? null : { id: crypto.randomUUID(), kind: 'parallel' as const, lineIds: linePair }, error: null };
+    } catch (cause) { return { relation: null, parallelLines: false, parallel: null, error: userFacingMessage(cause, 'Unable to read this distance.') }; }
   });
   const [initialDistance] = useState((): { readonly relation: CadSketchGraphRelation | null; readonly error: string | null } | null => {
     try {
@@ -608,7 +610,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       {!move && pointPair && <CadContextHelp label="Point pair dimensions">Aligned measures straight-line distance. Horizontal measures ΔX; Vertical measures ΔY, from the first point to the second. Positive X is right and positive Y is up; negative values reverse the direction. These dimensions keep the separation, leaving the reference free until you fix it. Horizontal/Vertical checkboxes align points without setting a size.</CadContextHelp>}
       {!move && pointLine && <CadContextHelp label="Midpoint">Keeps this point halfway between the line’s endpoints as they change. Construction lines work too. The guide itself remains free until you constrain it. Remove Midpoint to keep the current point position without attachment.</CadContextHelp>}
       {!move && linePair && <CadContextHelp label="Line pair relations">Angle drives the displayed corner in degrees. Parallel keeps directions aligned; Perpendicular keeps a right angle. Equal length keeps finite lengths equal. Lines may share a joint or be separate; construction lines also work. Existing drivers stay in force.</CadContextHelp>}
-      {!move && (pointLineDistance || lineDistance) && dimensionOnly && <CadContextHelp label="Point to line distance">Keeps the point, or the arc or circle center, at this distance from the line or its extension, on the side where it is now. {lineDistance ? 'Parallel lines also stay parallel, unless other relations already keep them so.' : 'The line follows its own constraints.'} Use Point on line for a zero distance.</CadContextHelp>}
+      {!move && (pointLineDistance || lineDistance) && dimensionOnly && <CadContextHelp label="Point to line distance">Keeps the point, or the arc or circle center, at this distance from the line or its extension, on the side where it is now. {!lineDistance ? 'The line follows its own constraints.' : initialLineDistance?.parallelLines ? 'Parallel lines also stay parallel, unless other relations already keep them so.' : 'These lines are a hair off parallel, so the distance runs from the end of one and they keep their own directions.'} Use Point on line for a zero distance.</CadContextHelp>}
       {!move && curvePair && <CadContextHelp label="Equal radius">Keeps the actual radii of these circles or arcs equal. Arc sweep and position remain independent. Add a radius or diameter dimension to control their shared size; two free curves still have a size freedom. Existing drivers stay in force.</CadContextHelp>}</div>
     <fieldset key={resetVersion} className="cad-feature-fields" disabled={interactionLocked || submission.applying}>
       {selectedPattern && <div className="cad-sketch-profile-actions"><span>{selectedPattern.index === 0 ? 'Pattern seed' : `Pattern occurrence ${selectedPattern.index + 1}`}</span><Button type="button" disabled={pending || !onEditPattern} onClick={() => onEditPattern?.(selectedPattern.relation.id)}>Edit pattern</Button>{selectedPattern.index > 0 && <Button type="button" disabled={pending || !onSelectPatternSeed} onClick={() => onSelectPatternSeed?.(selectedPattern.relation.seed.entityId)}>Select seed</Button>}<CadContextHelp label="Pattern ownership">Copies follow the seed and pitch. Edit the pattern to omit or restore copies; detach before moving or resizing one independently.</CadContextHelp></div>}

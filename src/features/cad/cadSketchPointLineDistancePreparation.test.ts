@@ -6,14 +6,15 @@ import { checkCadSketchGraph, type CadSketchGraphRelation } from '@/domain/cad/c
 import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
+import { CadSession } from './cadSession';
 import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
 const runtime = createCadSketchTestSolver();
 const set = (relation: CadSketchGraphRelation) => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation } as const);
-const gap = (value: number | string) => ({ id: 'gap', kind: 'point-line-distance', pointId: 'p', lineId: 'base', value } as const);
+const gap = (value: number | string, side: 'left' | 'right') => ({ id: 'gap', kind: 'point-line-distance', pointId: 'p', lineId: 'base', side, value } as const);
 
 function part(graph: object): CadDocument {
-  return parseCadDocument({ ...createCadDocument('Line distances', 'line-distances'), schemaVersion: 2, parameters: { depth: 6 }, features: [{
+  return parseCadDocument({ ...createCadDocument('Line distances', 'line-distances'), schemaVersion: 2, parameters: { depth: 6, height: 0, lift: 4 }, features: [{
     id: 'sketch', name: 'Distances', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph }] });
 }
 /** A driven 20 mm base line at `origin`, optionally reversed, and a free point 4 mm to the given side of it. */
@@ -31,15 +32,17 @@ describe('prepared point to line distance', () => {
   it.each([
     { origin: [0, 0], reversed: false, side: 1 }, { origin: [0, 0], reversed: true, side: 1 }, { origin: [0, 0], reversed: false, side: -1 },
     { origin: [0, 0], reversed: true, side: -1 }, { origin: [1e6, -2e6], reversed: true, side: -1 }, { origin: [-3e6, 1e6], reversed: false, side: 1 }
-  ] as const)('holds the point on its starting side through value edits and drags across: %o', async ({ origin, reversed, side }) => {
+  ] as const)('holds the point on its stored side through value edits and drags across: %o', async ({ origin, reversed, side }) => {
     const source = based(origin, reversed, side), digits = origin[0] ? 6 : 9;
-    const added = await prepareCadEdits(source, [set(gap(4))], runtime);
+    // Left is seen from the line's start looking toward its end.
+    const held = (side === 1) !== reversed ? 'left' : 'right', opposite = held === 'left' ? 'right' : 'left';
+    const added = await prepareCadEdits(source, [set(gap(4, held))], runtime);
     expect(added.sketchDiagnostics[0].diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 1, conflictingIds: [], redundantIds: [], issues: [] });
     const offset = (document: CadDocument) => position(document, 'p')[1] - origin[1];
     // A value edit and an expression move the point away from the line on the side it is on.
-    const edited = await prepareCadEdits(added.document, [set(gap(9))], runtime);
+    const edited = await prepareCadEdits(added.document, [set(gap(9, held))], runtime);
     expect(offset(edited.document)).toBeCloseTo(side * 9, digits);
-    const driven = await prepareCadEdits(edited.document, [set(gap(' depth '))], runtime);
+    const driven = await prepareCadEdits(edited.document, [set(gap(' depth ', held))], runtime);
     expect(offset(driven.document)).toBeCloseTo(side * 6, digits);
     // A drag across the line slides the point along its side instead of flipping it over.
     const p = position(driven.document, 'p');
@@ -47,7 +50,10 @@ describe('prepared point to line distance', () => {
     expect(offset(dragged.document)).toBeCloseTo(side * 6, digits);
     expect(position(dragged.document, 'p')[0]).toBeCloseTo(p[0] + 3, digits);
     expect(checkCadSketchGraph(graphOf(dragged.document), dragged.document.parameters)).toEqual([]);
-    expect(graphOf(dragged.document).relations).toEqual([gap(' depth ')]);
+    expect(graphOf(dragged.document).relations).toEqual([gap(' depth ', held)]);
+    // The stored side decides, not where the point happens to be: the other side carries the point across.
+    const crossed = await prepareCadEdits(source, [set(gap(4, opposite))], runtime);
+    expect(offset(crossed.document)).toBeCloseTo(-side * 4, digits);
   });
 
   it('measures as a reference without driving the point', async () => {
@@ -63,7 +69,8 @@ describe('prepared point to line distance', () => {
     const source = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [0, 10] }, { id: 'c', position: [10, 0] }, { id: 'd', position: [10, 10] }],
       entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'other', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
       relations: [{ id: 'up', kind: 'vertical', pointIds: ['a', 'b'] }, { id: 'up-too', kind: 'vertical', pointIds: ['c', 'd'] }] });
-    const distance = { id: 'gap', kind: 'point-line-distance', pointId: 'c', lineId: 'base', value: 10 } as const;
+    // C is right of the upward base line.
+    const distance = { id: 'gap', kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'right', value: 10 } as const;
     const failure = await prepareCadEdits(source, [set(distance), set({ id: 'parallel', kind: 'parallel', lineIds: ['base', 'other'] })], runtime).catch(error => error);
     expect(failure).toBeInstanceOf(CadSketchPreparationError);
     if (!(failure instanceof CadSketchPreparationError)) throw failure;
@@ -75,5 +82,70 @@ describe('prepared point to line distance', () => {
     const wider = await prepareCadEdits(held.document, [set({ ...distance, value: 15 })], runtime);
     expect(position(wider.document, 'c')[0] - position(wider.document, 'a')[0]).toBeCloseTo(15, 9);
     expect(position(wider.document, 'd')[0] - position(wider.document, 'a')[0]).toBeCloseTo(15, 9);
+  });
+});
+
+describe('a distance between parallel lines', () => {
+  it('moves the whole line with an existing distance once Parallel joins it', async () => {
+    const rise = { id: 'rise', kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 10 } as const;
+    const source = part({ points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['20', '0'] }, { id: 'c', position: [0, 10] }, { id: 'd', position: [20, 10] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+      relations: [rise] });
+    const wider = await prepareCadEdits(source, [set({ ...rise, value: 15 }), set({ id: 'level', kind: 'parallel', lineIds: ['base', 'top'] })], runtime);
+    expect(position(wider.document, 'c')[1]).toBeCloseTo(15, 9);
+    expect(position(wider.document, 'd')[1]).toBeCloseTo(15, 9);
+  });
+});
+
+describe('the stored side of a point to line distance', () => {
+  // The side is stored with the relation, so it holds however the geometry moved before the solve: a parameter that moves the
+  // line or the point, a parameter in the value, or an undone and redone edit.
+  /** A line at Y `height` and a free point 10 above it, or a free horizontal line and a point at Y `lift`. */
+  const raised = () => part({ points: [{ id: 'a', position: ['0', 'height'] }, { id: 'b', position: ['20', 'height'] }, { id: 'p', position: [5, 10] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [gap(10, 'left')] });
+  const lifted = () => part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'p', position: ['5', 'lift'] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+    relations: [{ id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }, gap(4, 'left')] });
+  const parameter = (name: string, value: number) => ({ kind: 'set-parameter', name, value } as const);
+
+  it('moves the point with a line that a parameter carries past it', async () => {
+    for (const [height, y] of [[20, 30], [-20, -10]] as const) {
+      const moved = await prepareCadEdits(raised(), [parameter('height', height)], runtime);
+      expect(position(moved.document, 'p')).toEqual([expect.closeTo(5, 9), expect.closeTo(y, 9)]);
+      expect(checkCadSketchGraph(graphOf(moved.document), moved.document.parameters)).toEqual([]);
+    }
+    // A parameter in the value moves it on the same side.
+    const driven = await prepareCadEdits(raised(), [set(gap(' depth ', 'left')), parameter('height', 20), parameter('depth', 12)], runtime);
+    expect(position(driven.document, 'p')[1]).toBeCloseTo(32, 9);
+  });
+
+  it('moves the line with a point that a parameter carries past it', async () => {
+    const moved = await prepareCadEdits(lifted(), [parameter('lift', -20)], runtime);
+    expect(position(moved.document, 'a')[1]).toBeCloseTo(-24, 9);
+    expect(position(moved.document, 'b')[1]).toBeCloseTo(-24, 9);
+    expect(position(moved.document, 'b')[0] - position(moved.document, 'a')[0]).toBeCloseTo(20, 9);
+    expect(checkCadSketchGraph(graphOf(moved.document), moved.document.parameters)).toEqual([]);
+  });
+
+  it('moves a free point with a line that another relation carries past it, and rejects the move when the point is fixed', async () => {
+    const floor = { id: 'floor', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 } as const;
+    const held = (relations: readonly CadSketchGraphRelation[]) => part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'p', position: [5, 10] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }, floor, gap(10, 'left'), ...relations] });
+    const raisedFloor = await prepareCadEdits(held([]), [set({ ...floor, value: 20 })], runtime);
+    expect(position(raisedFloor.document, 'p')[1]).toBeCloseTo(30, 9);
+    const pinned = await prepareCadEdits(held([{ id: 'pin', kind: 'fixed-point', pointId: 'p', position: [5, 10] }]), [set({ ...floor, value: 20 })], runtime).catch(error => error);
+    expect(pinned).toBeInstanceOf(CadSketchPreparationError);
+  });
+
+  it('keeps the side through undo and redo, and on the next edit', async () => {
+    const session = new CadSession(raised()), y = () => position(session.getSnapshot().document, 'p')[1];
+    const edit = (edits: Parameters<typeof prepareCadEdits>[1]) => session.editPrepared(session.getSnapshot().version,
+      async document => (await prepareCadEdits(document, edits, runtime)).document);
+    await edit([parameter('height', 20)]); expect(y()).toBeCloseTo(30, 9);
+    session.undo(); expect(y()).toBe(10);
+    session.redo(); expect(y()).toBeCloseTo(30, 9);
+    session.undo(); await edit([parameter('height', -20)]); expect(y()).toBeCloseTo(-10, 9);
+    expect(graphOf(session.getSnapshot().document).relations).toEqual([gap(10, 'left')]);
   });
 });

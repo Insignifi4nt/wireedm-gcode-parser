@@ -2005,7 +2005,7 @@ describe('CAD sketch interaction', () => {
     // Two parallel lines take a distance from the second line to the first, held parallel, as one undoable edit.
     await click('Dimension'); await pick(line('base')); await pick(line('top'));
     expect(field('Point to line distance').value).toBe('10'); expect(container.querySelector('[data-cad-angle-sector]')).toBeNull(); await click('Apply');
-    expect(relations()).toEqual([{ id: expect.any(String), kind: 'point-line-distance', pointId: 'c', lineId: 'base', value: 10 },
+    expect(relations()).toEqual([{ id: expect.any(String), kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 10 },
       { id: expect.any(String), kind: 'parallel', lineIds: ['base', 'top'] }]);
     await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source);
     // Lines that are not parallel still take an angle.
@@ -2042,6 +2042,48 @@ describe('CAD sketch interaction', () => {
     if (!action) throw new Error('Dimension action missing.'); expect(action.disabled).toBe(false);
     await act(async () => action.click()); expect(field('Point to line distance').value).toBe('4'); await click('Cancel');
     expect(currentDocument).toEqual(source); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('measures from the center of a circle whose radius follows an expression, and leaves its size to the expression', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters: { boreRadius: 2 }, features: [{ id: 'sketch', kind: 'sketch', name: 'Bores', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'p', position: [5, 4] }, { id: 'o', position: [10, -6] }, { id: 'q', position: [40, -6] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'bore', kind: 'circle', construction: false, centerPointId: 'o', radius: 'boreRadius' },
+        { id: 'disk', kind: 'circle', construction: false, centerPointId: 'q', radius: 3 }], relations: [] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const pick = async (selector: string) => {
+      const target = container.querySelector(selector); if (!target) throw new Error(`${selector} missing.`);
+      await act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    };
+    const entity = (id: string) => `[data-cad-sketch-entity="${id}"]`, point = (id: string) => `[data-cad-sketch-point="${id}"]`;
+    const restart = async () => { await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: null })); await click('Dimension'); };
+    const waiting = 'Choose a point, a line, another curve, the origin or an axis for a distance from its center';
+    // Picked first, it waits for a partner; picking it again or confirming does not open its size.
+    await click('Dimension'); await pick(entity('bore')); expect(container.textContent).toContain(waiting);
+    await pick(entity('bore')); await canvasKey('Enter');
+    expect(container.textContent).toContain(waiting); expect(container.querySelector('[aria-label="Radius"], [aria-label="Diameter"]')).toBeNull();
+    await pick(entity('base')); expect(field('Point to line distance').value).toBe('6'); await click('Cancel');
+    // Picked second after a line, a point, a curve or the origin, it measures from its center.
+    await restart(); await pick(entity('base')); await pick(entity('bore')); expect(field('Point to line distance').value).toBe('6'); await click('Cancel');
+    await restart(); await pick(point('p')); await pick(entity('bore')); await click('Horizontal distance'); expect(field('Horizontal distance').value).toBe('5'); await click('Cancel');
+    await restart(); await pick(entity('disk')); await pick(entity('bore')); expect(field('Center distance').value).toBe('30'); await click('Cancel');
+    await restart(); await pick('[data-cad-sketch-datum="origin"]'); await pick(entity('bore'));
+    expect(field('X from origin').value).toBe('10'); expect(field('Y from origin').value).toBe('-6'); await click('Cancel');
+    // Selected alone, Dimension starts the pick from it, from the toolbar and from the context menu.
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'bore' } }));
+    await click('Dimension'); expect(container.textContent).toContain(waiting); await pick(entity('disk')); expect(field('Center distance').value).toBe('30'); await click('Cancel');
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'), bore = container.querySelector<SVGGElement>(entity('bore'));
+    if (!canvas || !bore) throw new Error('Canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'bore' } }));
+    await act(async () => { bore.focus(); bore.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+    const action = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Dimension');
+    if (!action) throw new Error('Dimension action missing.'); expect(action.disabled).toBe(false);
+    await act(async () => action.click()); expect(container.textContent).toContain(waiting);
+    await pick(entity('base')); expect(field('Point to line distance').value).toBe('6'); await click('Apply');
+    const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
+    expect(feature.graph.relations).toEqual([{ id: expect.any(String), kind: 'point-line-distance', pointId: 'o', lineId: 'base', side: 'right', value: 6 }]);
+    expect(feature.graph.entities.find(item => item.id === 'bore')).toMatchObject({ radius: 'boreRadius' });
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
   it('starts Dimension before picking an edge, cancels cleanly and applies a linked length through the same editor', async () => {

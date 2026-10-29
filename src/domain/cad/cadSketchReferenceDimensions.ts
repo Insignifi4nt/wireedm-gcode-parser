@@ -2,7 +2,7 @@ import type { CadScalar } from './cadDocument';
 import type { CadSketchGraph, CadSketchReferenceDimension } from './cadSketchGraph';
 import { CadError } from './cadError';
 import { createCadSketchMeasurementReader } from './cadSketchMeasurements';
-import { resolveCadSketchPointLineDistanceOperands } from './cadSketchPointLineDistanceRelations';
+import { cadSketchPointLineSide, resolveCadSketchPointLineDistanceOperands } from './cadSketchPointLineDistanceRelations';
 
 /** Resolve authored identity only. A line reference follows its current retained endpoints. */
 export function resolveCadSketchReferenceDimension(graph: CadSketchGraph, relation: CadSketchReferenceDimension) {
@@ -31,8 +31,11 @@ export function measureCadSketchReferenceDimension(graph: CadSketchGraph, parame
   return curve.radiusMm * (source.quantity === 'diameter' ? 2 : 1);
 }
 
-/** Intent factory only: the ordinary prepared set-relation operation validates the new driver. */
+/** Intent factory only: the ordinary prepared set-relation operation validates the new driver. A point keeps the side it is measured on. */
 export function cadSketchReferenceDimensionToDriving(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>,
   relation: CadSketchReferenceDimension, value?: CadScalar) {
-  return { ...resolveCadSketchReferenceDimension(graph, relation), value: value ?? measureCadSketchReferenceDimension(graph, parameters, relation) };
+  const source = resolveCadSketchReferenceDimension(graph, relation), measured = value ?? measureCadSketchReferenceDimension(graph, parameters, relation);
+  if (source.kind !== 'point-line-distance') return { ...source, value: measured };
+  const side = cadSketchPointLineSide(createCadSketchMeasurementReader(graph, parameters).pointToLine(source.pointId, source.lineId).signedMm);
+  return { ...source, side, value: measured };
 }
