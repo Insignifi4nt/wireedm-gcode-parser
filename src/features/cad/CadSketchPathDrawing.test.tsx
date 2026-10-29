@@ -82,6 +82,40 @@ describe('line chains', () => {
     expect(h.error).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
 
+  it.each([['on the last point', [30, 30]], ['on empty space', [30, 50]]] as const)('finishes on a double-click %s after a pause, saving once without a zero-length segment', async (_label, [x, y]) => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30);
+    // Longer than a double-click, so the click that placed the last point cannot pair with the next.
+    await act(() => new Promise(resolve => setTimeout(resolve, 600)));
+    await h.tap(x, y); await h.tap(x, y, 2);
+    expect(onAddPath).toHaveBeenCalledTimes(1); expect(h.error).not.toHaveBeenCalled(); expect(h.instruction()).toBe(idleLine);
+    const ends = onAddPath.mock.calls[0][0].segments.map((segment: { end: readonly number[] }) => segment.end.map(Math.round));
+    expect(ends).toEqual(y === 30 ? [[30, 10], [30, 30]] : [[30, 10], [30, 30], [30, 50]]);
+  });
+
+  it('finishes on a double-click beyond the drag slop whose guides snap back onto the last point', async () => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30);
+    // Within the 6 px guide reach of the last point on each axis, but 8.2 px from it, past the 8 px drag slop.
+    const offset = 5.8 * Number(h.svg.getAttribute('viewBox')!.split(' ')[2]) / 800;
+    await h.tap(30 + offset, 30 + offset); await h.tap(30 + offset, 30 + offset, 2);
+    expect(onAddPath).toHaveBeenCalledTimes(1); expect(h.error).not.toHaveBeenCalled();
+    expect(onAddPath.mock.calls[0][0].segments.map((segment: { end: readonly number[] }) => segment.end.map(Math.round))).toEqual([[30, 10], [30, 30]]);
+  });
+
+  it.each(['Enter', 'Finish', 'double-click', 'Escape'] as const)('saves the completed segments and drops a pending arc endpoint on %s', async finisher => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10); await h.click('3-point Arc'); await h.tap(40, 20);
+    // The arc waits for its through-point; nothing is saved yet.
+    expect(onAddPath).not.toHaveBeenCalled(); expect(h.button('Finish chain').disabled).toBe(false);
+    if (finisher === 'double-click') { await act(() => new Promise(resolve => setTimeout(resolve, 600))); await h.tap(40, 20); await h.tap(40, 20, 2); }
+    else if (finisher === 'Finish') await h.click('Finish chain'); else await h.key(finisher);
+    expect(onAddPath).toHaveBeenCalledTimes(1); expect(h.error).not.toHaveBeenCalled();
+    const [draft, closed] = onAddPath.mock.calls[0];
+    expect(closed).toBe(false); expect(draft.kind).toBe('ready');
+    expect(draft.segments.map((segment: { kind: string; end: readonly number[] }) => [segment.kind, segment.end.map(Math.round)])).toEqual([['line', [30, 10]]]);
+  });
+
   it('draws and finishes a chain from the keyboard alone', async () => {
     const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
     await h.key(' '); for (let step = 0; step < 4; step++) await h.key('ArrowRight');

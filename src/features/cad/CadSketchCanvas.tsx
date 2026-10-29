@@ -204,6 +204,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const overlapPending = overlap !== null;
   const choicePending = snapChoice !== null;
   const interactionLocked = baseInteractionLocked || overlapPending || choicePending;
+  /** A pending snap choice is only the chain's next point, so finishing a line chain drops it like a pending arc endpoint. */
+  const chainFinishLocked = baseInteractionLocked || overlapPending;
   /** Select and Trim pick existing geometry; every other tool places new points. */
   const drawing = tool !== 'select' && tool !== 'trim';
   /** Line chains connected lines and three-point arcs in one draft until it is finished; `path`, Polyline's name, is its alias. */
@@ -254,8 +256,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
    */
   const drawingPress = useRef<DrawingPlacement & { readonly pointerId: number; changes: number; readonly fromIdle: boolean;
     readonly held: { readonly last: SketchPoint; readonly raw: SketchPoint; readonly scale: SketchPoint } | null; dragged: boolean } | null>(null);
-  /** The latest press or release that added a drawing point, so a second press there soon after reads as a double-click. */
-  const lastPlacement = useRef<DrawingPlacement & { readonly changes: number } | null>(null);
+  /**
+   * The latest press that stayed a click while drawing, whether or not it placed a point, so a second press there soon after
+   * reads as a double-click. A drag is no click and clears it.
+   */
+  const lastClick = useRef<DrawingPlacement & { readonly changes: number } | null>(null);
   /** The open chain save in flight, and what runs once it is accepted: the workbench's next tool, or leaving the tool. */
   const chainSave = useRef<{ after?: () => void } | null>(null);
   /**
@@ -800,7 +805,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (curveCreation) onCancelCurve?.();
   };
   const finishPath = (closed: boolean, draft: CadPathDraft = pathDraft, after?: () => void) => {
-    if (interactionLocked) return;
+    // Every other caller is gated by the full lock; only finishing an open chain closes a pending snap choice first.
+    if (chainFinishLocked) return;
     noteDraftChange(false);
     const reset = () => setPathDraft(idlePathDraft());
     try {
@@ -827,21 +833,26 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     catch (error) { onError(userFacingMessage(error, 'Unable to close this path.')); }
     svg.current?.focus();
   };
-  /** A double-click ends a chain that can stay open, without a zero-length segment. Curves and profile-only sketches keep their explicit finish. */
-  const finishChainGesture = () => {
-    const completed = completedCadPathChain(pathDraft);
-    if (completed) finishPath(false, completed);
+  /**
+   * Saves a chain that can stay open with its completed segments, dropping a pending arc endpoint or snap choice, and runs
+   * `after` once the save is accepted. False with no completed segment. Curves and profile-only sketches keep their explicit finish.
+   */
+  const finishOpenChain = (after?: () => void) => {
+    const completed = chainOpen && !chainFinishLocked ? completedCadPathChain(pathDraft) : null;
+    if (!completed) return false;
+    if (snapChoice) closeSnapChoice();
+    finishPath(false, completed, after); return true;
   };
-  /** A press soon after the latest placing press and within the drag slop of it completes a double-click. */
+  /** A press soon after the latest click and within the drag slop of it, with the draft unchanged since, completes a double-click. */
   const secondPress = (press: DrawingPlacement) => {
-    const previous = lastPlacement.current;
+    const previous = lastClick.current;
     return Boolean(previous && previous.changes === draftChanges.current.count && press.time - previous.time <= DOUBLE_CLICK_MS
       && Math.hypot(press.clientX - previous.clientX, press.clientY - previous.clientY) <= DRAWING_DRAG_PIXELS);
   };
-  const notePlacement = (before: number, at: DrawingPlacement) => {
-    const change = draftChanges.current;
-    lastPlacement.current = change.count !== before && change.added ? { time: at.time, clientX: at.clientX, clientY: at.clientY, changes: change.count } : null;
-  };
+  /** Records a press that stayed a click, after whatever it placed, so the next press can complete a double-click. */
+  const noteClick = (at: DrawingPlacement) => { lastClick.current = { time: at.time, clientX: at.clientX, clientY: at.clientY, changes: draftChanges.current.count }; };
+  /** A double-click finishes a chain that can stay open without a zero-length segment, and does nothing more when none is complete. */
+  const finishDoubleClick = () => { lastClick.current = null; finishOpenChain(); };
   /**
    * One Escape for the drawing. A chain that can stay open saves its completed segments and the tool stays; any other pending
    * drawing is discarded. During a chain's save the Escape leaves the tool once the save is accepted, so it never aborts drawn
@@ -854,22 +865,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     }
     if (interactionLocked) return false;
     if (pathTool && pathPending) {
-      const completed = chainOpen ? completedCadPathChain(pathDraft) : null;
-      if (completed) finishPath(false, completed); else changePath({ kind: 'cancel' });
+      if (!finishOpenChain()) changePath({ kind: 'cancel' });
       return true;
     }
     if (!points.length) return false;
     setPicks([]); noteDraftChange(false); return true;
   };
-  const finishChain = (after: () => void) => {
-    const completed = chainOpen && !interactionLocked ? completedCadPathChain(pathDraft) : null;
-    if (!completed) return false;
-    finishPath(false, completed, after); return true;
-  };
-  const drawingActions = useRef({ escape: escapeDrawing, finishChain });
-  drawingActions.current = { escape: escapeDrawing, finishChain };
+  const drawingActions = useRef({ escape: escapeDrawing, finishChain: finishOpenChain });
+  drawingActions.current = { escape: escapeDrawing, finishChain: finishOpenChain };
   const drawingControls = useMemo((): CadSketchDrawingControls => ({ escape: () => drawingActions.current.escape(), finishChain: after => drawingActions.current.finishChain(after) }), []);
-  const chainSavable = chainOpen && !interactionLocked && completedCadPathChain(pathDraft) !== null;
+  const chainSavable = chainOpen && !chainFinishLocked && completedCadPathChain(pathDraft) !== null;
   useLayoutEffect(() => {
     onDrawingControls?.(drawingControls, chainSavable);
     return () => onDrawingControls?.(null, false);
@@ -1097,20 +1102,26 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             suppressProfileClick.current = true;
             const last = pathTool ? pathDraft.kind === 'arc-through' ? pathDraft.end : pathDraft.kind === 'ready' ? cadPathDraftEndpoint(pathDraft) : null : points.at(-1);
             const bounds = event.currentTarget.getBoundingClientRect(), pick = getDrawingPick(event);
-            // A tap followed by a tap-drag can arrive as a second press on the point the tap placed, so wait for the release.
-            const beside = last && bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
-              event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS;
+            // A tap followed by a tap-drag can arrive as a second press on the point the tap placed, so wait for the release. So does
+            // a chain press whose pick snaps back onto its last point, which placing would only repeat.
+            const snapsBack = Boolean(chainOpen && last && !pick.candidates && pick.point[0] === last[0] && pick.point[1] === last[1]);
+            const beside = last && (snapsBack || bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
+              event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS);
             // Once a chain has its start, a drag from that point adds a segment to the chain like any later drag.
             const press = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, time: event.timeStamp, changes: draftChanges.current.count,
               fromIdle: chainOpen && pathDraft.kind === 'idle' && pathMode === 'line',
               held: beside && last ? { last, raw: getRawPoint(event) ?? [0, 0], scale: [width / bounds.width, span / bounds.height] as SketchPoint } : null, dragged: false };
+            // The second press of a double-click finishes a chain wherever it lands, whether or not either press placed a point.
+            // One beside the last point decides on release, so a tap followed by a tap-drag still draws. With nothing complete to
+            // save, the press stays an ordinary click.
+            if (chainOpen && !beside && secondPress(press)) { lastClick.current = null; if (finishOpenChain()) return; }
             drawingPress.current = press;
             try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
             if (beside) return;
-            // A double-click whose second press snaps back onto the point the first placed finishes the chain instead of repeating it.
-            if (chainOpen && last && !pick.candidates && pick.point[0] === last[0] && pick.point[1] === last[1] && secondPress(press)) { drawingPress.current = null; finishChainGesture(); return; }
             acceptDrawingPick(pick, event);
-            notePlacement(press.changes, press);
+            // A press that opens the snap chooser is no click: the chooser takes the next press, and dismissing it with a press
+            // outside starts a double-click instead.
+            if (pick.candidates) lastClick.current = null; else noteClick(press);
             // Only a press that added a point draws on release; a finished, rejected or ambiguous pick ends the gesture.
             const change = draftChanges.current;
             if (change.count !== press.changes && change.added) press.changes = change.count; else drawingPress.current = null;
@@ -1156,17 +1167,17 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           // Nothing more once the draft changed again during the press, for example by a cancel or a keyboard pick.
           if (event.button !== 0 || interactionLocked || draftChanges.current.count !== press.changes || !(points.length > 0 || pathPending)) return;
           if (press.dragged) {
-            acceptDrawingPick(getDrawingPick(event), event, press.fromIdle);
-            notePlacement(press.changes, { time: event.timeStamp, clientX: event.clientX, clientY: event.clientY });
+            // A drag is no click, so it never starts a double-click.
+            acceptDrawingPick(getDrawingPick(event), event, press.fromIdle); lastClick.current = null;
           }
           // A held press that did not drag is a deliberate short pick, unless it repeats the last point exactly or completes a
           // double-click, which finishes a chain. It resolves again at the pressed sketch position so Ctrl or Cmd pressed during
           // the hold still releases snaps and relations.
           else if (press.held) {
-            if (chainOpen && secondPress(press)) { finishChainGesture(); return; }
+            if (chainOpen && secondPress(press)) { finishDoubleClick(); return; }
             const pick = resolveDrawingPick(press.held.raw, event.ctrlKey || event.metaKey, 'pointer', press.held.scale);
             if (pick.point[0] !== press.held.last[0] || pick.point[1] !== press.held.last[1]) acceptDrawingPick(pick, { clientX: press.clientX, clientY: press.clientY });
-            notePlacement(press.changes, press);
+            noteClick(press);
           }
           return;
         }
@@ -1293,8 +1304,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         } else if ((event.key === 'Enter' || event.key === ' ') && (drawing || positionPick)) {
           event.preventDefault();
           if (positionPick) acceptDrawingPick(cursorPick);
-          // Enter keeps a chain with segments open, and adds a point to a lone start; a sketch without connected edges can only close it.
-          else if (event.key === 'Enter' && chainTool && pathDraft.kind === 'ready' && (pathDraft.segments.length || !chainOpen)) finishPath(sketch.kind === 'sketch' && !onAddPath);
+          // Enter saves a line chain's completed segments open, dropping a pending arc endpoint, and adds a point while none is
+          // complete; a sketch without connected edges can only close its chain.
+          else if (event.key === 'Enter' && chainOpen && finishOpenChain()) return;
+          else if (event.key === 'Enter' && chainTool && !chainOpen && pathDraft.kind === 'ready') finishPath(sketch.kind === 'sketch' && !onAddPath);
           else acceptDrawingPick(cursorPick);
         } else if (pathTool && pathPending && event.key === 'Backspace') { event.preventDefault(); changePath({ kind: 'undo-last' }); }
         else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPicks((current) => current.slice(0, -1)); noteDraftChange(false); }
@@ -1318,7 +1331,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           }
         } else if (drawing) {
           // A double-click that no press placed, such as a synthetic one, finishes a chain on its second click.
-          if (chainOpen && event.detail >= 2 && pathDraft.kind !== 'idle') finishChainGesture();
+          if (chainOpen && event.detail >= 2 && pathDraft.kind !== 'idle') finishDoubleClick();
           else acceptDrawingPick(getDrawingPick(event), event);
         }
       }}>
@@ -1422,7 +1435,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     {currentSnapChoice && <CadSketchSnapChooser anchor={{ x: currentSnapChoice.clientX, y: currentSnapChoice.clientY }} candidates={currentSnapChoice.candidates} graph={sourceGraph?.graph} profiles={sourceProfiles}
       onClose={closeSnapChoice} onHighlight={candidate => { if (choiceIsCurrent(currentSnapChoice)) setChoiceHighlight(candidate); }}
       onChoose={candidate => { if (choiceIsCurrent(currentSnapChoice)) placeChosen.current(candidate, currentSnapChoice.saveLine); }}
-      onOutsidePointerDown={event => { suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation(); }} />}
+      onOutsidePointerDown={event => {
+        suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation();
+        // The press that dismisses the chooser is still a click, so a double-click there finishes the chain.
+        if (chainOpen && event.button === 0) noteClick({ time: event.timeStamp, clientX: event.clientX, clientY: event.clientY });
+      }} />}
     {currentOverlap && <CadContextMenu anchor={{ x: currentOverlap.clientX + (currentOverlap.target ? 12 : 0), y: currentOverlap.clientY + (currentOverlap.target ? 12 : 0) }} title={currentOverlap.target ? currentOverlap.target.kind === 'point' ? 'Sketch point' : 'Sketch edge' : 'Select other'} items={overlapItems} onClose={closeOverlap}
       onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !isPreview && <CadSketchDimensionControls {...dimensionControls} interactionLocked={dimensionControls.interactionLocked || submission.applying || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}
@@ -1442,7 +1459,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       {pendingPicks.length > 0 && <span aria-label="Pending relations">{pendingPicks.length} attached</span>}
       {chainTool && <>
         <div className="cad-path-modes" role="group" aria-label="Segment mode"><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-label="Line segment" aria-pressed={pathMode === 'line'} onClick={() => changePath({ kind: 'mode', mode: 'line' }, true)}>Line</Button><Button disabled={interactionLocked || pathDraft.kind === 'arc-through'} aria-pressed={pathMode === 'arc'} onClick={() => changePath({ kind: 'mode', mode: 'arc' }, true)}>3-point Arc</Button></div>
-        {pathPending && <>{chainOpen && <Button aria-label="Finish chain" title="Save the completed segments open, without a closing edge (Enter, double-click or Escape)" disabled={interactionLocked || !completedCadPathChain(pathDraft)} onClick={() => { const completed = completedCadPathChain(pathDraft); if (completed) finishPath(false, completed); }}><ConfirmIcon size={13} /> Finish</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
+        {pathPending && <>{chainOpen && <Button aria-label="Finish chain" title="Save the completed segments open, without a closing edge (Enter, double-click or Escape)" disabled={chainFinishLocked || !completedCadPathChain(pathDraft)} onClick={() => finishOpenChain()}><ConfirmIcon size={13} /> Finish</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
       </>}
       {(points.length > 0 || singleSegment && pathPending) && <Button onClick={cancelDrawing}><CloseIcon size={13} /> Cancel drawing</Button>}</div></CadDrawingTools>}
     <div className="cad-view-caption">{formatCadQuantity(Number(cursor[0].toFixed(3)))}, {formatCadQuantity(Number(cursor[1].toFixed(3)))} mm</div>

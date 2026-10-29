@@ -2,7 +2,7 @@ import { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadSketchProfile } from '@/domain/cad/cadDocument';
-import { CadSketchCanvas } from './CadSketchCanvas';
+import { CadSketchCanvas, type CadSketchDrawingControls } from './CadSketchCanvas';
 import type { CadRenderedViewControls } from './cadViewportControls';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -299,6 +299,45 @@ describe('sketch canvas profile picking', () => {
       expect.objectContaining({ kind: 'line', end: [22.1, 3.2], endPick: { kind: 'coincident', point: [22.1, 3.2], sourcePointId: 'b', relationId: expect.any(String) } })
     ] }), false, expect.any(AbortSignal));
     expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it.each(['Finish', 'a tool switch', 'a double-click'] as const)('finishes a chain whose next point waits for a snap choice on %s, dropping that choice', async finisher => {
+    const onAddPath = vi.fn(), chain: { controls: CadSketchDrawingControls | null; savable: boolean } = { controls: null, savable: false };
+    const h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath,
+      onDrawingControls: (controls, savable) => { chain.controls = controls; chain.savable = savable; } });
+    await relations(true);
+    await h.click(12, 30); await h.click(12, 20); await h.click(22.2, 3.3);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull(); expect(chain.savable).toBe(true);
+    const after = vi.fn();
+    if (finisher === 'Finish') await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.click());
+    else if (finisher === 'a tool switch') await act(async () => { expect(chain.controls?.finishChain(after)).toBe(true); });
+    else {
+      // The first press dismisses the chooser, the second finishes the chain.
+      const press = (type: string) => h.pointer(type, { ...h.position(30, 40), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+      await press('pointerdown'); await press('pointerup'); await h.click(30, 40);
+      await press('pointerdown'); await press('pointerup'); await h.click(30, 40, h.svg, { detail: 2 });
+    }
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull();
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled();
+    const [draft, closed] = onAddPath.mock.calls[0];
+    expect(closed).toBe(false); expect(draft.segments.map((segment: { end: readonly number[] }) => segment.end)).toEqual([[expect.closeTo(12, 9), expect.closeTo(20, 9)]]);
+    if (finisher === 'a tool switch') expect(after).toHaveBeenCalledOnce();
+  });
+
+  it.each([['an idle Line', false], ['a pending chain', true]] as const)('reopens the snap chooser on a quick press after Escape on %s, without reading a double-click', async (_label, segment) => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+    await relations(true);
+    if (segment) { await h.click(12, 30); await h.click(12, 20); }
+    const chooser = () => document.querySelector('[aria-label="Choose snap target actions"]');
+    const press = async () => {
+      for (const type of ['pointerdown', 'pointerup']) await h.pointer(type, { ...h.position(22.2, 3.3), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+      await h.click(22.2, 3.3);
+    };
+    await press(); expect(chooser()).not.toBeNull();
+    await act(async () => snapChoice(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(chooser()).toBeNull();
+    await press();
+    expect(chooser()).not.toBeNull(); expect(onAddPath).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
   });
 
   it('drops an ambiguous choice after source replacement or actual SVG-frame movement without placing or outside-click fallback', async () => {
