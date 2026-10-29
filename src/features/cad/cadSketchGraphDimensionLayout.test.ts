@@ -364,4 +364,17 @@ describe('point to line distance layout', () => {
     expect(reference.extensions[0][0]).toEqual([20, 0]); expect(reference.extensions[0][1][0]).toBeCloseTo(30.2, 12); expect(reference.extensions[0][1][1] + 0).toBe(0);
     expect(cadSketchGraphDimensionLabel(6, 'point-line', true).text).toBe('(6 mm)');
   });
+
+  it('keeps the label of a reference whose point lies on the support, without arrows', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'q', position: [5, 0] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'measured', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'q', lineId: 'base' } }] });
+    const [reference] = layoutCadSketchGraphDimensions(graph, {}, .1);
+    if (reference?.kind !== 'point-line') throw new Error('Zero reference annotation missing.');
+    expect(reference).toMatchObject({ relation: graph.relations[0], valueMm: 0, arrows: [], extensions: [] });
+    expect(reference.line.flat().map(value => value + 0)).toEqual([5, 0, 5, 0]);
+    // The label sits square to the support, above it, and reads along it.
+    expect(reference.label[0]).toBeCloseTo(5, 12); expect(reference.label[1]).toBeGreaterThan(0);
+    expect([...reference.label, reference.labelAngle].every(Number.isFinite)).toBe(true);
+  });
 });

@@ -66,35 +66,24 @@ export function checkCadSketchPointLineDistanceRelation(graph: CadSketchGraph, r
 
 /**
  * An edit that turns a retained line around keeps each distance it carries over on the same physical side. A distance whose
- * line and side the edit left as they were takes the other side when the line's endpoints changed, its direction reversed,
- * and the point does not already lie on the stored side of the new direction. A side the edit restates, or one the
- * incoming positions already agree with, as in a sketch draft's finished state, is kept as given.
+ * line and side the edit left as they were takes the other side when the line's start and end swapped places, by point ID or
+ * declared Coincident identity. Positions play no part, so the result does not depend on the order of edits in a batch or
+ * on geometry not yet solved. A side the edit changes is kept as given; a later edit can state the side for the new direction.
  */
-export function keepCadSketchPointLineSides(previous: CadSketchGraph, next: CadSketchGraph, parameters: Readonly<Record<string, number>>): CadSketchGraph {
+export function keepCadSketchPointLineSides(previous: CadSketchGraph, next: CadSketchGraph): CadSketchGraph {
   if (previous === next || !next.relations.some(relation => relation.kind === 'point-line-distance')) return next;
   const carried = new Map(previous.relations.flatMap(relation => relation.kind === 'point-line-distance' ? [[relation.id, relation] as const] : []));
   const lines = (graph: CadSketchGraph) => new Map(graph.entities.flatMap(entity => entity.kind === 'line' ? [[entity.id, entity] as const] : []));
   const wereLines = lines(previous), nowLines = lines(next);
-  const positions = (graph: CadSketchGraph) => {
-    const points = new Map(graph.points.map(point => [point.id, point]));
-    return (id: string): Point2 | null => {
-      const point = points.get(id);
-      try { return point ? { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) } : null; } catch { return null; }
-    };
-  };
-  let was: ReturnType<typeof positions> | undefined, now: ReturnType<typeof positions> | undefined, changed = false;
-  const direction = (line: Parameters<typeof cadSketchLineDirection>[0], at: ReturnType<typeof positions>) => {
-    const ends = [line.startPointId, line.endPointId].flatMap(id => { const point = at(id); return point ? [[id, point] as const] : []; });
-    try { return cadSketchLineDirection(line, new Map(ends)); } catch { return null; }
-  };
+  let identity: ((pointId: string) => string) | undefined, changed = false;
   const relations = next.relations.map(relation => {
     if (relation.kind !== 'point-line-distance') return relation;
     const prior = carried.get(relation.id), before = wereLines.get(relation.lineId), after = nowLines.get(relation.lineId);
     if (prior?.lineId !== relation.lineId || prior.side !== relation.side || !before || !after || before.startPointId === after.startPointId && before.endPointId === after.endPointId) return relation;
-    was ??= positions(previous); now ??= positions(next);
-    const from = direction(before, was), to = direction(after, now), point = now(relation.pointId);
-    if (!from || !to || !point || from.x * to.x + from.y * to.y >= 0
-      || cadSketchPointLineSideSign(relation.side) * cadSketchSignedPointLineDistance(point, to) > 0) return relation;
+    // A point the edit removed keeps its own ID, which no retained endpoint can share.
+    if (!identity) { const root = resolveCadSketchPointIdentities(next), present = new Set(next.points.map(point => point.id)); identity = id => present.has(id) ? root(id) : id; }
+    const [wasStart, wasEnd, start, end] = [before.startPointId, before.endPointId, after.startPointId, after.endPointId].map(identity);
+    if (wasStart === wasEnd || start !== wasEnd || end !== wasStart) return relation;
     changed = true;
     return { ...relation, side: relation.side === 'left' ? 'right' as const : 'left' as const };
   });

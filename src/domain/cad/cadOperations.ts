@@ -334,7 +334,7 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
     features = features.map(feature => {
       const previous = before.get(feature.id);
       if (previous === feature || previous?.kind !== 'sketch' || feature.kind !== 'sketch' || !previous.graph || !feature.graph) return feature;
-      const graph = keepCadSketchPointLineSides(previous.graph, feature.graph, parameters);
+      const graph = keepCadSketchPointLineSides(previous.graph, feature.graph);
       return graph === feature.graph ? feature : { ...feature, graph };
     });
   }

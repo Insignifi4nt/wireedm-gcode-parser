@@ -134,9 +134,11 @@ function pointLineDimension(graph: CadSketchGraph, relation: Extract<CadSketchDi
     if (!axis || !point) return [];
     const signed = cadSketchSignedPointLineDistance(point, axis), length = Math.abs(signed);
     const valueMm = relation.kind === 'reference-dimension' ? length : evaluateCadScalar(relation.value, parameters);
-    if (!Number.isFinite(length) || length === 0 || !Number.isFinite(valueMm) || valueMm <= 0) return [];
-    // The dimension line runs from the foot on the support to the point; arrows widen along the support.
-    const foot = { x: point.x + axis.y * signed, y: point.y - axis.x * signed }, ux = (point.x - foot.x) / length, uy = (point.y - foot.y) / length;
+    if (!Number.isFinite(length) || !Number.isFinite(valueMm) || (relation.kind === 'reference-dimension' ? valueMm < 0 : length === 0 || valueMm <= 0)) return [];
+    // The dimension line runs from the foot on the support to the point; arrows widen along the support. A reference that
+    // measures zero, its point on the support, keeps its label beside the support, reading along it, without arrows.
+    const foot = { x: point.x + axis.y * signed, y: point.y - axis.x * signed };
+    const ux = length === 0 ? axis.x : (point.x - foot.x) / length, uy = length === 0 ? axis.y : (point.y - foot.y) / length;
     let readX = ux, readY = uy;
     if (readX < -1e-12 || Math.abs(readX) <= 1e-12 && readY < 0) { readX = -readX; readY = -readY; }
     const box = cadSketchGraphDimensionLabel(valueMm, 'point-line', relation.kind === 'reference-dimension'), lift = (box.height / 2 + isoTextGap) * mmPerPixel;
@@ -148,7 +150,7 @@ function pointLineDimension(graph: CadSketchGraph, relation: Extract<CadSketchDi
     const along = (foot.x - axis.start.x) * axis.x + (foot.y - axis.start.y) * axis.y, beyond = 2 * mmPerPixel;
     const extensions: Pair[] = along < 0 ? [[[axis.start.x, axis.start.y], [foot.x - axis.x * beyond, foot.y - axis.y * beyond]]]
       : along > axis.length ? [[[axis.end.x, axis.end.y], [foot.x + axis.x * beyond, foot.y + axis.y * beyond]]] : [];
-    return [{ kind: 'point-line', relation, valueMm, line: [[foot.x, foot.y], [point.x, point.y]], extensions, arrows: [arrow(foot, 1), arrow(point, -1)],
+    return [{ kind: 'point-line', relation, valueMm, line: [[foot.x, foot.y], [point.x, point.y]], extensions, arrows: length === 0 ? [] : [arrow(foot, 1), arrow(point, -1)],
       label: [foot.x / 2 + point.x / 2 - readY * lift, foot.y / 2 + point.y / 2 + readX * lift], labelAngle: Math.atan2(readY, readX) }];
   } catch { return []; }
 }

@@ -7,6 +7,7 @@ import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchRefere
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { CadSession } from './cadSession';
+import { CadSketchEditDraft } from './cadSketchEditDraft';
 import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
 const runtime = createCadSketchTestSolver();
@@ -186,9 +187,42 @@ describe('a line whose endpoints an edit swaps', () => {
     expect(sideOf(crossed.document)).toBe('left');
   });
 
-  it('keeps a side the incoming point already lies on, as a sketch draft publishes it', async () => {
-    const published = await prepareCadEdits(source(), [swapped(source(), { p: [5, -4] })], runtime);
-    expect(position(published.document, 'p')[1]).toBeCloseTo(-4, 9);
-    expect(sideOf(published.document)).toBe('left');
+  it('decides from endpoint identities, so the order of edits in a batch and unsolved positions do not matter', async () => {
+    // The line follows the height parameter; the point starts 10 above it at height 0.
+    const lifted = part({ points: [{ id: 'a', position: [0, 'height'] }, { id: 'b', position: [20, 'height'] }, { id: 'p', position: [5, 10] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [gap(10, 'left')] });
+    const raise = { kind: 'set-parameter', name: 'height', value: 20 } as const;
+    for (const order of [[raise, swapped(lifted)], [swapped(lifted), raise]]) {
+      const result = await prepareCadEdits(lifted, order, runtime);
+      expect(position(result.document, 'p')).toEqual([expect.closeTo(5, 9), expect.closeTo(30, 9)]); expect(sideOf(result.document)).toBe('right');
+    }
+    // A point arriving on the far side does not stop the flip; the stated side alone decides.
+    const moved = await prepareCadEdits(source(), [swapped(source(), { p: [5, -4] })], runtime);
+    expect(position(moved.document, 'p')[1]).toBeCloseTo(4, 9); expect(sideOf(moved.document)).toBe('right');
+    // A swap through a declared Coincident alias counts as the same swap.
+    const aliased = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'b2', position: [20, 0] }, { id: 'p', position: [5, 4] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'floor', kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'join', kind: 'coincident', pointIds: ['b', 'b2'] }, gap(4, 'left')] });
+    const sketch = aliased.features[0];
+    if (sketch?.kind !== 'sketch') throw new Error('Sketch missing.');
+    const throughAlias = await prepareCadEdits(aliased, [{ kind: 'update-feature', feature: { ...sketch, graph: { ...graphOf(aliased),
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'b2', endPointId: 'a' }] } } }], runtime);
+    expect(position(throughAlias.document, 'p')[1]).toBeCloseTo(4, 9); expect(sideOf(throughAlias.document)).toBe('right');
+  });
+
+  it('publishes a private draft that reverses the line and then restates the old side exactly', async () => {
+    const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const prepare = async (document: CadDocument, edits: readonly Parameters<typeof prepareCadEdits>[1][number][]) => (await prepareCadEdits(document, edits, runtime)).document;
+    await draft.editPrepared([swapped(base.document)], prepare); expect(sideOf(draft.getSnapshot().document)).toBe('right');
+    // Left of the reversed line is below it, so the restated side carries the point across.
+    await draft.editPrepared([set(gap(4, 'left'))], prepare);
+    const local = draft.getSnapshot().document, finish = draft.finishEdits(base);
+    expect(sideOf(local)).toBe('left'); expect(position(local, 'p')[1]).toBeCloseTo(-4, 9);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined, () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    expect(graphOf(main.getSnapshot().document)).toEqual(graphOf(local));
+    // A draft that only reverses the line publishes its kept side without a replay.
+    const plain = new CadSketchEditDraft(main.getSnapshot(), 'sketch');
+    await plain.editPrepared([swapped(main.getSnapshot().document)], prepare);
+    expect(plain.finishEdits(main.getSnapshot()).edits).toEqual([expect.objectContaining({ kind: 'update-feature' })]);
   });
 });
