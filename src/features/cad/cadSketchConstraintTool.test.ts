@@ -83,6 +83,38 @@ describe('cadSketchConstraintStep', () => {
     expect(stepIn(fixed, 'coincident', 'a', 'origin')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 }] });
     expect(step('parallel', 'bc', 'y-axis')).toEqual({ status: 'invalid', reason: 'This line is already vertical.', applied: ['v'] });
   });
+
+  it('lays a line on an axis by keeping both endpoints on it, in either pick order', () => {
+    expect(step('coincident', 'ab')).toMatchObject({ status: 'more', prompt: 'Choose a point to keep on this line, or an axis to lay it on', datums: ['x-axis', 'y-axis'] });
+    expect(step('coincident', 'x-axis')).toMatchObject({ status: 'more', prompt: 'Choose a point or a line to keep on this axis', entityIds: ['ab', 'cd', 'bc'] });
+    expect(step('coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
+    expect(step('coincident', 'y-axis', 'cd')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 0 }, { kind: 'fixed-axis', pointId: 'd', axis: 'x', value: 0 }] });
+    // An upright line cannot lie on the X axis, and a line already on the Y axis reports the relations that hold it.
+    expect(step('coincident', 'bc', 'x-axis')).toEqual({ status: 'invalid', reason: 'This line is vertical, so it cannot lie on the X axis. Remove that relation first.' });
+    const onAxis: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'cx', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 0 }, { id: 'dx', kind: 'fixed-axis', pointId: 'd', axis: 'x', value: 0 }] };
+    expect(stepIn(onAxis, 'coincident', 'cd', 'y-axis')).toEqual({ status: 'invalid', reason: 'This line is already on the Y axis.', applied: ['cx', 'dx'] });
+  });
+
+  it('adds one endpoint for a level line so the solver never receives a repeated relation', () => {
+    const level: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'h', kind: 'horizontal', pointIds: ['c', 'd'] }] };
+    expect(stepIn(level, 'coincident', 'cd', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 0 }] });
+    expect(stepIn(level, 'coincident', 'cd', 'x-axis')).toMatchObject({ relations: { length: 1 } });
+    const held: CadSketchGraph = { ...level, relations: [...level.relations, { id: 'dy', kind: 'fixed-axis', pointId: 'd', axis: 'y', value: 0 }] };
+    expect(stepIn(held, 'coincident', 'x-axis', 'cd')).toEqual({ status: 'invalid', reason: 'This line is already on the X axis.', applied: ['dy'] });
+    const dimensioned: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 4 }] };
+    expect(stepIn(dimensioned, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line already has a fixed Y. Remove that dimension first.' });
+    const pinned: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'pin', kind: 'fixed-point', pointId: 'b', position: [40, 2] }] };
+    expect(stepIn(pinned, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line is already fixed. Remove that relation first.' });
+  });
+
+  it('centers an arc or circle at the origin through its center point', () => {
+    expect(step('concentric')).toMatchObject({ status: 'more', prompt: 'Choose an arc or circle, or the origin', datums: ['origin'] });
+    expect(step('concentric', 'origin')).toMatchObject({ status: 'more', prompt: 'Choose an arc or circle to center at the origin', entityIds: ['arc', 'c1', 'c2'], pointIds: [], datums: [] });
+    expect(step('concentric', 'c1', 'origin')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'o1', axis: 'x', value: 0 }, { kind: 'fixed-axis', pointId: 'o1', axis: 'y', value: 0 }] });
+    expect(step('concentric', 'origin', 'arc')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'o2', axis: 'x' }, { kind: 'fixed-axis', pointId: 'o2', axis: 'y' }] });
+    const centered: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'ox', kind: 'fixed-axis', pointId: 'o1', axis: 'x', value: 0 }, { id: 'oy', kind: 'fixed-axis', pointId: 'o1', axis: 'y', value: 0 }] };
+    expect(stepIn(centered, 'concentric', 'c1', 'origin')).toEqual({ status: 'invalid', reason: 'This circle is already centered at the origin.', applied: ['ox', 'oy'] });
+  });
 });
 
 describe('cadSketchConstraintChoices', () => {
@@ -105,6 +137,17 @@ describe('cadSketchConstraintChoices', () => {
     expect(choices(graph, 'origin')).toEqual([]);
   });
 
+  it('offers what a line or circle takes with a selected axis or the origin', () => {
+    expect(choices(graph, 'x-axis', 'ab')).toEqual([{ tool: 'coincident', state: 'available', kinds: ['fixed-axis', 'fixed-axis'] },
+      { tool: 'parallel', state: 'available', kinds: ['horizontal'] }, { tool: 'perpendicular', state: 'available', kinds: ['vertical'] }]);
+    expect(choices(graph, 'bc', 'x-axis')).toEqual([{ tool: 'coincident', state: 'blocked', reason: 'This line is vertical, so it cannot lie on the X axis. Remove that relation first.' },
+      { tool: 'parallel', state: 'blocked', reason: 'This is already vertical.' }, { tool: 'perpendicular', state: 'applied', ids: ['v'] }]);
+    expect(choices(graph, 'c2', 'origin')).toEqual([{ tool: 'concentric', state: 'available', kinds: ['fixed-axis', 'fixed-axis'] }]);
+    // An axis has no length, middle or mirror, and plane references never pair with each other.
+    expect(choices(graph, 'x-axis', 'y-axis')).toEqual([]);
+    expect(choices(graph, 'arc', 'x-axis')).toEqual([]);
+  });
+
   it('marks constraints already in place with the relations that hold them, and explains conflicts', () => {
     expect(choices(graph, 'bc')).toEqual([{ tool: 'horizontal', state: 'blocked', reason: 'This is already vertical.' }, { tool: 'vertical', state: 'applied', ids: ['v'] }]);
     const placed: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'ex', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 0 }, { id: 'ey', kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 0 }] };
@@ -118,17 +161,30 @@ describe('cadSketchConstraintChoices', () => {
 });
 
 describe('pickCadSketchDatum', () => {
-  it('prefers the origin where the axes cross and otherwise the nearest eligible axis along its drawn length', () => {
+  it('prefers the origin where the axes cross and otherwise the nearest eligible axis', () => {
     const all = CAD_SKETCH_DATUMS;
     expect(pickCadSketchDatum([0.5, 0.5], 0.1, all)).toBe('origin');
     expect(pickCadSketchDatum([0.5, 0.5], 0.1, ['x-axis', 'y-axis'])).toBe('x-axis');
+    expect(pickCadSketchDatum([0.3, 0.5], 0.1, ['x-axis', 'y-axis'])).toBe('y-axis');
     expect(pickCadSketchDatum([6, 0.4], 0.1, all)).toBe('x-axis');
     expect(pickCadSketchDatum([-0.2, 7], 0.1, all)).toBe('y-axis');
-    // The axes stop at their drawn arrows, so empty space beyond them or behind the origin stays free for box selection.
-    expect(pickCadSketchDatum([30, 0.4], 0.1, all)).toBeNull();
-    expect(pickCadSketchDatum([-0.2, -30], 0.1, all)).toBeNull();
     expect(pickCadSketchDatum([6, 0.7], 0.1, all)).toBeNull();
     expect(pickCadSketchDatum([30, 0.4], 0.1, ['origin'])).toBeNull();
     expect(pickCadSketchDatum([0, 0], 0, all)).toBeNull();
+    expect(pickCadSketchDatum([0, 0], Number.NaN, all)).toBeNull();
+  });
+
+  it('picks an axis anywhere along it, on either side of the origin, within the same screen reach at every zoom', () => {
+    const all = CAD_SKETCH_DATUMS;
+    for (const millimetersPerPixel of [0.001, 0.1, 25]) {
+      const reach = 6 * millimetersPerPixel, far = 5000 * millimetersPerPixel;
+      expect(pickCadSketchDatum([far, reach * 0.9], millimetersPerPixel, all)).toBe('x-axis');
+      expect(pickCadSketchDatum([-far, -reach * 0.9], millimetersPerPixel, all)).toBe('x-axis');
+      expect(pickCadSketchDatum([reach * 0.9, -far], millimetersPerPixel, all)).toBe('y-axis');
+      expect(pickCadSketchDatum([-reach * 0.5, far], millimetersPerPixel, all)).toBe('y-axis');
+      expect(pickCadSketchDatum([far, reach * 1.1], millimetersPerPixel, all)).toBeNull();
+      expect(pickCadSketchDatum([reach, reach], millimetersPerPixel, all)).toBe('origin');
+      expect(pickCadSketchDatum([far, 0], millimetersPerPixel, ['y-axis', 'origin'])).toBeNull();
+    }
   });
 });

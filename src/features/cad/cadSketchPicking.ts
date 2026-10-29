@@ -70,20 +70,23 @@ export function createCadSketchProfilePicker(profiles: readonly CadSketchProfile
         contains: (point: Point2) => closedPathContainsPoint(refs, point, byId) }];
     } catch { return []; } // Invalid geometry keeps its existing property/build diagnostic.
   });
+  const nearest = (point: SketchPoint, millimetersPerPixel: number, inside: boolean): string | null => {
+    if (!Number.isFinite(point[0]) || !Number.isFinite(point[1]) || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return null;
+    const location = { x: point[0], y: point[1] };
+    const tolerance = CAD_SKETCH_PICK_RADIUS_PX * millimetersPerPixel;
+    let boundary: { id: string; distance: number } | null = null;
+    let interior: { id: string; area: number } | null = null;
+    for (const profile of prepared) {
+      const distance = profile.segments.reduce((closest, segment) => Math.min(closest, cadSketchBoundaryDistance(location, segment)), Infinity);
+      if (distance <= tolerance && (!boundary || distance < boundary.distance)) boundary = { id: profile.id, distance };
+      if (inside && !profile.construction && profile.area > 0 && (!interior || profile.area < interior.area) && profile.contains(location)) interior = { id: profile.id, area: profile.area };
+    }
+    return boundary?.id ?? interior?.id ?? null;
+  };
   return {
     hasProfile(id: string): boolean { return prepared.some(profile => profile.id === id); },
-    pick(point: SketchPoint, millimetersPerPixel: number): string | null {
-      if (!Number.isFinite(point[0]) || !Number.isFinite(point[1]) || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return null;
-      const location = { x: point[0], y: point[1] };
-      const tolerance = CAD_SKETCH_PICK_RADIUS_PX * millimetersPerPixel;
-      let boundary: { id: string; distance: number } | null = null;
-      let interior: { id: string; area: number } | null = null;
-      for (const profile of prepared) {
-        const distance = profile.segments.reduce((closest, segment) => Math.min(closest, cadSketchBoundaryDistance(location, segment)), Infinity);
-        if (distance <= tolerance && (!boundary || distance < boundary.distance)) boundary = { id: profile.id, distance };
-        if (!profile.construction && profile.area > 0 && (!interior || profile.area < interior.area) && profile.contains(location)) interior = { id: profile.id, area: profile.area };
-      }
-      return boundary?.id ?? interior?.id ?? null;
-    }
+    pick(point: SketchPoint, millimetersPerPixel: number): string | null { return nearest(point, millimetersPerPixel, true); },
+    /** The profile whose edge passes under the point, ignoring profiles that only enclose it. */
+    pickEdge(point: SketchPoint, millimetersPerPixel: number): string | null { return prepared.length ? nearest(point, millimetersPerPixel, false) : null; }
   };
 }

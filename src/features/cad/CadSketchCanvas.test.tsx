@@ -286,18 +286,38 @@ describe('graph spatial selection', () => {
     await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(onCancel).toHaveBeenCalledOnce();
   });
-  it('selects the plane origin and axes along their drawn arrows in plain selection', async () => {
+  it('selects the plane origin and axes anywhere along them in plain selection, after the geometry lying on them', async () => {
     const h = await spatialFixture(), datum = vi.fn();
     await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: datum, datumSelection: ['x-axis'] } });
     const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
-    const pixel = state.heightSpanMm / 500, click = async (y: number, shift = false) => { await h.pointer('pointerdown', 0, y, shift); await h.pointer('pointerup', 0, y, shift); };
-    await click(36 * pixel); await click(36 * pixel, true);
-    expect(datum.mock.calls).toEqual([['y-axis', false], ['y-axis', true]]);
-    // The V arrow points up from the origin; empty space past its tip or behind the origin is not the axis.
-    await click(200 * pixel); await click(-36 * pixel);
-    expect(datum).toHaveBeenCalledTimes(2); expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    const pixel = state.heightSpanMm / 500, click = async (x: number, y: number, shift = false) => { await h.pointer('pointerdown', x, y, shift); await h.pointer('pointerup', x, y, shift); };
+    await click(0, 36 * pixel); await click(0, 36 * pixel, true);
+    // Past the V arrow, behind the origin and beyond the line that lies on the H axis, the axes still answer.
+    await click(0, 200 * pixel); await click(3 * pixel, -40 * pixel); await click(20, -2 * pixel, true);
+    expect(datum.mock.calls).toEqual([['y-axis', false], ['y-axis', true], ['y-axis', false], ['y-axis', false], ['x-axis', true]]);
+    // The line lying on the H axis and the point at the origin keep their own picks.
+    await click(5, pixel); await click(pixel, 0);
+    expect(h.selected.mock.calls).toEqual([[{ kind: 'entity', id: 'ab' }, false], [{ kind: 'point', id: 'a' }, false]]);
+    expect(datum).toHaveBeenCalledTimes(5); expect(h.edited).not.toHaveBeenCalled();
     expect(container.querySelector('[data-cad-sketch-datum="x-axis"]')?.getAttribute('aria-pressed')).toBe('true');
     expect(container.querySelector('[data-cad-sketch-datum="y-axis"]')?.getAttribute('aria-pressed')).toBe('false');
+  });
+  it('treats the origin as a point and the axes as edges for the selection filter, and never boxes them', async () => {
+    const h = await spatialFixture(), datum = vi.fn(), role = (datum: string) => container.querySelector(`[data-cad-sketch-datum="${datum}"]`)?.getAttribute('role') ?? null;
+    await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
+    const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
+    const pixel = state.heightSpanMm / 500, click = async (x: number, y: number) => { await h.pointer('pointerdown', x, y); await h.pointer('pointerup', x, y); };
+    await act(async () => currentControls().setSketchPickFilter?.('points'));
+    expect([role('origin'), role('x-axis'), role('y-axis')]).toEqual(['button', null, null]);
+    await click(20, pixel);
+    await act(async () => currentControls().setSketchPickFilter?.('edges'));
+    expect([role('origin'), role('x-axis'), role('y-axis')]).toEqual([null, 'button', 'button']);
+    await click(20, pixel); expect(datum.mock.calls).toEqual([['x-axis', false]]);
+    // A box across the origin and both axes takes only the sketch geometry inside it.
+    await act(async () => currentControls().setSketchPickFilter?.('auto'));
+    await h.pointer('pointerdown', -40 * pixel, -40 * pixel); await h.pointer('pointermove', 12, 2); await h.pointer('pointerup', 12, 2);
+    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }, { kind: 'entity', id: 'ab' }], false);
+    expect(datum).toHaveBeenCalledOnce();
   });
   it('clears a datum-only selection on Escape and drops panned-away datums from the keyboard order', async () => {
     const h = await spatialFixture(), origin = () => container.querySelector('[data-cad-sketch-datum="origin"]');
@@ -313,6 +333,19 @@ describe('graph spatial selection', () => {
     await act(async () => window.dispatchEvent(Object.assign(new MouseEvent('pointerup', { button: 2, buttons: 0, bubbles: true }), { pointerId: 7 })));
     expect(currentControls().getState()).not.toEqual(state);
     expect(origin()?.getAttribute('tabindex')).toBeNull(); expect(origin()?.getAttribute('aria-hidden')).toBe('true');
+  });
+  it('places a position pick exactly at the origin when its owner takes the origin and no eligible point is under the pointer', async () => {
+    const h = await spatialFixture(), position = vi.fn(), onPick = vi.fn(), onPickDatum = vi.fn(), onCancel = vi.fn();
+    const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
+    const pixel = state.heightSpanMm / 500;
+    await h.show({ graphControls: { ...h.props().graphControls!, positionPick: { label: 'Place anchor', onPick: position, onCancel },
+      geometryPick: { label: 'Place anchor', eligibleEntityIds: [], eligiblePointIds: ['b', 'c'], eligibleDatums: ['origin'], onPick, onPickDatum, onCancel } } });
+    expect(container.querySelector('[data-cad-sketch-datum="origin"]')?.getAttribute('aria-label')).toBe('Use origin');
+    await h.pointer('pointerdown', 2 * pixel, pixel); await h.pointer('pointerup', 2 * pixel, pixel);
+    expect(onPickDatum).toHaveBeenCalledExactlyOnceWith('origin'); expect(position).not.toHaveBeenCalled();
+    // Away from the origin, and along the axes, the pick stays a free position.
+    await h.pointer('pointerdown', 20, 2 * pixel); await h.pointer('pointerup', 20, 2 * pixel);
+    expect(position).toHaveBeenCalledOnce(); expect(onPickDatum).toHaveBeenCalledOnce(); expect(onPick).not.toHaveBeenCalled();
   });
   it('borrows exact point picks before edges and disables geometry mutations while choosing a second operand', async () => {
     const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn();
@@ -428,7 +461,7 @@ describe('graph spatial selection', () => {
     await h.pointer('pointerdown', -2, -2); await h.pointer('pointermove', 12, 2);
     expect(h.selectedSet).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(true);
     await h.pointer('pointerup', 12, 2);
-    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }, { kind: 'entity', id: 'ab' }]);
+    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }, { kind: 'entity', id: 'ab' }], false);
     expect(h.edited).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
     await act(async () => h.canvas.dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true })));
     expect(h.selected).not.toHaveBeenCalled();
@@ -471,7 +504,7 @@ describe('graph spatial selection', () => {
     await h.show({ graphControls: { ...h.props().graphControls!, selection: [{ kind: 'point', id: 'a' }] } });
     await h.pointer('pointerdown', 12, 3, true); await h.pointer('pointermove', -2, -2, true); await h.pointer('pointermove', -2, -2, true);
     await h.pointer('pointerup', -2, -2, true);
-    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'b' }, { kind: 'entity', id: 'ab' }, { kind: 'entity', id: 'bc' }]);
+    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'b' }, { kind: 'entity', id: 'ab' }, { kind: 'entity', id: 'bc' }], true);
   });
   it('cancels on Escape, source change and spatial resize without publishing a partial selection', async () => {
     const h = await spatialFixture();
@@ -493,7 +526,7 @@ describe('graph spatial selection', () => {
     expect(currentControls().getState()).toMatchObject({ sketchPickFilter: 'points' });
     expect(h.selectedSet).not.toHaveBeenCalled();
     await h.pointer('pointerdown', -2, -2); await h.pointer('pointermove', 12, 2); await h.pointer('pointerup', 12, 2);
-    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }]);
+    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }], false);
   });
   it('keeps legacy profiles visible but prevents their grip and keyboard editing in a point-only filter', async () => {
     const h = await spatialFixture(), selectProfile = vi.fn(), move = vi.fn();
@@ -527,7 +560,7 @@ describe('graph spatial selection', () => {
     const selection: readonly CadSketchGraphSelection[] = Array.from({ length: 64 }, (_, i) => ({ kind: 'point', id: `p${i + 1}` }));
     await h.show({ graphControls: { ...h.props().graphControls!, selection } });
     await h.pointer('pointerdown', -1, -1, true); await h.pointer('pointermove', 1.4, .8, true); await h.pointer('pointerup', 1.4, .8, true);
-    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([...selection.slice(1), { kind: 'point', id: 'p0' }]);
+    expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([...selection.slice(1), { kind: 'point', id: 'p0' }], true);
     expect(h.error).not.toHaveBeenCalled();
   });
   it('offers exact overlapping operands on right click and commits only the chosen target', async () => {

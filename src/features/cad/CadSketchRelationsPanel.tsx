@@ -19,7 +19,7 @@ import { cadSketchLineAngleSectors, createCadSketchLineAngleRelation } from '@/d
 import { CadError } from '@/domain/cad/cadError';
 import { CadScalarEditContext, ScalarField, SelectField, type CadScalarValueDraft } from './CadFields';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
-import type { CadSketchDatum } from './cadSketchGraphSelection';
+import { cadSketchDatumRelationLabel, type CadSketchDatum } from './cadSketchGraphSelection';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { formatCadQuantity } from './cadDisplayQuantity';
@@ -299,6 +299,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const labelRelation = (relation: CadSketchGraphRelation) => initialCommand?.kind === 'datum-distance' && relation.kind === 'fixed-axis' && datumDimensions.some(item => item.id === relation.id)
     ? initialCommand.datum === 'origin' ? `${relation.axis.toUpperCase()} from origin` : relation.axis === 'x' ? 'X from Y axis' : 'Y from X axis'
     : relation.kind === 'distance' && pointPair && samePair(relation, pointPair) ? 'Distance' : relationLabel(relation);
+  // A zero coordinate reads as the plane reference it holds the point on; the value editor keeps the coordinate name.
+  const listedRelationLabel = (relation: CadSketchGraphRelation) => datumDimensions.some(item => item.id === relation.id) ? null : cadSketchDatumRelationLabel(relation);
   const acceptedScalars = useMemo(() => {
     const values: Record<string, CadScalar> = {};
     if (originalEntity?.kind === 'circle') values.radius = originalEntity.radius;
@@ -505,7 +507,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     setRelationPending: setBindingPending, markRelationEdited, changeParameter };
   const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}>
           <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { if(relation.kind === 'linear-pattern') { if (!pending) onEditPattern?.(relation.id); return; } setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
-            {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
+            {listedRelationLabel(relation) ?? labelRelation(relation)}{!listedRelationLabel(relation) && (relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
             {relation.kind === 'reference-dimension' && <span>({referenceValue(relation)})</span>}
             {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
           </Button><Button type="button" aria-label={relation.kind === 'linear-pattern' ? 'Detach pattern' : relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'linear-pattern' ? 'Detach all occurrences and retain their current geometry' : relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} disabled={relation.kind === 'linear-pattern' && (pending || !onEditPattern)} onClick={() => { if (relation.kind === 'linear-pattern') onEditPattern?.(relation.id,true); else removeRelation(relation.id); }}><CloseIcon size={12} /></Button>

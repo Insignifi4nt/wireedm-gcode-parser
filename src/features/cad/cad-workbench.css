@@ -197,8 +197,13 @@
 .cad-axis-y { stroke: #6a9e80; fill: none; }
 .cad-sketch-origin { stroke: var(--muted-foreground); fill: none; pointer-events: none; }
 .cad-sketch-axis-label { fill: var(--muted-foreground); pointer-events: none; user-select: none; }
-.cad-axis-x.is-pick-highlighted, .cad-axis-y.is-pick-highlighted, .cad-sketch-origin.is-pick-highlighted { stroke: var(--foreground); }
+/* The axes cross the whole view as quiet lines; hover, focus, selection and an inspected relation bring the line up with its arrow. */
+.cad-sketch-axis-line { stroke-opacity: 0.4; pointer-events: none; }
+.cad-sketch-axes [data-cad-sketch-datum]:focus { outline: none; }
+.cad-axis-x:is(.is-pick-highlighted, :focus-visible), .cad-axis-y:is(.is-pick-highlighted, :focus-visible), .cad-sketch-origin:is(.is-pick-highlighted, :focus-visible) { stroke: var(--foreground); }
 .cad-axis-x.is-selected, .cad-axis-y.is-selected, .cad-sketch-origin.is-selected { stroke: var(--primary); }
+.cad-axis-x.is-relation-highlighted, .cad-axis-y.is-relation-highlighted, .cad-sketch-origin.is-relation-highlighted { stroke: var(--warning, #f0bf71); }
+.cad-sketch-axes :is(.is-pick-highlighted, .is-selected, .is-relation-highlighted, :focus-visible) > .cad-sketch-axis-line { stroke-opacity: 0.85; }
 .cad-profile { fill: none; stroke: #9fc2d3; cursor: pointer; }
 .cad-profile.is-selected { stroke: #8ce9f5; fill: #7ae3ee22; }
 .cad-profile:focus-visible { stroke: #baf4ff; }

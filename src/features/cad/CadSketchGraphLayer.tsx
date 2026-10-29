@@ -25,7 +25,7 @@ export interface CadSketchGraphControls {
   readonly document: CadDocument;
   readonly selection: readonly CadSketchGraphSelection[];
   readonly relation?: CadSketchGraphRelation | null;
-  readonly inspection?: { readonly pointIds: readonly string[]; readonly entityIds: readonly string[] } | null;
+  readonly inspection?: { readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly datums?: readonly CadSketchDatum[] } | null;
   readonly degreesOfFreedom?: number | null;
   readonly showDimensions?: boolean;
   readonly geometryPick?: CadSketchGeometryPick;
@@ -34,7 +34,8 @@ export interface CadSketchGraphControls {
   readonly patternInteraction?: import('./CadSketchLinearPatternEditor').CadSketchLinearPatternInteraction;
   onEditPattern?(relationId: string): void;
   onSelect(selection: CadSketchGraphSelection | null, additive?: boolean): void;
-  onSelectSet?(selections: readonly CadSketchGraphSelection[]): void;
+  /** Replaces the geometry selection; `additive` keeps the selected plane references, as a Shift box does. */
+  onSelectSet?(selections: readonly CadSketchGraphSelection[], additive?: boolean): void;
   /** Plane references in the plain selection, beside the sketch geometry; a command pick lists its own. */
   readonly datumSelection?: readonly CadSketchDatum[];
   onSelectDatum?(datum: CadSketchDatum, additive: boolean): void;

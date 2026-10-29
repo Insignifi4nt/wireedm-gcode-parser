@@ -1,6 +1,7 @@
 import { CadError } from '@/domain/cad/cadError';
 import type { CadSketchGraph, CadSketchGraphIssue, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
+import { cadSketchDatumRelationLabel } from './cadSketchGraphSelection';
 import { cadSketchSolverRecoveryMessages } from './sketch-solver/cadSketchSolverMessages';
 import type { CadSketchSolveDiagnostics, CadSketchSolveResult } from './sketch-solver/cadSketchSolverTypes';
 
@@ -63,9 +64,9 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
         : relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds.map(pointLabel)
           : [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.measurement.entityId }).label]
         : ('pointIds' in relation ? relation.pointIds : [relation.pointId]).map(pointLabel);
-      const name = relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
+      const name = cadSketchDatumRelationLabel(relation) ?? (relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
         : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
-        : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationNames[relation.kind];
+        : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationNames[relation.kind]);
       label = `${name} relation ${index + 1} · ${operands.join(relation.kind === 'axis-distance' ? ' → ' : ' and ')}`;
     } else label = 'Unavailable relation';
   } else if (source.kind === 'entity') {

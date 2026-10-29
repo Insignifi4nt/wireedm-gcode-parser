@@ -11,7 +11,8 @@ interface Options {
   prepared: Prepared | null; enabled: boolean; locked: boolean; version?: string; cancelSignal: number; frameKey: string;
   filter: CadSketchGraphPickFilter; selection: readonly CadSketchGraphSelection[];
   project(event: { clientX: number; clientY: number }): Projection | null;
-  onSelectSet?(selection: readonly CadSketchGraphSelection[]): void;
+  /** `additive` marks a Shift box, which adds to the selection rather than replacing it. */
+  onSelectSet?(selection: readonly CadSketchGraphSelection[], additive?: boolean): void;
   onPendingChange(pending: boolean): void;
   onCancel(): void;
   onError(message: string): void;
@@ -82,7 +83,7 @@ export function useCadSketchBoxSelection(options: Options) {
       const next = read(event); if (!next) return false;
       const moved = next.active.moved || Math.hypot(event.clientX - next.active.clientX, event.clientY - next.active.clientY) > 4;
       try {
-        if (event.button === 0 && moved) next.current.onSelectSet?.(query(next.active, next.current, next.point, event.clientX).selections);
+        if (event.button === 0 && moved) next.current.onSelectSet?.(query(next.active, next.current, next.point, event.clientX).selections, next.active.toggle);
       } catch (cause) { next.current.onError(userFacingMessage(cause, 'Unable to select this geometry.')); }
       finally { cancel(false); }
       return moved;
