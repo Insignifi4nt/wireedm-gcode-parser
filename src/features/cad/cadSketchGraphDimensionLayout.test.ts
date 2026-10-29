@@ -363,6 +363,11 @@ describe('point to line distance layout', () => {
     expect(reference.extensions).toHaveLength(1);
     expect(reference.extensions[0][0]).toEqual([20, 0]); expect(reference.extensions[0][1][0]).toBeCloseTo(30.2, 12); expect(reference.extensions[0][1][1] + 0).toBe(0);
     expect(cadSketchGraphDimensionLabel(6, 'point-line', true).text).toBe('(6 mm)');
+    // Both draw the same slim arrowheads as the other dimensions: 5 px long and 3.5 px wide at 0.1 mm per pixel.
+    for (const arrow of [...driving.arrows, ...reference.arrows]) {
+      const [tip, left, right] = arrow, mid = [(left[0] + right[0]) / 2, (left[1] + right[1]) / 2];
+      expect(Math.hypot(mid[0] - tip[0], mid[1] - tip[1])).toBeCloseTo(.5, 12); expect(Math.hypot(left[0] - right[0], left[1] - right[1])).toBeCloseTo(.35, 12);
+    }
   });
 
   it('keeps the label of a reference whose point lies on the support, without arrows', () => {

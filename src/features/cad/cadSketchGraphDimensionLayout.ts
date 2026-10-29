@@ -144,7 +144,7 @@ function pointLineDimension(graph: CadSketchGraph, relation: Extract<CadSketchDi
     let readX = ux, readY = uy;
     if (readX < -1e-12 || Math.abs(readX) <= 1e-12 && readY < 0) { readX = -readX; readY = -readY; }
     const box = cadSketchGraphDimensionLabel(valueMm, 'point-line', relation.kind === 'reference-dimension'), lift = (box.height / 2 + isoTextGap) * mmPerPixel;
-    const headLength = Math.min(6 * mmPerPixel, length / 4), headWidth = Math.min(2.5 * mmPerPixel, length / 8);
+    const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, length / 4), headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, length / 8);
     const arrow = (tip: Point2, sign: number): Arrow => [[tip.x, tip.y],
       [tip.x + ux * headLength * sign + axis.x * headWidth, tip.y + uy * headLength * sign + axis.y * headWidth],
       [tip.x + ux * headLength * sign - axis.x * headWidth, tip.y + uy * headLength * sign - axis.y * headWidth]];
