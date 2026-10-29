@@ -157,6 +157,24 @@ describe('sketch canvas profile picking', () => {
     expect(onAddPath.mock.calls[2][0].segments[0].end).toEqual([expect.closeTo(30, 10), onAddPath.mock.calls[2][0].start[1]]);
     expect(onAddPath.mock.calls[2][0].segments[0]).not.toHaveProperty('inferred');
   });
+  it('releases the relation and attachment of a held short pick when Ctrl or Cmd is pressed before release', async () => {
+    for (const modifier of ['ctrlKey', 'metaKey'] as const) {
+      const onAddPath = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+      const press = (type: string, x: number, y: number, init: MouseEventInit = {}) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ...init });
+      const hold = async (start: readonly [number, number], end: readonly [number, number], hint: string) => {
+        await h.click(...start); await h.pointer('pointermove', { ...h.position(...end), button: 0, buttons: 0 });
+        expect(container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label')).toBe(hint);
+        // Both ends lie within the press-and-hold area, so the line is placed on release.
+        await press('pointerdown', ...end); await press('pointerup', ...end, { [modifier]: true }); await h.click(...end, h.svg, { [modifier]: true });
+        const [line] = onAddPath.mock.calls.at(-1)![0].segments;
+        expect(line.end).toEqual([expect.closeTo(end[0], 9), expect.closeTo(end[1], 9)]);
+        expect(line).not.toHaveProperty('inferred'); expect(line).not.toHaveProperty('endPick');
+      };
+      await hold([30, 25], [30.01, 25.32], 'Vertical');
+      await hold([22.1, 3.45], [22.11, 3.22], 'Coincident with Point 2');
+      expect(onAddPath).toHaveBeenCalledTimes(2);
+    }
+  });
   it('infers only for polyline line segments and names an attachment before the relation', async () => {
     const onAddPath = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
     const move = (x: number, y: number) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });

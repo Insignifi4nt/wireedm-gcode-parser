@@ -219,7 +219,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
    * a drag draws from that point, and a plain click places it then. `changes` is the draft change the press left.
    */
   const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; changes: number;
-    readonly held: { readonly pick: DrawingPick; readonly last: SketchPoint } | null; dragged: boolean } | null>(null);
+    readonly held: { readonly last: SketchPoint } | null; dragged: boolean } | null>(null);
   /**
    * Counts drawing draft changes and whether the latest one added a point. A press keeps its release only while its own
    * change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick during the press, ends it.
@@ -966,7 +966,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             const beside = last && bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
               event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS;
             const press = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, changes: draftChanges.current.count,
-              held: beside && last ? { pick, last } : null, dragged: false };
+              held: beside && last ? { last } : null, dragged: false };
             drawingPress.current = press;
             try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
             if (beside) return;
@@ -1010,8 +1010,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (event.button !== 0 || interactionLocked || draftChanges.current.count !== press.changes || !(points.length > 0 || pathPending)) return;
           if (press.dragged) acceptDrawingPick(getDrawingPick(event), event);
           // A held press that did not drag is a deliberate short pick, unless it repeats the last point exactly.
-          else if (press.held && (press.held.pick.point[0] !== press.held.last[0] || press.held.pick.point[1] !== press.held.last[1]))
-            acceptDrawingPick(press.held.pick, { clientX: press.clientX, clientY: press.clientY });
+          // It resolves again at the press position so Ctrl or Cmd pressed during the hold still releases snaps and relations.
+          else if (press.held) {
+            const anchor = { clientX: press.clientX, clientY: press.clientY }, pick = getDrawingPick({ ...anchor, ctrlKey: event.ctrlKey, metaKey: event.metaKey });
+            if (pick.point[0] !== press.held.last[0] || pick.point[1] !== press.held.last[1]) acceptDrawingPick(pick, anchor);
+          }
           return;
         }
         if (boxSelection.active()) { if (boxSelection.end(event)) suppressProfileClick.current = true; return; }
