@@ -64,3 +64,27 @@ export function cadSketchInferenceNote(dropped: readonly CadSketchGraphRelation[
     : plural ? 'the sketch could not keep them' : 'the sketch could not keep it';
   return `${names[0].toUpperCase()}${names.slice(1)}${plural ? ' relations' : ''} not added: ${why}.`;
 }
+
+/**
+ * Submit relations of which `optionalIds` may already follow from the sketch through relations the caller does not trace,
+ * such as a line held level by a chain of parallels. The full set goes first, so a constraint the sketch accepts costs one
+ * preparation. When preparation rejects it as redundant and names some optional relations, those are dropped and the rest
+ * is submitted once more. At least one relation always remains, so a constraint already fully in place still reports the
+ * repeat. An abort, any other failure or a changed base (`current` false) stops at once.
+ */
+export function submitCadSketchRelationsWithoutRepeats<T>({ relations, optionalIds, submit, signal, current }: {
+  readonly relations: readonly CadSketchGraphRelation[];
+  readonly optionalIds: readonly string[];
+  readonly submit: (relations: readonly CadSketchGraphRelation[]) => T | PromiseLike<T>;
+  readonly signal?: AbortSignal;
+  readonly current: () => boolean;
+}): T | Promise<T> {
+  const optional = new Set(optionalIds);
+  return settle(() => submit(relations), error => {
+    if (!optional.size || !(error instanceof CadSketchPreparationError) || error.feedback.reason !== 'redundant' || signal?.aborted || !current()) throw error;
+    const repeated = new Set(error.diagnostics.redundantIds.filter(id => optional.has(id)));
+    const kept = relations.filter(relation => !repeated.has(relation.id));
+    if (!repeated.size || !kept.length) throw error;
+    return submit(kept);
+  });
+}

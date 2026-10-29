@@ -390,19 +390,32 @@ describe('graph spatial selection', () => {
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
     expect(datum.mock.calls).toEqual([['x-axis', false], ['x-axis', false]]); expect(translate).toHaveBeenCalledOnce(); expect(move).toHaveBeenCalledOnce();
   });
-  it('drops a press on an axis when the document, cancellation, interaction lock or window focus changes before release', async () => {
-    const h = await spatialFixture(), datum = vi.fn();
+  it('drops a press on an axis, and its click, when the document, cancellation, lock, focus or canvas frame changes before release', async () => {
+    const h = await spatialFixture(), datum = vi.fn(), selectProfile = vi.fn();
     const profile = { id: 'legacy', name: 'Legacy rectangle', construction: false, geometry: { kind: 'rectangle' as const, x: -30, y: -5, width: 10, height: 10, cornerRadius: 0 } };
-    await h.show({ sketch: { ...h.feature, profiles: [profile] }, onSelectProfile: vi.fn(), graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
-    // Inside the unselected rectangle a press on the H axis starts neither a box nor a profile drag, so only the press itself can go stale.
-    const interrupted = async (change: () => Promise<unknown>) => { await h.pointer('pointerdown', -25, 0); await change(); await h.pointer('pointerup', -25, 0); };
+    await h.show({ sketch: { ...h.feature, profiles: [profile] }, onSelectProfile: selectProfile, graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
+    // Inside the unselected rectangle a press on the H axis starts neither a box nor a profile drag, so only the press itself can go
+    // stale. Its release and trailing click must neither select the rectangle nor clear the sketch selection; a cancellation or
+    // Escape may clear it themselves.
+    const click = () => act(async () => h.canvas.dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true, clientX: 260, clientY: 270 })));
+    const interrupted = async (change: () => Promise<unknown>) => {
+      await h.pointer('pointerdown', -25, 0); await change();
+      const cleared = h.selected.mock.calls.length;
+      await h.pointer('pointerup', -25, 0); await click(); expect(h.selected).toHaveBeenCalledTimes(cleared);
+    };
     await interrupted(() => h.show({ documentVersion: 'v2' }));
     await interrupted(() => h.show({ cancelSignal: h.props().cancelSignal + 1 }));
     await interrupted(async () => { await h.show({ interactionLocked: true }); await h.show({ interactionLocked: false }); });
     await interrupted(() => act(async () => window.dispatchEvent(new Event('blur'))));
-    expect(datum).not.toHaveBeenCalled();
-    await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0);
-    expect(datum).toHaveBeenCalledExactlyOnceWith('x-axis', false);
+    // A layout shift moves the axis away from the pointer without changing the document or view.
+    const bounds = vi.mocked(h.canvas.getBoundingClientRect), frame = bounds.getMockImplementation() ?? (() => h.canvas.getBoundingClientRect());
+    const original = h.canvas.getBoundingClientRect();
+    await interrupted(async () => { bounds.mockReturnValue({ ...original, top: original.top + 100, bottom: original.bottom + 100, y: original.y + 100, toJSON: () => ({}) }); });
+    bounds.mockImplementation(frame); bounds.mockReturnValue(original);
+    await interrupted(() => act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))));
+    expect(datum).not.toHaveBeenCalled(); expect(selectProfile).not.toHaveBeenCalled();
+    await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
+    expect(datum).toHaveBeenCalledExactlyOnceWith('x-axis', false); expect(selectProfile).not.toHaveBeenCalled();
   });
   it('clears a datum-only selection on Escape and drops panned-away datums from the keyboard order', async () => {
     const h = await spatialFixture(), origin = () => container.querySelector('[data-cad-sketch-datum="origin"]');

@@ -27,7 +27,7 @@ import type { CadSketchOffsetSource } from '@/domain/cad/cadSketchOffset';
 import type { CadSketchAreaRepairInspection, CadSketchAreaRepairs } from './cadSketchEditDraft';
 import { CadSketchConstraintStatus, type CadInspectSketchConstraints } from './CadSketchConstraintStatus';
 import type { CadSketchConstraintFeedbackSubject } from './cadSketchConstraintFeedback';
-import { appendCadSketchGraphWithInferences, cadSketchInferenceNote } from './cadSketchInferenceFallback';
+import { appendCadSketchGraphWithInferences, cadSketchInferenceNote, submitCadSketchRelationsWithoutRepeats } from './cadSketchInferenceFallback';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -1157,14 +1157,22 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     return [...placement ? [{ kind: 'translate-sketch-geometry' as const, sketchId: sourceSketchId, ...placement }] : [],
       ...relations.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation }))];
   };
+  // Relations the sketch may already imply are retried without the ones the solver finds repeated, on the same sketch only.
+  const applyConstraint = (graph: CadSketchGraph, sourceSketchId: string, relations: readonly CadSketchGraphRelation[], optional: readonly string[] | undefined, signal?: AbortSignal) => {
+    if (!optional?.length) return applyCanvasEdits(constraintEdits(graph, sourceSketchId, relations), signal);
+    const base = interactionState.current;
+    return submitCadSketchRelationsWithoutRepeats({ relations, optionalIds: optional, signal,
+      current: () => interactionState.current.version === base.version && interactionState.current.sketchId === base.sketchId,
+      submit: kept => applyCanvasEdits(constraintEdits(graph, sourceSketchId, kept), signal) });
+  };
   // Selection first, as in CATIA's Constraint Definition dialog: the menu lists what fits the selected geometry and plane references.
   const constraintSelection = useMemo<readonly CadSketchConstraintPick[]>(() => [...graphSelections, ...graphDatums.map(id => ({ kind: 'datum' as const, id }))], [graphSelections, graphDatums]);
   const constraintChoices = useMemo(() => sketch?.graph && !currentConstraintTool && tool === 'select'
     ? cadSketchConstraintChoices(sketch.graph, constraintSelection, () => crypto.randomUUID()) : [], [sketch, currentConstraintTool, tool, constraintSelection]);
   const toggleConstraint = (graph: CadSketchGraph, sourceSketchId: string, choice: CadSketchConstraintChoice) => {
     if (choice.state === 'blocked') return;
-    const edits = choice.state === 'available' ? constraintEdits(graph, sourceSketchId, choice.relations)
-      : choice.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sourceSketchId, relationId }));
+    if (choice.state === 'available') { const { relations, optional } = choice; submitEdit(signal => applyConstraint(graph, sourceSketchId, relations, optional, signal)); return; }
+    const edits = choice.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sourceSketchId, relationId }));
     submitEdit(signal => applyCanvasEdits(edits, signal));
   };
   const constraintChoiceHelp = (choice: CadSketchConstraintChoice) => choice.state === 'blocked' ? choice.reason
@@ -1199,8 +1207,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       const sourceSketchId = request.sketchId;
       restart();
       // The tool stays active; the next pick starts a new constraint on the updated sketch.
-      const edits = constraintEdits(graph, sourceSketchId, result.relations);
-      submitEdit(signal => applyCanvasEdits(edits, signal));
+      submitEdit(signal => applyConstraint(graph, sourceSketchId, result.relations, result.optional, signal));
     };
     return {
       eligibleEntityIds: step.entityIds, eligiblePointIds: step.pointIds, eligibleDatums: step.datums,

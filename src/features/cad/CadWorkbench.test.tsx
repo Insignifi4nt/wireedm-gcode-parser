@@ -1969,6 +1969,39 @@ describe('CAD sketch interaction', () => {
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'd' }]); expect(pressed('y-axis')).toBe('false');
   });
 
+  it('lays a line on an axis without the endpoint fix the sketch rejects as repeated, from the tool and from the selection', async () => {
+    const graph = { points: [{ id: 'a', position: [5, 0] }, { id: 'b', position: [25, 0] }], entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] } as const;
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Datums', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph }] });
+    const parsed = source.features[0]; if (parsed.kind !== 'sketch' || !parsed.graph) throw new Error('Sketch missing.');
+    const submitted: string[][] = [], base = parsed.graph;
+    await mount(source, { build: null, buildState: 'idle', onEditMany: edits => {
+      const fixes = edits.flatMap(edit => edit.kind === 'set-sketch-relation' && edit.relation.kind === 'fixed-axis' ? [edit.relation] : []);
+      submitted.push(fixes.map(relation => relation.pointId));
+      // Relations the tool does not trace already keep the line level, so the sketch rejects the second endpoint fix.
+      if (fixes.length === 2) throw new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Datums', graph: base, rejection: { kind: 'rejected', reason: 'redundant',
+        message: 'Repeated relation.', diagnostics: { status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [fixes[1].id], partiallyRedundantIds: [], issues: [] } } });
+      return currentSession.edit(edits);
+    } });
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const key = async (selector: string, shiftKey = false) => {
+      const target = container.querySelector(selector); if (!target) throw new Error(`${selector} missing.`);
+      await act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, shiftKey })));
+    };
+    const relations = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.relations; };
+    await click('Constrain');
+    const tool = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent?.trim() === 'Coincident'); if (!tool) throw new Error('Coincident missing.');
+    await act(async () => tool.click()); await key('[data-cad-sketch-entity="base"]'); await key('[data-cad-sketch-datum="x-axis"]');
+    expect(submitted).toEqual([['a', 'b'], ['a']]); expect(relations()).toMatchObject([{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }]);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await canvasKey('Escape'); await act(async () => currentSession.undo()); expect(relations()).toEqual([]);
+    await key('[data-cad-sketch-entity="base"]'); await key('[data-cad-sketch-datum="x-axis"]', true);
+    await click('Constrain');
+    const choice = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(entry => entry.textContent?.trim() === 'Coincident'); if (!choice) throw new Error('Coincident choice missing.');
+    await act(async () => choice.click());
+    expect(submitted.slice(2)).toEqual([['a', 'b'], ['a']]); expect(relations()).toMatchObject([{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }]);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it('keeps a point on an arc or circle with Coincident, picked after the tool or from the selection, and removes it from the selection menu', async () => {
     const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Curves', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
       points: [{ id: 'o', position: [0, 0] }, { id: 's', position: [10, 0] }, { id: 'e', position: [0, 10] }, { id: 'c', position: [30, 0] }, { id: 'p', position: [6, 8] }, { id: 'q', position: [34, 3] }],

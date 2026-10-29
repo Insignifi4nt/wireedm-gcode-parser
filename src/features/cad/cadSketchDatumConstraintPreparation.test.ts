@@ -4,7 +4,9 @@ import type { CadDocument } from '@/domain/cad/cadDocument';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { prepareCadEdits } from './cadEditPreparation';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { cadSketchConstraintStep, type CadSketchConstraintPick, type CadSketchConstraintTool } from './cadSketchConstraintTool';
+import { submitCadSketchRelationsWithoutRepeats } from './cadSketchInferenceFallback';
 import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
 const runtime = createCadSketchTestSolver();
@@ -34,6 +36,17 @@ async function constrain(source: CadDocument, tool: CadSketchConstraintTool, ...
   if (step.status !== 'ready') throw new Error(`Expected relations, got ${JSON.stringify(step)}.`);
   const prepared = await prepareCadEdits(source, step.relations.map(relation => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation } as const)), runtime);
   return { step, prepared, document: prepared.document, diagnostics: prepared.sketchDiagnostics[0].diagnostics };
+}
+
+/** Submit the same relations as the workbench does, retrying without optional ones the solver finds repeated. */
+async function constrainAsWorkbench(source: CadDocument, tool: CadSketchConstraintTool, ...ids: string[]) {
+  const step = cadSketchConstraintStep(graphOf(source), tool, ids.map(pick), () => `r${++counter}`), submitted: string[][] = [];
+  if (step.status !== 'ready') throw new Error(`Expected relations, got ${JSON.stringify(step)}.`);
+  const prepared = await submitCadSketchRelationsWithoutRepeats({ relations: step.relations, optionalIds: step.optional ?? [], current: () => true, submit: relations => {
+    submitted.push(relations.map(relation => relation.id));
+    return prepareCadEdits(source, relations.map(relation => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation } as const)), runtime);
+  } });
+  return { step, submitted, document: prepared.document, diagnostics: prepared.sketchDiagnostics[0].diagnostics };
 }
 
 describe('constraints with the plane origin and axes, solved natively', () => {
@@ -66,6 +79,32 @@ describe('constraints with the plane origin and axes, solved natively', () => {
     expect(aliased.step.relations).toHaveLength(1);
     expect(aliased.diagnostics).toMatchObject({ status: 'success', redundantIds: [], issues: [] });
     for (const id of ['a', 'b']) expect(at(aliased.document, id)[1]).toBeCloseTo(0, 9);
+  });
+
+  it('drops a coordinate the sketch already holds through relations the tool does not trace, and keeps the rest', async () => {
+    // a–b is level only through Parallel with the horizontal c–d, so the second endpoint fix repeats the first.
+    const parallel = await constrainAsWorkbench(part([{ id: 'h', kind: 'horizontal', pointIds: ['c', 'd'] }, { id: 'p', kind: 'parallel', lineIds: ['ab', 'cd'] }], { a: [0, 3], b: [10, 3] }), 'coincident', 'ab', 'x-axis');
+    expect(parallel.step).toMatchObject({ relations: [{ pointId: 'a' }, { pointId: 'b' }], optional: parallel.step.relations.map(relation => relation.id) });
+    expect(parallel.submitted).toEqual([parallel.step.relations.map(relation => relation.id), [parallel.step.relations[0].id]]);
+    expect(parallel.diagnostics).toMatchObject({ status: 'success', redundantIds: [], issues: [] });
+    for (const id of ['a', 'b']) expect(at(parallel.document, id)[1]).toBeCloseTo(0, 9);
+    // a lies on c–d, which is on the X axis, so only b needs fixing.
+    const onAxisLine: Readonly<Record<string, [number, number]>> = { c: [-20, 0], d: [-8, 0], a: [-14, 0] };
+    const throughLine = await constrainAsWorkbench(part([{ id: 'cy', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 0 }, { id: 'dy', kind: 'fixed-axis', pointId: 'd', axis: 'y', value: 0 },
+      { id: 'on', kind: 'point-on-line', pointId: 'a', lineId: 'cd' }], onAxisLine), 'coincident', 'x-axis', 'ab');
+    expect(throughLine.submitted.at(-1)).toEqual([throughLine.step.relations[1].id]);
+    expect(at(throughLine.document, 'b')[1]).toBeCloseTo(0, 9); expect(at(throughLine.document, 'a')[1]).toBeCloseTo(0, 9);
+    // q lies on a line along the Y axis, so placing it at the origin adds only its Y.
+    const atOrigin = await constrainAsWorkbench(part([{ id: 'cx', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 0 }, { id: 'dx', kind: 'fixed-axis', pointId: 'd', axis: 'x', value: 0 },
+      { id: 'onq', kind: 'point-on-line', pointId: 'q', lineId: 'cd' }], { c: [0, 7], d: [0, 19], q: [0, 9] }), 'coincident', 'q', 'origin');
+    expect(atOrigin.submitted.at(-1)).toEqual([atOrigin.step.relations.find(relation => relation.kind === 'fixed-axis' && relation.axis === 'y')!.id]);
+    expect(at(atOrigin.document, 'q').map(value => Math.abs(value))).toEqual([expect.closeTo(0, 9), expect.closeTo(0, 9)]);
+    // A line free of the axis takes both fixes at once, and a line already on it through such relations still reports the repeat.
+    const free = await constrainAsWorkbench(part([]), 'coincident', 'ab', 'x-axis');
+    expect(free.submitted).toHaveLength(1); expect(free.step.relations).toHaveLength(2);
+    const repeated = constrainAsWorkbench(part([{ id: 'cy', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 0 }, { id: 'dy', kind: 'fixed-axis', pointId: 'd', axis: 'y', value: 0 },
+      { id: 'on', kind: 'point-on-line', pointId: 'a', lineId: 'cd' }, { id: 'p', kind: 'parallel', lineIds: ['ab', 'cd'] }], { ...onAxisLine, b: [10, 0] }), 'coincident', 'ab', 'x-axis');
+    await expect(repeated).rejects.toSatisfy(error => error instanceof CadSketchPreparationError && error.feedback.reason === 'redundant');
   });
 
   it('keeps the center of a circle or arc on an axis, and the arc ends follow', async () => {
