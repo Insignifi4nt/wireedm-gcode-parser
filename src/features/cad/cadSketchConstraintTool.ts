@@ -228,13 +228,18 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       }
     } while (changed);
     const marked = new Set(snapshots.filter(at => at >= 0).map(find));
-    // A point on, or at the middle of, a line whose two ends a linked reference keeps at 0 follows that snapshot too.
-    for (const relation of dependent) {
-      if (relation.kind !== 'point-on-line' && relation.kind !== 'midpoint') continue;
-      const line = byId.get(relation.lineId);
-      if (line) for (const axis of ['x', 'y'] as const) {
-        const [start, end, point] = [line.startPointId, line.endPointId, relation.pointId].map(id => node(id, axis));
-        if (start >= 0 && end >= 0 && point >= 0 && marked.has(find(start)) && marked.has(find(end))) marked.add(find(point));
+    // A point on, or at the middle of, a line whose two ends a linked reference keeps at 0 follows that snapshot too,
+    // repeated until nothing more is marked so the order of the relations never matters.
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const relation of dependent) {
+        if (relation.kind !== 'point-on-line' && relation.kind !== 'midpoint') continue;
+        const line = byId.get(relation.lineId);
+        if (line) for (const axis of ['x', 'y'] as const) {
+          const [start, end, point] = [line.startPointId, line.endPointId, relation.pointId].map(id => node(id, axis));
+          if (start < 0 || end < 0 || point < 0 || marked.has(find(point)) || !marked.has(find(start)) || !marked.has(find(end))) continue;
+          marked.add(find(point)); grew = true;
+        }
       }
     }
     const linked = (pointId: string, axis: 'x' | 'y') => { const at = node(pointId, axis); return at >= 0 && !zero(pointId, axis) && marked.has(find(at)); };

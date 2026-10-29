@@ -246,8 +246,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const datumPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; readonly datum: CadSketchDatum; readonly additive: boolean; readonly documentVersion: string | undefined; readonly sketchId: string; readonly cancelSignal: number; readonly frame: string } | null>(null);
   // An abandoned press still ends in the browser's click, which must not select or clear what lies under it. Its pointer is kept
   // until it lifts and only then arms the suppression, so a click another pointer finishes first cannot consume it.
-  const abandonedPress = useRef<number | null>(null);
-  const dropDatumPress = useCallback(() => { if (!datumPress.current) return; abandonedPress.current = datumPress.current.pointerId; datumPress.current = null; }, []);
+  const abandonedPresses = useRef(new Set<number>());
+  const dropDatumPress = useCallback(() => { if (!datumPress.current) return; abandonedPresses.current.add(datumPress.current.pointerId); datumPress.current = null; }, []);
   /**
    * Counts drawing draft changes and whether the latest one added a point. A press keeps its release only while its own
    * change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick during the press, ends it.
@@ -972,7 +972,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       onPointerDownCapture={event => {
         // Another contact while an axis is held abandons the press and its trailing click; the same pointer pressing again replaces it.
         // This runs while capturing, since sketch geometry stops the press from reaching the canvas.
-        if (abandonedPress.current === event.pointerId) abandonedPress.current = null;
+        abandonedPresses.current.delete(event.pointerId);
         if (datumPress.current && datumPress.current.pointerId !== event.pointerId) dropDatumPress(); else datumPress.current = null;
         if (positionPick && event.button === 0) {
           event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true;
@@ -1057,7 +1057,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           }
         }
       }}
-      onPointerUpCapture={event => { if (abandonedPress.current === event.pointerId) { abandonedPress.current = null; suppressProfileClick.current = true; } }}
+      onPointerUpCapture={event => { if (abandonedPresses.current.delete(event.pointerId)) suppressProfileClick.current = true; }}
       onPointerUp={(event) => {
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
@@ -1109,7 +1109,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       }}
       onPointerCancel={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress();
         // A cancelled pointer ends in no click.
-        if (abandonedPress.current === event.pointerId) abandonedPress.current = null; boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
+        abandonedPresses.current.delete(event.pointerId); boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
       onLostPointerCapture={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress(); boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
       onPointerMove={(event) => {
         const press = drawingPress.current;

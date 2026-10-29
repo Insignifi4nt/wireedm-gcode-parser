@@ -207,6 +207,13 @@ describe('cadSketchConstraintStep', () => {
     const fixed = reference({ id: 'j', kind: 'coincident', pointIds: ['a', 'r0'] }, { id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 });
     expect(stepIn(fixed, 'coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ pointId: 'b', axis: 'y' }] });
     expect(stepIn(fixed, 'coincident', 'ab', 'x-axis')).toMatchObject({ relations: { length: 1 } });
+    // The middle of a line whose ends sit on the reference follows it too, whichever order the relations come in.
+    const middle = { id: 'm', kind: 'midpoint', pointId: 'q', lineId: 'ab' } as const;
+    const ends = [{ id: 'onA', kind: 'point-on-line', pointId: 'a', lineId: 'refLine' }, { id: 'onB', kind: 'point-on-line', pointId: 'b', lineId: 'refLine' }] as const;
+    for (const relations of [[middle, ...ends], [...ends, middle]]) {
+      const sketch = reference(...relations);
+      expect(stepIn({ ...sketch, points: [...sketch.points, { id: 'q', position: [0, 0] }] }, 'coincident', 'q', 'x-axis')).toEqual(moved('This point', 'the X axis'));
+    }
   });
 
   it('places a fixed point on the reference it already sits on, and explains one fixed elsewhere', () => {
