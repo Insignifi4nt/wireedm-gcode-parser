@@ -426,6 +426,16 @@ describe('graph spatial selection', () => {
     expect(datum).not.toHaveBeenCalled(); expect(selectProfile).not.toHaveBeenCalled();
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
     expect(datum).toHaveBeenCalledExactlyOnceWith('x-axis', false); expect(selectProfile).not.toHaveBeenCalled();
+    // A pen, primary for its own type, taps the V axis while a touch holds the H axis. The pen takes the V axis, and its click
+    // must not consume the suppression the touch's trailing click needs, so that click neither clears the V axis nor selects
+    // the rectangle.
+    datum.mockClear();
+    await h.pointer('pointerdown', -25, 0, false, 9);
+    await h.pointer('pointerdown', 0, 12, false, 10); await h.pointer('pointerup', 0, 12, false, 10); await click();
+    expect(datum).toHaveBeenCalledExactlyOnceWith('y-axis', false);
+    const kept = h.selected.mock.calls.length;
+    await h.pointer('pointerup', -25, 0, false, 9); await click();
+    expect(h.selected).toHaveBeenCalledTimes(kept); expect(datum).toHaveBeenCalledOnce(); expect(selectProfile).not.toHaveBeenCalled();
   });
   it('clears a datum-only selection on Escape and drops panned-away datums from the keyboard order', async () => {
     const h = await spatialFixture(), origin = () => container.querySelector('[data-cad-sketch-datum="origin"]');

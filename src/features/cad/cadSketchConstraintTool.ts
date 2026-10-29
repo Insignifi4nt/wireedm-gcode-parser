@@ -39,6 +39,8 @@ type Entity = CadSketchGraphEntity;
 /** What value-free relations keep in a sketch: coordinates at 0, pairs sharing a coordinate and line directions. */
 type Traced = {
   readonly zero: (pointId: string, axis: 'x' | 'y') => boolean;
+  /** Kept equal to a linked reference coordinate now at 0, which its source can move, and held at 0 by nothing else. */
+  readonly linked: (pointId: string, axis: 'x' | 'y') => boolean;
   readonly equal: (pair: readonly [string, string], axis: 'x' | 'y') => boolean;
   readonly direction: (lineId: string) => 'horizontal' | 'vertical' | null;
 };
@@ -48,11 +50,11 @@ const tracedSketches = new WeakMap<CadSketchGraph, Traced>();
 const keeps = { horizontal: 'y', vertical: 'x' } as const;
 /**
  * How a point already holds the coordinate a plane reference sets to zero. `held` says something holds it there: a relation
- * listed in `ids`, or a coordinate expression that is always zero. `away` says what holds it elsewhere. Only fixed coordinates
- * are `removable`: removing a fixed point or a linked reference would release more than this coordinate, and an expression
- * is edited, not removed.
+ * listed in `ids`, or a coordinate expression that is always zero. `away` says what holds it elsewhere, or `source` that only a
+ * linked reference holds it there now, which its source sketch can move. Only fixed coordinates are `removable`: removing a
+ * fixed point would release more than this coordinate, and an expression is edited, not removed.
  */
-type Hold = { readonly held: boolean; readonly ids: readonly string[]; readonly removable: boolean; readonly away: 'dimension' | 'fixed' | 'linked' | 'expression' | null };
+type Hold = { readonly held: boolean; readonly ids: readonly string[]; readonly removable: boolean; readonly away: 'dimension' | 'fixed' | 'linked' | 'source' | 'expression' | null };
 const isLine = (entity: Entity | undefined): entity is Extract<Entity, { kind: 'line' }> => entity?.kind === 'line';
 const isCurve = (entity: Entity | undefined): entity is Extract<Entity, { kind: 'arc' | 'circle' }> => entity?.kind === 'arc' || entity?.kind === 'circle';
 const samePoints = (ids: readonly string[], pair: readonly [string, string]) => ids.length === 2 && ids.includes(pair[0]) && ids.includes(pair[1]);
@@ -106,7 +108,7 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
   };
   const holding = (pointId: string, axis: 'x' | 'y'): Hold => {
     const index = axis === 'x' ? 0 : 1, joined = joint(pointId), ids: string[] = [];
-    let removable = true, expression = false;
+    let removable = true, expression = false, linked = false;
     // A coordinate written as an expression is fixed by it: always zero holds the point on the reference, anything else elsewhere.
     for (const point of graph.points) {
       const value = joined.has(point.id) ? point.position[index] : undefined;
@@ -124,15 +126,20 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
         values = linked.map(id => graph.points.find(point => point.id === id)?.position[index]); kind = 'linked';
       } else continue;
       if (!values.every(cadSketchZeroScalar)) return { held: false, ids: [], removable: false, away: kind };
+      // A linked reference at 0 is only a snapshot of its source, which a parameter of that sketch can move.
+      if (kind === 'linked') { linked = true; continue; }
       ids.push(relation.id); removable &&= kind === 'dimension';
     }
+    if (!expression && !ids.length && linked) return { held: false, ids: [], removable: false, away: 'source' };
     return { held: expression || ids.length > 0, ids, removable, away: null };
   };
   // What value-free relations imply whatever the dimensions are. Coordinates kept equal through Coincident, Horizontal,
   // Vertical, a level or upright line, a point on or at the middle of one, lines collinear with one or a mirror pair share a
   // class, and a class with a coordinate held at 0 holds all of it there. Directions pass through Parallel, Perpendicular and
   // Collinear. Dimensions, angles and other values never count: a later edit could move the geometry off the axis, so a fix
-  // they only happen to repeat at the current solution is still added, and preparation rejects it as redundant.
+  // they only happen to repeat at the current solution is still added, and preparation rejects it as redundant. A linked
+  // reference is a snapshot of its source, so its coordinates at 0 hold nothing and give no line a direction; a coordinate kept
+  // equal to one is only marked, so the step can ask for the reference to be detached.
   const traced = (): Traced => {
     const cached = tracedSketches.get(graph);
     if (cached) return cached;
@@ -157,8 +164,9 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
     let changed = false;
     const join = (a: number, b: number) => { if (a < 0 || b < 0) return; const [p, q] = [find(a), find(b)]; if (p !== q) { parent[p] = q; changed = true; } };
     const link = (a: string, b: string, axis: 'x' | 'y') => join(node(a, axis), node(b, axis));
-    // The holds `holding` reads, in one pass: a coordinate expression, a fixed coordinate or point, or a linked reference at 0.
+    // The holds `holding` reads, in one pass: a coordinate expression or a fixed coordinate or point at 0.
     const seed = (pointId: string, axis: 'x' | 'y', value: CadScalar | undefined) => { if (cadSketchZeroScalar(value)) join(node(pointId, axis), origin(axis)); };
+    const snapshots: number[] = [];
     for (const point of graph.points) for (const [index, axis] of (['x', 'y'] as const).entries()) if (typeof point.position[index] === 'string') seed(point.id, axis, point.position[index]);
     const positions = new Map(graph.points.map(point => [point.id, point.position]));
     const lines = graph.entities.filter(isLine), byId = new Map(lines.map(line => [line.id, line]));
@@ -169,7 +177,9 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       else if (relation.kind === 'fixed-point') { seed(relation.pointId, 'x', relation.position[0]); seed(relation.pointId, 'y', relation.position[1]); }
       else if (relation.kind === 'external-reference') {
         const owner = entity(relation.entityId);
-        for (const id of owner ? cadSketchEntityPointIds(owner) : []) { seed(id, 'x', positions.get(id)?.[0]); seed(id, 'y', positions.get(id)?.[1]); }
+        for (const id of owner ? cadSketchEntityPointIds(owner) : []) for (const [index, axis] of (['x', 'y'] as const).entries()) {
+          if (cadSketchZeroScalar(positions.get(id)?.[index])) snapshots.push(node(id, axis));
+        }
       } else if (relation.kind === 'horizontal' || relation.kind === 'vertical') link(relation.pointIds[0], relation.pointIds[1], keeps[relation.kind]);
       if (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') {
         const [a, b] = relation.lineIds, turned = relation.kind === 'perpendicular';
@@ -217,18 +227,31 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
         if (zero(line.startPointId, across) && (zero(p, across) || zero(q, across))) link(p, q, across);
       }
     } while (changed);
-    const result: Traced = { zero, equal, direction: lineId => direction.get(lineId) ?? null };
+    const marked = new Set(snapshots.filter(at => at >= 0).map(find));
+    // A point on, or at the middle of, a line whose two ends a linked reference keeps at 0 follows that snapshot too.
+    for (const relation of dependent) {
+      if (relation.kind !== 'point-on-line' && relation.kind !== 'midpoint') continue;
+      const line = byId.get(relation.lineId);
+      if (line) for (const axis of ['x', 'y'] as const) {
+        const [start, end, point] = [line.startPointId, line.endPointId, relation.pointId].map(id => node(id, axis));
+        if (start >= 0 && end >= 0 && point >= 0 && marked.has(find(start)) && marked.has(find(end))) marked.add(find(point));
+      }
+    }
+    const linked = (pointId: string, axis: 'x' | 'y') => { const at = node(pointId, axis); return at >= 0 && !zero(pointId, axis) && marked.has(find(at)); };
+    const result: Traced = { zero, linked, equal, direction: lineId => direction.get(lineId) ?? null };
     tracedSketches.set(graph, result);
     return result;
   };
   // A coordinate held at 0 only through other relations counts as held; there is no single relation to offer for removal.
   const holdingTraced = (pointId: string, axis: 'x' | 'y'): Hold => {
-    const hold = holding(pointId, axis);
-    return hold.held || hold.away || !traced().zero(pointId, axis) ? hold : { held: true, ids: [], removable: false, away: null };
+    const hold = holding(pointId, axis), { zero, linked } = traced();
+    if (hold.held || hold.away && hold.away !== 'source') return hold;
+    return zero(pointId, axis) ? { held: true, ids: [], removable: false, away: null } : linked(pointId, axis) ? { held: false, ids: [], removable: false, away: 'source' } : hold;
   };
   const heldAway = (subject: string, hold: Hold, axis: 'x' | 'y', target: string) => invalid(hold.away === 'dimension' ? `${subject} already has a fixed ${axis.toUpperCase()}. Remove that dimension first.`
     : hold.away === 'expression' ? `${subject} has its ${axis.toUpperCase()} set by an expression away from ${target}. Edit that coordinate first.`
-    : hold.away === 'linked' ? `${subject} follows a linked reference away from ${target}. Detach it first.` : `${subject} is fixed away from ${target}. Remove that relation first.`);
+    : hold.away === 'linked' ? `${subject} follows a linked reference away from ${target}. Detach it first.`
+    : hold.away === 'source' ? `${subject} follows a linked reference that its source sketch can move off ${target}. Detach it first.` : `${subject} is fixed away from ${target}. Remove that relation first.`);
   // Offer the holding relations for removal only when removing them releases exactly what this constraint holds.
   const alreadyHeld = (reason: string, holds: readonly Hold[]) => invalid(reason, holds.every(hold => hold.removable) ? [...new Set(holds.flatMap(hold => hold.ids))] : undefined);
   // A point placed on a plane reference fixes the coordinates that reference sets to zero, unless something already holds them there.
@@ -249,8 +272,10 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
     const kept = traced().direction(line.id);
     if (kept === across) return invalid(`Other relations keep this line ${across}, so it cannot lie on the ${name} axis.`);
     // A level line with one end held keeps the other there too, so that end's own relations are what can be removed.
+    // The other end is then held through the line too, even where a linked reference also keeps it at 0 for now.
     const direct = pair.map(pointId => holding(pointId, axis));
-    const holds = kept === level && direct.some(hold => hold.held) ? direct : pair.map(pointId => holdingTraced(pointId, axis)), away = holds.find(hold => hold.away);
+    const holds = kept === level && direct.some(hold => hold.held) ? direct.map((hold, index) => hold.away === 'source' ? holdingTraced(pair[index], axis) : hold)
+      : pair.map(pointId => holdingTraced(pointId, axis)), away = holds.find(hold => hold.away);
     if (away) return heldAway('An endpoint of this line', away, axis, `the ${name} axis`);
     const missing = pair.filter((_, index) => !holds[index].held);
     const needed = kept === level ? missing.length === 2 ? missing.slice(0, 1) : [] : missing;

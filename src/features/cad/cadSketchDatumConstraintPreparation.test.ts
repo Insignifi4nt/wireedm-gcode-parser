@@ -108,6 +108,32 @@ describe('constraints with the plane origin and axes, solved natively', () => {
     }
   });
 
+  it('asks to detach a linked reference that holds an end on the axis only until its source moves', async () => {
+    // A layout line at Y = lift, linked into the sketch, holds a on the X axis while lift is 0. Counting that would add only b's fix,
+    // and lift = 5 would then carry a off the axis with the edit accepted, so the step asks to detach the reference instead.
+    const source = parseCadDocument({ ...createCadDocument('Linked datum', 'linked-datum'), schemaVersion: 2, parameters: { lift: 0 }, features: [
+      { id: 'layout', kind: 'sketch', name: 'Layout', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 's', position: [0, ' lift '] }, { id: 'e', position: [10, ' lift '] }],
+        entities: [{ id: 'line', kind: 'line', startPointId: 's', endPointId: 'e', construction: true }], relations: [] } },
+      { id: 'sketch', kind: 'sketch', name: 'Datums', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [5, 0] }, { id: 'b', position: [12, 6] }],
+        entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] } }] });
+    const linked = (await prepareCadEdits(source, [{ kind: 'use-sketch-entity', sketchId: 'sketch', sourceSketchId: 'layout', sourceEntityId: 'line', idPrefix: 'ref' }], runtime)).document;
+    const sketchOf = (document: CadDocument) => { const sketch = document.features[1]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing sketch.'); return sketch.graph; };
+    const reference = sketchOf(linked).entities.find(entity => entity.kind === 'line' && entity.id !== 'ab');
+    if (reference?.kind !== 'line') throw new Error('Missing reference line.');
+    const reason = 'An endpoint of this line follows a linked reference that its source sketch can move off the X axis. Detach it first.';
+    for (const relation of [{ id: 'on', kind: 'point-on-line', pointId: 'a', lineId: reference.id }, { id: 'join', kind: 'coincident', pointIds: ['a', reference.startPointId] }] as const) {
+      const held = (await prepareCadEdits(linked, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }], runtime)).document;
+      expect(cadSketchConstraintStep(sketchOf(held), 'coincident', [pick('ab'), pick('x-axis')], () => `r${++counter}`)).toEqual({ status: 'invalid', reason });
+      // What counting it would have applied: b alone on the axis, which the source then moves a away from.
+      const partial = await prepareCadEdits(held, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'by', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 } }], runtime);
+      const lifted = (await prepareCadEdits(partial.document, [{ kind: 'set-parameter', name: 'lift', value: 5 }], runtime)).document;
+      const position = (id: string) => sketchOf(lifted).points.find(point => point.id === id)!.position.map(Number);
+      expect(position('a')[1]).toBeCloseTo(5, 9); expect(position('b')[1]).toBeCloseTo(0, 9);
+    }
+  });
+
   it('keeps the center of a circle or arc on an axis, and the arc ends follow', async () => {
     const circle = await constrain(part([]), 'coincident', 'ring', 'x-axis');
     expect(circle.diagnostics).toMatchObject({ status: 'success', redundantIds: [], issues: [] });

@@ -132,14 +132,14 @@ describe('cadSketchConstraintStep', () => {
         .toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
     }
     expect(stepIn(line([{ id: 'pin', kind: 'fixed-point', pointId: 'a', position: [0, 0] }]), 'coincident', 'ab', 'x-axis')).toMatchObject({ relations: { length: 1 } });
-    // A point joined to the endpoint holds it there too, through a fixed coordinate or a linked reference.
+    // A point joined to the endpoint holds it there too through a fixed coordinate, but a linked reference only follows its source.
     const joined = line([{ id: 'j', kind: 'coincident', pointIds: ['a', 'free'] }, { id: 'fy', kind: 'fixed-axis', pointId: 'free', axis: 'y', value: ' 0 ' }]);
     expect(stepIn(joined, 'coincident', 'x-axis', 'ab')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
     const linkedPoints = [...graph.points, { id: 'r0', position: [-5, 0] as [number, number] }, { id: 'r1', position: [-5, 9] as [number, number] }];
     const linked: CadSketchGraph = { ...line([{ id: 'j', kind: 'coincident', pointIds: ['a', 'r0'] },
       { id: 'ref', kind: 'external-reference', entityId: 'refLine', sourceSketchId: 'layout', source: { kind: 'line', entityId: 'line', startPointId: 's', endPointId: 'e' } }], linkedPoints),
       entities: [...graph.entities, { id: 'refLine', kind: 'line', construction: true, startPointId: 'r0', endPointId: 'r1' }] };
-    expect(stepIn(linked, 'coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
+    expect(stepIn(linked, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line follows a linked reference that its source sketch can move off the X axis. Detach it first.' });
     expect(stepIn(linked, 'coincident', 'ab', 'y-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line follows a linked reference away from the Y axis. Detach it first.' });
     // Both ends held: fixed coordinates can be removed together, a fixed point is never removed for the axis alone.
     const both = line([{ id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { id: 'by', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: '0' }]);
@@ -184,6 +184,29 @@ describe('cadSketchConstraintStep', () => {
     // A zero dimension only happens to hold e level with a, so a later edit could move it: the fix is still added.
     expect(stepIn(add({ id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { id: 'gap', kind: 'axis-distance', pointIds: ['a', 'e'], axis: 'y', value: 0 }), 'coincident', 'e', 'x-axis'))
       .toMatchObject({ status: 'ready', relations: [{ pointId: 'e', axis: 'y' }] });
+  });
+  it('never counts a linked reference at 0 as holding a coordinate or keeping a line level, since its source can move it', () => {
+    // r0–r1 is a linked reference lying on the X axis for now.
+    const reference = (...relations: CadSketchGraph['relations']): CadSketchGraph => ({ ...graph,
+      points: [...graph.points, { id: 'r0', position: [-10, 0] }, { id: 'r1', position: [10, 0] }],
+      entities: [...graph.entities, { id: 'refLine', kind: 'line', construction: true, startPointId: 'r0', endPointId: 'r1' }],
+      relations: [...graph.relations, { id: 'ref', kind: 'external-reference', entityId: 'refLine', sourceSketchId: 'layout', source: { kind: 'line', entityId: 'line', startPointId: 's', endPointId: 'e' } }, ...relations] });
+    const moved = (subject: string, target: string) => ({ status: 'invalid', reason: `${subject} follows a linked reference that its source sketch can move off ${target}. Detach it first.` });
+    // An end on the reference line, joined to one of its points, or level with one follows the snapshot, and the step asks to detach it.
+    for (const holding of [reference({ id: 'on', kind: 'point-on-line', pointId: 'a', lineId: 'refLine' }), reference({ id: 'j', kind: 'coincident', pointIds: ['a', 'r0'] }),
+      reference({ id: 'h', kind: 'horizontal', pointIds: ['a', 'r1'] })]) {
+      expect(stepIn(holding, 'coincident', 'ab', 'x-axis')).toEqual(moved('An endpoint of this line', 'the X axis'));
+      expect(stepIn(holding, 'coincident', 'a', 'x-axis')).toEqual(moved('This point', 'the X axis'));
+      expect(stepIn(holding, 'coincident', 'a', 'origin')).toMatchObject({ status: 'invalid' });
+    }
+    // A line parallel to the reference is not kept level by it, so both ends take a fix, and Horizontal is still offered.
+    const parallel = reference({ id: 'p', kind: 'parallel', lineIds: ['ab', 'refLine'] });
+    expect(stepIn(parallel, 'coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ pointId: 'a', axis: 'y' }, { pointId: 'b', axis: 'y' }] });
+    expect(stepIn(parallel, 'horizontal', 'ab')).toMatchObject({ status: 'ready', relations: [{ kind: 'horizontal' }] });
+    // Value-free relations that hold the end at 0 still count, whatever the reference does.
+    const fixed = reference({ id: 'j', kind: 'coincident', pointIds: ['a', 'r0'] }, { id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 });
+    expect(stepIn(fixed, 'coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ pointId: 'b', axis: 'y' }] });
+    expect(stepIn(fixed, 'coincident', 'ab', 'x-axis')).toMatchObject({ relations: { length: 1 } });
   });
 
   it('places a fixed point on the reference it already sits on, and explains one fixed elsewhere', () => {
