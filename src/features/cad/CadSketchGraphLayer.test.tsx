@@ -632,10 +632,14 @@ describe('graph definition locks and marks', () => {
     // The drag is the preview now: its own marks replace the published ones, over the accepted definition.
     expect([state('point', 'a'), state('point', 'b'), state('entity', 'edge')]).toEqual([['defined'], ['conflicting'], ['defined']]);
     expect(h.point('b').classList.contains('is-revealed')).toBe(true);
+    const target = () => container.querySelector('.cad-sketch-drag-target');
+    expect(target()?.classList.contains('is-invalid')).toBe(true);
     // Moving to another target while its solve is pending drops the old rejection's marks, back to the published ones.
     prepare.mockReturnValue(new Promise(() => undefined));
     await h.pointer(h.point('b'), 'pointermove', { clientX: 140 }); await act(async () => { await Promise.resolve(); });
     expect([state('point', 'a'), state('point', 'b'), state('entity', 'edge')]).toEqual([['redundant'], ['redundant'], ['redundant']]);
+    // So does the target marker, which neither shows the old rejection nor keeps its message.
+    expect(target()?.classList.contains('is-invalid')).toBe(false); expect(target()?.textContent).toBe('Drag target');
     await h.key(h.point('b'), 'Escape');
     expect(state('point', 'b')).toEqual(['redundant']);
     await h.render({ controls: { ...h.props().controls, diagnosis: null } });

@@ -325,6 +325,8 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   const radiusInteractive = edgesInteractive && !controls.geometryPick && circle?.lockedReason === null && controls.degreesOfFreedom !== 0 && !circleDefined;
   // A stale rejection belongs to an earlier target, so it marks nothing while the next solve runs.
   const dragMarks = preview.kind === 'error' && !preview.stale && preview.marks?.sketchId === sketch.id ? preview.marks : null;
+  // The same holds for the target marker: a stale rejection was for another target.
+  const rejection = preview.kind === 'error' && !preview.stale ? preview.message : null;
   const diagnosis = dragMarks ?? (controls.diagnosis?.sketchId === sketch.id ? controls.diagnosis : null);
   const selected = (kind: CadSketchGraphSelection['kind'], id: string) => controls.selection.some(selection => selection.kind === kind && selection.id === id);
   const focusTarget = (element: SVGGElement, target: CadSketchGraphSelection) => element.closest('.cad-sketch-graph')?.querySelector<SVGGElement>(`[data-cad-sketch-${target.kind === 'point' ? 'point' : 'entity'}="${target.id}"]`)?.focus({ preventScroll: true });
@@ -464,10 +466,10 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     </g>}
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
       selectedRelationId={controls.relation?.id} interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)} />}
-    {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${preview.kind === 'error' || candidate.issue ? ' is-invalid' : ''}`}
+    {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${rejection !== null || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.kind === 'translate' ? intent.anchor[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}
       cy={(intent.kind === 'point' ? intent.point.position[1] + intent.translation[1] : intent.kind === 'translate' ? intent.anchor[1] + intent.translation[1] : intent.circle.center[1]) - center[1]} r={5 * scaleY}>
-      <title>{candidate.issue ?? (preview.kind === 'error' ? preview.message : 'Drag target')}</title></circle>}
+      <title>{candidate.issue ?? rejection ?? 'Drag target'}</title></circle>}
     {snapCandidate && <CadSketchSnapHint candidate={snapCandidate} center={center} scaleX={scaleX} scaleY={scaleY} label={snapLabel} attained={attained} />}
   </g>;
 });
