@@ -67,7 +67,7 @@ export function checkCadSketchPointLineDistanceRelation(graph: CadSketchGraph, r
 /**
  * An edit that turns a retained line around keeps each distance it carries over on the same physical side. A distance whose
  * line and side the edit left as they were takes the other side when the line's start and end swapped places, by point ID or
- * declared Coincident identity. Positions play no part, so the result does not depend on the order of edits in a batch or
+ * declared Coincident identity, before or after the edit, so an end moved onto a point it was joined to is the same end. Positions play no part, so the result does not depend on the order of edits in a batch or
  * on geometry not yet solved. A side the edit changes is kept as given; a later edit can state the side for the new direction.
  */
 export function keepCadSketchPointLineSides(previous: CadSketchGraph, next: CadSketchGraph): CadSketchGraph {
@@ -80,8 +80,10 @@ export function keepCadSketchPointLineSides(previous: CadSketchGraph, next: CadS
     if (relation.kind !== 'point-line-distance') return relation;
     const prior = carried.get(relation.id), before = wereLines.get(relation.lineId), after = nowLines.get(relation.lineId);
     if (prior?.lineId !== relation.lineId || prior.side !== relation.side || !before || !after || before.startPointId === after.startPointId && before.endPointId === after.endPointId) return relation;
-    // A point the edit removed keeps its own ID, which no retained endpoint can share.
-    if (!identity) { const root = resolveCadSketchPointIdentities(next), present = new Set(next.points.map(point => point.id)); identity = id => present.has(id) ? root(id) : id; }
+    // Joins on either side of the edit count, so an end the edit replaced with a point once joined to it, even one it then
+    // removed with its Coincident, is still the same end.
+    if (!identity) identity = resolveCadSketchPointIdentities({ points: [...new Map([...previous.points, ...next.points].map(point => [point.id, point])).values()], entities: [],
+      relations: [...previous.relations, ...next.relations].filter(relation => relation.kind === 'coincident') });
     const [wasStart, wasEnd, start, end] = [before.startPointId, before.endPointId, after.startPointId, after.endPointId].map(identity);
     if (wasStart === wasEnd || start !== wasEnd || end !== wasStart) return relation;
     changed = true;

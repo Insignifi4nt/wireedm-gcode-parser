@@ -182,14 +182,15 @@ export class CadSketchEditDraft {
         if (retained?.kind !== 'linear-pattern' || retained.idPrefix !== relation.idPrefix || !same(retained.seed, relation.seed))
           edits.push({ kind: 'remove-sketch-relation', sketchId: feature.id, relationId: relation.id });
       }
-      edits.push({ kind: 'update-feature', feature });
-      // The draft's own edits already kept each distance's side. Publishing its final state as one edit would turn a side
-      // the draft deliberately restated after reversing its line, so replay those sides exactly.
+      // The draft's own edits already kept each distance's side. Publishing its final state as one edit would turn a side the
+      // draft deliberately restated after reversing its line, so release each such distance first: the final state then states
+      // it exactly, before any solve that edit needs.
       if (original.kind === 'sketch' && feature.kind === 'sketch' && original.graph && feature.graph) {
         const graph = feature.graph, republished = keepCadSketchPointLineSides(original.graph, graph);
         if (republished !== graph) for (const [index, relation] of graph.relations.entries())
-          if (republished.relations[index] !== relation) edits.push({ kind: 'set-sketch-relation', sketchId: feature.id, relation });
+          if (republished.relations[index] !== relation) edits.push({ kind: 'remove-sketch-relation', sketchId: feature.id, relationId: relation.id });
       }
+      edits.push({ kind: 'update-feature', feature });
     }
     const repaired = new Set<string>();
     for (const edit of structuredClone(consumerRepairs)) {

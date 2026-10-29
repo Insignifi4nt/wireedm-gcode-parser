@@ -208,16 +208,30 @@ describe('a line whose endpoints an edit swaps', () => {
     const throughAlias = await prepareCadEdits(aliased, [{ kind: 'update-feature', feature: { ...sketch, graph: { ...graphOf(aliased),
       entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'b2', endPointId: 'a' }] } } }], runtime);
     expect(position(throughAlias.document, 'p')[1]).toBeCloseTo(4, 9); expect(sideOf(throughAlias.document)).toBe('right');
+    // So does a swap onto the alias that also removes the old end and its Coincident.
+    const withoutOldEnd = await prepareCadEdits(aliased, [{ kind: 'update-feature', feature: { ...sketch, graph: { ...graphOf(aliased),
+      points: graphOf(aliased).points.filter(point => point.id !== 'b'),
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'b2', endPointId: 'a' }],
+      relations: [{ id: 'floor', kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { id: 'level', kind: 'horizontal', pointIds: ['a', 'b2'] }, gap(4, 'left')] } } }], runtime);
+    expect(position(withoutOldEnd.document, 'p')[1]).toBeCloseTo(4, 9); expect(sideOf(withoutOldEnd.document)).toBe('right');
   });
 
-  it('publishes a private draft that reverses the line and then restates the old side exactly', async () => {
+  it.each([false, true])('publishes a private draft that reverses the line and then restates the old side exactly (with a new pattern: %s)', async patterned => {
     const main = new CadSession(source()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     const prepare = async (document: CadDocument, edits: readonly Parameters<typeof prepareCadEdits>[1][number][]) => (await prepareCadEdits(document, edits, runtime)).document;
     await draft.editPrepared([swapped(base.document)], prepare); expect(sideOf(draft.getSnapshot().document)).toBe('right');
     // Left of the reversed line is below it, so the restated side carries the point across.
     await draft.editPrepared([set(gap(4, 'left'))], prepare);
+    // A pattern solves its exact geometry while the edit that publishes it is applied, so the side must already be right there.
+    if (patterned) await draft.editPrepared([
+      { kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [{ id: 'seed_center', position: [40, 10] }],
+        entities: [{ id: 'seed', kind: 'circle', centerPointId: 'seed_center', radius: 1.5, construction: false }], relations: [] } },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'holes', kind: 'linear-pattern',
+        seed: { kind: 'circle', entityId: 'seed', centerPointId: 'seed_center' }, idPrefix: 'row', direction: '+x', count: 3, spacing: 5, omittedInstances: [] } }], prepare);
     const local = draft.getSnapshot().document, finish = draft.finishEdits(base);
     expect(sideOf(local)).toBe('left'); expect(position(local, 'p')[1]).toBeCloseTo(-4, 9);
+    // The distance is released first, so the final state states its side exactly.
+    expect(finish.edits).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'gap' }, expect.objectContaining({ kind: 'update-feature' })]);
     await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined, () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
     expect(graphOf(main.getSnapshot().document)).toEqual(graphOf(local));
     // A draft that only reverses the line publishes its kept side without a replay.
