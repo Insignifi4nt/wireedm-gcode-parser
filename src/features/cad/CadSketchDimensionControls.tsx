@@ -148,11 +148,12 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
     setSelection(selectCadSketchDimension(NO_SKETCH_DIMENSIONS, chipPick(dimension)));
     setMenu(null); setEditor({ name: dimension.name, value: String(resolved), error: '' }); onInspectInput?.(dimension.name);
   };
-  // Delete on a selected chip removes every selected driving dimension; on another chip it removes just that one.
-  const removalTargets = (dimension: Dimension) => (isSelected(dimension) ? selected.flatMap(pick => dimensions.filter(item => sameCadSketchDimensionPick(chipPick(item), pick))) : [dimension])
+  // Delete and Backspace on a focused chip remove the selected driving dimensions, since focus never selects; the focused chip goes only
+  // while no chip is selected. A menu acts on the chip it opened on, with the rest of the selection when that chip is part of it.
+  const removalTargets = (dimension: Dimension, focused: boolean) => ((focused ? selected.length > 0 : isSelected(dimension)) ? selected.flatMap(pick => dimensions.filter(item => sameCadSketchDimensionPick(chipPick(item), pick))) : [dimension])
     .flatMap(item => item.constraintId ? [item.constraintId] : []);
-  const remove = (dimension: Dimension) => {
-    const targets = removalTargets(dimension);
+  const remove = (dimension: Dimension, focused: boolean) => {
+    const targets = removalTargets(dimension, focused);
     // The targets belong to this render's part; a handler from an earlier render does nothing.
     if (interactionLocked || editor || submission.applying || !targets.length || latest.current.document !== cadDocument) return;
     submission.submit(signal => onEditMany(targets.map(dimensionId => ({ kind: 'remove-sketch-dimension' as const, sketchId: sketch.id, profileId: profile.id, dimensionId })), signal),
@@ -170,12 +171,12 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
   if (menu && menuDimension) {
     // Commands run after the menu closes; a changed part or a cancellation since it opened drops them.
     const current = () => latest.current.document === menu.document && latest.current.cancel === menu.cancel;
-    const targets = removalTargets(menuDimension), count = isSelected(menuDimension) ? selected.length : 1;
+    const targets = removalTargets(menuDimension, false), count = isSelected(menuDimension) ? selected.length : 1;
     menuItems.push({ label: 'Edit value…', disabled: interactionLocked, onSelect: () => { if (current()) openEditor(menuDimension); } },
       { label: 'Make reference', disabled: true, help: PROFILE_REFERENCE_REASON, onSelect: () => undefined }, { kind: 'separator' },
       { label: count > 1 ? `Delete ${count} dimensions` : 'Delete', danger: true, disabled: interactionLocked || !targets.length,
         help: targets.length ? undefined : menuDimension.quantity ? 'This size follows its linked expression, so there is no dimension to remove. Edit the expression instead.' : 'Profile parameters belong to the profile and cannot be removed.',
-        onSelect: () => { if (current()) remove(menuDimension); } });
+        onSelect: () => { if (current()) remove(menuDimension, false); } });
   }
   if (!dimensions.length) return null;
   return <div ref={root} className={`cad-sketch-dimension-controls${annotated ? ' has-annotations' : ''}`} style={annotated ? undefined : { left: placement.x, top: placement.y }} aria-label={profile.geometry.kind === 'plugin' ? 'Profile parameters' : 'Sketch dimensions'} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape' && editor) { event.preventDefault(); event.stopPropagation(); close(); } }}>
@@ -205,7 +206,7 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
           if (event.key === 'Enter') openEditor(dimension);
           else if (event.key === 'Escape') setSelection(NO_SKETCH_DIMENSIONS);
           else if (menuKey) { const box = event.currentTarget.getBoundingClientRect(); openMenu(dimension, box.left + box.width / 2, box.top + box.height / 2); }
-          else remove(dimension);
+          else remove(dimension, true);
         }}><span>{dimension.symbol}</span><strong>{valueText(resolved)}</strong>{dimension.unit && <small>{dimension.unit}</small>}{dimensionBinding.kind === 'parameter' ? <LinkIcon size={10} /> : dimensionBinding.kind === 'expression' || !dimension.enabled ? <LockedIcon size={10} /> : null}</Button>;
     })}</div>
     {editor && active && binding && <form className="cad-dimension-edit" aria-busy={submission.applying || undefined} style={annotated ? { left: placement.x, top: placement.y } : undefined} role="dialog" aria-label={`${active.label} dimension`} onSubmit={event => {

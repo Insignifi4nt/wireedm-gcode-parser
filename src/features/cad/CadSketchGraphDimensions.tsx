@@ -22,7 +22,8 @@ export interface CadSketchGraphDimensionsProps {
    * was drawn for, so its owner can refuse a label that a replacement under the same ID has since taken over.
    */
   onSelect?(dimension: CadSketchDimensionPick | null, additive: boolean): void;
-  onDelete?(dimension: CadSketchDimensionPick): void;
+  /** Delete or Backspace on a focused label. Focus never selects, so the owner removes its selection and this dimension only while nothing is selected. */
+  onDelete?(dimension: CadSketchDimensionPick, key: 'Delete' | 'Backspace'): void;
   onMenu?(dimension: CadSketchDimensionPick, at: { readonly clientX: number; readonly clientY: number }): void;
   /** Hovering a dimension highlights the geometry it measures. */
   readonly highlight?: CadSketchHighlightStore;
@@ -83,7 +84,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
         else if (event.key === ' ') onSelect?.(pick, event.shiftKey);
         else if (event.key === 'Escape') onSelect?.(null, false);
         else if (menu) { const box = event.currentTarget.getBoundingClientRect(); onMenu?.(pick, { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }); }
-        else onDelete?.(pick);
+        else onDelete?.(pick, event.key === 'Delete' ? 'Delete' : 'Backspace');
       };
       const tone = selected || inspected ? ' is-selected' : reference ? ' is-reference' : '';
       return <g key={`${mountKey}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`} data-cad-sketch-dimension={relation.id}

@@ -1870,13 +1870,14 @@ describe('CAD sketch interaction', () => {
       expect(onEditMany).toHaveBeenCalledOnce();
       expect(onEditMany.mock.calls[0][0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'length' }, { kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'size' }]);
       expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'angle', 'x', 'measured']); expect(status()).toBeNull();
-      // Backspace on an unselected label removes only that dimension.
+      // Focus never selects: Backspace on an unselected label removes the selection, and with nothing selected the focused label.
       await pick('diagonal'); await press('angle', 'Backspace');
-      expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'x', 'measured']); expect(selectedDimensions()).toEqual(['diagonal']);
+      expect(relations().map(relation => relation.id)).toEqual(['angle', 'x', 'measured']); expect(selectedDimensions()).toEqual([]);
       let finish = () => undefined as void;
       onEditMany.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
-      await press('diagonal', 'Delete'); await press('measured', 'Delete');
-      expect(onEditMany).toHaveBeenCalledTimes(3); expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'x', 'measured']);
+      await press('angle', 'Delete'); await press('measured', 'Delete');
+      expect(onEditMany).toHaveBeenCalledTimes(3); expect(onEditMany.mock.calls[2][0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'angle' }]);
+      expect(relations().map(relation => relation.id)).toEqual(['angle', 'x', 'measured']);
       await act(async () => finish());
     });
 
@@ -2099,6 +2100,88 @@ describe('CAD sketch interaction', () => {
       expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]); expect(refocused).toBe(0);
       // The new document's dimension opens its own editor.
       await press('size', 'Enter'); expect(field('Diameter').value).toBe('8'); expect(selectedDimensions()).toEqual(['size']);
+      // A row that is not a dimension, open on the geometry the editor measured, never mounts in another part either.
+      await editRow('Fix X'); expect(relationRow('Fix X').getAttribute('aria-pressed')).toBe('true'); expect(geometry()).toEqual([{ kind: 'entity', id: 'hole' }]);
+      container.addEventListener('focusin', record);
+      await act(async () => replaceDocument({ ...currentDocument, id: 'third-document' }));
+      container.removeEventListener('focusin', record);
+      expect(relationsPanel()).toBeNull(); expect(geometry()).toEqual([]); expect(refocused).toBe(0);
+    });
+
+    it('deletes the selection, not a focused label or edge outside it, so Delete removes what is drawn selected', async () => {
+      await open();
+      const ids = () => relations().map(relation => relation.id);
+      const points = () => { const feature = currentDocument.features[0]; return feature.kind === 'sketch' ? feature.graph?.points.map(point => point.id) : undefined; };
+      const pressGeometry = (selector: string, key: string) => act(async () => {
+        const target = container.querySelector<SVGElement>(selector); if (!target) throw new Error(`${selector} missing.`);
+        target.focus(); target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      });
+      // Length's editor is open and keyboard focus moves to the unselected Diagonal label: Delete removes Length and closes its editor.
+      await press('length', 'Enter'); expect(field('Length').value).toBe('40');
+      await press('diagonal', 'Delete');
+      expect(ids()).toEqual(['diagonal', 'angle', 'size', 'x', 'measured']); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]);
+      // A focused edge removes the dimension selection, never itself.
+      await pick('size'); await pressGeometry('[data-cad-sketch-entity="base"]', 'Delete');
+      expect(ids()).toEqual(['diagonal', 'angle', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
+      // Selected geometry goes on Delete from a label and stays on Backspace, which removes only dimensions; the label's dimension stays.
+      await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'hole' } }));
+      await press('angle', 'Backspace'); expect(ids()).toEqual(['diagonal', 'angle', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
+      await press('angle', 'Delete'); expect(entities()).toEqual(['base', 'side']); expect(ids()).toEqual(['diagonal', 'angle', 'x', 'measured']);
+      // A selected point goes, not the focused edge.
+      await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'o' } }));
+      await pressGeometry('[data-cad-sketch-entity="side"]', 'Delete'); expect(entities()).toEqual(['base', 'side']); expect(points()).toEqual(['a', 'b', 'c']); expect(ids()).toEqual(['diagonal', 'angle', 'measured']);
+      // With nothing selected the focused label or edge is the one removed.
+      await press('diagonal', 'Delete'); expect(ids()).toEqual(['angle', 'measured']);
+      await pressGeometry('[data-cad-sketch-entity="side"]', 'Delete'); expect(entities()).toEqual(['base']);
+    });
+
+    it('never replays a cancelled dimension editor when Escape later cancels the relations panel', async () => {
+      await open();
+      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
+      const escapeFrom = (target: Element) => act(async () => { target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+      for (const from of ['body', 'dock'] as const) {
+        await press('length', 'Enter'); await input(field('Length'), '45'); await click('Cancel');
+        expect(relationsPanel()).not.toBeNull(); expect(selectedDimensions()).toEqual(['length']); expect(relationRow('Distance relation 1').getAttribute('aria-pressed')).toBe('false');
+        container.addEventListener('focusin', record);
+        await escapeFrom(from === 'body' ? document.body : relationRow('Angle'));
+        container.removeEventListener('focusin', record);
+        expect(refocused).toBe(0); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]);
+        expect(relations().find(relation => relation.id === 'length')).toMatchObject({ value: 40 });
+      }
+    });
+
+    it('keeps a closed row closed when an edit remounts the relations panel', async () => {
+      await open();
+      await replace(current => [...current, { id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }]);
+      // Fix Y, opened from the diagonal's editor, selects the two points the diagonal measures; a second press closes the row.
+      await press('diagonal', 'Enter'); expect(field('Distance').value).toBe('50');
+      await editRow('Fix Y'); expect(geometry()).toEqual([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'c' }]);
+      await editRow('Fix Y'); expect(relationRow('Fix Y').getAttribute('aria-pressed')).toBe('false');
+      // An agent removes point c with what depends on it, so the selection, and the panel, change to point a alone.
+      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
+      container.addEventListener('focusin', record);
+      await act(async () => {
+        const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
+        replaceDocument({ ...currentDocument, features: [{ ...feature, graph: { ...feature.graph, points: feature.graph.points.filter(point => point.id !== 'c'),
+          entities: feature.graph.entities.filter(entity => entity.id !== 'side'), relations: feature.graph.relations.filter(relation => !['diagonal', 'angle', 'measured'].includes(relation.id)) } }] });
+      });
+      container.removeEventListener('focusin', record);
+      expect(geometry()).toEqual([{ kind: 'point', id: 'a' }]); expect(relationsPanel()).not.toBeNull();
+      expect(relationRow('Fix Y').getAttribute('aria-pressed')).toBe('false'); expect(refocused).toBe(0);
+    });
+
+    it('never replays a cancelled new dimension when Escape later cancels the relations panel', async () => {
+      await open();
+      await replace(current => current.filter(relation => relation.id !== 'measured'));
+      await geometryMenu('side', 'Dimension'); expect(field('Length').value).toBe('30');
+      await input(field('Length'), '35'); await click('Cancel');
+      expect(relationsPanel()).not.toBeNull();
+      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
+      container.addEventListener('focusin', record);
+      await act(async () => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+      container.removeEventListener('focusin', record);
+      expect(refocused).toBe(0); expect(relationsPanel()).toBeNull();
+      expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'angle', 'size', 'x']);
     });
   });
 

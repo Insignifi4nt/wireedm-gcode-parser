@@ -40,13 +40,17 @@ export interface CadSketchGraphControls {
   /** Plane references in the plain selection, beside the sketch geometry; a command pick lists its own. */
   readonly datumSelection?: readonly CadSketchDatum[];
   onSelectDatum?(datum: CadSketchDatum, additive: boolean): void;
-  onDelete?(selection: CadSketchGraphSelection): void;
+  /** Delete removes this selection; Delete on a focused point or edge passes `focused`, so the owner removes its selection and the element only while nothing is selected. */
+  onDelete?(selection: CadSketchGraphSelection, focused?: true): void;
   onConfigureRelation?(relation: CadSketchDimensionRelation): void;
   /** Relation IDs of the dimensions selected on the canvas; a geometry selection replaces them. */
   readonly dimensionSelection?: readonly string[];
-  /** Label commands name the dimension the label was drawn for; Delete without one removes the dimension selection. */
+  /**
+   * Label commands name the dimension the label was drawn for. Delete without one removes the dimension selection; a focused label's
+   * Delete or Backspace passes its dimension and key, and the owner removes the selection and that dimension only while nothing is selected.
+   */
   onSelectDimension?(dimension: CadSketchDimensionPick | null, additive: boolean): void;
-  onDeleteDimension?(dimension?: CadSketchDimensionPick): void;
+  onDeleteDimension?(dimension?: CadSketchDimensionPick, key?: 'Delete' | 'Backspace'): void;
   onDimensionMenu?(dimension: CadSketchDimensionPick, at: { readonly clientX: number; readonly clientY: number }): void;
   /** Hover highlight shared with the dock rows; without one the layer keeps its own. */
   readonly highlight?: CadSketchHighlightStore;
@@ -366,7 +370,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     entityKey: (event, id) => {
       if (!edgeAllowed(id) || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'entity', id }, event.shiftKey); }
-      else if (event.key === 'Delete' && !controls.geometryPick && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id }); }
+      else if (event.key === 'Delete' && !controls.geometryPick && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id }, true); }
     },
     pointDown: (event, point) => {
       if (event.button !== 0 || !pointAllowed(point.id)) return;
@@ -390,7 +394,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       if (!pointAllowed(point.id) || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'point', id: point.id }, event.shiftKey); return; }
       if (controls.geometryPick) return;
-      if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'point', id: point.id }); return; }
+      if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'point', id: point.id }, true); return; }
       const step = gridStep * (event.shiftKey ? 10 : 1);
       const delta: SketchPoint | null = event.key === 'ArrowLeft' ? [-step, 0] : event.key === 'ArrowRight' ? [step, 0] : event.key === 'ArrowUp' ? [0, step] : event.key === 'ArrowDown' ? [0, -step] : null;
       if (!delta) return;
@@ -447,7 +451,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
       selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore}
       interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
-      onSelect={(dimension, additive) => controls.onSelectDimension?.(dimension, additive)} onDelete={dimension => controls.onDeleteDimension?.(dimension)}
+      onSelect={(dimension, additive) => controls.onSelectDimension?.(dimension, additive)} onDelete={(dimension, key) => controls.onDeleteDimension?.(dimension, key)}
       onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} />}
     {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${preview.kind === 'error' || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.kind === 'translate' ? intent.anchor[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}

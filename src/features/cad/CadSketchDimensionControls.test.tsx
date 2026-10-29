@@ -179,6 +179,20 @@ describe('on-part sketch dimension selection', () => {
     await act(async () => session.undo()); expect(findChip('Width')).not.toBeNull(); expect(findChip('Length')).not.toBeNull();
   });
 
+  it('deletes the selected chips from a focused chip outside the selection, and the focused chip only while none is selected', async () => {
+    const { edit } = await renderControls(slot());
+    // Focus never selects, so Delete on the focused Length removes the Width drawn selected.
+    await pick('Width'); await key('Length', 'Delete');
+    expect(edit).toHaveBeenCalledExactlyOnceWith([{ kind: 'remove-sketch-dimension', sketchId: 'sketch', profileId: 'profile', dimensionId: 'width' }], expect.any(AbortSignal));
+    expect(findChip('Width')).toBeNull(); expect(findChip('Length')).not.toBeNull();
+    // A selected size that has no dimension to remove keeps the focused chip as well.
+    await pick('Angle'); await key('Length', 'Backspace'); expect(edit).toHaveBeenCalledOnce(); expect(findChip('Length')).not.toBeNull();
+    await key('Length', 'Escape'); expect(pressed()).toEqual([]);
+    await key('Length', 'Delete');
+    expect(edit).toHaveBeenCalledTimes(2);
+    expect(edit).toHaveBeenLastCalledWith([{ kind: 'remove-sketch-dimension', sketchId: 'sketch', profileId: 'profile', dimensionId: 'length' }], expect.any(AbortSignal));
+  });
+
   it('reports a refused removal and keeps the chip selected', async () => {
     const { error } = await renderControls(slot(), () => { throw new Error('The slot needs its width.'); });
     await pick('Width'); await key('Width', 'Delete');
