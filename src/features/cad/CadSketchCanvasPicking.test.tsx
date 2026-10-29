@@ -384,6 +384,16 @@ describe('sketch canvas profile picking', () => {
     expect(h.added).toHaveBeenLastCalledWith({ kind: 'rectangle', x: expect.closeTo(2, 9), y: expect.closeTo(3, 9), width: expect.closeTo(0.4, 9), height: expect.closeTo(0.3, 9), cornerRadius: 0 }, expect.any(AbortSignal));
     expect(h.error).not.toHaveBeenCalled();
   });
+  it('keeps a held press at its pressed sketch position when the canvas resizes before release', async () => {
+    const h = await fixture([], { tool: 'rectangle' });
+    const press = (type: string, x: number, y: number, init: MouseEventInit = {}) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ...init });
+    await press('pointerdown', 25, 25); await press('pointerup', 25, 25); await h.click(25, 25);
+    // A held Ctrl press on the first corner repeats it exactly; the resize must not turn the release into a new corner.
+    await press('pointerdown', 25, 25, { ctrlKey: true });
+    Object.assign(h.svg, { getBoundingClientRect: () => ({ left: 10, top: 20, width: 1000, height: 600 }) });
+    await press('pointerup', 25, 25, { ctrlKey: true });
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
   it('never retries a rejected completing press with the release point', async () => {
     const added = vi.fn(() => { throw new Error('Rejected rectangle.'); });
     const h = await fixture([], { tool: 'rectangle', onAddProfile: added });
