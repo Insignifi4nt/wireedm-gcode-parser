@@ -1,0 +1,24 @@
+{
+  "version": "0.0.773",
+  "previousVersion": "0.0.772",
+  "postCompatibility": "preserved-output-sketch-cursor-render",
+  "summary": "Moving the cursor over a sketch no longer renders every graph point and edge again. Each point and edge row of the sketch graph layer is now its own memoized component that reaches the current pointer and keyboard handlers through a ref. The canvas passes the layer a highlight, selection controls and pick function that keep their identity while the cursor stays on the same target. The view toolbar is reused across cursor moves. A move re-renders only the rows whose highlight, selection or geometry changed. Pointer, keyboard, drag, snap, selection and drawing behavior are unchanged. On a sketch with 60 rectangles at 4x CPU throttling, the median handled hover move fell from 49 ms to about 26 ms while drawing (95th percentile 72 to about 47 ms), and from about 30 ms to 22 ms with the select tool (95th percentile 47 to about 38 ms).",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Sketch rendering work changes only.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools and their arguments are unchanged.",
+    "capabilities": "No post, machine or sketch capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "CadSketchCanvasRender.test.tsx moves the drawing cursor across a graph sketch before and after a first corner and checks that no point row renders again. Hovering a point renders only that row, and so does selecting a point. The test fails without the change. The CAD feature suites, build, lint, ui:check, the release check and the Chromium specs that draw on or select in the sketch canvas (cad-sketch-constraints, cad-sketch-dimension-points, cad-sketch-editing, cad-sketch-placement and cad-workflow) pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Sketch cursor moves respond faster.",
+    "changes": [
+      "Moving the cursor while drawing or selecting in a sketch redraws only the geometry that changes, so hover feedback keeps up on larger sketches."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
