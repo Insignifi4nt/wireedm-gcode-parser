@@ -94,18 +94,35 @@ describe('sketch canvas cursor rendering', () => {
     const hover = (target: Element, entered: boolean) => act(async () => {
       (entered ? svg : target).dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: entered ? target : svg }));
     });
+    Object.assign(svg, { getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) }) });
+    const parts = (id: string) => [annotation(id), ...container.querySelectorAll(`[data-cad-sketch-dimension="${id}"] :is(.cad-sketch-graph-dimension-line-hit, .cad-sketch-graph-dimension-arrow)`)];
+    // The pointer crosses each part of the annotation at a few positions, as a real pointer does.
+    const sweep = async (id: string) => {
+      for (const [index, part] of parts(id).entries()) for (const offset of [0, 3, 7]) await act(async () => {
+        const event = new MouseEvent('pointermove', { bubbles: true, clientX: 300 + index * 10 + offset, clientY: 200 + offset }); Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } });
+        part.dispatchEvent(event);
+      });
+    };
     expect(annotation('length')).not.toBeNull(); expect(highlighted()).toEqual([]);
+    expect(container.querySelectorAll('[data-cad-sketch-dimension="length"] .cad-sketch-graph-dimension-arrow').length).toBeGreaterThan(0);
 
     rowRenders.mockClear(); canvasRenders.mockClear();
-    await hover(annotation('length'), true);
+    await hover(annotation('length'), true); await sweep('length');
     expect(highlighted()).toEqual(['a', 'ab', 'b']);
-    await hover(annotation('length'), false); await hover(annotation('rise'), true);
+    await hover(annotation('length'), false); await hover(annotation('rise'), true); await sweep('rise');
     expect(highlighted()).toEqual(['b', 'bc', 'c']);
     await hover(annotation('rise'), false);
     expect(highlighted()).toEqual([]);
     expect(renderedPoints()).toEqual([]); expect(canvasRenders).not.toHaveBeenCalled();
+    // The same move over the open canvas does update the cursor.
+    await act(async () => {
+      const event = new MouseEvent('pointermove', { bubbles: true, clientX: 600, clientY: 500 }); Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } });
+      svg.dispatchEvent(event);
+    });
+    expect(canvasRenders).toHaveBeenCalled();
 
     // A selected dimension keeps its geometry highlighted and draws in the selection colour; the rows stay as they were.
+    rowRenders.mockClear();
     await act(async () => root.render(<CadSketchCanvas {...props} graphControls={{ ...graphControls, dimensionSelection: ['rise'] }} />));
     expect(renderedPoints()).toEqual([]); expect(highlighted()).toEqual(['b', 'bc', 'c']);
     expect(container.querySelector('[data-cad-sketch-dimension="rise"]')?.classList.contains('is-selected')).toBe(true);

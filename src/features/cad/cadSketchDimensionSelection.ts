@@ -7,21 +7,64 @@ const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['d
 /** Relations drawn as a dimension annotation on the sketch canvas. */
 export const isCadSketchDimensionRelation = (relation: CadSketchGraphRelation): relation is CadSketchDimensionRelation => DIMENSION_KINDS.has(relation.kind);
 
-/** Relation IDs of the dimensions selected on the canvas, in selection order. Geometry selection replaces it. */
-export const NO_SKETCH_DIMENSIONS: readonly string[] = Object.freeze([]);
+/**
+ * One selected dimension: its relation ID, or a profile chip's field, and what it measures. A different dimension that reuses the ID,
+ * after undo, redo or an agent edit, is a different pick and never inherits the selection.
+ */
+export interface CadSketchDimensionPick { readonly id: string; readonly identity: string }
+/** Dimensions selected on the canvas or on a profile, in selection order. Geometry selection replaces it. */
+export const NO_SKETCH_DIMENSIONS: readonly CadSketchDimensionPick[] = Object.freeze([]);
+export const NO_SKETCH_DIMENSION_IDS: readonly string[] = Object.freeze([]);
 const MAX_SELECTED_DIMENSIONS = 64;
+export const sameCadSketchDimensionPick = (a: CadSketchDimensionPick, b: CadSketchDimensionPick) => a.id === b.id && a.identity === b.identity;
+const samePick = sameCadSketchDimensionPick;
 
 /** A plain pick selects one dimension; an additive pick toggles it in or out of the current set. */
-export function selectCadSketchDimension(current: readonly string[], id: string, additive = false): readonly string[] {
-  if (!additive) return current.length === 1 && current[0] === id ? current : Object.freeze([id]);
-  if (current.includes(id)) { const kept = current.filter(item => item !== id); return kept.length ? Object.freeze(kept) : NO_SKETCH_DIMENSIONS; }
-  return current.length >= MAX_SELECTED_DIMENSIONS ? current : Object.freeze([...current, id]);
+export function selectCadSketchDimension(current: readonly CadSketchDimensionPick[], pick: CadSketchDimensionPick, additive = false): readonly CadSketchDimensionPick[] {
+  if (!additive) return current.length === 1 && samePick(current[0], pick) ? current : Object.freeze([pick]);
+  if (current.some(item => samePick(item, pick))) { const kept = current.filter(item => !samePick(item, pick)); return kept.length ? Object.freeze(kept) : NO_SKETCH_DIMENSIONS; }
+  return current.length >= MAX_SELECTED_DIMENSIONS ? current : Object.freeze([...current, pick]);
 }
-/** Undo, redo and deletion can remove a selected dimension; the rest stay selected and an unchanged set keeps its identity. */
-export function reconcileCadSketchDimensionSelection(graph: CadSketchGraph | undefined, current: readonly string[]): readonly string[] {
+/** Keeps the picks that still name an available dimension; an unchanged set keeps its identity. */
+export function keepCadSketchDimensionPicks(current: readonly CadSketchDimensionPick[], available: (pick: CadSketchDimensionPick) => boolean): readonly CadSketchDimensionPick[] {
   if (!current.length) return current;
-  const kept = current.filter(id => graph?.relations.some(relation => relation.id === id && isCadSketchDimensionRelation(relation)));
+  const kept = current.filter(available);
   return kept.length === current.length ? current : kept.length ? Object.freeze(kept) : NO_SKETCH_DIMENSIONS;
+}
+export function cadSketchDimensionIds(current: readonly CadSketchDimensionPick[]): readonly string[] {
+  return current.length ? Object.freeze(current.map(pick => pick.id)) : NO_SKETCH_DIMENSION_IDS;
+}
+
+const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
+  : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(',')}}` : JSON.stringify(value);
+/**
+ * What a dimension measures, without its value or ID. Editing the value keeps the selection, and so do Make reference and
+ * Make driving, which keep the measured length, distance, radius or diameter. A relation that measures something else does not.
+ */
+export function cadSketchDimensionIdentity(graph: CadSketchGraph, relation: CadSketchDimensionRelation): string {
+  const pair = (pointIds: readonly string[]) => [...pointIds].sort();
+  switch (relation.kind) {
+    case 'distance': return canonical(['point-distance', pair(relation.pointIds)]);
+    case 'radial-size': return canonical(['radial-size', relation.entityId, relation.quantity]);
+    case 'reference-dimension': {
+      const measurement = relation.measurement;
+      if (measurement.kind === 'radial-size') return canonical(['radial-size', measurement.entityId, measurement.quantity]);
+      if (measurement.kind === 'point-distance') return canonical(['point-distance', pair(measurement.pointIds)]);
+      const line = graph.entities.find(entity => entity.id === measurement.entityId);
+      return line?.kind === 'line' ? canonical(['point-distance', pair([line.startPointId, line.endPointId])]) : canonical(['line-length', measurement.entityId]);
+    }
+    default: return canonical(Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id' && key !== 'value' && key !== 'values')));
+  }
+}
+/** The pick for a canvas dimension, or null when the relation is gone or is not a dimension. */
+export function cadSketchDimensionPick(graph: CadSketchGraph, relationId: string): CadSketchDimensionPick | null {
+  const relation = graph.relations.find(item => item.id === relationId);
+  return relation && isCadSketchDimensionRelation(relation) ? { id: relation.id, identity: cadSketchDimensionIdentity(graph, relation) } : null;
+}
+/** Undo, redo, deletion and agent edits can remove or replace a selected dimension; the rest stay selected. */
+export function reconcileCadSketchDimensionSelection(graph: CadSketchGraph | undefined, current: readonly CadSketchDimensionPick[]): readonly CadSketchDimensionPick[] {
+  if (!graph) return current.length ? NO_SKETCH_DIMENSIONS : current;
+  return keepCadSketchDimensionPicks(current, pick => cadSketchDimensionPick(graph, pick.id)?.identity === pick.identity);
 }
 
 /** Sentence-case name of a canvas dimension, as the relations list names it. */

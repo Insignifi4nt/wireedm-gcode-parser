@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import {
-  cadSketchDimensionSelectionStatus, cadSketchRelationHighlight, createCadSketchHighlightStore, NO_SKETCH_DIMENSIONS,
-  reconcileCadSketchDimensionSelection, selectCadSketchDimension
+  cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionSelectionStatus, cadSketchRelationHighlight, createCadSketchHighlightStore, NO_SKETCH_DIMENSION_IDS,
+  NO_SKETCH_DIMENSIONS, reconcileCadSketchDimensionSelection, selectCadSketchDimension, type CadSketchDimensionPick
 } from './cadSketchDimensionSelection';
 import { cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
 
@@ -24,33 +24,60 @@ const graph = parseCadSketchGraph({
 });
 
 describe('sketch dimension selection', () => {
+  const pick = (id: string) => { const found = cadSketchDimensionPick(graph, id); if (!found) throw new Error(`${id} is not a dimension`); return found; };
+  const withRelation = (relation: (typeof graph.relations)[number]) => ({ ...graph, relations: graph.relations.map(item => item.id === relation.id ? relation : item) });
+
   it('selects one dimension, toggles with Shift and keeps identity when nothing changes', () => {
-    const one = selectCadSketchDimension(NO_SKETCH_DIMENSIONS, 'length');
-    expect(one).toEqual(['length']);
-    expect(selectCadSketchDimension(one, 'length')).toBe(one);
-    const two = selectCadSketchDimension(one, 'size', true);
-    expect(two).toEqual(['length', 'size']);
-    expect(selectCadSketchDimension(two, 'rise')).toEqual(['rise']);
-    expect(selectCadSketchDimension(two, 'length', true)).toEqual(['size']);
-    expect(selectCadSketchDimension(['size'], 'size', true)).toBe(NO_SKETCH_DIMENSIONS);
-    expect(Object.isFrozen(two)).toBe(true);
+    const one = selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick('length'));
+    expect(cadSketchDimensionIds(one)).toEqual(['length']);
+    expect(selectCadSketchDimension(one, pick('length'))).toBe(one);
+    const two = selectCadSketchDimension(one, pick('size'), true);
+    expect(cadSketchDimensionIds(two)).toEqual(['length', 'size']);
+    expect(cadSketchDimensionIds(selectCadSketchDimension(two, pick('rise')))).toEqual(['rise']);
+    expect(cadSketchDimensionIds(selectCadSketchDimension(two, pick('length'), true))).toEqual(['size']);
+    expect(selectCadSketchDimension([pick('size')], pick('size'), true)).toBe(NO_SKETCH_DIMENSIONS);
+    expect(Object.isFrozen(two)).toBe(true); expect(cadSketchDimensionIds(NO_SKETCH_DIMENSIONS)).toBe(NO_SKETCH_DIMENSION_IDS);
   });
 
   it('caps an additive selection', () => {
-    let current: readonly string[] = NO_SKETCH_DIMENSIONS;
-    for (let index = 0; index < 70; index++) current = selectCadSketchDimension(current, `d${index}`, true);
+    let current: readonly CadSketchDimensionPick[] = NO_SKETCH_DIMENSIONS;
+    for (let index = 0; index < 70; index++) current = selectCadSketchDimension(current, { id: `d${index}`, identity: 'distance' }, true);
     expect(current).toHaveLength(64);
   });
 
   it('reconciles after undo or deletion: removed or non-dimension relations drop out and an intact set keeps its identity', () => {
-    const current = Object.freeze(['length', 'size']);
+    const current = Object.freeze([pick('length'), pick('size')]);
     expect(reconcileCadSketchDimensionSelection(graph, current)).toBe(current);
     const withoutSize = { ...graph, relations: graph.relations.filter(relation => relation.id !== 'size') };
-    expect(reconcileCadSketchDimensionSelection(withoutSize, current)).toEqual(['length']);
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withoutSize, current))).toEqual(['length']);
     // Positional relations and datum coordinates are not canvas dimensions.
-    expect(reconcileCadSketchDimensionSelection(graph, ['parallel-free', 'x'])).toBe(NO_SKETCH_DIMENSIONS);
+    expect(cadSketchDimensionPick(graph, 'parallel-free')).toBeNull(); expect(cadSketchDimensionPick(graph, 'x')).toBeNull();
+    expect(reconcileCadSketchDimensionSelection(graph, [{ id: 'x', identity: pick('length').identity }])).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(undefined, current)).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(graph, NO_SKETCH_DIMENSIONS)).toBe(NO_SKETCH_DIMENSIONS);
+  });
+
+  it('keeps a dimension whose value changes, but drops an ID that now names a different measurement', () => {
+    const current = Object.freeze([pick('length'), pick('size')]);
+    // A new value, or an expression, is the same dimension.
+    expect(reconcileCadSketchDimensionSelection(withRelation({ id: 'length', kind: 'distance', pointIds: ['b', 'a'], value: ' width ' }), current)).toBe(current);
+    // An agent edit or undo that reuses the ID for other points, another kind or the other radial quantity does not inherit the selection.
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withRelation({ id: 'length', kind: 'distance', pointIds: ['a', 'c'], value: 40 }), current))).toEqual(['size']);
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withRelation({ id: 'length', kind: 'axis-distance', pointIds: ['a', 'b'], axis: 'x', value: 40 }), current))).toEqual(['size']);
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withRelation({ id: 'size', kind: 'radial-size', entityId: 'hole', quantity: 'radius', value: 4 }), current))).toEqual(['length']);
+    const angle = pick('angle');
+    expect(reconcileCadSketchDimensionSelection(withRelation({ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'side', towardPointId: 'c' }], sense: 'cw', value: 45 }), [angle])).toEqual([angle]);
+    expect(reconcileCadSketchDimensionSelection(withRelation({ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'side', towardPointId: 'c' }], sense: 'ccw', value: 90 }), [angle])).toBe(NO_SKETCH_DIMENSIONS);
+  });
+
+  it('keeps the selection through Make reference and Make driving, which measure the same thing', () => {
+    const current = Object.freeze([pick('length'), pick('diagonal'), pick('size')]);
+    const referenced = { ...graph, relations: graph.relations.map(relation => relation.id === 'length' ? { id: 'length', kind: 'reference-dimension' as const, measurement: { kind: 'line-length' as const, entityId: 'base' } }
+      : relation.id === 'diagonal' ? { id: 'diagonal', kind: 'reference-dimension' as const, measurement: { kind: 'point-distance' as const, pointIds: ['c', 'a'] as const } }
+        : relation.id === 'size' ? { id: 'size', kind: 'reference-dimension' as const, measurement: { kind: 'radial-size' as const, entityId: 'hole', quantity: 'diameter' as const } } : relation) };
+    expect(reconcileCadSketchDimensionSelection(referenced, current)).toBe(current);
+    // A reference to another line under the same ID is a different dimension.
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withRelation({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'side' } }), current))).toEqual(['diagonal', 'size']);
   });
 
   it('describes the selection for the status line without opening the editor', () => {
@@ -58,6 +85,7 @@ describe('sketch dimension selection', () => {
     expect(cadSketchDimensionSelectionStatus(graph, ['diagonal'])).toBe('Distance selected · Double-click or Enter edits · Delete removes');
     expect(cadSketchDimensionSelectionStatus(graph, ['size', 'rise'])).toBe('2 dimensions selected · Delete removes them');
     expect(cadSketchDimensionSelectionStatus(graph, [])).toBeNull();
+    expect(cadSketchDimensionSelectionStatus(graph, ['gone'])).toBeNull();
   });
 });
 

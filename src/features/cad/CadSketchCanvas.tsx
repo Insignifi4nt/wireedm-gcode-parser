@@ -1066,6 +1066,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const rect = event.currentTarget.getBoundingClientRect();
           if (!rect.width || !rect.height) { finishPan(event.pointerId); return; }
           setCenter([active.center[0] - (event.clientX - active.x) / rect.width * width, active.center[1] + (event.clientY - active.y) / rect.height * span]);
+        } else if (event.target instanceof Element && event.target.closest('.cad-sketch-graph-dimension.is-interactive')) {
+          // Hovering a selectable dimension only lights up its geometry through the highlight overlay. The drawing cursor keeps its
+          // last position and a grip or datum hover ends once, so moving across a label, its line or its arrows renders nothing else.
+          // Drawing tools hide annotations and position picks make them inert, so there the cursor keeps following the pointer.
+          if (hoverHandle) setHoverHandle(null);
+          if (datumHover) setDatumHover(null);
         } else {
           getDrawingPick(event);
           if (tool === 'trim') {

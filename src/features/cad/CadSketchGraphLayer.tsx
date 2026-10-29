@@ -20,7 +20,7 @@ import { cadSketchSnapTargetLabel, type CadSketchSnapCandidate } from './cadSket
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
 import { CadSketchHighlightOverlay } from './CadSketchHighlightOverlay';
-import { createCadSketchHighlightStore, NO_SKETCH_DIMENSIONS, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
+import { createCadSketchHighlightStore, NO_SKETCH_DIMENSION_IDS, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 
 type Prepared = ReturnType<typeof prepareCadSketchGraphInteraction>;
 export interface CadSketchGraphControls {
@@ -442,7 +442,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       <path d={`M ${radiusGripX} ${shownCircle.center[1] - center[1] + 4 * scaleY} l ${4 * scaleX} ${-4 * scaleY} l ${-4 * scaleX} ${-4 * scaleY} l ${-4 * scaleX} ${4 * scaleY} Z`} className="cad-sketch-point-mark" />
       <title>{circle.lockedReason ?? (controls.degreesOfFreedom === 0 ? 'Fully constrained by dimensions and relations' : `Radius ${formatCadQuantity(shownCircle.radius)} mm · Drag to resize, or use arrow keys`)}</title>
     </g>}
-    <CadSketchHighlightOverlay store={highlightStore} prepared={displayed} center={center} mmPerPixel={scaleY} selectedRelationIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSIONS} />
+    <CadSketchHighlightOverlay store={highlightStore} prepared={displayed} center={center} mmPerPixel={scaleY} selectedRelationIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSION_IDS} />
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
       selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore}
       interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}

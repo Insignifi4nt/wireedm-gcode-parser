@@ -20,6 +20,7 @@ import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
 import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
+import { cadSketchDimensionSelectionStatus } from './cadSketchDimensionSelection';
 import { useCadSketchEditing } from './useCadSketchEditing';
 import { pairedBoreMirrorPart } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 import { cadSketchSourceAvailability, cadSketchSourceIssue } from '@/domain/cad/cadSketchSources';
@@ -62,6 +63,12 @@ vi.mock('@/domain/cad/cadSketchSources', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/domain/cad/cadSketchSources')>();
   return { ...actual, cadSketchSourceAvailability: vi.fn(actual.cadSketchSourceAvailability), cadSketchSourceIssue: vi.fn(actual.cadSketchSourceIssue) };
 });
+// The sketch canvas reads its dimension status line once per render in the select tool, so the call count tracks canvas renders.
+vi.mock('./cadSketchDimensionSelection', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./cadSketchDimensionSelection')>();
+  return { ...actual, cadSketchDimensionSelectionStatus: vi.fn(actual.cadSketchDimensionSelectionStatus) };
+});
+const canvasRenders = vi.mocked(cadSketchDimensionSelectionStatus);
 
 let container: HTMLDivElement;
 let root: Root;
@@ -1859,6 +1866,68 @@ describe('CAD sketch interaction', () => {
       expect(relations().some(relation => relation.id === 'size')).toBe(true); expect(selectedDimensions()).toEqual(['size']);
     });
 
+    it('lights the geometry from relation and issue rows in the dock without rendering the sketch canvas again', async () => {
+      await open({ build: null, buildState: 'idle', onEditMany: () => {
+        const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
+        throw new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Bracket', graph: feature.graph, rejection: { kind: 'rejected', reason: 'conflicting', message: 'Over-defined.',
+          diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length', 'diagonal'], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
+      } });
+      const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]')!, point = container.querySelector<SVGGElement>('[data-cad-sketch-point="o"]')!;
+      vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+      await act(async () => { point.focus(); point.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+      await act(async () => menuItem('Constraints and dimensions').click());
+      // A refused apply lists the conflicting relations as issue rows.
+      const remove = container.querySelector<HTMLButtonElement>('ul[aria-label="Sketch relations"] > li button[aria-label^="Remove "]'); if (!remove) throw new Error('Remove button missing.');
+      await act(async () => remove.click()); await click('Apply');
+      const issues = [...container.querySelectorAll('ul[aria-label="Constraint issues"] > li')], rows = [...container.querySelectorAll('ul[aria-label="Sketch relations"] > li'), ...issues];
+      expect(issues).toHaveLength(2);
+      const panel = rows[0].closest('form')!, lit: (string | null)[][] = [];
+      canvasRenders.mockClear();
+      for (const row of rows) {
+        await act(async () => panel.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row })));
+        for (const offset of [0, 4, 9]) await act(async () => {
+          const event = new MouseEvent('pointermove', { bubbles: true, clientX: 700 + offset, clientY: 100 + offset }); Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } });
+          row.dispatchEvent(event);
+        });
+        lit.push([...highlighted('point'), ...highlighted('entity')]);
+        await act(async () => row.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: panel })));
+      }
+      expect(lit.slice(-2)).toEqual([['a', 'b'], ['a', 'c']]); expect(lit.every(entry => entry.length > 0)).toBe(true);
+      expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull(); expect(canvasRenders).not.toHaveBeenCalled();
+      // A move over the canvas itself does render it, so the count is live.
+      await act(async () => {
+        const event = new MouseEvent('pointermove', { bubbles: true, clientX: 300, clientY: 200 }); Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } });
+        canvas.dispatchEvent(event);
+      });
+      expect(canvasRenders).toHaveBeenCalled();
+    });
+
+    it('never carries the selection or an open menu to a relation that reuses a dimension ID', async () => {
+      await open();
+      type Relation = ReturnType<typeof relations>[number];
+      const replace = (change: (current: readonly Relation[]) => readonly Relation[]) => act(async () => {
+        const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
+        replaceDocument({ ...currentDocument, features: [{ ...feature, graph: { ...feature.graph, relations: change(feature.graph.relations) } }] });
+      });
+      const swap = (relation: Relation) => replace(current => current.map(item => item.id === relation.id ? relation : item));
+      await pick('length');
+      // A rewritten relation that measures the same points is the same dimension.
+      await swap({ id: 'length', kind: 'distance', pointIds: ['b', 'a'], value: 40 }); expect(selectedDimensions()).toEqual(['length']);
+      // An agent edit that reuses the ID for other points is a different dimension, so Delete has nothing to remove.
+      await swap({ id: 'length', kind: 'distance', pointIds: ['b', 'c'], value: 30 });
+      expect(selectedDimensions()).toEqual([]); expect(status()).toBeNull();
+      const before = currentDocument; await canvasKey('Delete'); expect(currentDocument).toBe(before);
+      // Undo and redo can remove a selected dimension and bring it back; it returns unselected.
+      await pick('size'); const size = relations().find(relation => relation.id === 'size')!;
+      await replace(current => current.filter(relation => relation.id !== 'size')); await replace(current => [...current, size]);
+      expect(selectedDimensions()).toEqual([]);
+      // An open menu closes when its dimension is replaced, and the replacement is neither selected nor removed.
+      await press('angle', 'ContextMenu'); expect(document.querySelector('[role="menu"]')).not.toBeNull();
+      await swap({ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'side', towardPointId: 'c' }], sense: 'ccw', value: 90 });
+      expect(document.querySelector('[role="menu"]')).toBeNull(); expect(selectedDimensions()).toEqual([]);
+      expect(relations().some(relation => relation.id === 'angle')).toBe(true);
+    });
+
     it('offers edit, reference or driving and delete from the dimension menu, with reasons for unavailable commands', async () => {
       await open();
       // The menu key on an unselected dimension selects it first.
@@ -1868,12 +1937,13 @@ describe('CAD sketch interaction', () => {
       await act(async () => menuItem('Edit value…').click()); expect(field('Angle').value).toBe('90');
       await press('length', 'ContextMenu'); await act(async () => menuItem('Make reference').click());
       expect(relations().find(relation => relation.id === 'length')).toEqual({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' } });
-      expect(label('length').getAttribute('aria-label')).toMatch(/^Reference dimension /);
+      // The reference measures the same length, so it stays selected.
+      expect(label('length').getAttribute('aria-label')).toMatch(/^Reference dimension /); expect(selectedDimensions()).toEqual(['length']);
       await press('measured', 'ContextMenu');
       expect(menuItem('Edit value…').disabled).toBe(true);
       expect(menuItem('Edit value…').getAttribute('aria-description')).toBe('A reference dimension follows the geometry. Make it driving to set its value.');
       await act(async () => menuItem('Make driving').click());
-      expect(relations().find(relation => relation.id === 'measured')).toEqual({ id: 'measured', kind: 'distance', pointIds: ['b', 'c'], value: 30 });
+      expect(relations().find(relation => relation.id === 'measured')).toEqual({ id: 'measured', kind: 'distance', pointIds: ['b', 'c'], value: 30 }); expect(selectedDimensions()).toEqual(['measured']);
       await pick('size'); await pick('diagonal', true); await press('size', 'ContextMenu');
       await act(async () => menuItem('Delete 2 dimensions').click());
       expect(relations().map(relation => relation.id)).toEqual(['length', 'angle', 'x', 'measured']);

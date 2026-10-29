@@ -1,4 +1,4 @@
-import { act, useSyncExternalStore } from 'react';
+import { act, useState, useSyncExternalStore } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadDocument, CadProfile, CadSketchProfile } from '@/domain/cad/cadDocument';
@@ -8,7 +8,7 @@ import { CAD_GEAR_V2_PLUGIN, createCadPluginProfile } from '@/domain/cad/plugins
 import { CadSession } from './cadSession';
 import { CadSketchDimensionControls, type CadSketchDimensionControlsProps } from './CadSketchDimensionControls';
 
-let container: HTMLDivElement, root: Root;
+let container: HTMLDivElement, root: Root, cancelControls: () => void = () => undefined;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 function makeDocument(geometry: CadProfile, parameters: Readonly<Record<string, number>> = {}, constraints?: CadSketchProfile['constraints']): CadDocument {
@@ -38,8 +38,9 @@ async function renderControls(document: CadDocument, apply?: CadSketchDimensionC
   const edit = vi.fn((edits: readonly CadEdit[]) => apply ? apply(edits) : session.edit(edits));
   function Harness() {
     const state = useSyncExternalStore(session.subscribe, session.getSnapshot), sketch = state.document.features[0];
+    const [cancelSignal, setCancelSignal] = useState(0); cancelControls = () => setCancelSignal(value => value + 1);
     if (sketch.kind !== 'sketch') throw new Error('Missing test sketch');
-    return <CadSketchDimensionControls document={state.document} sketch={sketch} profile={sketch.profiles[0]} parameters={state.document.parameters} anchor={{ x: 200, y: 150 }} project={project} onEditMany={edit} onPendingChange={pending} interactionLocked={false} cancelSignal={0} onInspectInput={inspect} onConfigure={configure} onError={error} />;
+    return <CadSketchDimensionControls document={state.document} sketch={sketch} profile={sketch.profiles[0]} parameters={state.document.parameters} anchor={{ x: 200, y: 150 }} project={project} onEditMany={edit} onPendingChange={pending} interactionLocked={false} cancelSignal={cancelSignal} onInspectInput={inspect} onConfigure={configure} onError={error} />;
   }
   await act(async () => root.render(<Harness />)); return { session, pending, inspect, configure, edit, error };
 }
@@ -127,8 +128,10 @@ describe('on-part sketch dimension editing', () => {
 });
 
 describe('on-part sketch dimension selection', () => {
-  const slot = () => makeDocument({ kind: 'slot', x: 0, y: 0, length: 20, width: 8, angle: 'tilt' }, { tilt: 15 },
-    [{ id: 'width', kind: 'dimension', quantity: 'width' }, { id: 'length', kind: 'dimension', quantity: 'length' }]);
+  const slotGeometry: CadProfile = { kind: 'slot', x: 0, y: 0, length: 20, width: 8, angle: 'tilt' };
+  const width = { id: 'width', kind: 'dimension', quantity: 'width' } as const, length = { id: 'length', kind: 'dimension', quantity: 'length' } as const;
+  const slot = (constraints: CadSketchProfile['constraints'] = [width, length]) => makeDocument(slotGeometry, { tilt: 15 }, constraints);
+  const menuOpen = () => document.querySelector('[role="menu"]') !== null;
   const pick = async (label: string, shiftKey = false) => act(async () => chip(label).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, shiftKey })));
   const pressed = () => Array.from(container.querySelectorAll('.cad-dimension-chips > button[aria-pressed="true"]')).map(button => button.getAttribute('aria-label'));
   const menuItem = (text: string) => {
@@ -179,6 +182,41 @@ describe('on-part sketch dimension selection', () => {
     const { error } = await renderControls(slot(), () => { throw new Error('The slot needs its width.'); });
     await pick('Width'); await key('Width', 'Delete');
     expect(error).toHaveBeenCalledWith('The slot needs its width.'); expect(pressed()).toEqual(['Dimension width 8 mm, press Enter to edit']);
+  });
+
+  it('closes a chip menu when the part changes or the edit is cancelled, so it never removes a replacement constraint', async () => {
+    const { session, edit } = await renderControls(slot());
+    await key('Width', 'ContextMenu'); expect(menuOpen()).toBe(true);
+    // An agent replaces the Width constraint on the same profile while the menu is open.
+    await act(async () => session.replace(slot([{ id: 'width-2', kind: 'dimension', quantity: 'width' }, length])));
+    expect(menuOpen()).toBe(false); expect(pressed()).toEqual([]);
+    expect(findChip('Width')).not.toBeNull(); expect(edit).not.toHaveBeenCalled();
+    // Any other change to the part, or Cancel, also closes it.
+    await key('Length', 'ContextMenu'); expect(menuOpen()).toBe(true);
+    await act(async () => session.edit([{ kind: 'set-parameter', name: 'tilt', value: 20 }])); expect(menuOpen()).toBe(false);
+    await key('Length', 'ContextMenu'); expect(menuOpen()).toBe(true);
+    await act(async () => cancelControls()); expect(menuOpen()).toBe(false);
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it('never carries a selection to a constraint added after the selected one went away', async () => {
+    const { session, edit } = await renderControls(slot());
+    await pick('Width'); await pick('Length', true); expect(pressed()).toHaveLength(2);
+    // Removed elsewhere, then added again with the same ID: the returning chip starts unselected.
+    await act(async () => session.replace(slot([length]))); expect(findChip('Width')).toBeNull();
+    await act(async () => session.replace(slot([width, length])));
+    expect(pressed()).toEqual(['Dimension length 20 mm, press Enter to edit']);
+    await key('Length', 'Delete');
+    expect(edit).toHaveBeenCalledOnce();
+    expect(edit).toHaveBeenCalledWith([{ kind: 'remove-sketch-dimension', sketchId: 'sketch', profileId: 'profile', dimensionId: 'length' }], expect.any(AbortSignal));
+  });
+
+  it('drops the selection when a constraint keeps its ID but measures another quantity', async () => {
+    const circle = (quantity: 'radius' | 'diameter') => makeDocument({ kind: 'circle', x: 0, y: 0, radius: 5 }, {}, [{ id: 'size', kind: 'dimension', quantity }]);
+    const { session } = await renderControls(circle('radius'));
+    await pick('Radius'); expect(pressed()).toEqual(['Dimension radius 5 mm, press Enter to edit']);
+    await act(async () => session.replace(circle('diameter')));
+    expect(findChip('Diameter')).not.toBeNull(); expect(pressed()).toEqual([]);
   });
 
   it('offers edit, a disabled reference conversion and delete from the chip menu', async () => {
