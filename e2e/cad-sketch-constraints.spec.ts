@@ -174,7 +174,7 @@ test('drives an obtuse corner in degrees through its real annotation, retains it
   const angle = angled.graph.relations.find((relation: { kind: string }) => relation.kind === 'line-angle');
   expect(angle).toMatchObject({ rays: [{ lineId: 'incoming', towardPointId: 'a' }, { lineId: 'outgoing', towardPointId: 'b' }], sense: 'ccw', value: ' cornerAngle ' });
   expect(angled.graph.points.slice(0, 2)).toEqual(sketch.graph.points.slice(0, 2));
-  await page.getByRole('button', { name: /^Configure angle / }).click(); await degrees.fill('110');
+  await page.getByRole('button', { name: /^Dimension angle / }).dblclick(); await degrees.fill('110');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect((await context(page)).version).toBe(current.version);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
@@ -184,7 +184,7 @@ test('drives an obtuse corner in degrees through its real annotation, retains it
   const built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
   expect(built.bodies[0].volumeMm3).toBeCloseTo(250 * Math.sin(120 * Math.PI / 180), 7);
   await (await historyRow(page, 'Angled plate')).dblclick();
-  await page.getByRole('button', { name: /^Configure angle / }).click(); await degrees.fill('110');
+  await page.getByRole('button', { name: /^Dimension angle / }).dblclick(); await degrees.fill('110');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   expect((await context(page)).version).toBe(current.version);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
@@ -885,7 +885,7 @@ test('keeps plate sides and hole radii equal while editing their drivers, then e
   await (await relationControl(page, 'checkbox', 'Equal radius')).check();
   await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
-  await page.getByRole('button', { name: 'Configure diameter 4 mm', exact: true }).click();
+  await page.getByRole('button', { name: 'Dimension diameter 4 mm, press Enter to edit', exact: true }).dblclick();
   await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('8');
   await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false, parameters: { bore: 8 } }); current = await context(page);
@@ -936,7 +936,7 @@ test('drives a circle diameter and major-arc radius through native dimensions, t
   await page.getByRole('button', { name: 'Close Diameter relation help', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
-  await page.getByRole('button', { name: 'Configure diameter 12 mm', exact: true }).click();
+  await page.getByRole('button', { name: 'Dimension diameter 12 mm, press Enter to edit', exact: true }).dblclick();
   await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('16');
   await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false, parameters: { nominal: 16 } }); current = await context(page);
@@ -950,7 +950,7 @@ test('drives a circle diameter and major-arc radius through native dimensions, t
   expect(accepted.graph.points).toEqual([feature.graph.points[0], feature.graph.points[1], { id: 'start', position: [26, '0'] }, { id: 'end', position: ['20', 6] }]);
   expect(accepted.graph.relations).toEqual([expect.objectContaining({ kind: 'radial-size', quantity: 'diameter', value: ' nominal ', entityId: 'disk' }),
     expect.objectContaining({ kind: 'radial-size', quantity: 'radius', value: 6, entityId: 'arc' })]);
-  await expect(page.getByRole('button', { name: 'Configure radius 6 mm', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Dimension radius 6 mm, press Enter to edit', exact: true })).toBeVisible();
   expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: feature.id })).materialAreaMm2).toBeCloseTo(64 * Math.PI, 9);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'add-feature', feature: {
@@ -1227,7 +1227,7 @@ test('rounds and bevels constrained corners with linked drivers, native dimensio
   expect(rounded.graph.relations.at(-1)).toMatchObject({ kind: 'fillet-corner', value: ' size ' });
   const roundedArea = 291 + 9 * Math.PI / 4;
   expect((await call(page, 'cad_measure_sketch', { expectedVersion: current.version, sketchId: 'outline' })).materialAreaMm2).toBeCloseTo(roundedArea, 8);
-  await page.locator(`[data-cad-sketch-dimension="${rounded.graph.relations.at(-1).id}"] [role="button"]`).click();
+  await page.locator(`[data-cad-sketch-dimension="${rounded.graph.relations.at(-1).id}"] [role="button"]`).dblclick();
   await expect(page.getByRole('textbox', { name: 'Fillet radius mm', exact: true })).toHaveValue('3');
   await page.getByRole('textbox', { name: 'Fillet radius mm', exact: true }).fill('4');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -1239,7 +1239,7 @@ test('rounds and bevels constrained corners with linked drivers, native dimensio
   const accepted = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature;
   expect(accepted.graph.relations.at(-1)).toMatchObject({ id: 'bevel', kind: 'chamfer-corner', lineIds: ['ab', 'bc'], values: [2, 3] });
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'fit' } });
-  await page.locator('[data-cad-sketch-dimension="bevel"] [role="button"]').first().click();
+  await page.locator('[data-cad-sketch-dimension="bevel"] [role="button"]').first().dblclick();
   await expect(page.getByRole('textbox', { name: 'Setback 1 mm', exact: true })).toHaveValue('2');
   await expect(page.getByRole('textbox', { name: 'Setback 2 mm', exact: true })).toHaveValue('3');
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
@@ -1387,8 +1387,12 @@ test('moves one shared graph point over an enclosing profile, with cancel, undo 
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   expect(await source()).toMatchObject({ feature: { graph: { points: [{ position: ['0', '0'] }, { position: [25, 0] }, { position: [20, 10] }, { position: [0, 10] }] } } });
   const beforeLocked = (await context(page)).version;
-  await page.getByRole('button', { name: 'Point 1 in Outline', exact: true }).press('ArrowRight');
+  const locked = page.getByRole('button', { name: 'Point 1 in Outline', exact: true });
+  await locked.press('ArrowRight');
   expect(await context(page)).toMatchObject({ version: beforeLocked, workflowOpen: false });
+  // The refused nudge still selects its point, and focus never selects, so Delete would remove Point 1; Space selects Point 2 first.
+  await expect(locked).toHaveAttribute('aria-pressed', 'true');
+  await point.press(' '); await expect(point).toHaveAttribute('aria-pressed', 'true'); await expect(locked).toHaveAttribute('aria-pressed', 'false');
   await point.press('Delete');
   await expect.poll(async () => (await context(page)).version).not.toBe(beforeLocked);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
@@ -1506,11 +1510,11 @@ test('edits graph relations and linked circle radius through the shared inspecto
   expect(inspection.analysis).toMatchObject({ kind: 'solved', degreesOfFreedom: 0 });
   const feature = await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' });
   expect(feature.feature.graph.points[2].position[0]).toBeCloseTo(45, 8);
-  await page.getByRole('button', { name: 'Configure distance 15 mm', exact: true }).click();
+  await page.getByRole('button', { name: 'Dimension distance 15 mm, press Enter to edit', exact: true }).dblclick();
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('17.5');
   await expect.poll(() => page.locator('[data-cad-sketch-entity="ab"] > line').evaluate(line => Number(line.getAttribute('x2')) - Number(line.getAttribute('x1')))).toBeCloseTo(17.5, 9);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await page.getByRole('button', { name: 'Configure distance 15 mm', exact: true }).click();
+  await page.getByRole('button', { name: 'Dimension distance 15 mm, press Enter to edit', exact: true }).dblclick();
   await expect(page.getByRole('textbox', { name: 'Length mm', exact: true })).toHaveValue('15');
   expect((await context(page)).version).toBe(current.version);
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'ring' } } });

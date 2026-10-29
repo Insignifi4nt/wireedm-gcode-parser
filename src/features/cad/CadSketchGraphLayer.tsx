@@ -19,6 +19,8 @@ import { cadSketchGeometryPickAllows, type CadSketchDatum, type CadSketchGeometr
 import { cadSketchSnapTargetLabel, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
+import { CadSketchHighlightOverlay } from './CadSketchHighlightOverlay';
+import { createCadSketchHighlightStore, NO_SKETCH_DIMENSION_IDS, type CadSketchDimensionPick, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import { cadSketchGeometryMark, type CadSketchDefinitionMarks, type CadSketchDiagnosisMarks, type CadSketchGeometryMark } from './cadSketchDefinitionMarks';
 
 type Prepared = ReturnType<typeof prepareCadSketchGraphInteraction>;
@@ -46,8 +48,20 @@ export interface CadSketchGraphControls {
   /** Plane references in the plain selection, beside the sketch geometry; a command pick lists its own. */
   readonly datumSelection?: readonly CadSketchDatum[];
   onSelectDatum?(datum: CadSketchDatum, additive: boolean): void;
-  onDelete?(selection: CadSketchGraphSelection): void;
+  /** Delete removes this selection; Delete on a focused point or edge passes `focused`, so the owner removes its selection and the element only while nothing is selected. */
+  onDelete?(selection: CadSketchGraphSelection, focused?: true): void;
   onConfigureRelation?(relation: CadSketchDimensionRelation): void;
+  /** Relation IDs of the dimensions selected on the canvas; a geometry selection replaces them. */
+  readonly dimensionSelection?: readonly string[];
+  /**
+   * Label commands name the dimension the label was drawn for. Delete without one removes the dimension selection; a focused label's
+   * Delete or Backspace passes its dimension and key, and the owner removes the selection and that dimension only while nothing is selected.
+   */
+  onSelectDimension?(dimension: CadSketchDimensionPick | null, additive: boolean): void;
+  onDeleteDimension?(dimension?: CadSketchDimensionPick, key?: 'Delete' | 'Backspace'): void;
+  onDimensionMenu?(dimension: CadSketchDimensionPick, at: { readonly clientX: number; readonly clientY: number }): void;
+  /** Hover highlight shared with the dock rows; without one the layer keeps its own. */
+  readonly highlight?: CadSketchHighlightStore;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   readonly onPrepareEdits?: CadPrepareEdits;
   onPreviewDocument?(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
@@ -145,16 +159,20 @@ const GraphPointRow = memo(function GraphPointRow({ point, original, graph, degr
  * Point and size handles share one gesture owner; solved previews never become accepted geometry. The layer is memoized,
  * so drawing-cursor moves in the canvas do not render every edge and point again; callers pass stable props.
  */
-export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, highlighted }: {
+export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, coversDimensionLine, highlighted }: {
   controls: CadSketchGraphControls; sketch: CadSketchFeature; version?: string; prepared: Prepared; visual?: Prepared;
   center: SketchPoint; scaleX: number; scaleY: number; gridStep: number; snap: boolean; gridSnap?: boolean; active: boolean; locked: boolean; cancelSignal: number;
   onPendingChange(pending: boolean): void; onError(message: string): void;
   filter?: CadSketchGraphPickFilter;
   pickAt?(event: { clientX: number; clientY: number }): CadSketchGraphSelection | null;
+  /** Whether a datum, profile grip or profile edge under the pointer keeps the pick from a dimension line or arrow. */
+  coversDimensionLine?(event: { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event }): boolean;
   highlighted?: CadSketchGraphSelection | null;
 }) {
   const submission = useCadEditSubmission();
+  const [ownHighlight] = useState(createCadSketchHighlightStore), highlightStore = controls.highlight ?? ownHighlight;
   const [intent, setIntent] = useState<Intent | null>(null);
+  const [dimensionHits, setDimensionHits] = useState<SVGGElement | null>(null);
   const drag = useRef<Drag | null>(null);
   const callbacks = useRef({ controls, onPendingChange, onError }); callbacks.current = { controls, onPendingChange, onError };
   const lastPreview = useRef<{ source: CadDocument; document: CadDocument } | null>(null);
@@ -379,7 +397,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     entityKey: (event, id) => {
       if (!edgeAllowed(id) || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'entity', id }, event.shiftKey); }
-      else if (event.key === 'Delete' && !controls.geometryPick && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id }); }
+      else if (event.key === 'Delete' && !controls.geometryPick && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id }, true); }
     },
     pointDown: (event, point) => {
       if (event.button !== 0 || !pointAllowed(point.id)) return;
@@ -407,7 +425,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       if (!pointAllowed(point.id) || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'point', id: point.id }, event.shiftKey); return; }
       if (controls.geometryPick) return;
-      if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'point', id: point.id }); return; }
+      if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'point', id: point.id }, true); return; }
       const step = gridStep * (event.shiftKey ? 10 : 1);
       const delta: SketchPoint | null = event.key === 'ArrowLeft' ? [-step, 0] : event.key === 'ArrowRight' ? [step, 0] : event.key === 'ArrowUp' ? [0, step] : event.key === 'ArrowDown' ? [0, -step] : null;
       if (!delta) return;
@@ -417,6 +435,8 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     }
   };
   return <g className={`cad-sketch-graph${interactive && !controls.geometryPick ? ' is-draggable' : ''}${intent && !submission.applying ? ' is-dragging' : ''}`} onKeyDown={event => { if (event.key === 'Escape' && (drag.current || intent || submission.applying)) { event.preventDefault(); event.stopPropagation(); cancel(); } }}>
+    {/* Dimension lines and arrows take the pointer beneath the points and edges, so the geometry they end on or cross keeps its picks. */}
+    <g ref={setDimensionHits} className="cad-sketch-graph-dimension-hits" />
     {displayed.geometry.segments.map((segment, index) => {
       const entity = entities.get(segment.id);
       return <GraphEntityRow key={segment.id} segment={segment} index={index} sketchName={sketch.name} selected={selected('entity', segment.id)}
@@ -464,8 +484,12 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       <path d={`M ${radiusGripX} ${shownCircle.center[1] - center[1] + 4 * scaleY} l ${4 * scaleX} ${-4 * scaleY} l ${-4 * scaleX} ${-4 * scaleY} l ${-4 * scaleX} ${4 * scaleY} Z`} className="cad-sketch-point-mark" />
       <title>{circle.lockedReason ?? (controls.degreesOfFreedom === 0 || circleDefined ? FULLY_DEFINED_HINT : `Radius ${formatCadQuantity(shownCircle.radius)} mm · Drag to resize, or use arrow keys`)}</title>
     </g>}
+    <CadSketchHighlightOverlay store={highlightStore} prepared={displayed} center={center} mmPerPixel={scaleY} selectedRelationIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSION_IDS} />
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
-      selectedRelationId={controls.relation?.id} interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)} />}
+      selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore} hitLayer={dimensionHits} covered={coversDimensionLine}
+      interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
+      onSelect={(dimension, additive) => controls.onSelectDimension?.(dimension, additive)} onDelete={(dimension, key) => controls.onDeleteDimension?.(dimension, key)}
+      onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} />}
     {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${rejection !== null || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.kind === 'translate' ? intent.anchor[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}
       cy={(intent.kind === 'point' ? intent.point.position[1] + intent.translation[1] : intent.kind === 'translate' ? intent.anchor[1] + intent.translation[1] : intent.circle.center[1]) - center[1]} r={5 * scaleY}>

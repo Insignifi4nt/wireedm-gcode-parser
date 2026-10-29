@@ -25,12 +25,12 @@ test('persists passive dimensions through private sketch Finish and converts a d
     expect.objectContaining({kind:'reference-dimension',measurement:{kind:'point-distance',pointIds:['a','c']}}),
     expect.objectContaining({kind:'reference-dimension',measurement:{kind:'radial-size',entityId:'bore',quantity:'diameter'}})]}});
   await call(page,'cad_edit_document',{expectedVersion:current.version,edits:[{kind:'set-parameter',name:'width',value:60}]});current=await context(page);
-  await edit();await expect(page.getByRole('button',{name:'Inspect reference distance 63.245553 mm',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Inspect reference diameter 6 mm',exact:true}).click();
+  await edit();await expect(page.getByRole('button',{name:'Reference dimension distance 63.245553 mm, press Enter to edit',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Reference dimension diameter 6 mm, press Enter to edit',exact:true}).dblclick();
   await page.getByRole('button',{name:'Make driving',exact:true}).click();await page.getByRole('textbox',{name:'Diameter mm',exact:true}).fill('8');
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
   expect((await call(page,'cad_get_feature',{expectedVersion:current.version,featureId:'plate'})).feature).toEqual(measured);
-  await page.getByRole('button',{name:'Inspect reference diameter 6 mm',exact:true}).click();await page.getByRole('button',{name:'Make driving',exact:true}).click();
+  await page.getByRole('button',{name:'Reference dimension diameter 6 mm, press Enter to edit',exact:true}).dblclick();await page.getByRole('button',{name:'Make driving',exact:true}).click();
   await page.getByRole('textbox',{name:'Diameter mm',exact:true}).fill('8');await apply();await finish();current=await context(page);
   const driven=(await call(page,'cad_get_feature',{expectedVersion:current.version,featureId:'plate'})).feature;
   expect(driven).toMatchObject({graph:{points:sketch.graph.points,entities:[...sketch.graph.entities.slice(0,4),{...sketch.graph.entities[4],radius:4}],relations:[

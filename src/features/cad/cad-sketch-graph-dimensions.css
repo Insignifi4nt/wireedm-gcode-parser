@@ -1,2 +1,29 @@
+/* Thin annotation styling: 1 px lines, slim arrows and haloed mono text, no label box. */
+.cad-sketch-graph-dimension { color: var(--muted-foreground); }
+.cad-sketch-graph-dimension.is-reference { color: color-mix(in srgb, var(--muted-foreground) 62%, transparent); }
+/* Hover and focus brighten an unselected dimension only; a selected one keeps the selection colour, and focus keeps its underline. */
+.cad-sketch-graph-dimension:not(.is-selected):is(.is-interactive:hover, .is-pointed, :has(.cad-sketch-graph-dimension-label:focus-visible)) { color: var(--foreground); }
+.cad-sketch-graph-dimension.is-selected { color: var(--primary); }
+.cad-sketch-graph-dimension.is-interactive { cursor: pointer; }
+.cad-sketch-graph-dimension-lines { fill: none; stroke: currentColor; }
+/* Only the label takes the pointer here; the lines and arrows take it beneath the sketch geometry. */
+.cad-sketch-graph-dimension-lines { pointer-events: none; }
+.cad-sketch-graph-dimension-lines :is(line, path) { stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.cad-sketch-graph-dimension-extension { stroke-opacity: .45; }
+.cad-sketch-graph-dimension-arrow { fill: currentColor; stroke: none; }
+.cad-sketch-graph-dimension-pick { cursor: pointer; }
+.cad-sketch-graph-dimension-pick :is(line, path) { fill: none; stroke: transparent; stroke-width: 7px; vector-effect: non-scaling-stroke; pointer-events: stroke; }
+.cad-sketch-graph-dimension-pick polygon { fill: transparent; stroke: none; pointer-events: fill; }
 .cad-sketch-graph-dimension-label { outline: none; }
-.cad-sketch-graph-dimension-label:is(:hover, :focus-visible, [aria-pressed="true"]) .cad-sketch-graph-dimension-label-box { stroke: var(--primary); stroke-width: 1.5; }
+.cad-sketch-graph-dimension-hit { fill: transparent; stroke: none; }
+.cad-sketch-graph-dimension-text {
+  fill: currentColor; font-family: var(--font-mono); font-size: 10.5px; font-weight: 400; pointer-events: none;
+  /* A halo in the canvas colour keeps the value readable over geometry and the grid. */
+  paint-order: stroke; stroke: color-mix(in srgb, var(--cad-view-top, var(--background)) 50%, var(--cad-view-bottom, var(--background))); stroke-width: 3px; stroke-linejoin: round;
+}
+.cad-sketch-graph-dimension-label:focus-visible .cad-sketch-graph-dimension-text { text-decoration: underline; }
+
+/* Geometry measured by a hovered or selected dimension, and by a hovered dock row. */
+.cad-sketch-highlight { fill: none; stroke: var(--warning, #f0bf71); }
+.cad-sketch-highlight :is(line, path, circle) { stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.cad-sketch-highlight .cad-sketch-highlight-point { fill: var(--warning, #f0bf71); stroke: var(--foreground); stroke-width: 1px; }

@@ -43,6 +43,12 @@ function button(label: string) {
   if (!match) throw new Error(`Missing button ${label}`); return match;
 }
 async function click(label: string) { await act(async () => button(label).click()); }
+/** On-part chips select on click; a double-click opens their editor, as on canvas dimensions. */
+function chip(label: string) {
+  const match = Array.from(document.querySelectorAll<HTMLButtonElement>('.cad-dimension-chips > button')).find(element => element.getAttribute('aria-label')?.startsWith(`Dimension ${label.toLowerCase()} `));
+  if (!match) throw new Error(`Missing ${label} chip`); return match;
+}
+async function openChip(label: string) { await act(async () => chip(label).dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, detail: 2 }))); }
 function field(label: string) { const input = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`); if (!input) throw new Error(`Missing field ${label}`); return input; }
 async function input(label: string, value: string) {
   const element = field(label), setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
@@ -105,7 +111,7 @@ describe('gear configuration and canvas integration', () => {
     const { session, edits } = await mount(gearDocument(true)); const original = session.getSnapshot().document;
     await openGear(); await click('Edit Module relation'); expect(session.getSnapshot().workflowOpen).toBe(false);
     await input('Module expression', 'module * 2');
-    expect(session.getSnapshot().workflowOpen).toBe(true); expect(button('Parameters').disabled).toBe(true); expect(button('Edit Module').disabled).toBe(true);
+    expect(session.getSnapshot().workflowOpen).toBe(true); expect(button('Parameters').disabled).toBe(true); expect(chip('Module').disabled).toBe(true);
     expect(session.getSnapshot().document).toBe(original); expect(edits).not.toHaveBeenCalled();
     await click('Close Module relation help'); expect(session.getSnapshot().workflowOpen).toBe(false); expect(profileModule(session)).toBe('module');
   });
@@ -135,7 +141,7 @@ describe('gear configuration and canvas integration', () => {
   });
   it('keeps an on-part editor usable through its own lock while blocking other workflow races', async () => {
     const { session, edits } = await mount(gearDocument(true)); await openGear();
-    await click('Edit Module relation'); await click('Edit Module');
+    await click('Edit Module relation'); await openChip('Module');
     expect(session.getSnapshot().workflowOpen).toBe(true); expect(field('Module value').disabled).toBe(false);
     await input('Module expression', 'module * 2');
     expect(field('Module value').disabled).toBe(true); const onPartApply = container.querySelector<HTMLButtonElement>('.cad-dimension-edit button[type="submit"]'); expect(onPartApply?.disabled).toBe(true);
@@ -144,14 +150,14 @@ describe('gear configuration and canvas integration', () => {
   it('edits on-part teeth and module with domain validation and one atomic history step each', async () => {
     const { session, edits } = await mount(gearDocument(true)); await openGear();
     const original = session.getSnapshot().document;
-    await click('Edit Teeth'); expect(field('Teeth value').disabled).toBe(false); expect(session.getSnapshot().workflowOpen).toBe(true);
+    await openChip('Teeth'); expect(field('Teeth value').disabled).toBe(false); expect(session.getSnapshot().workflowOpen).toBe(true);
     expect(button('Circle').disabled).toBe(true); await click('Circle'); expect(field('Teeth value').disabled).toBe(false);
     expect(container.querySelector<HTMLInputElement>('.cad-sketch-options input')?.disabled).toBe(true);
     await input('Teeth value', '12.5'); expect(container.querySelector('.cad-dimension-error')?.textContent).toContain('integer');
     const apply = container.querySelector<HTMLButtonElement>('.cad-dimension-edit button[type="submit"]'); expect(apply?.disabled).toBe(true); expect(session.getSnapshot().document).toBe(original);
     await input('Teeth value', '12'); await click('Apply'); expect(session.getSnapshot().document.parameters.teeth).toBe(12); expect(session.getSnapshot().workflowOpen).toBe(false); expect(edits).toHaveBeenCalledTimes(1);
     await act(async () => session.undo()); expect(session.getSnapshot().document).toEqual(original); expect(session.getSnapshot().canUndo).toBe(false);
-    await click('Edit Module'); await input('Module value', '4'); await click('Apply'); expect(session.getSnapshot().document.parameters.module).toBe(4); expect(profileModule(session)).toBe('module'); expect(edits).toHaveBeenCalledTimes(2);
+    await openChip('Module'); await input('Module value', '4'); await click('Apply'); expect(session.getSnapshot().document.parameters.module).toBe(4); expect(profileModule(session)).toBe('module'); expect(edits).toHaveBeenCalledTimes(2);
     await act(async () => session.undo()); expect(session.getSnapshot().document).toEqual(original); expect(session.getSnapshot().canUndo).toBe(false);
   });
 });

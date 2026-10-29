@@ -11,6 +11,7 @@ New work uses semantic theme tokens. Shared control CSS contains no literal colo
 | Role | Existing tokens |
 | --- | --- |
 | Page and panels | `--background` / `--foreground`, `--card` / `--card-foreground`, `--surface-raised`, `--surface-inset` |
+| Drawing annotations | `--annotation-halo` behind annotation text; a drawing surface may set it to its own backdrop |
 | Popups and help | `--popover` / `--popover-foreground`, `--popup-shadow` |
 | Main action | `--primary` / `--primary-foreground`, `--primary-hover` |
 | Quiet action and selection | `--secondary` / `--secondary-foreground`, `--accent` / `--accent-foreground` |
@@ -43,7 +44,7 @@ Icons come from `@wire-edm/icons-react`. Use semantic named exports such as `Pad
 
 | Component or pattern | Contract |
 | --- | --- |
-| `Button` | Native props/ref and omitted-type behavior. Default `ghost` / `compact` is quiet and 24px. `primary` and its `default` alias identify the main action; `secondary`, `outline`, `danger`, `menu` and `scrim` express existing intent. Sizes are `compact`, its `sm` alias, `md` at 28px, `icon` and `menu`. Use explicit `type="button"` for commands inside forms. `asChild` retains child semantics. |
+| `Button` | Native props/ref and omitted-type behavior. Default `ghost` / `compact` is quiet and 24px. `primary` and its `default` alias identify the main action; `secondary`, `outline`, `danger`, `menu` and `scrim` express existing intent. `annotation` is a value placed on a drawing: no box, haloed monospace text, the shared focus ring and a small pointer target around the text; pressed or expanded shows in the primary colour. Sizes are `compact`, its `sm` alias, `md` at 28px, `icon` and `menu`. Use explicit `type="button"` for commands inside forms. `asChild` retains child semantics. |
 | `Input` | Native types, labels, constraints, values and refs. Default 28px; `density="compact"` is 24px. Checkbox, radio, range, color and file types retain native behavior and intrinsic size. |
 | `Textarea` | Native multiline editing, selection, reset, rows and refs. Content/layout owns height; source editors retain monospace, whitespace and independent scrolling. |
 | `Select` | One native select with options/optgroups, native values, forms and keyboard behavior. `density="compact"` gives a quiet 24px toolbar trigger. No mirrored selection state. |

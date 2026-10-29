@@ -243,7 +243,8 @@
 .cad-sketch-handle { fill: var(--card); stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; cursor: grab; }
 .cad-sketch-handle:hover, .cad-sketch-handle.is-active, .cad-sketch-handle:focus-visible { fill: var(--primary); stroke: var(--foreground); outline: none; }
 .cad-sketch-handle.is-locked { stroke: var(--muted-foreground); cursor: not-allowed; }
-.cad-sketch-entity-hit { stroke: transparent; fill: none; pointer-events: stroke; }
+/* The hit stroke stays continuous on dashed construction edges, so a press in a dash gap reaches the edge and not what lies beneath. */
+.cad-sketch-entity-hit { stroke: transparent; fill: none; pointer-events: stroke; stroke-dasharray: none; }
 .cad-sketch-entity, .cad-sketch-entity.is-selected { fill: none; }
 .cad-sketch-entity:not([aria-disabled]):hover { stroke: #d6f6ff; }
 .cad-sketch-entity.is-selected { stroke: var(--primary); }
