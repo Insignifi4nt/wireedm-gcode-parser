@@ -63,7 +63,12 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
   const labels = useRef(new Map<string, SVGGElement>());
   const hide = () => { if (hovered.current) highlight?.hide(hovered.current); hovered.current = null; point(null); };
   const hideOnUnmount = useRef(hide); hideOnUnmount.current = hide;
-  useEffect(() => () => hideOnUnmount.current(), []);
+  // A window that loses focus never sends the pointer leave, so it drops the hover too.
+  useEffect(() => {
+    const blur = () => hideOnUnmount.current();
+    window.addEventListener('blur', blur);
+    return () => { window.removeEventListener('blur', blur); hideOnUnmount.current(); };
+  }, []);
   // A render that rewrites the group's class keeps the mark; a dimension that is gone, or whose line no longer takes the pointer, drops it.
   useLayoutEffect(() => {
     const current = pointed.current; if (!current) return;

@@ -180,3 +180,33 @@ test('leaves every pointer action on a point or an edge under a dimension line o
   await page.keyboard.press('Escape'); await expect(reference).toHaveCount(0);
   await page.mouse.dblclick(between.x, between.y); await expect(editor).toHaveValue('10');
 });
+
+test('leaves a construction edge its picks in the gaps of its dashes, where a dimension line or arrow lies beneath', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'plate', kind: 'sketch', name: 'Plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'o', position: [30, 20] }], entities: [{ id: 'hole', kind: 'circle', centerPointId: 'o', radius: 10, construction: true }],
+    relations: [{ id: 'size', kind: 'radial-size', entityId: 'hole', quantity: 'radius', value: 10 }] } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  await (await historyRow(page, 'Plate')).dblclick();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeVisible();
+  const label = page.locator('[data-cad-sketch-dimension="size"] [role="button"]'), edge = page.locator('[data-cad-sketch-entity="hole"]');
+  // Every place on the dashed circle answers with the circle, gaps included; only the value label, which keeps its pick, may cover it.
+  const owners = await page.locator('[data-cad-sketch-point="o"] .cad-sketch-point-mark').evaluate(mark => {
+    const centre = mark.getBoundingClientRect(), x = centre.x + centre.width / 2, y = centre.y + centre.height / 2;
+    const hit = document.querySelector('[data-cad-sketch-dimension-hit="size"]') as SVGGElement, line = hit.querySelector('line')!;
+    const [tipX, tipY] = hit.querySelector('polygon')!.getAttribute('points')!.split(' ')[0].split(',').map(Number);
+    const tip = new DOMPoint(tipX, tipY).matrixTransform(line.getScreenCTM()!), radius = Math.hypot(tip.x - x, tip.y - y);
+    const counts = { edge: 0, label: 0, other: [] as string[] };
+    for (let step = 0; step < 180; step += 1) {
+      const angle = step * Math.PI / 90, element = document.elementFromPoint(x + radius * Math.cos(angle), y + radius * Math.sin(angle));
+      if (element?.closest('[data-cad-sketch-entity="hole"]')) counts.edge += 1;
+      else if (element?.closest('[data-cad-sketch-dimension="size"]')) counts.label += 1;
+      else counts.other.push(element ? element.getAttribute('class') ?? element.tagName : 'none');
+    }
+    return { ...counts, tip: { x: tip.x, y: tip.y } };
+  });
+  expect(owners.other).toEqual([]); expect(owners.edge).toBeGreaterThan(150);
+  // At the arrow tip, the circle takes the click and the dimension stays unselected.
+  await page.mouse.click(owners.tip.x, owners.tip.y);
+  await expect(edge).toHaveAttribute('aria-pressed', 'true'); await expect(label).toHaveAttribute('aria-pressed', 'false');
+});

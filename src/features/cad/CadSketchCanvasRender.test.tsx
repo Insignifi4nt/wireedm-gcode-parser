@@ -249,5 +249,9 @@ describe('sketch canvas cursor rendering', () => {
     expect(await hover(.5)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true); expect(datums()).toEqual([]);
     // Only the overlay draws the measured edge, once for each time the line takes the hover; no row or dimension renders again.
     expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual(['ab', 'ab']); expect(dimensionRenders).not.toHaveBeenCalled();
+    // A window that loses focus sends no pointer leave; it still drops the mark and the measured edge.
+    expect(container.querySelector('[data-cad-highlight-entity="ab"]')).not.toBeNull();
+    await act(async () => { window.dispatchEvent(new Event('blur')); });
+    expect(pointed()).toBe(false); expect(container.querySelector('[data-cad-highlight-entity]')).toBeNull();
   });
 });
