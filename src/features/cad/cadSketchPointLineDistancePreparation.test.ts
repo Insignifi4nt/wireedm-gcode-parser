@@ -149,3 +149,46 @@ describe('the stored side of a point to line distance', () => {
     expect(graphOf(session.getSnapshot().document).relations).toEqual([gap(10, 'left')]);
   });
 });
+
+describe('a line whose endpoints an edit swaps', () => {
+  // The base runs (0,0) to (20,0) with the point held 4 to its left, above it.
+  const source = () => part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'p', position: [5, 4] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }],
+    relations: [{ id: 'floor', kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }, gap(4, 'left')] });
+  const swapped = (document: CadDocument, changes: { readonly side?: 'left' | 'right'; readonly p?: readonly [number, number] } = {}) => {
+    const graph = graphOf(document), sketch = document.features[0];
+    return { kind: 'update-feature', feature: { ...sketch, graph: { ...graph,
+      points: graph.points.map(point => point.id === 'p' && changes.p ? { ...point, position: changes.p } : point),
+      entities: graph.entities.map(entity => entity.kind === 'line' ? { ...entity, startPointId: entity.endPointId, endPointId: entity.startPointId } : entity),
+      relations: graph.relations.map(relation => relation.kind === 'point-line-distance' && changes.side ? { ...relation, side: changes.side } : relation) } } } as const;
+  };
+  const sideOf = (document: CadDocument) => graphOf(document).relations.find(relation => relation.kind === 'point-line-distance')?.side;
+
+  it('keeps the point where it is when only the endpoint order changes', async () => {
+    const reversed = await prepareCadEdits(source(), [swapped(source())], runtime);
+    expect(position(reversed.document, 'p')).toEqual([expect.closeTo(5, 9), expect.closeTo(4, 9)]);
+    expect(sideOf(reversed.document)).toBe('right');
+    expect(checkCadSketchGraph(graphOf(reversed.document), reversed.document.parameters)).toEqual([]);
+    // Turning it back restores the original side.
+    const restored = await prepareCadEdits(reversed.document, [swapped(reversed.document)], runtime);
+    expect(position(restored.document, 'p')).toEqual([expect.closeTo(5, 9), expect.closeTo(4, 9)]);
+    expect(sideOf(restored.document)).toBe('left');
+  });
+
+  it('respects a side the same edit or batch states', async () => {
+    // Right of the reversed line is above it, so the stated side carries a point that arrives below back up.
+    const restated = await prepareCadEdits(source(), [swapped(source(), { side: 'right', p: [5, -4] })], runtime);
+    expect(position(restated.document, 'p')[1]).toBeCloseTo(4, 9);
+    expect(sideOf(restated.document)).toBe('right');
+    // Left of the reversed line, set by a later edit in the batch, is below it.
+    const crossed = await prepareCadEdits(source(), [swapped(source()), set(gap(4, 'left'))], runtime);
+    expect(position(crossed.document, 'p')[1]).toBeCloseTo(-4, 9);
+    expect(sideOf(crossed.document)).toBe('left');
+  });
+
+  it('keeps a side the incoming point already lies on, as a sketch draft publishes it', async () => {
+    const published = await prepareCadEdits(source(), [swapped(source(), { p: [5, -4] })], runtime);
+    expect(position(published.document, 'p')[1]).toBeCloseTo(-4, 9);
+    expect(sideOf(published.document)).toBe('left');
+  });
+});
