@@ -258,12 +258,12 @@ describe('graph spatial selection', () => {
     const held = new Set<number>(), release = vi.fn();
     Object.assign(canvas, { setPointerCapture: (id: number) => held.add(id), hasPointerCapture: (id: number) => held.has(id),
       releasePointerCapture: (id: number) => { held.delete(id); release(id); } });
-    const pointer = async (type: string, x: number, y: number, shiftKey = false, pointerId = 7, button = 0, target: Element = canvas, modifiers: Pick<MouseEventInit, 'ctrlKey' | 'metaKey'> = {}) => {
+    const pointer = async (type: string, x: number, y: number, shiftKey = false, pointerId = 7, button = 0, target: Element = canvas, modifiers: Pick<MouseEventInit, 'ctrlKey' | 'metaKey'> = {}, isPrimary = true) => {
       const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
       const event = new MouseEvent(type, { button, buttons: type === 'pointerup' ? 0 : button === 2 ? 2 : 1, bubbles: true, cancelable: true, shiftKey,
         clientX: 510 + (x - state.centerMm[0]) / (state.heightSpanMm * 2) * 1000,
         clientY: 270 - (y - state.centerMm[1]) / state.heightSpanMm * 500, ...modifiers });
-      Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: true } });
+      Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: isPrimary } });
       await act(async () => target.dispatchEvent(event));
     };
     return { feature, props: () => props, show, canvas, pointer, selected, selectedSet, edited, deleted, pending, error, release };
@@ -420,6 +420,9 @@ describe('graph spatial selection', () => {
       await act(async () => h.canvas.dispatchEvent(event));
     };
     await interrupted(async () => { await contact('pointerdown'); await contact('pointerup'); });
+    // Sketch geometry stops a press from reaching the canvas, so a second touch on a point still abandons the held press.
+    const point = container.querySelector('[data-cad-sketch-point="c"]'); if (!point) throw new Error('Point missing.');
+    await interrupted(async () => { await h.pointer('pointerdown', 30, 20, false, 8, 0, point, {}, false); await h.pointer('pointerup', 30, 20, false, 8, 0, point, {}, false); });
     expect(datum).not.toHaveBeenCalled(); expect(selectProfile).not.toHaveBeenCalled();
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
     expect(datum).toHaveBeenCalledExactlyOnceWith('x-axis', false); expect(selectProfile).not.toHaveBeenCalled();

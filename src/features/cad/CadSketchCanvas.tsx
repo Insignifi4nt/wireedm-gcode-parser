@@ -968,6 +968,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     <svg ref={svg} className={`cad-sketch-canvas ${drawing ? 'is-drawing' : tool === 'trim' ? 'is-trimming' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio="none"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDownCapture={event => {
+        // Another contact while an axis is held abandons the press and its trailing click; the same pointer pressing again replaces it.
+        // This runs while capturing, since sketch geometry stops the press from reaching the canvas.
+        if (datumPress.current && datumPress.current.pointerId !== event.pointerId) dropDatumPress(); else datumPress.current = null;
         if (positionPick && event.button === 0) {
           event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true;
           if (event.isPrimary === false || interactionLocked || viewLocked || isPreview || pan.current || profileDrag.current) return;
@@ -983,8 +986,6 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       }}
       onClickCapture={event => { if (positionPick && event.button === 0 && event.detail > 0) { event.preventDefault(); event.stopPropagation(); } }}
       onPointerDown={(event) => {
-        // Another contact while an axis is held abandons the press and its trailing click; the same pointer pressing again replaces it.
-        if (datumPress.current && datumPress.current.pointerId !== event.pointerId) dropDatumPress(); else datumPress.current = null;
         if (boxSelection.active()) { boxSelection.begin(event); return; }
         if (profileDrag.current) return;
         // Only the primary pointer owns the trailing click; a second contact must not release its suppression.
