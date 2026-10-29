@@ -390,6 +390,20 @@ describe('graph spatial selection', () => {
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
     expect(datum.mock.calls).toEqual([['x-axis', false], ['x-axis', false]]); expect(translate).toHaveBeenCalledOnce(); expect(move).toHaveBeenCalledOnce();
   });
+  it('drops a press on an axis when the document, cancellation, interaction lock or window focus changes before release', async () => {
+    const h = await spatialFixture(), datum = vi.fn();
+    const profile = { id: 'legacy', name: 'Legacy rectangle', construction: false, geometry: { kind: 'rectangle' as const, x: -30, y: -5, width: 10, height: 10, cornerRadius: 0 } };
+    await h.show({ sketch: { ...h.feature, profiles: [profile] }, onSelectProfile: vi.fn(), graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
+    // Inside the unselected rectangle a press on the H axis starts neither a box nor a profile drag, so only the press itself can go stale.
+    const interrupted = async (change: () => Promise<unknown>) => { await h.pointer('pointerdown', -25, 0); await change(); await h.pointer('pointerup', -25, 0); };
+    await interrupted(() => h.show({ documentVersion: 'v2' }));
+    await interrupted(() => h.show({ cancelSignal: h.props().cancelSignal + 1 }));
+    await interrupted(async () => { await h.show({ interactionLocked: true }); await h.show({ interactionLocked: false }); });
+    await interrupted(() => act(async () => window.dispatchEvent(new Event('blur'))));
+    expect(datum).not.toHaveBeenCalled();
+    await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0);
+    expect(datum).toHaveBeenCalledExactlyOnceWith('x-axis', false);
+  });
   it('clears a datum-only selection on Escape and drops panned-away datums from the keyboard order', async () => {
     const h = await spatialFixture(), origin = () => container.querySelector('[data-cad-sketch-datum="origin"]');
     await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: vi.fn(), datumSelection: ['x-axis'] } });

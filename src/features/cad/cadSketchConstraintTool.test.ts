@@ -106,6 +106,24 @@ describe('cadSketchConstraintStep', () => {
     expect(stepIn(pinned, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line is fixed away from the X axis. Remove that relation first.' });
   });
 
+  it('reads coordinate expressions and joined endpoints when laying a line on an axis', () => {
+    const at = (id: string, position: CadSketchGraph['points'][number]['position']) => graph.points.map(point => point.id === id ? { ...point, position } : point);
+    // A Y written as an expression that is always zero holds that endpoint on the X axis; any other expression holds it elsewhere.
+    expect(stepIn({ ...graph, points: at('a', [0, '0']) }, 'coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
+    expect(stepIn({ ...graph, points: at('a', [0, '1 - 1']) }, 'coincident', 'x-axis', 'ab')).toMatchObject({ relations: { length: 1 } });
+    expect(stepIn({ ...graph, points: at('a', [0, 'h']) }, 'coincident', 'ab', 'x-axis'))
+      .toEqual({ status: 'invalid', reason: 'An endpoint of this line has its Y set by an expression away from the X axis. Edit that coordinate first.' });
+    expect(stepIn({ ...graph, points: at('e', [60, '0']) }, 'coincident', 'e', 'x-axis')).toEqual({ status: 'invalid', reason: 'This point is already on the X axis.' });
+    // Orientation through a joined endpoint: a joins q, so q–b level means a–b is level, and q–b upright means a–b is upright.
+    const joined = (kind: 'horizontal' | 'vertical'): CadSketchGraph => ({ ...graph, points: [...graph.points, { id: 'q', position: [0, 0] }],
+      relations: [{ id: 'j', kind: 'coincident', pointIds: ['a', 'q'] }, { id: 'o', kind, pointIds: ['q', 'b'] }] });
+    expect(stepIn(joined('horizontal'), 'coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }] });
+    expect(stepIn(joined('horizontal'), 'coincident', 'ab', 'x-axis')).toMatchObject({ relations: { length: 1 } });
+    expect(stepIn(joined('vertical'), 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'This line is vertical, so it cannot lie on the X axis. Remove that relation first.' });
+    expect(stepIn(joined('horizontal'), 'parallel', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'This line is already horizontal.', applied: ['o'] });
+    expect(stepIn(joined('vertical'), 'horizontal', 'ab')).toEqual({ status: 'invalid', reason: 'This is already vertical.' });
+  });
+
   it('counts an endpoint that any relation already holds on the axis, and constrains only the other one', () => {
     const line = (relations: CadSketchGraph['relations'], points: CadSketchGraph['points'] = graph.points): CadSketchGraph => ({ ...graph, points, relations: [...graph.relations, ...relations] });
     // An endpoint fixed at the origin, or fixed anywhere on the axis, already lies on it.

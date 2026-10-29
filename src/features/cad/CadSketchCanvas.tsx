@@ -243,7 +243,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
    * A plain-selection press on the origin or an axis. It selects the reference on release, so a press that travels past the
    * drag slop first still boxes or moves a profile exactly as it would away from the axes.
    */
-  const datumPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; readonly datum: CadSketchDatum; readonly additive: boolean } | null>(null);
+  const datumPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; readonly datum: CadSketchDatum; readonly additive: boolean; readonly documentVersion: string | undefined; readonly sketchId: string; readonly cancelSignal: number } | null>(null);
   /**
    * Counts drawing draft changes and whether the latest one added a point. A press keeps its release only while its own
    * change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick during the press, ends it.
@@ -274,9 +274,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     return active;
   }, []);
   useEffect(() => {
-    const blurred = () => finishProfileDrag();
+    // Losing the window ends a press on the origin or an axis without selecting it, as it ends a profile drag.
+    const blurred = () => { datumPress.current = null; finishProfileDrag(); };
     window.addEventListener('blur', blurred);
-    return () => { window.removeEventListener('blur', blurred); finishProfileDrag(); };
+    return () => { window.removeEventListener('blur', blurred); datumPress.current = null; finishProfileDrag(); };
   }, [finishProfileDrag]);
   const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; button: number; buttonMask: number; moved: boolean; element: SVGSVGElement } | null>(null);
   const finishPan = useCallback((pointerId?: number) => {
@@ -354,7 +355,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const visibleHandles = previewHandlePicker.handles.filter(handle => handle.profileId === handleProfile?.id);
   const displayHandles = hoverHandle && hoverHandle.profileId !== handleProfile?.id ? [...visibleHandles, hoverHandle] : visibleHandles;
   useLayoutEffect(() => { finishPan(); }, [documentVersion, interactionLocked, cancelSignal, sketch.id, profilePicker, finishPan]);
-  useLayoutEffect(() => { finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridSnap, gridStep, navigationMode, finishProfileDrag]);
+  useLayoutEffect(() => { datumPress.current = null; finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridSnap, gridStep, navigationMode, finishProfileDrag]);
   useLayoutEffect(() => {
     if (profileDrag.current && profileDrag.current.profile.id !== selectedProfileId) finishProfileDrag();
     setDetailSelection(current => current.kind === 'handle' && current.target.profileId === selectedProfileId ? current : { kind: 'profile' });
@@ -1029,7 +1030,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             }
             const grip = pickFilter === 'auto' && onMoveHandle && point && rect.height ? pickGrip(event, point, span / rect.height) : null;
             const datum = datumSelect && point && rect.height ? datumUnder(point, span / rect.height, Boolean(grip)) : null;
-            if (datum) datumPress.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, datum, additive: event.shiftKey };
+            if (datum) datumPress.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, datum, additive: event.shiftKey, documentVersion, sketchId: sketch.id, cancelSignal };
             if (grip) {
               setActiveHandle(grip);
               if (selectedProfileId !== grip.profileId) onSelectProfile(grip.profileId);
@@ -1067,7 +1068,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (reference && event.pointerId === reference.pointerId) {
           datumPress.current = null;
           // A press that stayed within the drag slop selects the reference; the box or profile drag it started ends unapplied.
-          if (event.button === 0 && datumSelect && !interactionLocked && Math.hypot(event.clientX - reference.clientX, event.clientY - reference.clientY) <= 4) {
+          // It belongs to the document, sketch and cancellation it began in.
+          const current = reference.documentVersion === documentVersion && reference.sketchId === sketch.id && reference.cancelSignal === cancelSignal;
+          if (event.button === 0 && current && datumSelect && !interactionLocked && Math.hypot(event.clientX - reference.clientX, event.clientY - reference.clientY) <= 4) {
             if (boxSelection.active()) boxSelection.cancel(false);
             finishProfileDrag(event.pointerId);
             chooseDatum(reference.datum, reference.additive); suppressProfileClick.current = true;

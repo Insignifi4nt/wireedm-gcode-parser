@@ -56,6 +56,18 @@ describe('constraints with the plane origin and axes, solved natively', () => {
     expect(at(joined.document, 'c')[1]).toBeCloseTo(0, 9);
   });
 
+  it('counts an endpoint whose coordinate expression is zero, and a line level through a joined point, as already on the axis', async () => {
+    const written = await constrain(part([], { a: [0, '0'] as unknown as [number, number] }), 'coincident', 'ab', 'x-axis');
+    expect(written.step.relations).toEqual([expect.objectContaining({ kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 })]);
+    expect(written.diagnostics).toMatchObject({ status: 'success', redundantIds: [], issues: [] });
+    expect(at(written.document, 'b')[1]).toBeCloseTo(0, 9);
+    // a joins q and q–b is horizontal, so a–b is already level and one endpoint lays it on the axis.
+    const aliased = await constrain(part([{ id: 'j', kind: 'coincident', pointIds: ['a', 'q'] }, { id: 'h', kind: 'horizontal', pointIds: ['q', 'b'] }], { q: [0, 0], b: [10, 0] }), 'coincident', 'x-axis', 'ab');
+    expect(aliased.step.relations).toHaveLength(1);
+    expect(aliased.diagnostics).toMatchObject({ status: 'success', redundantIds: [], issues: [] });
+    for (const id of ['a', 'b']) expect(at(aliased.document, id)[1]).toBeCloseTo(0, 9);
+  });
+
   it('keeps the center of a circle or arc on an axis, and the arc ends follow', async () => {
     const circle = await constrain(part([]), 'coincident', 'ring', 'x-axis');
     expect(circle.diagnostics).toMatchObject({ status: 'success', redundantIds: [], issues: [] });

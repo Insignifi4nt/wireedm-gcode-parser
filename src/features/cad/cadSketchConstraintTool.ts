@@ -37,11 +37,12 @@ export type CadSketchConstraintStep =
 
 type Entity = CadSketchGraphEntity;
 /**
- * How a point already holds the coordinate a plane reference sets to zero. `ids` are the relations holding it there; `away`
- * says what holds it elsewhere. Only fixed coordinates are `removable`: removing a fixed point or a linked reference would
- * release more than this coordinate.
+ * How a point already holds the coordinate a plane reference sets to zero. `held` says something holds it there: a relation
+ * listed in `ids`, or a coordinate expression that is always zero. `away` says what holds it elsewhere. Only fixed coordinates
+ * are `removable`: removing a fixed point or a linked reference would release more than this coordinate, and an expression
+ * is edited, not removed.
  */
-type Hold = { readonly ids: readonly string[]; readonly removable: boolean; readonly away: 'dimension' | 'fixed' | 'linked' | null };
+type Hold = { readonly held: boolean; readonly ids: readonly string[]; readonly removable: boolean; readonly away: 'dimension' | 'fixed' | 'linked' | 'expression' | null };
 const isLine = (entity: Entity | undefined): entity is Extract<Entity, { kind: 'line' }> => entity?.kind === 'line';
 const isCurve = (entity: Entity | undefined): entity is Extract<Entity, { kind: 'arc' | 'circle' }> => entity?.kind === 'arc' || entity?.kind === 'circle';
 const samePoints = (ids: readonly string[], pair: readonly [string, string]) => ids.length === 2 && ids.includes(pair[0]) && ids.includes(pair[1]);
@@ -70,19 +71,33 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
     const reason = check ? attempt(check) : null;
     return reason ? invalid(reason) : { status: 'ready', relations: [relation] };
   };
+  // A point shares its position with every point joined to it, so a relation on any of them holds it too.
+  let identityOf: ((pointId: string) => string) | undefined;
+  const identity = (pointId: string) => (identityOf ??= resolveCadSketchPointIdentities(graph))(pointId);
+  const sameJoints = (ids: readonly string[], pair: readonly [string, string]) => {
+    if (ids.length !== 2) return false;
+    const [a, b, p, q] = [ids[0], ids[1], pair[0], pair[1]].map(identity);
+    return a === p && b === q || a === q && b === p;
+  };
   const axisRelation = (kind: 'horizontal' | 'vertical', pair: readonly [string, string]) => {
     const other = kind === 'horizontal' ? 'vertical' : 'horizontal';
-    return exists(relation => relation.kind === other && samePoints(relation.pointIds, pair)) ? invalid(`This is already ${other}.`) : ready({ id: newId(), kind, pointIds: pair });
+    return exists(relation => relation.kind === other && sameJoints(relation.pointIds, pair)) ? invalid(`This is already ${other}.`) : ready({ id: newId(), kind, pointIds: pair });
   };
   const zeroAxis = (pointId: string, axis: 'x' | 'y') => ({ id: newId(), kind: 'fixed-axis' as const, pointId, axis, value: 0 });
-  // A point shares its position with every point joined to it, so a relation on any of them holds it too.
   const joint = (pointId: string) => {
-    const identity = resolveCadSketchPointIdentities(graph), root = identity(pointId);
+    const root = identity(pointId);
     return new Set(graph.points.filter(point => identity(point.id) === root).map(point => point.id));
   };
   const holding = (pointId: string, axis: 'x' | 'y'): Hold => {
     const index = axis === 'x' ? 0 : 1, joined = joint(pointId), ids: string[] = [];
-    let removable = true;
+    let removable = true, expression = false;
+    // A coordinate written as an expression is fixed by it: always zero holds the point on the reference, anything else elsewhere.
+    for (const point of graph.points) {
+      const value = joined.has(point.id) ? point.position[index] : undefined;
+      if (typeof value !== 'string') continue;
+      if (!cadSketchZeroScalar(value)) return { held: false, ids: [], removable: false, away: 'expression' };
+      expression = true; removable = false;
+    }
     for (const relation of graph.relations) {
       let values: readonly (CadScalar | undefined)[], kind: NonNullable<Hold['away']>;
       if (relation.kind === 'fixed-axis' && relation.axis === axis && joined.has(relation.pointId)) { values = [relation.value]; kind = 'dimension'; }
@@ -92,12 +107,13 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
         if (!linked.length) continue;
         values = linked.map(id => graph.points.find(point => point.id === id)?.position[index]); kind = 'linked';
       } else continue;
-      if (!values.every(cadSketchZeroScalar)) return { ids: [], removable: false, away: kind };
+      if (!values.every(cadSketchZeroScalar)) return { held: false, ids: [], removable: false, away: kind };
       ids.push(relation.id); removable &&= kind === 'dimension';
     }
-    return { ids, removable, away: null };
+    return { held: expression || ids.length > 0, ids, removable, away: null };
   };
   const heldAway = (subject: string, hold: Hold, axis: 'x' | 'y', target: string) => invalid(hold.away === 'dimension' ? `${subject} already has a fixed ${axis.toUpperCase()}. Remove that dimension first.`
+    : hold.away === 'expression' ? `${subject} has its ${axis.toUpperCase()} set by an expression away from ${target}. Edit that coordinate first.`
     : hold.away === 'linked' ? `${subject} follows a linked reference away from ${target}. Detach it first.` : `${subject} is fixed away from ${target}. Remove that relation first.`);
   // Offer the holding relations for removal only when removing them releases exactly what this constraint holds.
   const alreadyHeld = (reason: string, holds: readonly Hold[]) => invalid(reason, holds.every(hold => hold.removable) ? [...new Set(holds.flatMap(hold => hold.ids))] : undefined);
@@ -105,7 +121,7 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
   const onDatum = (pointId: string, axes: readonly ('x' | 'y')[], subject: string, target: string, already: string): CadSketchConstraintStep => {
     const holds = axes.map(axis => holding(pointId, axis)), away = holds.findIndex(hold => hold.away);
     if (away >= 0) return heldAway(subject, holds[away], axes[away], target);
-    const relations = axes.filter((_, index) => !holds[index].ids.length).map(axis => zeroAxis(pointId, axis));
+    const relations = axes.filter((_, index) => !holds[index].held).map(axis => zeroAxis(pointId, axis));
     return relations.length ? { status: 'ready', relations } : alreadyHeld(already, holds);
   };
   const onAxis = (pointId: string, reference: 'x-axis' | 'y-axis', subject: string, already: string) =>
@@ -115,18 +131,18 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
   const lineOnAxis = (line: Extract<Entity, { kind: 'line' }>, reference: 'x-axis' | 'y-axis'): CadSketchConstraintStep => {
     const axis = reference === 'x-axis' ? 'y' : 'x', level = reference === 'x-axis' ? 'horizontal' : 'vertical', across = level === 'horizontal' ? 'vertical' : 'horizontal';
     const pair = [line.startPointId, line.endPointId] as const, name = reference === 'x-axis' ? 'X' : 'Y';
-    if (exists(relation => relation.kind === across && samePoints(relation.pointIds, pair))) return invalid(`This line is ${across}, so it cannot lie on the ${name} axis. Remove that relation first.`);
+    if (exists(relation => relation.kind === across && sameJoints(relation.pointIds, pair))) return invalid(`This line is ${across}, so it cannot lie on the ${name} axis. Remove that relation first.`);
     const holds = pair.map(pointId => holding(pointId, axis)), away = holds.find(hold => hold.away);
     if (away) return heldAway('An endpoint of this line', away, axis, `the ${name} axis`);
-    const missing = pair.filter((_, index) => !holds[index].ids.length);
-    const needed = exists(relation => relation.kind === level && samePoints(relation.pointIds, pair)) ? missing.length === 2 ? missing.slice(0, 1) : [] : missing;
+    const missing = pair.filter((_, index) => !holds[index].held);
+    const needed = exists(relation => relation.kind === level && sameJoints(relation.pointIds, pair)) ? missing.length === 2 ? missing.slice(0, 1) : [] : missing;
     return needed.length ? { status: 'ready', relations: needed.map(pointId => zeroAxis(pointId, axis)) } : alreadyHeld(`This line is already on the ${name} axis.`, holds);
   };
   // A line follows an axis through horizontal or vertical, the same relations a level or upright line takes.
   const alongAxis = (line: Extract<Entity, { kind: 'line' }>, reference: CadSketchDatum, parallel: boolean) => {
     if (reference === 'origin') return invalid('Choose an axis, not the origin.');
     const kind = (reference === 'x-axis') === parallel ? 'horizontal' : 'vertical', pair = [line.startPointId, line.endPointId] as const;
-    const existing = matching(relation => relation.kind === kind && samePoints(relation.pointIds, pair));
+    const existing = matching(relation => relation.kind === kind && sameJoints(relation.pointIds, pair));
     return existing.length ? invalid(`This line is already ${kind}.`, existing) : axisRelation(kind, pair);
   };
   switch (tool) {
@@ -139,7 +155,6 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       if (datum && datum !== 'origin' && curve) return onAxis(curve.centerPointId, datum, `The center of this ${curve.kind}`, `This ${curve.kind} is already centered on the ${datum === 'x-axis' ? 'X' : 'Y'} axis.`);
       if (datum) return datum === 'origin' ? more('Choose a point to place at the origin', [], allPoints) : more('Choose a point, line, arc or circle to keep on this axis', [...lines, ...curves], allPoints);
       if (points.length === 2) {
-        const identity = resolveCadSketchPointIdentities(graph);
         return identity(points[0]) === identity(points[1]) ? invalid('These points are already joined.', matching(relation => relation.kind === 'coincident' && samePoints(relation.pointIds, [points[0], points[1]])))
           : ready({ id: newId(), kind: 'coincident', pointIds: [points[0], points[1]] });
       }
@@ -218,7 +233,6 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       if (datum && chosen.length === 1) return onDatum(chosen[0].centerPointId, ['x', 'y'], `The center of this ${chosen[0].kind}`, 'the origin', `This ${chosen[0].kind} is already centered at the origin.`);
       if (datum) return more('Choose an arc or circle to center at the origin', curves, []);
       if (chosen.length === 2) {
-        const identity = resolveCadSketchPointIdentities(graph);
         const centers = [chosen[0].centerPointId, chosen[1].centerPointId] as const;
         if (identity(centers[0]) === identity(centers[1])) return invalid('These already share a center.', matching(relation => relation.kind === 'coincident' && samePoints(relation.pointIds, centers)));
         return ready({ id: newId(), kind: 'coincident', pointIds: [chosen[0].centerPointId, chosen[1].centerPointId] });
