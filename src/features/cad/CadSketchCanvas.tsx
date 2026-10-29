@@ -216,12 +216,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   /**
    * A primary press while drawing. The press places its pick at once; a drag past the slop then places the next pick on
    * release, so press-drag-release draws like two clicks. A press beside the last placed point is held until release:
-   * a drag draws from that point, and a plain click places it then. `attempts` counts shape completions before the press.
+   * a drag draws from that point, and a plain click places it then. `changes` is the draft change the press left.
    */
-  const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; readonly attempts: number;
+  const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; changes: number;
     readonly held: { readonly pick: DrawingPick; readonly last: SketchPoint } | null; dragged: boolean } | null>(null);
-  /** Every attempt to save a drawn shape, so a press that tried to finish one never draws again on release. */
-  const completionAttempts = useRef(0);
+  /**
+   * Counts drawing draft changes and whether the latest one added a point. A press keeps its release only while its own
+   * change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick during the press, ends it.
+   */
+  const draftChanges = useRef({ count: 0, added: false });
+  const noteDraftChange = (added: boolean) => { draftChanges.current = { count: draftChanges.current.count + 1, added }; };
   const pendingChange = useRef(onPendingChange);
   pendingChange.current = onPendingChange;
   const edgeSubmission = useRef<CadSketchOverlapPick | null>(null);
@@ -708,21 +712,21 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
       setCursorInput(current => ({ ...current, point: action.kind === 'point' ? action.point : cursor, mode: 'position' }));
       if (action.kind === 'point' && next.kind === 'ready' && (singleSegment ? next.segments.length > 0 : sketch.kind === 'sketch' && closesCadPolyline(next))) finishPath(!singleSegment, next);
-      else setPathDraft(next);
+      else { setPathDraft(next); noteDraftChange(action.kind === 'point'); }
     }
     catch (error) { onError(userFacingMessage(error, 'Unable to draw this path.')); }
     if (action.kind === 'cancel' && curveCreation) onCancelCurve?.();
     if (focus) svg.current?.focus();
   };
   const cancelDrawing = () => {
-    closeSnapChoice();
+    noteDraftChange(false); closeSnapChoice();
     edgeSubmission.current = null; submission.cancel(); ownedHandleEdit.current = null;
     setDragPreview(null); setPicks([]); setPathDraft(idlePathDraft()); setCursorInput(current => ({ ...current, mode: 'position' }));
     if (curveCreation) onCancelCurve?.();
   };
   const finishPath = (closed: boolean, draft: CadPathDraft = pathDraft) => {
     if (interactionLocked) return;
-    completionAttempts.current++;
+    noteDraftChange(false);
     const reset = () => setPathDraft(idlePathDraft());
     try {
       if (sketch.kind === 'curve') {
@@ -743,7 +747,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     svg.current?.focus();
   };
   const add = (geometry: CadProfile, drawing?: CadFreshSketchDrawing) => {
-    completionAttempts.current++;
+    noteDraftChange(false);
     try {
       if (!attachedSourceCurrent()) return;
       if (drawing && !onAddFreshSketch && picks.some(pick => pick.kind !== 'position')) throw new Error('The attached drawing cannot be saved by this editor. Cancel or release its pending relations.');
@@ -854,17 +858,20 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     }
     const appendPick = (pick: CadFreshSketchPick) => {
       if (referencesSource(pick) && !attachedSource.current) attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
-      setPicks([...picks, pick]);
+      setPicks([...picks, pick]); noteDraftChange(true);
     };
     try {
       if (tool === 'slot' && points.length > 1) {
         // The width click only shapes the slot; both centers keep their own picks.
+        noteDraftChange(false);
         const width = slotSketchWidth(points[0], points[1], point);
         add(slotSketchProfile(points[0], points[1], width), { kind: 'slot', first: picks[0], second: picks[1], width });
       } else if (tool === 'slot' && first) {
         if (Math.hypot(point[0] - first[0], point[1] - first[1]) < 0.001) throw new Error('Click a different point for the second arc center.');
         appendPick(authoredPick());
       } else if (first && (tool === 'rectangle' || tool === 'circle')) {
+        // A completing pick ends the press even when its geometry is rejected.
+        noteDraftChange(false);
         const geometry = twoPointSketchProfile(tool, first, point);
         add(geometry, tool === 'rectangle' ? { kind: 'rectangle', first: picks[0], opposite: authoredPick() }
           : geometry.kind === 'circle' && typeof geometry.radius === 'number' ? { kind: 'circle', center: picks[0], radius: geometry.radius } : undefined);
@@ -939,12 +946,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             // A tap followed by a tap-drag can arrive as a second press on the point the tap placed, so wait for the release.
             const beside = last && bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
               event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS;
-            drawingPress.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, attempts: completionAttempts.current,
+            const press = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, changes: draftChanges.current.count,
               held: beside && last ? { pick, last } : null, dragged: false };
+            drawingPress.current = press;
             try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
             if (beside) return;
-            if (pick.candidates) drawingPress.current = null;
-            acceptDrawingPick(pick, event); return;
+            acceptDrawingPick(pick, event);
+            // Only a press that added a point draws on release; a finished, rejected or ambiguous pick ends the gesture.
+            const change = draftChanges.current;
+            if (change.count !== press.changes && change.added) press.changes = change.count; else drawingPress.current = null;
+            return;
           }
           if (tool === 'select' && sketch.kind === 'sketch' && !viewLocked && !isPreview) {
             const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
@@ -976,8 +987,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
           drawingPress.current = null;
-          // Nothing more once the press tried to finish the shape, even if saving it failed, or the drawing was cancelled.
-          if (event.button !== 0 || interactionLocked || completionAttempts.current !== press.attempts || !(points.length > 0 || pathPending)) return;
+          // Nothing more once the draft changed again during the press, for example by a cancel or a keyboard pick.
+          if (event.button !== 0 || interactionLocked || draftChanges.current.count !== press.changes || !(points.length > 0 || pathPending)) return;
           if (press.dragged) acceptDrawingPick(getDrawingPick(event), event);
           // A held press that did not drag is a deliberate short pick, unless it repeats the last point exactly.
           else if (press.held && (press.held.pick.point[0] !== press.held.last[0] || press.held.pick.point[1] !== press.held.last[1]))
@@ -1090,8 +1101,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           else if (event.key === 'Enter' && tool === 'path' && pathDraft.kind === 'ready') finishPath(sketch.kind === 'sketch' && !onAddPath);
           else acceptDrawingPick(cursorPick);
         } else if (pathTool && pathPending && (event.key === 'Backspace' || event.key === 'Escape')) { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }); }
-        else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPicks((current) => current.slice(0, -1)); }
-        else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPicks([]); }
+        else if (event.key === 'Backspace' && points.length) { event.preventDefault(); setPicks((current) => current.slice(0, -1)); noteDraftChange(false); }
+        else if (event.key === 'Escape' && points.length) { event.preventDefault(); setPicks([]); noteDraftChange(false); }
         else if (event.key === 'Escape' && tool === 'select' && (graphControls?.selection.length || graphControls?.datumSelection?.length)) { event.preventDefault(); event.stopPropagation(); graphControls.onSelect(null); }
       }}
       onClick={(event) => {

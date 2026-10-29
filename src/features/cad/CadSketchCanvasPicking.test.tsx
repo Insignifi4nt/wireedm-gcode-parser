@@ -316,6 +316,24 @@ describe('sketch canvas profile picking', () => {
     // The first corner is kept, so the next press completes the shape normally.
     expect(container.querySelector('.cad-sketch-viewport p')?.textContent).toContain('Click the opposite corner');
   });
+  it('ends a press whose completing pick fails validation without saving its release', async () => {
+    const h = await fixture([], { tool: 'rectangle' });
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ctrlKey: true });
+    await press('pointerdown', 2, 3); await press('pointerup', 2, 3);
+    // A zero-width rectangle is rejected on press, and its release must not save a different one.
+    await press('pointerdown', 2, 17); await press('pointermove', 12, 17); await press('pointerup', 12, 17);
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).toHaveBeenCalledOnce();
+  });
+  it('ends a held press when Escape and a keyboard pick start the next rectangle during it', async () => {
+    const h = await fixture([], { tool: 'rectangle' });
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ctrlKey: true });
+    const key = (key: string) => act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })));
+    await press('pointerdown', 2, 3); await press('pointerup', 2, 3);
+    await press('pointerdown', 2.4, 3.3); await key('Escape'); await key(' ');
+    expect(container.querySelector('.cad-sketch-viewport p')?.textContent).toContain('Click the opposite corner');
+    await press('pointermove', 12, 17); await press('pointerup', 12, 17);
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
   it('keeps the trailing click of a drawing press suppressed when a second contact lands', async () => {
     const h = await fixture([], { tool: 'rectangle' });
     await h.pointer('pointerdown', { ...h.position(2, 3), button: 0, buttons: 1 });
