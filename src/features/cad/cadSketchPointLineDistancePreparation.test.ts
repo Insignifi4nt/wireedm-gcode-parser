@@ -214,6 +214,13 @@ describe('a line whose endpoints an edit swaps', () => {
       entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'b2', endPointId: 'a' }],
       relations: [{ id: 'floor', kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { id: 'level', kind: 'horizontal', pointIds: ['a', 'b2'] }, gap(4, 'left')] } } }], runtime);
     expect(position(withoutOldEnd.document, 'p')[1]).toBeCloseTo(4, 9); expect(sideOf(withoutOldEnd.document)).toBe('right');
+    // An exact swap that also moves the alias from one end to the other is still a swap: the joins of the two snapshots never
+    // chain the ends together.
+    const movedAlias = await prepareCadEdits(aliased, [{ kind: 'update-feature', feature: { ...sketch, graph: { ...graphOf(aliased),
+      points: graphOf(aliased).points.map(point => point.id === 'b2' ? { ...point, position: [0, 0] } : point),
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'b', endPointId: 'a' }],
+      relations: graphOf(aliased).relations.map(relation => relation.id === 'join' ? { ...relation, pointIds: ['a', 'b2'] } : relation) } } }], runtime);
+    expect(position(movedAlias.document, 'p')).toEqual([expect.closeTo(5, 9), expect.closeTo(4, 9)]); expect(sideOf(movedAlias.document)).toBe('right');
   });
 
   it.each([false, true])('publishes a private draft that reverses the line and then restates the old side exactly (with a new pattern: %s)', async patterned => {

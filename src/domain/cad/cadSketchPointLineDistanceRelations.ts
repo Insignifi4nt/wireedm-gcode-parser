@@ -67,25 +67,32 @@ export function checkCadSketchPointLineDistanceRelation(graph: CadSketchGraph, r
 /**
  * An edit that turns a retained line around keeps each distance it carries over on the same physical side. A distance whose
  * line and side the edit left as they were takes the other side when the line's start and end swapped places, by point ID or
- * declared Coincident identity, before or after the edit, so an end moved onto a point it was joined to is the same end. Positions play no part, so the result does not depend on the order of edits in a batch or
- * on geometry not yet solved. A side the edit changes is kept as given; a later edit can state the side for the new direction.
+ * declared Coincident identity before or after the edit, so an end moved onto a point it was joined to is the same end. The
+ * two snapshots' joins are read separately and never chained, which could merge two distinct ends. Positions play no part, so
+ * the result does not depend on the order of edits in a batch or on geometry not yet solved. A side the edit changes is kept as given; a later edit can state the side for the new direction.
  */
 export function keepCadSketchPointLineSides(previous: CadSketchGraph, next: CadSketchGraph): CadSketchGraph {
   if (previous === next || !next.relations.some(relation => relation.kind === 'point-line-distance')) return next;
   const carried = new Map(previous.relations.flatMap(relation => relation.kind === 'point-line-distance' ? [[relation.id, relation] as const] : []));
   const lines = (graph: CadSketchGraph) => new Map(graph.entities.flatMap(entity => entity.kind === 'line' ? [[entity.id, entity] as const] : []));
   const wereLines = lines(previous), nowLines = lines(next);
-  let identity: ((pointId: string) => string) | undefined, changed = false;
+  let joins: readonly ((a: string, b: string) => boolean)[] | undefined, changed = false;
   const relations = next.relations.map(relation => {
     if (relation.kind !== 'point-line-distance') return relation;
     const prior = carried.get(relation.id), before = wereLines.get(relation.lineId), after = nowLines.get(relation.lineId);
     if (prior?.lineId !== relation.lineId || prior.side !== relation.side || !before || !after || before.startPointId === after.startPointId && before.endPointId === after.endPointId) return relation;
     // Joins on either side of the edit count, so an end the edit replaced with a point once joined to it, even one it then
     // removed with its Coincident, is still the same end.
-    if (!identity) identity = resolveCadSketchPointIdentities({ points: [...new Map([...previous.points, ...next.points].map(point => [point.id, point])).values()], entities: [],
-      relations: [...previous.relations, ...next.relations].filter(relation => relation.kind === 'coincident') });
-    const [wasStart, wasEnd, start, end] = [before.startPointId, before.endPointId, after.startPointId, after.endPointId].map(identity);
-    if (wasStart === wasEnd || start !== wasEnd || end !== wasStart) return relation;
+    joins ??= [previous, next].map(graph => {
+      const ids = new Set(graph.points.map(point => point.id));
+      const identity = resolveCadSketchPointIdentities({ points: graph.points, entities: [],
+        relations: graph.relations.filter(relation => relation.kind === 'coincident' && relation.pointIds.every(id => ids.has(id))) });
+      return (a: string, b: string) => a === b || ids.has(a) && ids.has(b) && identity(a) === identity(b);
+    });
+    const [joinedBefore, joinedAfter] = joins, same = (a: string, b: string) => joinedBefore(a, b) || joinedAfter(a, b);
+    const [wasStart, wasEnd, start, end] = [before.startPointId, before.endPointId, after.startPointId, after.endPointId];
+    // Ends joined to each other have no direction to keep, and an end that matches both old ends is no clear swap.
+    if (joinedBefore(wasStart, wasEnd) || joinedAfter(start, end) || !same(start, wasEnd) || !same(end, wasStart) || same(start, wasStart) || same(end, wasEnd)) return relation;
     changed = true;
     return { ...relation, side: relation.side === 'left' ? 'right' as const : 'left' as const };
   });
