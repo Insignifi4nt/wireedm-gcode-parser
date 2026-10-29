@@ -1387,8 +1387,12 @@ test('moves one shared graph point over an enclosing profile, with cancel, undo 
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   expect(await source()).toMatchObject({ feature: { graph: { points: [{ position: ['0', '0'] }, { position: [25, 0] }, { position: [20, 10] }, { position: [0, 10] }] } } });
   const beforeLocked = (await context(page)).version;
-  await page.getByRole('button', { name: 'Point 1 in Outline', exact: true }).press('ArrowRight');
+  const locked = page.getByRole('button', { name: 'Point 1 in Outline', exact: true });
+  await locked.press('ArrowRight');
   expect(await context(page)).toMatchObject({ version: beforeLocked, workflowOpen: false });
+  // The refused nudge still selects its point, and focus never selects, so Delete would remove Point 1; Space selects Point 2 first.
+  await expect(locked).toHaveAttribute('aria-pressed', 'true');
+  await point.press(' '); await expect(point).toHaveAttribute('aria-pressed', 'true'); await expect(locked).toHaveAttribute('aria-pressed', 'false');
   await point.press('Delete');
   await expect.poll(async () => (await context(page)).version).not.toBe(beforeLocked);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
