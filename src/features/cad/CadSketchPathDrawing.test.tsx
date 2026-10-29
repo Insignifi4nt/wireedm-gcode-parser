@@ -82,6 +82,17 @@ describe('line chains', () => {
     expect(h.error).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
 
+  it('draws and finishes a chain from the keyboard alone', async () => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.key(' '); for (let step = 0; step < 4; step++) await h.key('ArrowRight');
+    await h.key(' '); for (let step = 0; step < 4; step++) await h.key('ArrowUp');
+    await h.key(' '); expect(onAddPath).not.toHaveBeenCalled();
+    expect((await h.key('Escape')).defaultPrevented).toBe(true);
+    expect(onAddPath).toHaveBeenCalledTimes(1); expect(onAddPath.mock.calls[0][1]).toBe(false);
+    expect(onAddPath.mock.calls[0][0].segments.map((segment: { kind: string }) => segment.kind)).toEqual(['line', 'line']);
+    expect((await h.key('Escape')).defaultPrevented).toBe(false);
+  });
+
   it('saves one line from a drag with nothing pending, while a drag during a chain adds to it', async () => {
     const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
     await h.drag([10, 10], [30, 14]);

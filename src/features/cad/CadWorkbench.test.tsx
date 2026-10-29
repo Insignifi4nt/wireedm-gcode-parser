@@ -1713,6 +1713,18 @@ describe('CAD sketch interaction', () => {
     }
   });
 
+  it('saves a chain drawn in construction mode as construction edges', async () => {
+    await mount(); await startSketch(); await snapToGrid(); await click('Line');
+    const construction = container.querySelector<HTMLInputElement>('.cad-sketch-options input'); if (!construction) throw new Error('Construction control missing.');
+    await act(async () => construction.click()); expect(construction.checked).toBe(true);
+    const known = sketchGraph().entities.length;
+    await canvasClick(330, 175); await canvasClick(450, 175); await canvasClick(450, 115);
+    // The mode is chosen before drawing, so it stays fixed while the chain is pending.
+    expect(construction.disabled).toBe(true);
+    await canvasKey('Escape');
+    expect(sketchGraph().entities.slice(known).map(entity => [entity.kind, entity.construction])).toEqual([['line', true], ['line', true]]);
+  });
+
   it('discards a lone chain start on the first Escape and returns to Select on the next', async () => {
     await mount(); await startSketch(); await click('Line'); const before = currentSession.getSnapshot();
     await canvasClick(330, 175); expect(workflow).toHaveBeenLastCalledWith(true);
