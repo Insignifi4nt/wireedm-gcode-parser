@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchGraphDimensionLabel, layoutCadSketchGraphDimensions, type CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { cadSketchDimensionPickOf, createCadSketchDimensionKeys, type CadSketchDimensionPick, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
@@ -27,21 +28,49 @@ export interface CadSketchGraphDimensionsProps {
   onMenu?(dimension: CadSketchDimensionPick, at: { readonly clientX: number; readonly clientY: number }): void;
   /** Hovering a dimension highlights the geometry it measures. */
   readonly highlight?: CadSketchHighlightStore;
+  /**
+   * The group beneath the sketch points and edges where dimension lines and arrows take the pointer, so the geometry they end on or
+   * cross keeps its own picks. Without it only the value labels take the pointer.
+   */
+  readonly hitLayer?: SVGGElement | null;
+  /** Whether a datum, profile grip or profile edge under the pointer keeps the pick from a dimension line or arrow. Labels always keep theirs. */
+  covered?(event: { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event }): boolean;
 }
 
 const NO_IDS: readonly string[] = Object.freeze([]);
 
 /** The parent owns scale(1,-1); labels undo that flip and retain screen-pixel sizing. */
-export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel, selectedRelationId, selectedIds = NO_IDS, interactive, onConfigure, onSelect, onDelete, onMenu, highlight }: CadSketchGraphDimensionsProps) {
+export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel, selectedRelationId, selectedIds = NO_IDS, interactive, onConfigure, onSelect, onDelete, onMenu, highlight, hitLayer, covered }: CadSketchGraphDimensionsProps) {
   const dimensions = useMemo(() => layoutCadSketchGraphDimensions(graph, parameters, mmPerPixel), [graph, parameters, mmPerPixel]);
   const pointNumbers = useMemo(() => new Map(graph.points.map((point, index) => [point.id, index + 1])), [graph.points]);
   // A label keeps its element while the graph names the same dimension; a replacement mounts afresh, so it never takes over focus.
   const [dimensionKeys] = useState(createCadSketchDimensionKeys);
   const keys = useMemo(() => dimensionKeys(graph), [dimensionKeys, graph]);
   const hovered = useRef<string | null>(null);
-  const hide = () => { if (hovered.current) highlight?.hide(hovered.current); hovered.current = null; };
+  // The drawn dimension whose line or arrow is under the pointer. That target lies outside the dimension, so CSS hover cannot brighten it;
+  // a class on its drawn group does, without rendering the dimensions again.
+  const pointed = useRef<{ readonly key: string; readonly element: SVGGElement } | null>(null);
+  const groups = useRef(new Map<string, SVGGElement>());
+  const point = (key: string | null) => {
+    const element = key ? groups.current.get(key) ?? null : null;
+    if (pointed.current?.element === element) return;
+    pointed.current?.element.classList.remove('is-pointed');
+    pointed.current = key && element ? { key, element } : null;
+    element?.classList.add('is-pointed');
+  };
+  // The drawn dimension whose line or arrow took the last primary press; only that press's click and double-click reach it.
+  const pressed = useRef<string | null>(null);
+  const labels = useRef(new Map<string, SVGGElement>());
+  const hide = () => { if (hovered.current) highlight?.hide(hovered.current); hovered.current = null; point(null); };
   const hideOnUnmount = useRef(hide); hideOnUnmount.current = hide;
   useEffect(() => () => hideOnUnmount.current(), []);
+  // A render that rewrites the group's class keeps the mark; a dimension that is gone, or whose line no longer takes the pointer, drops it.
+  useLayoutEffect(() => {
+    const current = pointed.current; if (!current) return;
+    const element = interactive && hitLayer ? groups.current.get(current.key) : undefined;
+    if (element) { pointed.current = { key: current.key, element }; element.classList.add('is-pointed'); }
+    else { current.element.classList.remove('is-pointed'); pointed.current = null; }
+  });
   // A dimension that leaves the drawing or is replaced, or a canvas that stops accepting picks, drops its hover highlight.
   useEffect(() => {
     const owner = hovered.current;
@@ -49,7 +78,8 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
   }, [keys, interactive]);
   const line = (points: readonly [SketchPoint, SketchPoint], className?: string) => <line className={className} x1={points[0][0] - center[0]} y1={points[0][1] - center[1]}
     x2={points[1][0] - center[0]} y2={points[1][1] - center[1]} />;
-  return <g className="cad-sketch-graph-dimensions" role="group" aria-label="Sketch dimensions">
+  const hits: ReactElement[] = [];
+  const drawn = <g className="cad-sketch-graph-dimensions" role="group" aria-label="Sketch dimensions">
     {dimensions.map(dimension => {
       const relation = dimension.relation, reference = relation.kind === 'reference-dimension';
       const { quantity, text, width, height } = cadSketchGraphDimensionLabel(dimension.kind === 'angle' ? dimension.valueDegrees : dimension.valueMm, dimension.kind, reference);
@@ -61,11 +91,12 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
       const mountKey = keys.get(relation.id) ?? relation.id, owner = `dimension:${mountKey}`, pick = cadSketchDimensionPickOf(relation);
       const enter = () => { if (!interactive || !highlight) return; hovered.current = owner; highlight.show(owner, { kind: 'relation', relationId: relation.id }); };
       const leave = () => { if (hovered.current === owner) hide(); };
+      const elementKey = `${mountKey}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`;
       const down = (event: PointerEvent<SVGGElement>) => {
         // The canvas owns right and middle presses: a still right release opens this dimension's menu.
         if (event.button !== 0) return;
         event.preventDefault(); event.stopPropagation();
-        if (interactive && event.isPrimary !== false) event.currentTarget.querySelector<SVGGElement>('.cad-sketch-graph-dimension-label')?.focus({ preventScroll: true });
+        if (interactive && event.isPrimary !== false) labels.current.get(elementKey)?.focus({ preventScroll: true });
       };
       const click = (event: MouseEvent<SVGGElement>) => {
         if (event.button !== 0) return; event.preventDefault(); event.stopPropagation();
@@ -86,21 +117,41 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
         else if (menu) { const box = event.currentTarget.getBoundingClientRect(); onMenu?.(pick, { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }); }
         else onDelete?.(pick, event.key === 'Delete' ? 'Delete' : 'Backspace');
       };
+      // A datum, profile grip or profile edge under a line or arrow keeps the pointer: the dimension leaves that event to the canvas.
+      const pointerOver = (event: PointerEvent<SVGGElement>) => {
+        if (!interactive) return;
+        if (covered?.(event)) { if (hovered.current === owner) hide(); else if (pointed.current?.key === elementKey) point(null); return; }
+        if (hovered.current !== owner) enter();
+        point(elementKey);
+      };
+      const lineDown = (event: PointerEvent<SVGGElement>) => {
+        if (event.button !== 0) return;
+        if (covered?.(event)) { pressed.current = null; return; }
+        pressed.current = elementKey; down(event);
+      };
       const tone = selected || inspected ? ' is-selected' : reference ? ' is-reference' : '';
-      return <g key={`${mountKey}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`} data-cad-sketch-dimension={relation.id}
+      const measure = (className?: string) => dimension.kind === 'angle' ? <path className={className} d={`M ${dimension.arc.start[0] - center[0]} ${dimension.arc.start[1] - center[1]} A ${dimension.arc.radius} ${dimension.arc.radius} 0 0 ${dimension.arc.clockwise ? 0 : 1} ${dimension.arc.end[0] - center[0]} ${dimension.arc.end[1] - center[1]}`} />
+        : line(dimension.line, className);
+      const arrows = (className?: string) => dimension.arrows.map((arrow, index) => <polygon key={index} className={className}
+        points={arrow.map(point => `${point[0] - center[0]},${point[1] - center[1]}`).join(' ')} />);
+      // The drawn line stays 1 px; a wider transparent copy beneath the geometry takes the pointer, with copies of the arrows.
+      if (interactive && hitLayer) hits.push(<g key={elementKey} data-cad-sketch-dimension-hit={relation.id} className="cad-sketch-graph-dimension-pick"
+        onPointerEnter={pointerOver} onPointerMove={pointerOver} onPointerLeave={() => { leave(); if (pointed.current?.key === elementKey) point(null); }} onPointerDown={lineDown}
+        onClick={event => { if (pressed.current === elementKey) click(event); }} onDoubleClick={event => { if (pressed.current === elementKey) doubleClick(event); }}>
+        {measure()}
+        {arrows()}
+      </g>);
+      return <g key={elementKey} data-cad-sketch-dimension={relation.id}
         data-cad-dimension-reference={reference || undefined} data-cad-dimension-kind={dimension.kind} data-cad-dimension-side={dimension.kind === 'setback' ? dimension.side : undefined}
+        ref={element => { if (element) groups.current.set(elementKey, element); else groups.current.delete(elementKey); }}
         className={`cad-sketch-graph-dimension${tone}${interactive ? ' is-interactive' : ''}`}
         onPointerEnter={enter} onPointerLeave={leave} onPointerDown={down} onClick={click} onDoubleClick={doubleClick}>
         <g className="cad-sketch-graph-dimension-lines">
           {dimension.extensions.map((extension, index) => <g key={index}>{line(extension, 'cad-sketch-graph-dimension-extension')}</g>)}
-          {/* The drawn line stays 1 px; a wider transparent copy takes the pointer. */}
-          {(['cad-sketch-graph-dimension-line', 'cad-sketch-graph-dimension-line-hit'] as const).map(part => dimension.kind === 'angle'
-            ? <path key={part} className={part} d={`M ${dimension.arc.start[0] - center[0]} ${dimension.arc.start[1] - center[1]} A ${dimension.arc.radius} ${dimension.arc.radius} 0 0 ${dimension.arc.clockwise ? 0 : 1} ${dimension.arc.end[0] - center[0]} ${dimension.arc.end[1] - center[1]}`} />
-            : <g key={part}>{line(dimension.line, part)}</g>)}
-          {dimension.arrows.map((arrow, index) => <polygon key={index} className="cad-sketch-graph-dimension-arrow"
-            points={arrow.map(point => `${point[0] - center[0]},${point[1] - center[1]}`).join(' ')} />)}
+          {measure('cad-sketch-graph-dimension-line')}
+          {arrows('cad-sketch-graph-dimension-arrow')}
         </g>
-        <g className="cad-sketch-graph-dimension-label" role="button" aria-label={`${reference ? 'Reference dimension' : 'Dimension'} ${name} ${quantity}${roles}, press Enter to edit`}
+        <g ref={element => { if (element) labels.current.set(elementKey, element); else labels.current.delete(elementKey); }} className="cad-sketch-graph-dimension-label" role="button" aria-label={`${reference ? 'Reference dimension' : 'Dimension'} ${name} ${quantity}${roles}, press Enter to edit`}
           aria-pressed={selected || inspected} aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1}
           transform={`translate(${dimension.label[0] - center[0]} ${dimension.label[1] - center[1]}) scale(${mmPerPixel} ${-mmPerPixel})${dimension.labelAngle ? ` rotate(${-dimension.labelAngle * 180 / Math.PI})` : ''}`}
           onKeyDown={key}>
@@ -110,4 +161,5 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
       </g>;
     })}
   </g>;
+  return <>{drawn}{hitLayer && hits.length > 0 && createPortal(hits, hitLayer)}</>;
 }

@@ -159,17 +159,20 @@ const GraphPointRow = memo(function GraphPointRow({ point, original, graph, degr
  * Point and size handles share one gesture owner; solved previews never become accepted geometry. The layer is memoized,
  * so drawing-cursor moves in the canvas do not render every edge and point again; callers pass stable props.
  */
-export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, highlighted }: {
+export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, coversDimensionLine, highlighted }: {
   controls: CadSketchGraphControls; sketch: CadSketchFeature; version?: string; prepared: Prepared; visual?: Prepared;
   center: SketchPoint; scaleX: number; scaleY: number; gridStep: number; snap: boolean; gridSnap?: boolean; active: boolean; locked: boolean; cancelSignal: number;
   onPendingChange(pending: boolean): void; onError(message: string): void;
   filter?: CadSketchGraphPickFilter;
   pickAt?(event: { clientX: number; clientY: number }): CadSketchGraphSelection | null;
+  /** Whether a datum, profile grip or profile edge under the pointer keeps the pick from a dimension line or arrow. */
+  coversDimensionLine?(event: { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event }): boolean;
   highlighted?: CadSketchGraphSelection | null;
 }) {
   const submission = useCadEditSubmission();
   const [ownHighlight] = useState(createCadSketchHighlightStore), highlightStore = controls.highlight ?? ownHighlight;
   const [intent, setIntent] = useState<Intent | null>(null);
+  const [dimensionHits, setDimensionHits] = useState<SVGGElement | null>(null);
   const drag = useRef<Drag | null>(null);
   const callbacks = useRef({ controls, onPendingChange, onError }); callbacks.current = { controls, onPendingChange, onError };
   const lastPreview = useRef<{ source: CadDocument; document: CadDocument } | null>(null);
@@ -432,6 +435,8 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     }
   };
   return <g className={`cad-sketch-graph${interactive && !controls.geometryPick ? ' is-draggable' : ''}${intent && !submission.applying ? ' is-dragging' : ''}`} onKeyDown={event => { if (event.key === 'Escape' && (drag.current || intent || submission.applying)) { event.preventDefault(); event.stopPropagation(); cancel(); } }}>
+    {/* Dimension lines and arrows take the pointer beneath the points and edges, so the geometry they end on or cross keeps its picks. */}
+    <g ref={setDimensionHits} className="cad-sketch-graph-dimension-hits" />
     {displayed.geometry.segments.map((segment, index) => {
       const entity = entities.get(segment.id);
       return <GraphEntityRow key={segment.id} segment={segment} index={index} sketchName={sketch.name} selected={selected('entity', segment.id)}
@@ -481,7 +486,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     </g>}
     <CadSketchHighlightOverlay store={highlightStore} prepared={displayed} center={center} mmPerPixel={scaleY} selectedRelationIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSION_IDS} />
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
-      selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore}
+      selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore} hitLayer={dimensionHits} covered={coversDimensionLine}
       interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
       onSelect={(dimension, additive) => controls.onSelectDimension?.(dimension, additive)} onDelete={(dimension, key) => controls.onDeleteDimension?.(dimension, key)}
       onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} />}

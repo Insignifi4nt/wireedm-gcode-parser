@@ -73,6 +73,10 @@ interface DrawingSnapChoice {
   readonly candidates: readonly CadSketchSnapCandidate[];
   readonly clientX: number; readonly clientY: number; readonly frame: string;
 }
+/** A pointer event on a dimension line or arrow, as the graph layer passes it. */
+type DimensionLineEvent = { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event };
+/** What one event found over a dimension line: the grip and datum the canvas hover shows, and whether either, or a profile edge, keeps the pick. */
+interface LineCover { readonly event: Event; readonly grip: CadSketchHandlePick | null; readonly datum: CadSketchDatum | null; readonly covered: boolean }
 interface DrawingCursor { readonly point: SketchPoint; readonly mode: 'pointer' | 'position'; readonly suppressed: boolean }
 export interface CadSketchContextMenuRequest {
   readonly clientX: number;
@@ -284,7 +288,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     window.addEventListener('blur', blurred);
     return () => { window.removeEventListener('blur', blurred); dropDatumPress(); finishProfileDrag(); };
   }, [dropDatumPress, finishProfileDrag]);
-  const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; button: number; buttonMask: number; moved: boolean; element: SVGSVGElement; dimension: CadSketchDimensionPick | null } | null>(null);
+  const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; button: number; buttonMask: number; moved: boolean; element: SVGSVGElement; dimension: CadSketchDimensionPick | null; dimensionLine: boolean } | null>(null);
   const finishPan = useCallback((pointerId?: number) => {
     const active = pan.current;
     if (!active || pointerId !== undefined && pointerId !== active.pointerId) return;
@@ -719,6 +723,25 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const owned = key ? handlePicker.handles.find(grip => `${grip.profileId}/${cadSketchHandleKey(grip.handle)}` === key) : null;
     return owned ?? handlePicker.pick(point, millimetersPerPixel, selectedProfileId);
   };
+  /**
+   * Dimension lines and arrows lie beneath the sketch points and edges. A datum, profile grip or profile edge under one keeps the pick too.
+   * Each event is measured once: the grip and datum found are the ones the canvas hover would find, so a move over a line asks no picker twice.
+   */
+  const lineCover = useRef<LineCover | null>(null);
+  const measureLineCover = (event: DimensionLineEvent) => {
+    if (lineCover.current?.event === event.nativeEvent) return lineCover.current;
+    const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect();
+    if (!point || !rect?.height) return null;
+    const millimetersPerPixel = span / rect.height, auto = pickFilter === 'auto';
+    const grip = onMoveHandle ? pickGrip(event, point, millimetersPerPixel) : null, gripped = Boolean(grip && auto);
+    // As in datumUnder: a grip keeps an axis from the pointer, and so does a profile edge in plain selection.
+    const edge = !gripped && auto && profilePicker.edgeNear(point, millimetersPerPixel);
+    const datum = gripped || edge && datumSelect ? null : datumAt(point, millimetersPerPixel);
+    lineCover.current = { event: event.nativeEvent, grip, datum, covered: gripped || edge || Boolean(datumSelect && datum) };
+    return lineCover.current;
+  };
+  const dimensionLineCover = useRef(measureLineCover); dimensionLineCover.current = measureLineCover;
+  const coversDimensionLine = useCallback((event: DimensionLineEvent) => Boolean(dimensionLineCover.current(event)?.covered), []);
   const submitEdit = (apply: (signal: AbortSignal) => CadEditCompletion, accepted: () => void, fallback: string) => {
     pendingChange.current(true);
     submission.submit(apply, accepted, error => {
@@ -1001,9 +1024,14 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (viewLocked) return;
           event.preventDefault(); event.currentTarget.focus({ preventScroll: true });
           // A still right release on a dimension opens the menu of the dimension pressed, which the workbench checks is still there.
-          const dimensionId = event.button === 2 && event.target instanceof Element ? event.target.closest('[data-cad-sketch-dimension]')?.getAttribute('data-cad-sketch-dimension') ?? null : null;
+          // A label takes the press; a line or arrow only where no datum, profile grip or profile edge lies under it.
+          const target = event.button === 2 && event.target instanceof Element ? event.target : null;
+          const label = target?.closest('[data-cad-sketch-dimension]')?.getAttribute('data-cad-sketch-dimension') ?? null;
+          const line = label ? null : target?.closest('[data-cad-sketch-dimension-hit]')?.getAttribute('data-cad-sketch-dimension-hit') ?? null;
+          const dimensionId = label ?? (line && !dimensionLineCover.current(event)?.covered ? line : null);
           const dimension = dimensionId && sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchDimensionPick(sourceSketch.graph, dimensionId) : null;
-          pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget, dimension };
+          pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget,
+            dimension, dimensionLine: !label };
           try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); }
         } else if (event.button === 0 && !interactionLocked) {
           // SVG's native focus ring is measured in drawing units. Keep pointer
@@ -1108,10 +1136,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (!active || active.pointerId !== event.pointerId) return;
         finishPan(event.pointerId);
         if (active.button !== 2 || event.button !== 2 || active.moved || Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4 || interactionLocked || viewLocked) return;
-        if (active.dimension && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onDimensionMenu) {
-          graphControls.onDimensionMenu(active.dimension, { clientX: event.clientX, clientY: event.clientY }); return;
-        }
+        const dimension = active.dimension && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onDimensionMenu ? active.dimension : null;
+        // A label opens its menu at once; a line or arrow opens its dimension's only where no sketch geometry lies under the release.
+        if (dimension && !active.dimensionLine) { graphControls?.onDimensionMenu?.(dimension, { clientX: event.clientX, clientY: event.clientY }); return; }
         if (openOverlap(event)) return;
+        if (dimension) { graphControls?.onDimensionMenu?.(dimension, { clientX: event.clientX, clientY: event.clientY }); return; }
         const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
         if (!geometryPick && !positionPick && pickFilter === 'auto' && point && rect.height) onContextMenu?.({ clientX: event.clientX, clientY: event.clientY, trigger: 'pointer', profileId: profilePicker.pick(point, span / rect.height), pointMm: point });
       }}
@@ -1142,13 +1171,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (!rect.width || !rect.height) { finishPan(event.pointerId); return; }
           setCenter([active.center[0] - (event.clientX - active.x) / rect.width * width, active.center[1] + (event.clientY - active.y) / rect.height * span]);
         } else if (event.target instanceof Element && event.target.closest('.cad-sketch-graph-dimension.is-interactive')) {
-          // Hovering a selectable dimension only lights up its geometry through the highlight overlay. The drawing cursor keeps its
-          // last position and a grip or datum hover ends once, so moving across a label, its line or its arrows renders nothing else.
+          // Hovering a selectable dimension label only lights up its geometry through the highlight overlay. The drawing cursor keeps its
+          // last position and a grip or datum hover ends once, so moving across a label renders nothing else.
           // Drawing tools hide annotations and position picks make them inert, so there the cursor keeps following the pointer.
           if (hoverHandle) setHoverHandle(null);
           if (datumHover) setDatumHover(null);
         } else {
-          getDrawingPick(event);
+          // A dimension line or arrow keeps the cursor where it was too, but a datum or grip under it still takes the hover, as it takes the press;
+          // the line's own cover test already found them for this move.
+          const onLine = event.target instanceof Element && event.target.closest('[data-cad-sketch-dimension-hit]') !== null;
+          if (!onLine) getDrawingPick(event);
           if (tool === 'trim') {
             const preview = interactionLocked || viewLocked ? null : trimAt(event);
             setTrimHover(preview && sourceGraph ? { prepared: sourceGraph, preview } : null);
@@ -1156,13 +1188,14 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const gripHover = tool === 'select' && !geometryPick && !positionPick && Boolean(onMoveHandle);
           if ((datumEligible || gripHover) && !interactionLocked && !viewLocked) {
             const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect(), millimetersPerPixel = rect.height ? span / rect.height : 0;
-            // The graph layer's hit areas already say which sketch point, edge or dimension is under the pointer, so hover never searches the graph.
+            // The graph layer's hit areas already say which sketch point, edge or dimension label is under the pointer, so hover never searches the graph.
             const graphTarget = event.target instanceof Element ? event.target.closest('[data-cad-sketch-point], [data-cad-sketch-entity], [data-cad-sketch-dimension]') : null;
-            const grip = gripHover && !graphTarget && point && millimetersPerPixel ? pickGrip(event, point, millimetersPerPixel) : null;
+            const cover = onLine ? dimensionLineCover.current(event) : null;
+            const grip = gripHover && !graphTarget && point && millimetersPerPixel ? cover ? cover.grip : pickGrip(event, point, millimetersPerPixel) : null;
             if (gripHover) setHoverHandle(grip);
             if (datumEligible) {
               const covered = Boolean(graphTarget && graphTarget.getAttribute('aria-disabled') !== 'true' || grip && pickFilter === 'auto');
-              const next = point && millimetersPerPixel ? datumUnder(point, millimetersPerPixel, covered) : null;
+              const next = cover ? covered ? null : cover.datum : point && millimetersPerPixel ? datumUnder(point, millimetersPerPixel, covered) : null;
               if (next !== datumHover) setDatumHover(next);
             }
           }
@@ -1283,7 +1316,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         </g>}
         {graphControls && sourceSketch.kind === 'sketch' && sourceGraph && layerControls && <CadSketchGraphLayer controls={layerControls} sketch={sourceSketch} version={documentVersion} prepared={sourceGraph} visual={visualGraph ?? undefined}
           center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)} gridStep={gridStep} snap={snap} gridSnap={gridSnap} active={tool === 'select'}
-          filter={graphPickFilter} highlighted={graphHighlight} pickAt={pickGraphAt}
+          filter={graphPickFilter} highlighted={graphHighlight} pickAt={pickGraphAt} coversDimensionLine={coversDimensionLine}
           locked={externalInteractionLocked || Boolean(positionPick && !geometryPick) || submission.applying || points.length > 0 || pathPending || dragPreview !== null || boxPending || overlapPending || choicePending} cancelSignal={cancelSignal} onPendingChange={publishGraphPending} onError={onError} />}
         {graphControls?.patternInteraction && sourceSketch.kind === 'sketch' && (previewSketch ?? sourceSketch).graph && <CadSketchLinearPatternPreview graph={(previewSketch ?? sourceSketch).graph!} parameters={parameters} interaction={graphControls.patternInteraction} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}

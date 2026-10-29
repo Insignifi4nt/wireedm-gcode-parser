@@ -8,6 +8,7 @@ import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { CadSketchCanvas } from './CadSketchCanvas';
 import { cadSketchDimensionSelectionStatus } from './cadSketchDimensionSelection';
 import { cadSketchDefinitionMarks } from './cadSketchDefinitionMarks';
+import { cadSketchGraphDimensionLabel } from './cadSketchGraphDimensionLayout';
 import type { CadRenderedViewControls } from './cadViewportControls';
 
 // Every graph point row asks for its pattern lock reason once per render, so the call count tracks row renders.
@@ -27,6 +28,12 @@ vi.mock('@/domain/cad/compileCadSketchGeometry', async importOriginal => {
   return { ...original, cadSketchGraphBoundary: vi.fn(original.cadSketchGraphBoundary) };
 });
 const edgeRenders = vi.mocked(cadSketchGraphBoundary);
+// The dimensions layer formats each label once per render.
+vi.mock('./cadSketchGraphDimensionLayout', async importOriginal => {
+  const original = await importOriginal<typeof import('./cadSketchGraphDimensionLayout')>();
+  return { ...original, cadSketchGraphDimensionLabel: vi.fn(original.cadSketchGraphDimensionLabel) };
+});
+const dimensionRenders = vi.mocked(cadSketchGraphDimensionLabel);
 // Each picker the canvas prepares counts its queries, so a test can bound the work one pointer move does.
 const picks = vi.hoisted(() => ({ graph: 0, profile: 0, edge: 0, grip: 0 }));
 vi.mock('./cadSketchGraphInteraction', async importOriginal => {
@@ -83,7 +90,7 @@ async function mountCanvas(graph: NonNullable<CadSketchFeature['graph']>, initia
     Object.defineProperties(event, { pointerId: { value: 3 }, isPrimary: { value: true } });
     await act(async () => target.dispatchEvent(event));
   };
-  return { props: () => props, show, pointer, move: (x: number, y: number, target?: Element) => pointer('pointermove', x, y, target) };
+  return { props: () => props, show, pointer, move: (x: number, y: number, target?: Element) => pointer('pointermove', x, y, target), view: () => controls?.getState() };
 }
 
 describe('sketch canvas cursor rendering', () => {
@@ -131,7 +138,7 @@ describe('sketch canvas cursor rendering', () => {
       (entered ? svg : target).dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: entered ? target : svg }));
     });
     Object.assign(svg, { getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) }) });
-    const parts = (id: string) => [annotation(id), ...container.querySelectorAll(`[data-cad-sketch-dimension="${id}"] :is(.cad-sketch-graph-dimension-line-hit, .cad-sketch-graph-dimension-arrow)`)];
+    const parts = (id: string) => [annotation(id), ...container.querySelectorAll(`[data-cad-sketch-dimension-hit="${id}"] :is(line, path, polygon)`)];
     // The pointer crosses each part of the annotation at a few positions, as a real pointer does.
     const sweep = async (id: string) => {
       for (const [index, part] of parts(id).entries()) for (const offset of [0, 3, 7]) await act(async () => {
@@ -219,5 +226,28 @@ describe('sketch canvas cursor rendering', () => {
     expect(await hover(10, 0, container.querySelector('[data-cad-sketch-point="a"]')!)).toEqual({ graph: 0, profile: 0, edge: 0, grip: 0 }); expect(highlighted()).toEqual([]);
     // Away from both axes nothing beyond the grip test runs.
     expect(await hover(40, 30)).toEqual({ graph: 0, profile: 0, edge: 0, grip: 1 }); expect(highlighted()).toEqual([]);
+  });
+
+  it('answers hover over a dimension line from one query of each picker, rendering neither rows nor dimensions for it', async () => {
+    const { props, show, move, view } = await mountCanvas({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 20 }] }, { tool: 'select' });
+    await show({ onMoveHandle: vi.fn(), graphControls: { ...props().graphControls!, onSelectDatum: vi.fn(), onSelectDimension: vi.fn(), onConfigureRelation: vi.fn() } });
+    const state = view(); if (!state || state.mode === 'solid') throw new Error('Sketch frame missing');
+    const line = () => container.querySelector('[data-cad-sketch-dimension-hit="length"] line')!, value = (name: string) => Number(line().getAttribute(name));
+    // The graph layer draws relative to the view center; the line starts above a, on the Y axis.
+    const along = (share: number) => [state.centerMm[0] + value('x1') + (value('x2') - value('x1')) * share, state.centerMm[1] + value('y1') + (value('y2') - value('y1')) * share] as const;
+    const datums = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
+    const pointed = () => container.querySelector('[data-cad-sketch-dimension="length"]')!.classList.contains('is-pointed');
+    const hover = async (share: number) => { Object.assign(picks, { graph: 0, profile: 0, edge: 0, grip: 0 }); await move(...along(share), line()); return { ...picks }; };
+    expect(value('x1')).toBeCloseTo(-state.centerMm[0], 9);
+    clearRenders(); dimensionRenders.mockClear();
+    // Along the line, the cover test's grip and edge queries serve the canvas hover too, and the line marks its own dimension.
+    expect(await hover(.5)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true); expect(datums()).toEqual([]);
+    expect(await hover(.6)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true);
+    // Where it crosses the Y axis, the axis takes the hover from the same queries.
+    expect(await hover(0)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(false); expect(datums()).toEqual(['y-axis']);
+    expect(await hover(.5)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true); expect(datums()).toEqual([]);
+    // Only the overlay draws the measured edge, once for each time the line takes the hover; no row or dimension renders again.
+    expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual(['ab', 'ab']); expect(dimensionRenders).not.toHaveBeenCalled();
   });
 });

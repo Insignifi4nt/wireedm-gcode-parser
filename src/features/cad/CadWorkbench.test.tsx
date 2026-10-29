@@ -2328,6 +2328,103 @@ describe('CAD sketch interaction', () => {
       expect(relations()).toBe(before); expect(pressed()).toEqual(['x-axis']); expect(selectedDimensions()).toEqual([]);
     });
 
+    describe('a dimension line or arrow, which takes the pointer only where no geometry or datum lies', () => {
+      const pointerSetup = () => {
+        const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+        let captured = false;
+        Object.assign(canvas, { setPointerCapture: () => { captured = true; }, hasPointerCapture: () => captured, releasePointerCapture: () => { captured = false; } });
+        const view = viewport().getState().view; if (!view || view.mode === 'solid') throw new Error('Sketch frame missing.');
+        const viewWidth = Number(canvas.getAttribute('viewBox')?.split(' ')[2]);
+        /** The client position of a point drawn in the graph layer, whose coordinates are relative to the view centre. */
+        const at = (x: number, y: number) => ({ clientX: 300 + x / viewWidth * 600, clientY: 200 - y / view.heightSpanMm * 400 });
+        const hit = (id: string) => {
+          const found = container.querySelector<SVGGElement>(`[data-cad-sketch-dimension-hit="${id}"]`); if (!found) throw new Error(`Dimension line ${id} missing.`);
+          const line = found.querySelector('line')!, value = (name: string) => Number(line.getAttribute(name));
+          return { element: line, start: at(value('x1'), value('y1')), end: at(value('x2'), value('y2')),
+            along: (share: number) => at(value('x1') + (value('x2') - value('x1')) * share, value('y1') + (value('y2') - value('y1')) * share) };
+        };
+        const arrowTip = (id: string) => {
+          const [x, y] = container.querySelector(`[data-cad-sketch-dimension="${id}"] .cad-sketch-graph-dimension-arrow`)!.getAttribute('points')!.split(' ')[0].split(',').map(Number);
+          return at(x, y);
+        };
+        const send = (target: Element, type: string, position: { clientX: number; clientY: number }, init: MouseEventInit = {}) => act(async () => {
+          const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...position, ...init });
+          Object.defineProperties(event, { pointerId: { value: 7 }, isPrimary: { value: true } }); target.dispatchEvent(event);
+        });
+        // Each press goes to the dimension's line as drawn now. A press the canvas takes captures the pointer, and a box it begins
+        // makes the dimensions inert and draws their lines again, so its release and click reach the canvas.
+        const released = (target: Element) => target.isConnected ? target : canvas;
+        const clickAt = async (id: string, position: { clientX: number; clientY: number }, init: MouseEventInit = {}, detail = 1) => {
+          const target = hit(id).element;
+          await send(target, 'pointerdown', position, { button: 0, buttons: 1, ...init }); await send(released(target), 'pointerup', position, { button: 0, buttons: 0, ...init });
+          await send(released(target), 'click', position, { button: 0, detail, ...init });
+        };
+        const doubleClickAt = async (id: string, position: { clientX: number; clientY: number }) => {
+          await clickAt(id, position); await clickAt(id, position, {}, 2); await send(released(hit(id).element), 'dblclick', position, { button: 0, detail: 2 });
+        };
+        const rightClickAt = async (id: string, position: { clientX: number; clientY: number }) => {
+          await send(hit(id).element, 'pointerdown', position, { button: 2, buttons: 2 }); await send(canvas, 'pointerup', position, { button: 2, buttons: 0 });
+        };
+        const datumPressed = () => ['origin', 'x-axis', 'y-axis'].filter(name => container.querySelector(`[data-cad-sketch-datum="${name}"]`)?.getAttribute('aria-pressed') === 'true');
+        const datumHovered = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
+        const menuItems = () => [...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim());
+        return { canvas, hit, arrowTip, send, clickAt, doubleClickAt, rightClickAt, datumPressed, datumHovered, menuItems };
+      };
+
+      it('lies beneath every sketch point and edge, while the labels lie above them', async () => {
+        await open();
+        const layer = container.querySelector('.cad-sketch-graph-dimension-hits'), rows = [...container.querySelectorAll('[data-cad-sketch-point], [data-cad-sketch-entity]')];
+        expect(layer?.querySelectorAll('[data-cad-sketch-dimension-hit]').length).toBe(container.querySelectorAll('[data-cad-sketch-dimension]').length);
+        expect(rows.length).toBeGreaterThan(0);
+        for (const row of rows) {
+          expect(layer!.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+          expect(row.compareDocumentPosition(label('length')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        }
+      });
+
+      it('selects, toggles and edits its dimension and opens its menu away from the geometry and datums', async () => {
+        await open(); const { hit, clickAt, doubleClickAt, rightClickAt, menuItems } = pointerSetup();
+        const middle = hit('length').along(.5);
+        await clickAt('length', middle);
+        expect(selectedDimensions()).toEqual(['length']); expect(document.activeElement).toBe(label('length'));
+        await clickAt('size', hit('size').along(.25), { shiftKey: true }); expect(selectedDimensions()).toEqual(['length', 'size']);
+        await canvasKey('Escape'); expect(selectedDimensions()).toEqual([]);
+        await rightClickAt('length', middle);
+        expect(menuItems()).toEqual(expect.arrayContaining(['Edit value…', 'Make reference'])); expect(selectedDimensions()).toEqual(['length']);
+        await act(async () => document.querySelector('[role="menu"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+        expect(document.querySelector('[role="menu"]')).toBeNull();
+        await doubleClickAt('diagonal', hit('diagonal').along(.5)); expect(field('Distance').value).toBe('50');
+      });
+
+      it('leaves the hover, the press and the right-click on an axis under it to the axis', async () => {
+        await open(); const { hit, arrowTip, clickAt, doubleClickAt, send, rightClickAt, datumPressed, datumHovered, menuItems } = pointerSetup();
+        // Length runs from a, on the Y axis, along the base; its line and arrow at a lie on that axis.
+        const onAxis = hit('length').start, away = hit('length').along(.5);
+        expect(arrowTip('length').clientX).toBeCloseTo(onAxis.clientX, 6);
+        await send(hit('length').element, 'pointermove', away, { buttons: 0 });
+        expect(highlighted('entity')).toEqual(['base']); expect(datumHovered()).toEqual([]);
+        expect(container.querySelector('[data-cad-sketch-dimension="length"]')?.classList.contains('is-pointed')).toBe(true);
+        await send(hit('length').element, 'pointermove', onAxis, { buttons: 0 });
+        expect(datumHovered()).toEqual(['y-axis']); expect(highlighted('entity')).toEqual([]);
+        expect(container.querySelector('[data-cad-sketch-dimension="length"]')?.classList.contains('is-pointed')).toBe(false);
+        await clickAt('length', onAxis);
+        expect(datumPressed()).toEqual(['y-axis']); expect(selectedDimensions()).toEqual([]); expect(document.activeElement).not.toBe(label('length'));
+        await clickAt('length', onAxis, { shiftKey: true }); expect(datumPressed()).toEqual([]); expect(selectedDimensions()).toEqual([]);
+        await doubleClickAt('length', onAxis);
+        expect(datumPressed()).toEqual(['y-axis']); expect(document.querySelector('.cad-parameter-editor')).toBeNull(); expect(selectedDimensions()).toEqual([]);
+        await rightClickAt('length', onAxis);
+        expect(menuItems()).not.toContain('Make reference'); expect(selectedDimensions()).toEqual([]);
+      });
+
+      it('offers the geometry under a right-click before its dimension', async () => {
+        await open(); const { arrowTip, rightClickAt, menuItems } = pointerSetup();
+        // The diameter line runs out from the hole's centre and crosses the hole where its arrow ends.
+        await rightClickAt('size', arrowTip('size'));
+        expect(menuItems()).toContain('Select edge'); expect(menuItems()).not.toContain('Make reference'); expect(selectedDimensions()).toEqual([]);
+      });
+    });
+
     it('never replays a cancelled dimension editor when Escape later cancels the relations panel', async () => {
       await open();
       let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };

@@ -2,17 +2,18 @@
 .cad-sketch-graph-dimension { color: var(--muted-foreground); }
 .cad-sketch-graph-dimension.is-reference { color: color-mix(in srgb, var(--muted-foreground) 62%, transparent); }
 /* Hover and focus brighten an unselected dimension only; a selected one keeps the selection colour, and focus keeps its underline. */
-.cad-sketch-graph-dimension:not(.is-selected):is(.is-interactive:hover, :has(.cad-sketch-graph-dimension-label:focus-visible)) { color: var(--foreground); }
+.cad-sketch-graph-dimension:not(.is-selected):is(.is-interactive:hover, .is-pointed, :has(.cad-sketch-graph-dimension-label:focus-visible)) { color: var(--foreground); }
 .cad-sketch-graph-dimension.is-selected { color: var(--primary); }
 .cad-sketch-graph-dimension.is-interactive { cursor: pointer; }
 .cad-sketch-graph-dimension-lines { fill: none; stroke: currentColor; }
+/* Only the label takes the pointer here; the lines and arrows take it beneath the sketch geometry. */
+.cad-sketch-graph-dimension-lines { pointer-events: none; }
 .cad-sketch-graph-dimension-lines :is(line, path) { stroke-width: 1px; vector-effect: non-scaling-stroke; }
-.cad-sketch-graph-dimension-line { pointer-events: none; }
-.cad-sketch-graph-dimension-extension { stroke-opacity: .45; pointer-events: none; }
-.cad-sketch-graph-dimension-lines .cad-sketch-graph-dimension-line-hit { stroke: transparent; stroke-width: 7px; pointer-events: none; }
-.cad-sketch-graph-dimension.is-interactive .cad-sketch-graph-dimension-line-hit { pointer-events: stroke; }
-.cad-sketch-graph-dimension-arrow { fill: currentColor; stroke: none; pointer-events: none; }
-.cad-sketch-graph-dimension.is-interactive .cad-sketch-graph-dimension-arrow { pointer-events: visiblePainted; }
+.cad-sketch-graph-dimension-extension { stroke-opacity: .45; }
+.cad-sketch-graph-dimension-arrow { fill: currentColor; stroke: none; }
+.cad-sketch-graph-dimension-pick { cursor: pointer; }
+.cad-sketch-graph-dimension-pick :is(line, path) { fill: none; stroke: transparent; stroke-width: 7px; vector-effect: non-scaling-stroke; pointer-events: stroke; }
+.cad-sketch-graph-dimension-pick polygon { fill: transparent; stroke: none; pointer-events: fill; }
 .cad-sketch-graph-dimension-label { outline: none; }
 .cad-sketch-graph-dimension-hit { fill: transparent; stroke: none; }
 .cad-sketch-graph-dimension-text {
