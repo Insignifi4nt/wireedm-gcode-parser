@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadPathClosureTolerance } from '@/domain/cad/cadAnalyticSegments';
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
-import { cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchProfilePositionSnapSource } from './cadSketchGeometrySnaps';
+import { cadSketchDrawingInference, cadSketchDrawingInferenceLabel, cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchProfilePositionSnapSource } from './cadSketchGeometrySnaps';
 
 describe('prepared sketch geometry snaps', () => {
   it('retains profile position intent beside exact graph points and only suppresses graph midpoints', () => {
@@ -321,6 +321,30 @@ describe('prepared sketch geometry snaps', () => {
       expect(at([15, 10.2], { alignTo: [[25, 50]] })).toEqual({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'ab', entityKind: 'line' }, point: [15, 10], distancePx: expect.closeTo(2, 9), entityIds: ['ab'] } });
       expect(cadSketchSnapTargetLabel({ kind: 'on-entity', entityId: 'ab', entityKind: 'line', vertical: [15.3, 50] })).toBe('On line · vertical with point');
       expect(cadSketchSnapTargetLabel({ kind: 'on-axis', axis: 'y', horizontal: [60, -30] })).toBe('On Y axis · horizontal with point');
+    });
+  });
+  describe('line relations from the start guide', () => {
+    const start = [10, 20] as const;
+    it('infers only from a guide through the line start and an exactly level or plumb end', () => {
+      expect(cadSketchDrawingInference({ kind: 'aligned', horizontal: [10, 20] }, start, [40, 20])).toBe('horizontal');
+      expect(cadSketchDrawingInference({ kind: 'aligned', vertical: [10, 20] }, start, [10, -5])).toBe('vertical');
+      // Another acquired point's guide copies a position only, even when the line happens to be level.
+      expect(cadSketchDrawingInference({ kind: 'aligned', horizontal: [70, 20.5] }, start, [40, 20.5])).toBeNull();
+      expect(cadSketchDrawingInference({ kind: 'aligned', horizontal: [10, 20] }, start, [40, 20 + 1e-12])).toBeNull();
+      // Both guides: the start's own guide gives the relation, the other point's guide only places the end.
+      expect(cadSketchDrawingInference({ kind: 'aligned', horizontal: [10, 20], vertical: [40, 90] }, start, [40, 20])).toBe('horizontal');
+      expect(cadSketchDrawingInference({ kind: 'aligned', horizontal: [70, 50], vertical: [10, 20] }, start, [10, 50])).toBe('vertical');
+      expect(cadSketchDrawingInference({ kind: 'on-entity', entityId: 'edge', entityKind: 'line', vertical: [10, 20] }, start, [10, 3])).toBe('vertical');
+      expect(cadSketchDrawingInference({ kind: 'on-axis', axis: 'x', vertical: [10, 20] }, start, [10, 0])).toBe('vertical');
+      expect(cadSketchDrawingInference({ kind: 'on-entity', entityId: 'edge', entityKind: 'line' }, start, [10, 3])).toBeNull();
+      expect(cadSketchDrawingInference({ kind: 'endpoint', pointId: 'level' }, start, [40, 20])).toBeNull();
+    });
+    it('names any attachment first, then the relation, then a guide that only places the end', () => {
+      expect(cadSketchDrawingInferenceLabel({ kind: 'aligned', horizontal: [10, 20] }, 'horizontal')).toBe('Horizontal');
+      expect(cadSketchDrawingInferenceLabel({ kind: 'aligned', horizontal: [10, 20], vertical: [40, 90] }, 'horizontal')).toBe('Horizontal · vertical with point');
+      expect(cadSketchDrawingInferenceLabel({ kind: 'on-entity', entityId: 'edge', entityKind: 'line', vertical: [10, 20] }, 'vertical')).toBe('Point on line · Vertical');
+      expect(cadSketchDrawingInferenceLabel({ kind: 'on-entity', entityId: 'hole', entityKind: 'circle', horizontal: [10, 20] }, 'horizontal')).toBe('Point on curve · Horizontal');
+      expect(cadSketchDrawingInferenceLabel({ kind: 'on-axis', axis: 'x', vertical: [10, 20] }, 'vertical')).toBe('Fixed Y at 0 · Vertical');
     });
   });
 });

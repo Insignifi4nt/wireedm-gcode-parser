@@ -60,7 +60,7 @@ describe('sketch canvas profile picking', () => {
     entities: [{ id: 'line', kind: 'line' as const, startPointId: 'a', endPointId: 'b', construction: false }, { id: 'circle', kind: 'circle' as const, centerPointId: 'c', radius: 3.4, construction: false }], relations: []
   } };
   const inference = () => {
-    const checkbox = container.querySelector<HTMLInputElement>('[aria-label="Create coincident relations"]');
+    const checkbox = container.querySelector<HTMLInputElement>('[aria-label="Create relations"]');
     if (!checkbox) throw new Error('Missing relation inference control'); return checkbox;
   };
   /** Sets Create relations to the state a test needs, through the visible checkbox. */
@@ -126,7 +126,8 @@ describe('sketch canvas profile picking', () => {
     const onAddPath = vi.fn(), h = await fixture([], { tool: 'path', onAddPath });
     const move = (x: number, y: number, init: MouseEventInit = {}) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0, ...init });
     await h.click(30, 30); await move(30.03, 50);
-    expect(container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label')).toBe('Vertical with point · No relation');
+    // The guide comes from the active line's own start, so the line keeps it as a relation.
+    expect(container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label')).toBe('Vertical');
     expect(container.querySelectorAll('.cad-sketch-snap-guide')).toHaveLength(1);
     await move(30.03, 50, { ctrlKey: true }); expect(container.querySelector('.cad-sketch-snap-hint')).toBeNull();
     await h.click(30.03, 50); await h.click(50, 50.04); await h.click(30, 30);
@@ -135,6 +136,60 @@ describe('sketch canvas profile picking', () => {
     const { start: first, segments: [{ end: second }, { end: third }] } = onAddPath.mock.calls[0][0];
     expect(first).toEqual([expect.closeTo(30, 10), expect.closeTo(30, 10)]);
     expect(second).toEqual([first[0], expect.closeTo(50, 10)]); expect(third).toEqual([expect.closeTo(50, 10), second[1]]);
+    // The return to the start closes the polyline and keeps no inferred relation.
+    expect(onAddPath.mock.calls[0][0].segments.map((segment: { inferred?: object }) => segment.inferred)).toEqual([
+      { kind: 'vertical', relationId: expect.any(String) }, { kind: 'horizontal', relationId: expect.any(String) }, undefined]);
+  });
+  it('keeps a line drawn along its own start guide horizontal unless Ctrl or Create relations releases it', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { tool: 'line', onAddPath });
+    const move = (x: number, y: number, init: MouseEventInit = {}) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0, ...init });
+    const hint = () => container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label') ?? null;
+    await h.click(10, 10); await move(30, 10.03); expect(hint()).toBe('Horizontal'); await h.click(30, 10.03);
+    expect(onAddPath).toHaveBeenCalledOnce();
+    const [{ start, segments: [line] }, closed] = onAddPath.mock.calls[0];
+    expect(closed).toBe(false); expect(line.end).toEqual([expect.closeTo(30, 10), start[1]]);
+    expect(line.inferred).toEqual({ kind: 'horizontal', relationId: expect.any(String) });
+    await h.click(10, 40); await h.click(30, 40.03, h.svg, { ctrlKey: true });
+    expect(onAddPath.mock.calls[1][0].segments[0].end).toEqual([expect.closeTo(30, 10), expect.closeTo(40.03, 10)]);
+    expect(onAddPath.mock.calls[1][0].segments[0]).not.toHaveProperty('inferred');
+    await relations(false); await h.click(10, 70); await move(30, 70.03); expect(hint()).toBe('Horizontal with point · No relation'); await h.click(30, 70.03);
+    // The guide still places the end level; only the relation is left out.
+    expect(onAddPath.mock.calls[2][0].segments[0].end).toEqual([expect.closeTo(30, 10), onAddPath.mock.calls[2][0].start[1]]);
+    expect(onAddPath.mock.calls[2][0].segments[0]).not.toHaveProperty('inferred');
+  });
+  it('releases the relation and attachment of a held short pick when Ctrl or Cmd is pressed before release', async () => {
+    for (const modifier of ['ctrlKey', 'metaKey'] as const) {
+      const onAddPath = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+      const press = (type: string, x: number, y: number, init: MouseEventInit = {}) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ...init });
+      const hold = async (start: readonly [number, number], end: readonly [number, number], hint: string) => {
+        await h.click(...start); await h.pointer('pointermove', { ...h.position(...end), button: 0, buttons: 0 });
+        expect(container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label')).toBe(hint);
+        // Both ends lie within the press-and-hold area, so the line is placed on release.
+        await press('pointerdown', ...end); await press('pointerup', ...end, { [modifier]: true }); await h.click(...end, h.svg, { [modifier]: true });
+        const [line] = onAddPath.mock.calls.at(-1)![0].segments;
+        expect(line.end).toEqual([expect.closeTo(end[0], 9), expect.closeTo(end[1], 9)]);
+        expect(line).not.toHaveProperty('inferred'); expect(line).not.toHaveProperty('endPick');
+      };
+      await hold([30, 25], [30.01, 25.32], 'Vertical');
+      await hold([22.1, 3.45], [22.11, 3.22], 'Coincident with Point 2');
+      expect(onAddPath).toHaveBeenCalledTimes(2);
+    }
+  });
+  it('infers only for polyline line segments and names an attachment before the relation', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    const move = (x: number, y: number) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });
+    const hint = () => container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label') ?? null;
+    const mode = (name: string) => act(async () => { [...container.querySelectorAll<HTMLButtonElement>('[aria-label="Segment mode"] button')].find(button => button.textContent === name)!.click(); });
+    // The start's vertical guide crosses the existing line at (8, 3.2).
+    await h.click(8, 30); await move(8.03, 3.23); expect(hint()).toBe('Point on line · Vertical'); await h.click(8.03, 3.23);
+    await mode('3-point Arc'); await move(30, 3.23); expect(hint()).toBe('Horizontal with point · No relation');
+    await h.click(30, 3.23); await h.click(19, 8);
+    await mode('Line'); await h.click(30.03, 30);
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')?.click(); });
+    const [line, arc, last] = onAddPath.mock.calls[0][0].segments;
+    expect(line).toMatchObject({ kind: 'line', end: [8, 3.2], endPick: { kind: 'on-line', lineId: 'line' }, inferred: { kind: 'vertical' } });
+    expect(arc.kind).toBe('arc'); expect(arc).not.toHaveProperty('inferred');
+    expect(last).toMatchObject({ kind: 'line', end: [arc.end[0], expect.closeTo(30, 10)], inferred: { kind: 'vertical' } });
   });
   it('drops a hovered center once a parameter edit moves it, also when the sketch keeps its object', async () => {
     const sketch = { id: 'sketch', name: 'Sketch', suppressed: false, kind: 'sketch' as const, plane: 'XY' as const, offset: 0,
@@ -328,6 +383,16 @@ describe('sketch canvas profile picking', () => {
     expect(h.added).toHaveBeenCalledOnce();
     expect(h.added).toHaveBeenLastCalledWith({ kind: 'rectangle', x: expect.closeTo(2, 9), y: expect.closeTo(3, 9), width: expect.closeTo(0.4, 9), height: expect.closeTo(0.3, 9), cornerRadius: 0 }, expect.any(AbortSignal));
     expect(h.error).not.toHaveBeenCalled();
+  });
+  it('keeps a held press at its pressed sketch position when the canvas resizes before release', async () => {
+    const h = await fixture([], { tool: 'rectangle' });
+    const press = (type: string, x: number, y: number, init: MouseEventInit = {}) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ...init });
+    await press('pointerdown', 25, 25); await press('pointerup', 25, 25); await h.click(25, 25);
+    // A held Ctrl press on the first corner repeats it exactly; the resize must not turn the release into a new corner.
+    await press('pointerdown', 25, 25, { ctrlKey: true });
+    Object.assign(h.svg, { getBoundingClientRect: () => ({ left: 10, top: 20, width: 1000, height: 600 }) });
+    await press('pointerup', 25, 25, { ctrlKey: true });
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
   });
   it('never retries a rejected completing press with the release point', async () => {
     const added = vi.fn(() => { throw new Error('Rejected rectangle.'); });

@@ -20,9 +20,14 @@ export type CadFreshSketchPick =
 export function cadFreshSketchDatumAxes(datum: CadFreshSketchDatum): readonly ('x' | 'y')[] {
   return datum === 'origin' ? ['x', 'y'] : datum === 'x-axis' ? ['y'] : ['x'];
 }
-/** One connected polyline step. An arc's `through` point only shapes it and never attaches to other geometry. */
+/** A horizontal or vertical relation a drawn line keeps between its own two endpoints. */
+export interface CadFreshSketchInference { readonly kind: 'horizontal' | 'vertical'; readonly relationId: string }
+/**
+ * One connected polyline step. An arc's `through` point only shapes it and never attaches to other geometry. A line's
+ * `inferred` relation needs its ends exactly level or plumb and never closes the polyline.
+ */
 export type CadFreshSketchPolylineStep =
-  | { readonly kind: 'line'; readonly end: CadFreshSketchPick }
+  | { readonly kind: 'line'; readonly end: CadFreshSketchPick; readonly inferred?: CadFreshSketchInference }
   | { readonly kind: 'arc'; readonly end: CadFreshSketchPick; readonly through: CadConstructionPoint };
 export type CadFreshSketchDrawing =
   | { readonly kind: 'rectangle'; readonly first: CadFreshSketchPick; readonly opposite: CadFreshSketchPick }
@@ -208,7 +213,8 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
       throw new CadError('invalid-fresh-sketch-reference', 'A point placed on the origin or an axis must lie exactly on it.');
     return point;
   }
-  function finish(graph: CadSketchGraph, bindings: readonly { readonly pick: CadFreshSketchPick; readonly pointId: string }[]): CadSketchGraph {
+  /** Inferred relations follow every attachment, so a solver that sets a repeated relation aside names them first. */
+  function finish(graph: CadSketchGraph, bindings: readonly { readonly pick: CadFreshSketchPick; readonly pointId: string }[], inferred: readonly CadSketchGraphRelation[] = []): CadSketchGraph {
     const relations: CadSketchGraphRelation[] = [...graph.relations, ...bindings.flatMap(({ pick, pointId }): CadSketchGraphRelation[] => {
       switch (pick.kind) {
         case 'coincident': return [{ id: pick.relationId, kind: 'coincident', pointIds: [pointId, pick.sourcePointId] }];
@@ -217,7 +223,7 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
         case 'datum': return cadFreshSketchDatumAxes(pick.datum).map((axis, index) => ({ id: pick.relationIds[index], kind: 'fixed-axis', pointId, axis, value: 0 }));
         case 'position': return [];
       }
-    })];
+    }), ...inferred];
     const merged = acceptedGraph({ points: [...existing.points, ...graph.points], entities: [...existing.entities, ...graph.entities], relations: [...existing.relations, ...relations] }, parameters);
     return Object.freeze({ points: Object.freeze(merged.points.slice(existing.points.length)), entities: Object.freeze(merged.entities.slice(existing.entities.length)),
       relations: Object.freeze(merged.relations.slice(existing.relations.length)) });
@@ -252,9 +258,18 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
       const returns = drawing.closed && last !== undefined && samePosition(steps[steps.length - 1].end, start);
       if (returns && last.end.kind !== 'position' && !sameAttachment(last.end, drawing.start))
         throw new CadError('ambiguous-path-closure', 'The last point attaches to different geometry than the start. Click the start itself to close the polyline.');
+      const inferences = drawing.steps.flatMap((step, index) => {
+        if (step.kind !== 'line' || !step.inferred) return [];
+        const { kind, relationId } = step.inferred, from = index ? steps[index - 1].end : start, to = steps[index].end;
+        if (returns && index === steps.length - 1) throw new CadError('invalid-fresh-sketch-inference', 'A line that closes a polyline cannot keep an inferred relation.');
+        if (kind === 'horizontal' ? from[1] !== to[1] : kind === 'vertical' ? from[0] !== to[0] : true)
+          throw new CadError('invalid-fresh-sketch-inference', 'An inferred horizontal or vertical relation needs a line drawn exactly level or plumb.');
+        return [{ index, kind, relationId }];
+      });
       const { graph, pointIds } = allocatePolyline(start, steps, drawing.closed, construction, createId);
       const bindings = [{ pick: drawing.start, pointId: pointIds[0] }, ...drawing.steps.flatMap((step, index) => returns && index === steps.length - 1 ? [] : [{ pick: step.end, pointId: pointIds[index + 1] }])];
-      return Object.freeze({ kind: 'polyline', pointIds: Object.freeze(pointIds), geometry: finish(graph, bindings) });
+      return Object.freeze({ kind: 'polyline', pointIds: Object.freeze(pointIds), geometry: finish(graph, bindings,
+        inferences.map(({ index, kind, relationId }) => ({ id: relationId, kind, pointIds: [pointIds[index], pointIds[index + 1]] }))) });
     }
     case 'slot': {
       const first = checkedPoint(drawing.first), second = checkedPoint(drawing.second), width = numeric(drawing.width);

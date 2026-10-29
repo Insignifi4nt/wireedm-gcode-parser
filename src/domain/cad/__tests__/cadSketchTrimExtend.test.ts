@@ -5,7 +5,7 @@ import { prepareCadSketchTrim, trimCadSketchEntity } from '../cadSketchTrimExten
 import { cadAnalyticSegments } from '../cadAnalyticSegments';
 import { signedAreaOfPath } from '@/domain/path-intel/segments';
 import { createCadDocument, parseCadDocument } from '../cadSchema';
-import { createCadFreshSketchGraph } from '../cadFreshSketchGraph';
+import { createCadFreshSketchDrawing, createCadFreshSketchGraph } from '../cadFreshSketchGraph';
 
 function fences() {
   return parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] },
@@ -198,6 +198,23 @@ describe('exact sketch end Trim', () => {
     expect(result).toMatchObject({ retainedEntityId: null, removedEntityId: 'edge', cutPointId: null });
     expect(result.graph.entities).toEqual([graph.entities[1]]); expect(result.graph.points).toEqual(without(graph.points, 'a', 'b'));
     expect(JSON.stringify(graph)).toBe(before);
+  });
+
+  it('moves the horizontal relation a drawn line inferred onto the end that a trim leaves it', () => {
+    const fence = parseCadSketchGraph({ points: [{ id: 'c', position: [5, -5] }, { id: 'd', position: [5, 5] }],
+      entities: [{ id: 'left', kind: 'line', startPointId: 'c', endPointId: 'd', construction: true }], relations: [] });
+    let next = 0;
+    const drawn = createCadFreshSketchDrawing({ drawing: { kind: 'polyline', start: { kind: 'position', point: [0, 0] }, closed: false,
+      steps: [{ kind: 'line', end: { kind: 'position', point: [20, 0] }, inferred: { kind: 'horizontal', relationId: 'drawn-level' } }] },
+    construction: false, createId: () => `drawn-${++next}`, existingGraph: fence });
+    if (drawn.kind !== 'polyline') throw new Error('Expected polyline roles.');
+    const graph = parseCadSketchGraph({ points: [...fence.points, ...drawn.geometry.points], entities: [...fence.entities, ...drawn.geometry.entities], relations: [...drawn.geometry.relations] });
+    const preview = prepareCadSketchTrim({ graph, parameters: {}, entityId: drawn.geometry.entities[0].id, parameter: 0.1 });
+    if (preview.target.kind !== 'end') throw new Error('Expected end trim.');
+    expect(preview.target.removedRelationIds).toBeUndefined();
+    const trimmed = trimCadSketchEntity({ graph, parameters: {}, trim: { ...preview.target, cutPointId: 'cut' } }).graph;
+    expect(trimmed.relations).toEqual([{ id: 'drawn-level', kind: 'horizontal', pointIds: ['cut', drawn.pointIds[1]] }]);
+    expect(trimmed.points.find(point => point.id === 'cut')?.position).toEqual([5, 0]);
   });
 
   it('removes detached-end and redefined whole-entity relations only when confirmed, while preserving unrelated exact relation text', () => {

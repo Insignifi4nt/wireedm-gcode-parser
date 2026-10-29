@@ -11,7 +11,8 @@ function samePoint(a: CadConstructionPoint, b: CadConstructionPoint): boolean {
 /**
  * Compile live authored joints, never recover topology from encoded profile samples.
  * Every drawn point is new: snapped attachments become removable relations, and only
- * consecutive segments and a closed chain's final exact return share a point.
+ * consecutive segments and a closed chain's final exact return share a point. A line's
+ * inferred horizontal or vertical relation follows the attachments.
  * Return an append payload that leaves the existing graph unchanged.
  */
 export function createCadPathDraftGraph({ draft, closed, construction, createId, existingGraph, parameters = {} }: {
@@ -40,7 +41,7 @@ export function createCadPathDraftGraph({ draft, closed, construction, createId,
         throw new CadError('invalid-path-draft-arc', 'The live arc support must match its authored start, end and through points.');
     }
     current = segment.end;
-    return segment.kind === 'line' ? { kind: 'line' as const, end: pick(segment.end, segment.endPick) }
+    return segment.kind === 'line' ? { kind: 'line' as const, end: pick(segment.end, segment.endPick), ...(segment.inferred ? { inferred: segment.inferred } : {}) }
       : { kind: 'arc' as const, end: pick(segment.end, segment.endPick), through: segment.through };
   });
   return createCadFreshSketchDrawing({ drawing: { kind: 'polyline', start: pick(draft.start, draft.startPick), steps, closed },

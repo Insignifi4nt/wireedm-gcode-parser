@@ -1,6 +1,6 @@
 import type { CadProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
-import type { CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
+import type { CadFreshSketchInference, CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
 import {
   copyCadConstructionPoint, createCadConstructionLine, createCadOpenCurveSegments, createCadPathProfile, createCadThreePointArc,
   MAX_CAD_PATH_CONSTRUCTION_EDGES, type CadConstructedArc, type CadConstructionPoint, type CadPathConstructionStep
@@ -10,15 +10,18 @@ import { cadPathClosureTolerance, type ResolvedCadPathSegment } from '@/domain/c
 export type CadPathDrawingMode = 'line' | 'arc';
 /** A snap that attaches a draft point to other geometry with a removable relation once the draft is accepted. */
 export type CadPathDraftPick = Exclude<CadFreshSketchPick, { kind: 'position' }>;
-export type CadPathDraftSegment = (Extract<ResolvedCadPathSegment, { kind: 'line' }>
+export type CadPathDraftSegment = ((Extract<ResolvedCadPathSegment, { kind: 'line' }> & { readonly inferred?: CadFreshSketchInference })
   | (CadConstructedArc & { readonly end: CadConstructionPoint; readonly through: CadConstructionPoint })) & { readonly endPick?: CadPathDraftPick };
 export type CadPathDraft =
   | { readonly kind: 'idle'; readonly mode: CadPathDrawingMode }
   | { readonly kind: 'ready'; readonly start: CadConstructionPoint; readonly startPick?: CadPathDraftPick; readonly segments: readonly CadPathDraftSegment[]; readonly mode: CadPathDrawingMode }
   | { readonly kind: 'arc-through'; readonly start: CadConstructionPoint; readonly startPick?: CadPathDraftPick; readonly segments: readonly CadPathDraftSegment[]; readonly end: CadConstructionPoint; readonly endPick?: CadPathDraftPick };
 export type CadPathDrawingAction =
-  /** `pick` attaches the point; an arc's through point only shapes the arc, so its pick is ignored. */
-  | { readonly kind: 'point'; readonly point: CadConstructionPoint; readonly pick?: CadFreshSketchPick }
+  /**
+   * `pick` attaches the point; an arc's through point only shapes the arc, so its pick is ignored. `inferred` keeps a line
+   * ending exactly level or plumb with its start horizontal or vertical; any other point ignores it.
+   */
+  | { readonly kind: 'point'; readonly point: CadConstructionPoint; readonly pick?: CadFreshSketchPick; readonly inferred?: CadFreshSketchInference }
   | { readonly kind: 'mode'; readonly mode: CadPathDrawingMode }
   | { readonly kind: 'undo-last' }
   | { readonly kind: 'cancel' };
@@ -46,10 +49,19 @@ export function cadPathDraftPicks(draft: CadPathDraft): readonly CadPathDraftPic
   return picks.filter((pick): pick is CadPathDraftPick => pick !== undefined);
 }
 
-/** The same drawn points with every pending attachment released. */
+/** Every pending horizontal or vertical relation, in drawing order. */
+export function cadPathDraftInferences(draft: CadPathDraft): readonly CadFreshSketchInference[] {
+  return draft.kind === 'idle' ? [] : draft.segments.flatMap(segment => segment.kind === 'line' && segment.inferred ? [segment.inferred] : []);
+}
+
+/** The same drawn points with every pending attachment and inferred relation released. */
 export function releaseCadPathDraftPicks(draft: CadPathDraft): CadPathDraft {
-  if (!cadPathDraftPicks(draft).length || draft.kind === 'idle') return draft;
-  const segments = Object.freeze(draft.segments.map(entry => { const { endPick: _released, ...segment } = entry; return Object.freeze(segment); }));
+  if (draft.kind === 'idle' || !cadPathDraftPicks(draft).length && !cadPathDraftInferences(draft).length) return draft;
+  const segments = Object.freeze(draft.segments.map(entry => {
+    const { endPick: _released, ...segment } = entry;
+    if (segment.kind !== 'line') return Object.freeze(segment);
+    const { inferred: _dropped, ...line } = segment; return Object.freeze(line);
+  }));
   if (draft.kind === 'ready') return Object.freeze({ kind: 'ready', start: draft.start, segments, mode: draft.mode });
   return Object.freeze({ kind: 'arc-through', start: draft.start, segments, end: draft.end });
 }
@@ -58,6 +70,13 @@ function attachment(point: CadConstructionPoint, pick: CadFreshSketchPick | unde
   if (!pick || pick.kind === 'position') return {};
   if (pick.point[0] !== point[0] || pick.point[1] !== point[1]) throw new CadError('invalid-construction', 'A point attachment must keep the picked position.');
   return { pick };
+}
+
+function inference(start: CadConstructionPoint, end: CadConstructionPoint, inferred: CadFreshSketchInference | undefined): { readonly inferred?: CadFreshSketchInference } {
+  if (!inferred) return {};
+  if (inferred.kind === 'horizontal' ? start[1] !== end[1] : inferred.kind === 'vertical' ? start[0] !== end[0] : true)
+    throw new CadError('invalid-construction', 'An inferred horizontal or vertical relation needs a line drawn exactly level or plumb.');
+  return { inferred: Object.freeze({ kind: inferred.kind, relationId: inferred.relationId }) };
 }
 
 /** Only committed segments are retained. Arc endpoints remain logical picks, not rounded circle samples. */
@@ -89,7 +108,7 @@ export function updateCadPathDraft(draft: CadPathDraft, action: CadPathDrawingAc
       const segment: CadPathDraftSegment = draft.kind === 'arc-through'
         ? Object.freeze({ ...createCadThreePointArc({ start, end: draft.end, through: point }), end: draft.end, through: point,
           ...(draft.endPick !== undefined ? { endPick: draft.endPick } : {}) })
-        : Object.freeze({ ...createCadConstructionLine(start, point), ...(pick ? { endPick: pick } : {}) });
+        : Object.freeze({ ...createCadConstructionLine(start, point), ...(pick ? { endPick: pick } : {}), ...inference(start, point, action.inferred) });
       return Object.freeze({ kind: 'ready', start: draft.start, ...startReference, segments: Object.freeze([...draft.segments, segment]), mode });
     }
     default: { const exhaustive: never = action; throw new CadError('invalid-construction', `Unsupported drawing action: ${String(exhaustive)}`); }

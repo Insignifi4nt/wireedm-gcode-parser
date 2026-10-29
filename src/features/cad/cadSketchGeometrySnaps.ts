@@ -306,3 +306,20 @@ export function cadSketchSnapRelation(target: CadSketchSnapTarget): string | nul
   return target.kind === 'origin' ? 'Fixed at origin' : target.kind === 'on-axis' ? `Fixed ${target.axis === 'x' ? 'Y' : 'X'} at 0`
     : target.kind === 'on-entity' ? target.entityKind === 'line' ? 'Point on line' : 'Point on curve' : 'pointId' in target ? 'Coincident' : null;
 }
+
+/**
+ * The relation a line from `start` to `end` keeps because `end` followed the guide from `start` itself: exactly level
+ * for horizontal, exactly plumb for vertical. A guide from any other point copies a position only.
+ */
+export function cadSketchDrawingInference(target: CadSketchSnapTarget, start: SketchPoint, end: SketchPoint): 'horizontal' | 'vertical' | null {
+  if (target.kind !== 'aligned' && target.kind !== 'on-entity' && target.kind !== 'on-axis') return null;
+  const fromStart = (source: SketchPoint | undefined) => source !== undefined && source[0] === start[0] && source[1] === start[1];
+  if (fromStart(target.horizontal) && end[1] === start[1] && end[0] !== start[0]) return 'horizontal';
+  if (fromStart(target.vertical) && end[0] === start[0] && end[1] !== start[1]) return 'vertical';
+  return null;
+}
+/** The snap hint for a line keeping `axis`: any attachment first, then the relation, then a guide that only copies a position. */
+export function cadSketchDrawingInferenceLabel(target: CadSketchSnapTarget, axis: 'horizontal' | 'vertical'): string {
+  const other = target.kind !== 'aligned' ? undefined : axis === 'horizontal' ? target.vertical && 'vertical with point' : target.horizontal && 'horizontal with point';
+  return [cadSketchSnapRelation(target), axis === 'horizontal' ? 'Horizontal' : 'Vertical', other].filter(Boolean).join(' · ');
+}

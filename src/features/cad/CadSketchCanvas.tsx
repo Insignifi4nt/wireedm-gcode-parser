@@ -17,7 +17,7 @@ import { DRAG_GRID_CATCH_PIXELS, magnetSketchPoint, slotSketchProfile, slotSketc
 import { CadSketchProfileGeometry } from './CadSketchProfileGeometry';
 import { createCadSketchHandlePicker, createCadSketchProfilePicker, type CadSketchHandlePick } from './cadSketchPicking';
 import { cadPathDraftEndpoint, cadPathDraftPicks, closeCadPolylineProfile, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft, type CadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
-import { cadSketchSnapRelation, cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
+import { cadSketchDrawingInference, cadSketchDrawingInferenceLabel, cadSketchSnapRelation, cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { prepareCadSketchProfilePositionSnaps } from './cadSketchProfilePositionSnaps';
 import { cadSketchProfileSnapLabel } from './cadSketchSnapLabels';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
@@ -219,7 +219,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
    * a drag draws from that point, and a plain click places it then. `changes` is the draft change the press left.
    */
   const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; changes: number;
-    readonly held: { readonly pick: DrawingPick; readonly last: SketchPoint } | null; dragged: boolean } | null>(null);
+    readonly held: { readonly last: SketchPoint; readonly raw: SketchPoint; readonly scale: SketchPoint } | null; dragged: boolean } | null>(null);
   /**
    * Counts drawing draft changes and whether the latest one added a point. A press keeps its release only while its own
    * change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick during the press, ends it.
@@ -378,11 +378,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const inferring = canInfer && inferCoincidence && !(tool === 'circle' && picks.length) && !(tool === 'slot' && picks.length > 1) && !(pathTool && pathDraft.kind === 'arc-through');
   const inferencePoint = inferring && snapHint && 'pointId' in snapHint.target ? snapHint.target.pointId : undefined;
   const inferenceRelation = inferring && snapHint ? cadSketchSnapRelation(snapHint.target) : null;
+  // A line ending on its own start's guide keeps that relation; a return to the chain start closes it instead.
+  const lineInference = (candidate: CadSketchSnapCandidate | undefined, point: SketchPoint) => inferring && pathTool && pathDraft.kind === 'ready' && pathDraft.mode === 'line'
+    && candidate && (point[0] !== pathDraft.start[0] || point[1] !== pathDraft.start[1]) ? cadSketchDrawingInference(candidate.target, cadPathDraftEndpoint(pathDraft), point) : null;
+  const inferredAxis = snapHint ? lineInference(snapHint, snapHint.point) : null;
   const snapLabel = inferencePoint ? `Coincident with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === inferencePoint) ?? -1) + 1}`
     : snapHint ? snapHint.target.kind === 'profile-position' ? `${cadSketchProfileSnapLabel(snapHint.target, sourceProfiles)} · Position only · No relation`
     : snapHint.target.kind === 'draft-start' ? sketch.kind === 'curve' ? 'Curve start'
       : pathDraft.kind === 'ready' && pathDraft.segments.length > (pathDraft.mode === 'line' ? 1 : 0) ? 'Close polyline' : 'Polyline start'
     : 'pointId' in snapHint.target || snapHint.target.kind === 'midpoint' ? `${snapHint.target.kind[0].toUpperCase()}${snapHint.target.kind.slice(1)} position · No relation`
+    : inferredAxis ? cadSketchDrawingInferenceLabel(snapHint.target, inferredAxis)
     : `${cadSketchSnapTargetLabel(snapHint.target)} · ${inferenceRelation ?? 'No relation'}` : '';
   const snapHighlight: CadSketchGraphSelection | null = snapHint && 'pointId' in snapHint.target ? { kind: 'point', id: snapHint.target.pointId }
     : snapHint && 'entityId' in snapHint.target ? { kind: 'entity', id: snapHint.target.entityId } : null;
@@ -862,8 +867,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     };
     if (pathTool) {
       // An arc's through point only shapes the arc.
-      const pick = canInfer && pathDraft.kind !== 'arc-through' ? authoredPick() : undefined;
-      changePath({ kind: 'point', point, ...(pick && pick.kind !== 'position' ? { pick } : {}) }); return;
+      const pick = canInfer && pathDraft.kind !== 'arc-through' ? authoredPick() : undefined, axis = lineInference(candidate, point);
+      changePath({ kind: 'point', point, ...(pick && pick.kind !== 'position' ? { pick } : {}), ...(axis ? { inferred: { kind: axis, relationId: crypto.randomUUID() } } : {}) }); return;
     }
     const appendPick = (pick: CadFreshSketchPick) => {
       if (referencesSource(pick) && !attachedSource.current) attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
@@ -961,7 +966,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             const beside = last && bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
               event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS;
             const press = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, changes: draftChanges.current.count,
-              held: beside && last ? { pick, last } : null, dragged: false };
+              held: beside && last ? { last, raw: getRawPoint(event) ?? [0, 0], scale: [width / bounds.width, span / bounds.height] as SketchPoint } : null, dragged: false };
             drawingPress.current = press;
             try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
             if (beside) return;
@@ -1005,8 +1010,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (event.button !== 0 || interactionLocked || draftChanges.current.count !== press.changes || !(points.length > 0 || pathPending)) return;
           if (press.dragged) acceptDrawingPick(getDrawingPick(event), event);
           // A held press that did not drag is a deliberate short pick, unless it repeats the last point exactly.
-          else if (press.held && (press.held.pick.point[0] !== press.held.last[0] || press.held.pick.point[1] !== press.held.last[1]))
-            acceptDrawingPick(press.held.pick, { clientX: press.clientX, clientY: press.clientY });
+          // It resolves again at the pressed sketch position so Ctrl or Cmd pressed during the hold still releases snaps and relations.
+          else if (press.held) {
+            const pick = resolveDrawingPick(press.held.raw, event.ctrlKey || event.metaKey, 'pointer', press.held.scale);
+            if (pick.point[0] !== press.held.last[0] || pick.point[1] !== press.held.last[1]) acceptDrawingPick(pick, { clientX: press.clientX, clientY: press.clientY });
+          }
           return;
         }
         if (boxSelection.active()) { if (boxSelection.end(event)) suppressProfileClick.current = true; return; }
@@ -1251,8 +1259,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       if (!pathTool || !pathPending || interactionLocked || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === 'Backspace' || event.key === 'Escape') { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }, true); }
     }}><span>{instruction}</span>
-      {canInfer && <label className="cad-check"><Input type="checkbox" aria-label="Create coincident relations" checked={inferCoincidence} disabled={interactionLocked}
-        title="Attach future snapped points with removable relations: coincident with endpoints and centers, on a line, arc or circle, or on the origin and axes. Switching off releases pending attachments; accepted geometry is unchanged."
+      {canInfer && <label className="cad-check"><Input type="checkbox" aria-label="Create relations" checked={inferCoincidence} disabled={interactionLocked}
+        title="Attach future snapped points with removable relations: coincident with endpoints and centers, on a line, arc or circle, or on the origin and axes. A line drawn along its start's horizontal or vertical guide stays horizontal or vertical. Switching off releases pending relations; accepted geometry is unchanged."
         onChange={event => { const enabled = event.target.checked; setInferCoincidence(enabled); if (!enabled) { setPicks(current => current.map(pick => ({ kind: 'position', point: pick.point }))); setPathDraft(releaseCadPathDraftPicks); } }} />Create relations</label>}
       {pendingPicks.length > 0 && <span aria-label="Pending relations">{pendingPicks.length} attached</span>}
       {tool === 'path' && <>
