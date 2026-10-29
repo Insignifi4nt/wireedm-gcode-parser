@@ -96,7 +96,7 @@ function PreviousEditorHeader() {
   return <div>Previous editor content</div>;
 }
 
-async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'onBeginSketchEdit' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
+async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onPrepareEdits' | 'onWorkflowChange' | 'onBeginSketchEdit' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
   const session = new CadSession(initial);
   currentSession = session;
   function Harness() {
@@ -1974,7 +1974,9 @@ describe('CAD sketch interaction', () => {
     const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Datums', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph }] });
     const parsed = source.features[0]; if (parsed.kind !== 'sketch' || !parsed.graph) throw new Error('Sketch missing.');
     const submitted: string[][] = [], base = parsed.graph;
-    await mount(source, { build: null, buildState: 'idle', onEditMany: edits => {
+    // The retry first prepares the reduced set without applying it; the second fix must hold in that result.
+    let reduced: (edits: readonly CadEdit[]) => CadDocument = edits => { const preview = new CadSession(currentDocument); preview.edit(edits); return preview.getSnapshot().document; };
+    await mount(source, { build: null, buildState: 'idle', onPrepareEdits: async edits => reduced(edits), onEditMany: edits => {
       const fixes = edits.flatMap(edit => edit.kind === 'set-sketch-relation' && edit.relation.kind === 'fixed-axis' ? [edit.relation] : []);
       submitted.push(fixes.map(relation => relation.pointId));
       // Relations the tool does not trace already keep the line level, so the sketch rejects the second endpoint fix.
@@ -2000,6 +2002,15 @@ describe('CAD sketch interaction', () => {
     await act(async () => choice.click());
     expect(submitted.slice(2)).toEqual([['a', 'b'], ['a']]); expect(relations()).toMatchObject([{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }]);
     expect(container.querySelector('[role="alert"]')).toBeNull();
+    // A reduced result that leaves b off the axis keeps the first rejection, and nothing is applied.
+    await canvasKey('Escape'); await act(async () => currentSession.undo()); expect(relations()).toEqual([]);
+    reduced = () => parseCadDocument({ ...source, features: [{ ...parsed, graph: { ...graph, points: [graph.points[0], { id: 'b', position: [25, 4] }] } }] });
+    await key('[data-cad-sketch-entity="base"]'); await key('[data-cad-sketch-datum="x-axis"]', true);
+    await click('Constrain');
+    const again = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(entry => entry.textContent?.trim() === 'Coincident'); if (!again) throw new Error('Coincident choice missing.');
+    await act(async () => again.click());
+    expect(submitted.slice(4)).toEqual([['a', 'b']]); expect(relations()).toEqual([]);
+    expect(statusMessage).toHaveBeenLastCalledWith(expect.stringContaining('Sketch constraints are redundant.'), 'error');
   });
 
   it('keeps a point on an arc or circle with Coincident, picked after the tool or from the selection, and removes it from the selection menu', async () => {

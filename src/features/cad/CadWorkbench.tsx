@@ -27,7 +27,7 @@ import type { CadSketchOffsetSource } from '@/domain/cad/cadSketchOffset';
 import type { CadSketchAreaRepairInspection, CadSketchAreaRepairs } from './cadSketchEditDraft';
 import { CadSketchConstraintStatus, type CadInspectSketchConstraints } from './CadSketchConstraintStatus';
 import type { CadSketchConstraintFeedbackSubject } from './cadSketchConstraintFeedback';
-import { appendCadSketchGraphWithInferences, cadSketchInferenceNote, submitCadSketchRelationsWithoutRepeats } from './cadSketchInferenceFallback';
+import { appendCadSketchGraphWithInferences, cadSketchInferenceNote, cadSketchRelationsHold, submitCadSketchRelationsWithoutRepeats } from './cadSketchInferenceFallback';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -1157,12 +1157,17 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     return [...placement ? [{ kind: 'translate-sketch-geometry' as const, sketchId: sourceSketchId, ...placement }] : [],
       ...relations.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation }))];
   };
-  // Relations the sketch may already imply are retried without the ones the solver finds repeated, on the same sketch only.
+  // Relations the sketch may already imply are retried without the ones the solver finds repeated, on the same sketch only,
+  // once a preparation that applies nothing shows the rest still satisfies them.
   const applyConstraint = (graph: CadSketchGraph, sourceSketchId: string, relations: readonly CadSketchGraphRelation[], optional: readonly string[] | undefined, signal?: AbortSignal) => {
     if (!optional?.length) return applyCanvasEdits(constraintEdits(graph, sourceSketchId, relations), signal);
     const base = interactionState.current;
     return submitCadSketchRelationsWithoutRepeats({ relations, optionalIds: optional, signal,
       current: () => interactionState.current.version === base.version && interactionState.current.sketchId === base.sketchId,
+      holds: async (kept, dropped) => {
+        const prepare = props.onPrepareEdits;
+        return prepare ? cadSketchRelationsHold(await prepare(constraintEdits(graph, sourceSketchId, kept), signal ?? new AbortController().signal), sourceSketchId, dropped) : false;
+      },
       submit: kept => applyCanvasEdits(constraintEdits(graph, sourceSketchId, kept), signal) });
   };
   // Selection first, as in CATIA's Constraint Definition dialog: the menu lists what fits the selected geometry and plane references.

@@ -6,7 +6,7 @@ import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { cadSketchConstraintStep, type CadSketchConstraintPick, type CadSketchConstraintTool } from './cadSketchConstraintTool';
-import { submitCadSketchRelationsWithoutRepeats } from './cadSketchInferenceFallback';
+import { cadSketchRelationsHold, submitCadSketchRelationsWithoutRepeats } from './cadSketchInferenceFallback';
 import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
 const runtime = createCadSketchTestSolver();
@@ -42,10 +42,10 @@ async function constrain(source: CadDocument, tool: CadSketchConstraintTool, ...
 async function constrainAsWorkbench(source: CadDocument, tool: CadSketchConstraintTool, ...ids: string[]) {
   const step = cadSketchConstraintStep(graphOf(source), tool, ids.map(pick), () => `r${++counter}`), submitted: string[][] = [];
   if (step.status !== 'ready') throw new Error(`Expected relations, got ${JSON.stringify(step)}.`);
-  const prepared = await submitCadSketchRelationsWithoutRepeats({ relations: step.relations, optionalIds: step.optional ?? [], current: () => true, submit: relations => {
-    submitted.push(relations.map(relation => relation.id));
-    return prepareCadEdits(source, relations.map(relation => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation } as const)), runtime);
-  } });
+  const edits = (relations: readonly CadSketchGraph['relations'][number][]) => relations.map(relation => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation } as const));
+  const prepared = await submitCadSketchRelationsWithoutRepeats({ relations: step.relations, optionalIds: step.optional ?? [], current: () => true,
+    holds: async (kept, dropped) => cadSketchRelationsHold((await prepareCadEdits(source, edits(kept), runtime)).document, 'sketch', dropped),
+    submit: relations => { submitted.push(relations.map(relation => relation.id)); return prepareCadEdits(source, edits(relations), runtime); } });
   return { step, submitted, document: prepared.document, diagnostics: prepared.sketchDiagnostics[0].diagnostics };
 }
 
@@ -105,6 +105,20 @@ describe('constraints with the plane origin and axes, solved natively', () => {
     const repeated = constrainAsWorkbench(part([{ id: 'cy', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 0 }, { id: 'dy', kind: 'fixed-axis', pointId: 'd', axis: 'y', value: 0 },
       { id: 'on', kind: 'point-on-line', pointId: 'a', lineId: 'cd' }, { id: 'p', kind: 'parallel', lineIds: ['ab', 'cd'] }], { ...onAxisLine, b: [10, 0] }), 'coincident', 'ab', 'x-axis');
     await expect(repeated).rejects.toSatisfy(error => error instanceof CadSketchPreparationError && error.feedback.reason === 'redundant');
+  });
+
+  it('keeps the first rejection when the coordinate the solver calls repeated would not hold without it', async () => {
+    // q lies on a fixed circle through the origin. Its X fix depends on the circle where the circle meets the Y = 0 line, yet Y = 0
+    // alone also holds q where it is, at (6, 0) on the far side.
+    const source = part([{ id: 'hub', kind: 'fixed-point', pointId: 'k', position: [3, 0] }, { id: 'size', kind: 'radial-size', entityId: 'ring', quantity: 'radius', value: 3 },
+      { id: 'on', kind: 'point-on-curve', pointId: 'q', curveId: 'ring' }], { k: [3, 0], q: [6, 0] });
+    await expect(constrainAsWorkbench(source, 'coincident', 'q', 'origin')).rejects.toSatisfy(error => error instanceof CadSketchPreparationError && error.feedback.reason === 'redundant');
+    // Without the check the reduced Y fix is accepted with q still at (6, 0).
+    const step = cadSketchConstraintStep(graphOf(source), 'coincident', [pick('q'), pick('origin')], () => `r${++counter}`);
+    if (step.status !== 'ready') throw new Error('Expected relations.');
+    const onlyY = step.relations.filter(relation => relation.kind === 'fixed-axis' && relation.axis === 'y');
+    const reduced = await prepareCadEdits(source, onlyY.map(relation => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation } as const)), runtime);
+    expect(at(reduced.document, 'q').map(value => Math.round(value * 1e9) / 1e9 + 0)).toEqual([6, 0]);
   });
 
   it('keeps the center of a circle or arc on an axis, and the arc ends follow', async () => {

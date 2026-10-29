@@ -983,7 +983,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       }}
       onClickCapture={event => { if (positionPick && event.button === 0 && event.detail > 0) { event.preventDefault(); event.stopPropagation(); } }}
       onPointerDown={(event) => {
-        datumPress.current = null;
+        // Another contact while an axis is held abandons the press and its trailing click; the same pointer pressing again replaces it.
+        if (datumPress.current && datumPress.current.pointerId !== event.pointerId) dropDatumPress(); else datumPress.current = null;
         if (boxSelection.active()) { boxSelection.begin(event); return; }
         if (profileDrag.current) return;
         // Only the primary pointer owns the trailing click; a second contact must not release its suppression.

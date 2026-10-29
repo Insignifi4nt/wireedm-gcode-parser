@@ -4,12 +4,12 @@ import type { CadDocument } from '@/domain/cad/cadDocument';
 import type { CadFreshSketchInference } from '@/domain/cad/cadFreshSketchGraph';
 import type { CadConstructionPoint } from '@/domain/cad/cadPathConstruction';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { prepareCadEdits } from './cadEditPreparation';
 import { createCadPathDraftGraph } from './cadPathDraftGraph';
 import { createCadPathDraft, updateCadPathDraft, type CadPathDraftPick } from './cadPathDrawing';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
-import { appendCadSketchGraphWithInferences, cadSketchInferenceNote, submitCadSketchRelationsWithoutRepeats } from './cadSketchInferenceFallback';
+import { appendCadSketchGraphWithInferences, cadSketchInferenceNote, cadSketchRelationsHold, submitCadSketchRelationsWithoutRepeats } from './cadSketchInferenceFallback';
 import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
 let solves = 0;
@@ -98,22 +98,39 @@ describe('inferred line relations at commit', () => {
       entities: [{ id: 'pq', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }, { id: 'rs', kind: 'line', construction: false, startPointId: 'r', endPointId: 's' }],
       relations: [{ id: 'level', kind: 'horizontal', pointIds: ['r', 's'] }, { id: 'along', kind: 'parallel', lineIds: ['pq', 'rs'] }] });
     const fixes = [{ id: 'p-y', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 0 }, { id: 'q-y', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 0 }] as const;
-    const run = (optionalIds: readonly string[], options: { current?: () => boolean; owner?: AbortController } = {}) => {
-      const attempts: string[][] = [];
-      const result = submitCadSketchRelationsWithoutRepeats({ relations: fixes, optionalIds, signal: options.owner?.signal, current: options.current ?? (() => true), submit: async relations => {
-        attempts.push(relations.map(relation => relation.id));
-        try { return await prepareCadEdits(document, relations.map(relation => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation } as const)), solver); }
-        catch (error) { options.owner?.abort(); throw error; }
-      } });
-      return { result, attempts };
+    const edits = (submitted: readonly CadSketchGraphRelation[]) => submitted.map(relation => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation } as const));
+    type Holds = (kept: readonly CadSketchGraphRelation[], dropped: readonly CadSketchGraphRelation[]) => boolean | Promise<boolean>;
+    const run = (optionalIds: readonly string[], options: { current?: () => boolean; owner?: AbortController; holds?: Holds } = {}) => {
+      const attempts: string[][] = [], checked: string[][] = [];
+      const result = submitCadSketchRelationsWithoutRepeats({ relations: fixes, optionalIds, signal: options.owner?.signal, current: options.current ?? (() => true),
+        holds: (kept, dropped) => {
+          checked.push(dropped.map(relation => relation.id));
+          return options.holds ? options.holds(kept, dropped) : prepareCadEdits(document, edits(kept), solver).then(prepared => cadSketchRelationsHold(prepared.document, 'sketch', dropped));
+        },
+        submit: async submitted => {
+          attempts.push(submitted.map(relation => relation.id));
+          try { return await prepareCadEdits(document, edits(submitted), solver); }
+          catch (error) { options.owner?.abort(); throw error; }
+        } });
+      return { result, attempts, checked };
     };
     const kept = run(['p-y', 'q-y']);
     expect(relations((await kept.result).document).slice(2)).toEqual([fixes[0]]); expect(kept.attempts).toEqual([['p-y', 'q-y'], ['p-y']]);
-    // A required relation the redundancy names, an abort or a changed base reports the first failure.
-    for (const attempt of [run(['p-y']), run(['p-y', 'q-y'], { owner: new AbortController() }), run(['p-y', 'q-y'], { current: () => false })]) {
+    expect(kept.checked).toEqual([['q-y']]);
+    // A required relation the redundancy names, an abort or a changed base reports the first failure. So does a reduced result
+    // that misses a dropped relation, a check that fails, and a base that changes while the check runs.
+    let calls = 0;
+    for (const attempt of [run(['p-y']), run(['p-y', 'q-y'], { owner: new AbortController() }), run(['p-y', 'q-y'], { current: () => false }),
+      run(['p-y', 'q-y'], { holds: () => false }), run(['p-y', 'q-y'], { holds: () => Promise.reject(new Error('Preparation failed.')) }),
+      run(['p-y', 'q-y'], { current: () => ++calls < 2 })]) {
       await expect(attempt.result).rejects.toSatisfy(error => error instanceof CadSketchPreparationError && error.feedback.reason === 'redundant');
       expect(attempt.attempts).toHaveLength(1);
     }
+    // The check reads the reduced result: an end the solve leaves off the axis fails it.
+    const off = await prepareCadEdits(document, edits([fixes[0]]), solver);
+    expect(cadSketchRelationsHold(off.document, 'sketch', [fixes[1]])).toBe(true);
+    expect(cadSketchRelationsHold(off.document, 'sketch', [{ ...fixes[1], value: 1 }])).toBe(false);
+    expect(cadSketchRelationsHold(off.document, 'missing', [fixes[1]])).toBe(false);
   });
 
   it('describes dropped relations neutrally', () => {

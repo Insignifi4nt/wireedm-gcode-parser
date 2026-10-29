@@ -390,7 +390,7 @@ describe('graph spatial selection', () => {
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
     expect(datum.mock.calls).toEqual([['x-axis', false], ['x-axis', false]]); expect(translate).toHaveBeenCalledOnce(); expect(move).toHaveBeenCalledOnce();
   });
-  it('drops a press on an axis, and its click, when the document, cancellation, lock, focus or canvas frame changes before release', async () => {
+  it('drops a press on an axis, and its click, when the document, cancellation, lock, focus or canvas frame changes, or another contact lands, before release', async () => {
     const h = await spatialFixture(), datum = vi.fn(), selectProfile = vi.fn();
     const profile = { id: 'legacy', name: 'Legacy rectangle', construction: false, geometry: { kind: 'rectangle' as const, x: -30, y: -5, width: 10, height: 10, cornerRadius: 0 } };
     await h.show({ sketch: { ...h.feature, profiles: [profile] }, onSelectProfile: selectProfile, graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
@@ -413,6 +413,13 @@ describe('graph spatial selection', () => {
     await interrupted(async () => { bounds.mockReturnValue({ ...original, top: original.top + 100, bottom: original.bottom + 100, y: original.y + 100, toJSON: () => ({}) }); });
     bounds.mockImplementation(frame); bounds.mockReturnValue(original);
     await interrupted(() => act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))));
+    // A second touch that lands and lifts while the axis is held makes the press a gesture rather than a tap.
+    const contact = async (type: string) => {
+      const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true, clientX: 600, clientY: 300 });
+      Object.defineProperties(event, { pointerId: { value: 8 }, isPrimary: { value: false } });
+      await act(async () => h.canvas.dispatchEvent(event));
+    };
+    await interrupted(async () => { await contact('pointerdown'); await contact('pointerup'); });
     expect(datum).not.toHaveBeenCalled(); expect(selectProfile).not.toHaveBeenCalled();
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
     expect(datum).toHaveBeenCalledExactlyOnceWith('x-axis', false); expect(selectProfile).not.toHaveBeenCalled();
