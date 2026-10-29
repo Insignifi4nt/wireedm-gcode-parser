@@ -263,6 +263,85 @@ describe('sketch canvas profile picking', () => {
     expect(h.added).not.toHaveBeenCalled(); expect(graphSketch).toEqual(original);
     expect(onAddFreshSketch.mock.calls[0][0].first.relationId).not.toBe(onAddFreshSketch.mock.calls[0][0].opposite.relationId);
   });
+  it('places a drawing point on press and draws a rectangle by press-drag-release or by a tap followed by a tap-drag', async () => {
+    const h = await fixture([], { tool: 'rectangle' }), rectangle = { kind: 'rectangle', x: expect.closeTo(2, 9), y: expect.closeTo(3, 9), width: expect.closeTo(10, 9), height: expect.closeTo(14, 9), cornerRadius: 0 };
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+    const instruction = () => container.querySelector('.cad-sketch-viewport p')?.textContent ?? '';
+    await press('pointerdown', 2, 3); expect(instruction()).toContain('Click the opposite corner');
+    await press('pointermove', 7, 9); await press('pointermove', 12, 17); await press('pointerup', 12, 17);
+    // The trailing click belongs to the drag and places nothing more.
+    await h.click(12, 17);
+    expect(h.added).toHaveBeenCalledOnce(); expect(h.added).toHaveBeenLastCalledWith(rectangle, expect.any(AbortSignal));
+    // A touchpad can report the tap and the tap-drag as two presses; the second one only grabs the tapped corner.
+    await press('pointerdown', 2, 3); await press('pointerup', 2, 3); await h.click(2, 3);
+    await press('pointerdown', 2, 3); await press('pointermove', 12, 17); await press('pointerup', 12, 17); await h.click(12, 17);
+    expect(h.added).toHaveBeenCalledTimes(2); expect(h.added).toHaveBeenLastCalledWith(rectangle, expect.any(AbortSignal));
+    expect(h.error).not.toHaveBeenCalled();
+  });
+  it('ignores a wobble within a drawing press and draws polyline segments with press-drag-release', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { tool: 'path', onAddPath });
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+    await press('pointerdown', 2, 3); await press('pointermove', 2.5, 3.4); await press('pointerup', 2.5, 3.4); await h.click(2.5, 3.4);
+    // The wobble stayed a click: only the start is placed.
+    expect(container.querySelector('.cad-sketch-viewport p')?.textContent).toContain('Click the next point');
+    await press('pointerdown', 2, 3); await press('pointermove', 20, 9); await press('pointerup', 20, 9); await h.click(20, 9);
+    await press('pointerdown', 20, 9); await press('pointermove', 33, 27); await press('pointerup', 33, 27); await h.click(33, 27);
+    await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(onAddPath).toHaveBeenCalledOnce();
+    const { start, segments } = onAddPath.mock.calls[0][0];
+    expect(start).toEqual([expect.closeTo(2, 9), expect.closeTo(3, 9)]);
+    expect(segments.map((segment: { end: readonly number[] }) => segment.end)).toEqual([[expect.closeTo(20, 9), expect.closeTo(9, 9)], [expect.closeTo(33, 9), expect.closeTo(27, 9)]]);
+    expect(h.error).not.toHaveBeenCalled();
+  });
+  it('places a deliberate pick beside the last point on release and only grabs a press on that exact point', async () => {
+    const h = await fixture([], { tool: 'rectangle' });
+    const press = (type: string, x: number, y: number, init: MouseEventInit = {}) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ...init });
+    await press('pointerdown', 2, 3); await press('pointerup', 2, 3); await h.click(2, 3);
+    await press('pointerdown', 2, 3); await press('pointerup', 2, 3); await h.click(2, 3);
+    expect(h.added).not.toHaveBeenCalled();
+    // A short corner within the slop of the first one is placed when the press ends without a drag.
+    await press('pointerdown', 2.4, 3.3, { ctrlKey: true }); expect(h.added).not.toHaveBeenCalled();
+    await press('pointerup', 2.4, 3.3, { ctrlKey: true }); await h.click(2.4, 3.3, h.svg, { ctrlKey: true });
+    expect(h.added).toHaveBeenCalledOnce();
+    expect(h.added).toHaveBeenLastCalledWith({ kind: 'rectangle', x: expect.closeTo(2, 9), y: expect.closeTo(3, 9), width: expect.closeTo(0.4, 9), height: expect.closeTo(0.3, 9), cornerRadius: 0 }, expect.any(AbortSignal));
+    expect(h.error).not.toHaveBeenCalled();
+  });
+  it('never retries a rejected completing press with the release point', async () => {
+    const added = vi.fn(() => { throw new Error('Rejected rectangle.'); });
+    const h = await fixture([], { tool: 'rectangle', onAddProfile: added });
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+    await press('pointerdown', 2, 3); await press('pointerup', 2, 3); await h.click(2, 3);
+    await press('pointerdown', 12, 17); await press('pointermove', 20, 25); await press('pointerup', 20, 25); await h.click(20, 25);
+    expect(added).toHaveBeenCalledOnce(); expect(h.error).toHaveBeenCalledOnce();
+    // The first corner is kept, so the next press completes the shape normally.
+    expect(container.querySelector('.cad-sketch-viewport p')?.textContent).toContain('Click the opposite corner');
+  });
+  it('ends a press whose completing pick fails validation without saving its release', async () => {
+    const h = await fixture([], { tool: 'rectangle' });
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ctrlKey: true });
+    await press('pointerdown', 2, 3); await press('pointerup', 2, 3);
+    // A zero-width rectangle is rejected on press, and its release must not save a different one.
+    await press('pointerdown', 2, 17); await press('pointermove', 12, 17); await press('pointerup', 12, 17);
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).toHaveBeenCalledOnce();
+  });
+  it('ends a held press when Escape and a keyboard pick start the next rectangle during it', async () => {
+    const h = await fixture([], { tool: 'rectangle' });
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, ctrlKey: true });
+    const key = (key: string) => act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })));
+    await press('pointerdown', 2, 3); await press('pointerup', 2, 3);
+    await press('pointerdown', 2.4, 3.3); await key('Escape'); await key(' ');
+    expect(container.querySelector('.cad-sketch-viewport p')?.textContent).toContain('Click the opposite corner');
+    await press('pointermove', 12, 17); await press('pointerup', 12, 17);
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+  it('keeps the trailing click of a drawing press suppressed when a second contact lands', async () => {
+    const h = await fixture([], { tool: 'rectangle' });
+    await h.pointer('pointerdown', { ...h.position(2, 3), button: 0, buttons: 1 });
+    await h.pointer('pointerdown', { ...h.position(12, 17), button: 0, buttons: 1 }, 12, false);
+    await h.pointer('pointerup', { ...h.position(2.4, 3.3), button: 0, buttons: 0 }); await h.click(2.4, 3.3);
+    expect(h.added).not.toHaveBeenCalled();
+    expect(container.querySelector('.cad-sketch-viewport p')?.textContent).toContain('Click the opposite corner');
+  });
   it('applies inference only to future picks and explicitly clears pending links when switched off', async () => {
     const onAddPath = vi.fn();
     const h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
