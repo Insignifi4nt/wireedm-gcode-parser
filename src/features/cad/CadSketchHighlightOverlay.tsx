@@ -4,13 +4,13 @@ import type { prepareCadSketchGraphInteraction } from './cadSketchGraphInteracti
 import type { SketchPoint } from './cadSketchInteraction';
 import { cadArcSvgPath } from './cadSketchSvg';
 import { CAD_SKETCH_AXIS_PIXELS, type CadSketchDatum } from './cadSketchGraphSelection';
-import { cadSketchRelationHighlight, type CadSketchHighlight, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
+import { cadSketchHighlightRelationIds, cadSketchRelationHighlight, type CadSketchHighlight, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import './cad-sketch-graph-dimensions.css';
 
 type Prepared = ReturnType<typeof prepareCadSketchGraphInteraction>;
 
 /**
- * The geometry a hovered or selected dimension measures, drawn above the sketch rows. It is the only subscriber to the hover
+ * The geometry a hovered or selected dimension or relation names, drawn above the sketch rows. It is the only subscriber to the hover
  * store, so hovering a dimension or a dock row renders this leaf alone; the rows and their selection classes stay unchanged.
  */
 export const CadSketchHighlightOverlay = memo(function CadSketchHighlightOverlay({ store, prepared, center, mmPerPixel, selectedRelationIds }: {
@@ -22,7 +22,7 @@ export const CadSketchHighlightOverlay = memo(function CadSketchHighlightOverlay
     const relation = (id: string) => graph.relations.find(item => item.id === id);
     for (const id of selectedRelationIds) { const found = relation(id); if (found) parts.push(cadSketchRelationHighlight(graph, found)); }
     if (source?.kind === 'geometry') parts.push(source);
-    else if (source) { const found = relation(source.relationId); if (found) parts.push(cadSketchRelationHighlight(graph, found)); }
+    else for (const id of cadSketchHighlightRelationIds(source)) { const found = relation(id); if (found) parts.push(cadSketchRelationHighlight(graph, found)); }
     return { pointIds: new Set(parts.flatMap(part => part.pointIds)), entityIds: new Set(parts.flatMap(part => part.entityIds)), datums: new Set(parts.flatMap(part => part.datums)) };
   }, [prepared.graph, selectedRelationIds, source]);
   if (!highlight.pointIds.size && !highlight.entityIds.size && !highlight.datums.size) return null;

@@ -84,6 +84,22 @@ add('pin','Pin line','cam','M8 3h8M9 3v7l3 3 3-3V3M6 15h12M12 15v6M6 15l3-5M18 1
 add('departure','Depart from contour','cam','M5 3v18M8 12h13M16 7l5 5-5 5',['ArrowRightFromLine']);
 add('turn','Turn direction','geometry','M5 3v10h15M15 8l5 5-5 5',['CornerDownRight']);
 add('constraint','Sketch constraint','geometry','M3 20h18M9 20V4M9 15h5v5',['Perpendicular']);
+// Sketch relations: one drawing per relation, shared by the canvas glyphs, the Constrain menu and the relations list.
+add('relation-horizontal','Horizontal relation','geometry','M4 12h16M4 9v6M20 9v6');
+add('relation-vertical','Vertical relation','geometry','M12 4v16M9 4h6M9 20h6');
+add('relation-parallel','Parallel relation','geometry','M4 16L14 6M10 18L20 8');
+add('relation-perpendicular','Perpendicular relation','geometry','M4 19h16M10 19V5M10 15h4v4');
+add('relation-collinear','Collinear relation','geometry','M3 19l6-6M15 7l6-6'+dot(12,10));
+add('relation-equal-length','Equal length relation','geometry','M5 9h14M5 15h14');
+add('relation-equal-radius','Equal radius relation','geometry',circle(12,12,9)+'M8 10h8M8 14h8');
+add('relation-tangent','Tangent relation','geometry',circle(12,14,6)+'M3 8h18');
+add('relation-coincident','Coincident relation','geometry','M4 19l8-7 8 7'+circle(12,12,2.5));
+add('relation-concentric','Concentric relation','geometry',circle(12,12,8)+circle(12,12,4));
+add('relation-midpoint','Midpoint relation','geometry','M4 18L20 6'+dot(4,18)+dot(20,6)+circle(12,12,2.5));
+add('relation-symmetric','Symmetric relation','geometry','M12 3v4M12 10v4M12 17v4'+circle(6,12,2.5)+circle(18,12,2.5));
+add('relation-fix','Fix relation','geometry','M12 3v10M5 13h14M7 13l-2 4M11 13l-2 4M15 13l-2 4M19 13l-2 4');
+add('relation-point-on-line','Point on line relation','geometry','M3 16h18'+circle(15,16,2.5));
+add('relation-point-on-curve','Point on curve relation','geometry','M3 18a9 9 0 0 1 18 0'+circle(12,9,2.5));
 add('trim','Trim geometry','geometry','M8 9l12 12M8 15L20 3'+circle(5,6,3)+circle(5,18,3),['Scissors']);
 add('scan','Inspect bounds','view','M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5M6 12h12',['Scan']);
 add('section-view','Section view','view',[body,'M6 11l4 2M6 14l4 2'],['ScanLine']);
