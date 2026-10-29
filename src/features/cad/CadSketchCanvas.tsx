@@ -51,6 +51,8 @@ const snapDraftStart = prepareCadSketchGeometrySnaps();
 /** Snap targets that place a point along a curve or guide rather than at a point of its own. */
 const SNAP_PLACEMENTS: ReadonlySet<CadSketchSnapCandidate['target']['kind']> = new Set(['on-entity', 'on-axis', 'aligned']);
 const ACQUIRED_POINTS = 4;
+/** A drawing press that travels farther than this is a drag, and a press this close to the last placed point grabs it. */
+const DRAWING_DRAG_PIXELS = 8;
 /** Picks whose relations name source geometry, so the source must not change while they are pending. */
 const referencesSource = (pick: CadFreshSketchPick) => pick.kind === 'coincident' || pick.kind === 'on-line';
 type DrawingPick = { readonly point: SketchPoint } & (
@@ -211,6 +213,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   // Trim previews the edge piece under the cursor against the exact accepted graph; a click removes it and Trim stays active.
   const [trimHover, setTrimHover] = useState<{ readonly prepared: CadSketchOverlapPick['prepared']; readonly preview: TrimPreview } | null>(null);
   const suppressProfileClick = useRef(false);
+  /**
+   * A primary press while drawing. The press places its pick at once, or only grabs the last placed point when it lands
+   * on it; a drag past the slop then places the next pick on release, so press-drag-release draws like two clicks.
+   */
+  const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; dragged: boolean } | null>(null);
   const pendingChange = useRef(onPendingChange);
   pendingChange.current = onPendingChange;
   const edgeSubmission = useRef<CadSketchOverlapPick | null>(null);
@@ -917,6 +924,19 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           event.preventDefault();
           event.currentTarget.focus({ preventScroll: true });
           if (tool === 'trim') { suppressProfileClick.current = true; trimEdge(event); return; }
+          if (drawing && !geometryPick && !positionPick) {
+            // The press places the pick, so its trailing click must not place another.
+            suppressProfileClick.current = true;
+            drawingPress.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, dragged: false };
+            try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
+            const last = pathTool ? pathDraft.kind === 'arc-through' ? pathDraft.end : pathDraft.kind === 'ready' ? cadPathDraftEndpoint(pathDraft) : null : points.at(-1);
+            const bounds = event.currentTarget.getBoundingClientRect(), pick = getDrawingPick(event);
+            // A tap followed by a tap-drag can arrive as a second press on the point the tap placed: it only grabs that point.
+            if (last && bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
+              event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS) return;
+            if (pick.candidates) drawingPress.current = null;
+            acceptDrawingPick(pick, event); return;
+          }
           if (tool === 'select' && sketch.kind === 'sketch' && !viewLocked && !isPreview) {
             const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
             const graphHit = point && rect.height ? graphPicks(point, span / rect.height)[0] : null;
@@ -944,6 +964,13 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         }
       }}
       onPointerUp={(event) => {
+        const press = drawingPress.current;
+        if (press && event.pointerId === press.pointerId) {
+          drawingPress.current = null;
+          // A drag ends with the next pick, unless its press finished the shape or the drawing was cancelled meanwhile.
+          if (press.dragged && event.button === 0 && !interactionLocked && (points.length > 0 || pathPending)) acceptDrawingPick(getDrawingPick(event), event);
+          return;
+        }
         if (boxSelection.active()) { if (boxSelection.end(event)) suppressProfileClick.current = true; return; }
         if (profileDrag.current) {
           if (event.pointerId !== profileDrag.current.pointerId) return;
@@ -964,9 +991,14 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
         if (!geometryPick && !positionPick && pickFilter === 'auto' && point && rect.height) onContextMenu?.({ clientX: event.clientX, clientY: event.clientY, trigger: 'pointer', profileId: profilePicker.pick(point, span / rect.height), pointMm: point });
       }}
-      onPointerCancel={(event) => { boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
-      onLostPointerCapture={(event) => { boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
+      onPointerCancel={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
+      onLostPointerCapture={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
       onPointerMove={(event) => {
+        const press = drawingPress.current;
+        if (press && event.pointerId === press.pointerId) {
+          if (!(event.buttons & 1)) drawingPress.current = null;
+          else if (!press.dragged && Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY) > DRAWING_DRAG_PIXELS) press.dragged = true;
+        }
         if (boxSelection.active()) { boxSelection.move(event); return; }
         if (profileDrag.current) {
           if (event.pointerId !== profileDrag.current.pointerId) return;

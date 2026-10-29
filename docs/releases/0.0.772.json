@@ -1,0 +1,25 @@
+{
+  "version": "0.0.772",
+  "previousVersion": "0.0.771",
+  "postCompatibility": "preserved-output-sketch-drawing-input",
+  "summary": "Sketch drawing tools now place a point when the button or touchpad is pressed, not on the click that follows the release, and they accept press, drag and release. A drag places the press point and then the release point, so one drag draws a line, rectangle, circle or the first two points of an arc, slot or polyline segment. A press that travels no more than 8 pixels stays a click. A press on the point just placed only picks it up, so a touchpad tap followed by a tap-and-drag draws from the tapped point instead of placing the first corner on release. A press that finishes a shape never starts the next one on release. Keyboard placement, snapping, relations and the trailing click are unchanged; the click after a press places nothing more.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files or controller output. Drawing input timing changes: points are placed on press, and pressing again within 8 pixels of the point just placed no longer adds a second point there.",
+  "checklist": {
+    "schema": "No UPID, post, machine package, execution plan, saved revision, CAD schema, storage, journal or worker reply change. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event, cancellation or input-version behavior change. WebMCP tools and their arguments are unchanged.",
+    "capabilities": "No post or machine capability change. Sketch drawing tools accept press-drag-release in addition to separate clicks.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "CadSketchCanvasPicking.test.tsx draws a rectangle from one press-drag-release and from a tap followed by a tap-drag that arrives as a second press, keeps a small wobble as a click, and draws polyline segments by press-drag-release; both tests fail without the change. The CAD feature suites, build, lint, ui:check, the release check and the Chromium specs that draw on the sketch canvas (cad-sketch-constraints, cad-sketch-dimension-points, cad-sketch-editing, cad-sketch-placement and cad-workflow) pass."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Drawing responds on press and accepts press-drag-release.",
+    "changes": [
+      "Sketch tools place a point as soon as you press, and one press-drag-release draws a line, rectangle or circle.",
+      "On a touchpad, a tap followed by a tap-and-drag now draws from the tapped point instead of dropping the first corner on release."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}
