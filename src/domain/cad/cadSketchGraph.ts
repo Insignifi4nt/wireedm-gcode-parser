@@ -8,6 +8,7 @@ import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { resolveCadSketchSymmetryOperands, checkCadSketchSymmetricRelation } from './cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands, checkCadSketchPointOnLineRelation } from './cadSketchPointOnLineRelations';
+import { resolveCadSketchPointOnCurveOperands, checkCadSketchPointOnCurveRelation } from './cadSketchPointOnCurveRelations';
 import { resolveCadSketchTangentJoint, checkCadSketchTangentJoint } from './cadSketchTangentRelations';
 import { validateCadSketchLinearPattern, checkCadSketchLinearPattern } from './cadSketchLinearPattern';
 import type { Point2 } from '@/domain/path-intel/types';
@@ -55,6 +56,7 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ id, kind: Type.Literal('collinear'), lineIds: pair }, strict),
     Type.Object({ id, kind: Type.Literal('midpoint'), pointId: id, lineId: id }, strict),
     Type.Object({ id, kind: Type.Literal('point-on-line'), pointId: id, lineId: id }, strict),
+    Type.Object({ id, kind: Type.Literal('point-on-curve'), pointId: id, curveId: id }, strict),
     Type.Object({ id, kind: Type.Literal('tangent-joint'), endpoints: Type.Tuple([tangentEndpoint, tangentEndpoint]) }, strict),
     Type.Object({ id, kind: Type.Literal('symmetric'), pointIds: pair, lineId: id }, strict),
     Type.Object({ id, kind: Type.Literal('equal-length'), lineIds: pair }, strict),
@@ -86,6 +88,7 @@ export type CadSketchAxisDistanceRelation = Extract<CadSketchGraphRelation, { ki
 export type CadSketchMidpointRelation = Extract<CadSketchGraphRelation, { kind: 'midpoint' }>;
 export type CadSketchSymmetricRelation = Extract<CadSketchGraphRelation, { kind: 'symmetric' }>;
 export type CadSketchPointOnLineRelation = Extract<CadSketchGraphRelation, { kind: 'point-on-line' }>;
+export type CadSketchPointOnCurveRelation = Extract<CadSketchGraphRelation, { kind: 'point-on-curve' }>;
 export type CadSketchTangentJointRelation = Extract<CadSketchGraphRelation, { kind: 'tangent-joint' }>;
 const issueCodes = ['invalid-expression', 'invalid-coordinate', 'degenerate-entity', 'invalid-radius', 'arc-radius-mismatch', 'invalid-distance', 'relation-residual'] as const;
 export const CadSketchGraphIssueSchema = Type.Object({
@@ -137,6 +140,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
     if (item.kind === 'line-angle') resolveCadSketchAngleRays(graph, item.rays);
     if (item.kind === 'midpoint') resolveCadSketchMidpointOperands(graph, item);
     if (item.kind === 'point-on-line') resolveCadSketchPointOnLineOperands(graph, item);
+    if (item.kind === 'point-on-curve') resolveCadSketchPointOnCurveOperands(graph, item);
     if (item.kind === 'tangent-joint') resolveCadSketchTangentJoint(graph, item);
     if (item.kind === 'symmetric') resolveCadSketchSymmetryOperands(graph, item);
     if (item.kind === 'radial-size') {
@@ -253,6 +257,7 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
       if (relation.kind === 'linear-pattern') { issues.push(...checkCadSketchLinearPattern(graph, parameters, relation)); continue; }
       if (relation.kind === 'symmetric') { issues.push(...checkCadSketchSymmetricRelation(graph, relation, points)); continue; }
       if (relation.kind === 'point-on-line') { issues.push(...checkCadSketchPointOnLineRelation(graph, relation, points)); continue; }
+      if (relation.kind === 'point-on-curve') { issues.push(...checkCadSketchPointOnCurveRelation(graph, relation, points, parameters)); continue; }
       if (relation.kind === 'tangent-joint') { issues.push(...checkCadSketchTangentJoint(graph, relation, points)); continue; }
       if (relation.kind === 'reference-dimension') continue; // Passive intent; geometry checks above remain authoritative.
       if (relation.kind === 'external-reference') {

@@ -1,7 +1,7 @@
 import { userFacingMessage } from '@/lib/userMessage';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { CadSketchExtendDependencyError, CadSketchTrimDependencyError, cadSketchCircleTrimParameter, prepareCadSketchTrim, prepareCadSketchExtend,
-  type CadSketchTrimPreparation, type CadSketchExtendPreparation } from '@/domain/cad/cadSketchTrimExtend';
+  type CadSketchTrimAttachment, type CadSketchTrimPreparation, type CadSketchExtendPreparation } from '@/domain/cad/cadSketchTrimExtend';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { nearestPointOnSegment } from '@/domain/path-editor/pathPointInference';
 import type { PathSegment } from '@/domain/path-intel/types';
@@ -32,10 +32,9 @@ function contactHelp(boundary: { readonly endpointPointId?: string }, action: 'T
     : 'Intersection cut: a one-time numeric endpoint. It will not follow later changes to the cutting edge.';
 }
 
-/** How one cut joins its boundary: an existing endpoint, a point kept on a cutting line, or a fixed point on a curve. */
-function cutHelp(boundary: { readonly endpointPointId?: string }, attachLineId: string | null): string {
-  return boundary.endpointPointId ? 'shares the boundary endpoint' : attachLineId ? 'stays on the cutting line'
-    : 'is a fixed point on the cutting curve and will not follow later changes to it';
+/** How one cut joins its boundary: an existing endpoint, or a new point kept on the cutting line or curve. */
+function cutHelp(boundary: { readonly endpointPointId?: string }, attachment: CadSketchTrimAttachment | null): string {
+  return boundary.endpointPointId ? 'shares the boundary endpoint' : attachment?.kind === 'point-on-curve' ? 'stays on the cutting curve' : 'stays on the cutting line';
 }
 
 /** Relations that only described the removed piece leave with it; name the first few. */
@@ -46,8 +45,8 @@ function removalHelp(prepared: ReturnType<typeof prepareCadSketchGraphInteractio
   return ` Also removes ${labels.join('; ')}${omitted ? `; ${omitted} more` : ''}.`;
 }
 
-const attachments = (lineIds: readonly [string | null, string | null]) => lineIds.some(Boolean)
-  ? { attachRelationIds: [lineIds[0] ? crypto.randomUUID() : null, lineIds[1] ? crypto.randomUUID() : null] as [string | null, string | null] } : {};
+const attachments = (cuts: readonly [CadSketchTrimAttachment | null, CadSketchTrimAttachment | null]) => cuts.some(Boolean)
+  ? { attachRelationIds: [cuts[0] ? crypto.randomUUID() : null, cuts[1] ? crypto.randomUUID() : null] as [string | null, string | null] } : {};
 
 /** The pinned analytic query supplies both the visible removal and the submitted witness. */
 export function prepareCadSketchTrimPreview(prepared: ReturnType<typeof prepareCadSketchGraphInteraction>, sketchId: string,
@@ -62,17 +61,17 @@ export function prepareCadSketchTrimPreview(prepared: ReturnType<typeof prepareC
     const target = geometry.target, removed = removalHelp(prepared, target.removedRelationIds);
     if (target.kind === 'delete') return { kind: 'ready', edit: { kind: 'trim-sketch-entity', sketchId, trim: target }, geometry,
       help: `No cutting boundary. Trim removes this whole edge.${removed}` };
-    if (target.kind === 'end' && 'attachLineId' in geometry) return { kind: 'ready', edit: { kind: 'trim-sketch-entity', sketchId, trim: { ...target,
-      cutPointId: target.boundary.endpointPointId ?? crypto.randomUUID(), ...(geometry.attachLineId ? { attachRelationId: crypto.randomUUID() } : {}) } },
-    geometry, help: `Trim to the highlighted boundary. The cut ${cutHelp(target.boundary, geometry.attachLineId)}.${removed}` };
-    if (target.kind === 'end' || !('attachLineIds' in geometry)) throw new Error('Trim preparation changed shape.');
+    if (target.kind === 'end' && 'attachment' in geometry) return { kind: 'ready', edit: { kind: 'trim-sketch-entity', sketchId, trim: { ...target,
+      cutPointId: target.boundary.endpointPointId ?? crypto.randomUUID(), ...(geometry.attachment ? { attachRelationId: crypto.randomUUID() } : {}) } },
+    geometry, help: `Trim to the highlighted boundary. The cut ${cutHelp(target.boundary, geometry.attachment)}.${removed}` };
+    if (target.kind === 'end' || !('attachments' in geometry)) throw new Error('Trim preparation changed shape.');
     const cutPointIds = [target.boundaries[0].endpointPointId ?? crypto.randomUUID(), target.boundaries[1].endpointPointId ?? crypto.randomUUID()] as const;
-    const [first, second] = target.boundaries.map((boundary, index) => cutHelp(boundary, geometry.attachLineIds[index]));
+    const [first, second] = target.boundaries.map((boundary, index) => cutHelp(boundary, geometry.attachments[index]));
     if (target.kind === 'circle') return { kind: 'ready', edit: { kind: 'trim-sketch-entity', sketchId, trim: { ...target, cutPointIds,
-      ...attachments(geometry.attachLineIds) } }, geometry,
+      ...attachments(geometry.attachments) } }, geometry,
     help: `Remove the highlighted circle span and keep its complementary arc. One cut ${first}; the other ${second}. No radius constraint is added.${removed}` };
     return { kind: 'ready', edit: { kind: 'trim-sketch-entity', sketchId, trim: { ...target, cutPointIds, newEntityId: crypto.randomUUID(),
-      supportRelationId: crypto.randomUUID(), ...attachments(geometry.attachLineIds) } }, geometry,
+      supportRelationId: crypto.randomUUID(), ...attachments(geometry.attachments) } }, geometry,
     help: `The start-side cut ${first}; the end-side cut ${second}.`
       + (segment.kind === 'arc' ? ' Both survivors share their center and keep an Equal radius relation.' : ' Both survivors keep a Collinear relation.') + removed };
   } catch (cause) {

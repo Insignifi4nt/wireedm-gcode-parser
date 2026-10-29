@@ -63,10 +63,49 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     clock.next('nativeCall');
     const solution = solver.solve(model);
     clock.next('mapping');
-    const judged = judge(input, model, solution, check), withheld = WITHHELD[solution.diagnosis.kind];
-    const attempt: CadSketchNativeAttempt = withheld && !judged.reason ? { ...judged, reason: withheld } : judged;
-    return solution.drag ? { ...attempt, drag: solution.drag } : attempt;
+    const attempt = settle(input, model, solution, check);
+    if (attempt.result.kind === 'solved' || input.drag) return attempt;
+    // A point held on a curve that starts on its center has no radial direction to move along, so a
+    // failed solve tries again from starts one radius out. Only an answer at its most certain replaces it.
+    for (const values of centerStarts(input.graph, model)) {
+      const seeded = { ...model, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded)), check);
+      if (retried.result.kind === 'solved' && !retried.reason) return retried;
+    }
+    return attempt;
   } finally { clock.stop(); }
+}
+
+function settle(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, check: Check): CadSketchNativeAttempt {
+  const judged = judge(input, model, solution, check), withheld = WITHHELD[solution.diagnosis.kind];
+  const attempt: CadSketchNativeAttempt = withheld && !judged.reason ? { ...judged, reason: withheld } : judged;
+  return solution.drag ? { ...attempt, drag: solution.drag } : attempt;
+}
+
+/**
+ * Start values that move each point-on-curve point sitting on its curve's center one radius out,
+ * using only that point's own free coordinates. Each point offers along X, along Y and diagonally
+ * where its free coordinates allow. Start k gives the i-th such point its offer k + i, wrapping, so
+ * points with different free axes move together and points on one center start apart. Nothing else
+ * moves, and none are offered when no such point exists.
+ */
+function centerStarts(graph: CadSketchGraph, model: CadSketchEquationModel): readonly (readonly number[])[] {
+  const { values, fixed, pointParameters, radiusParameters } = model, centered = new Map<number, { readonly reach: number; readonly offers: readonly (readonly number[])[] }>();
+  for (const relation of graph.relations) {
+    if (relation.kind !== 'point-on-curve') continue;
+    const curve = graph.entities.find(entity => entity.id === relation.curveId), x = pointParameters.get(relation.pointId);
+    if ((curve?.kind !== 'arc' && curve?.kind !== 'circle') || x === undefined || centered.has(x)) continue;
+    const center = pointParameters.get(curve.centerPointId)!, start = curve.kind === 'arc' ? pointParameters.get(curve.startPointId)! : -1;
+    const reach = curve.kind === 'arc' ? Math.hypot(values[start] - values[center], values[start + 1] - values[center + 1]) : values[radiusParameters.get(curve.id)!];
+    if (!(reach > 0) || Math.hypot(values[x] - values[center], values[x + 1] - values[center + 1]) > 1e-12 * Math.max(1, reach)) continue;
+    const offers = [[1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2]].filter(direction => direction.every((step, axis) => step === 0 || !fixed[x + axis]));
+    if (offers.length) centered.set(x, { reach, offers });
+  }
+  const rounds = Math.max(0, ...[...centered.values()].map(point => point.offers.length));
+  return Array.from({ length: rounds }, (_, round) => {
+    const seeded = [...values];
+    [...centered].forEach(([x, { reach, offers }], index) => offers[(round + index) % offers.length].forEach((step, axis) => { seeded[x + axis] += step * reach; }));
+    return seeded;
+  });
 }
 
 type Check = (graph: CadSketchGraph, parameters: CadSketchSolveInput['parameters']) => readonly CadSketchGraphIssue[];

@@ -11,6 +11,8 @@ export type CadFreshSketchPick =
   | { readonly kind: 'position'; readonly point: CadConstructionPoint }
   | { readonly kind: 'coincident'; readonly point: CadConstructionPoint; readonly sourcePointId: string; readonly relationId: string }
   | { readonly kind: 'on-line'; readonly point: CadConstructionPoint; readonly lineId: string; readonly relationId: string }
+  /** Keeps the point on the full circle of an arc or circle. */
+  | { readonly kind: 'on-curve'; readonly point: CadConstructionPoint; readonly curveId: string; readonly relationId: string }
   /** Fixes the coordinates the reference sets to zero: both at the origin, Y on the X axis and X on the Y axis. */
   | { readonly kind: 'datum'; readonly point: CadConstructionPoint; readonly datum: CadFreshSketchDatum; readonly relationIds: readonly string[] };
 
@@ -100,6 +102,7 @@ function sameAttachment(a: CadFreshSketchPick, b: CadFreshSketchPick): boolean {
     case 'position': return b.kind === 'position';
     case 'coincident': return b.kind === 'coincident' && a.sourcePointId === b.sourcePointId;
     case 'on-line': return b.kind === 'on-line' && a.lineId === b.lineId;
+    case 'on-curve': return b.kind === 'on-curve' && a.curveId === b.curveId;
     case 'datum': return b.kind === 'datum' && a.datum === b.datum;
   }
 }
@@ -198,6 +201,8 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
     }
     if (pick.kind === 'on-line' && !existing.entities.some(entity => entity.id === pick.lineId && entity.kind === 'line'))
       throw new CadError('stale-fresh-sketch-point-reference', 'A picked line changed or no longer exists. Pick a position on it again.');
+    if (pick.kind === 'on-curve' && !existing.entities.some(entity => entity.id === pick.curveId && (entity.kind === 'arc' || entity.kind === 'circle')))
+      throw new CadError('stale-fresh-sketch-point-reference', 'A picked arc or circle changed or no longer exists. Pick a position on it again.');
     if (pick.kind === 'datum' && (pick.relationIds.length !== cadFreshSketchDatumAxes(pick.datum).length
       || cadFreshSketchDatumAxes(pick.datum).some(axis => point[axis === 'x' ? 0 : 1] !== 0)))
       throw new CadError('invalid-fresh-sketch-reference', 'A point placed on the origin or an axis must lie exactly on it.');
@@ -208,6 +213,7 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
       switch (pick.kind) {
         case 'coincident': return [{ id: pick.relationId, kind: 'coincident', pointIds: [pointId, pick.sourcePointId] }];
         case 'on-line': return [{ id: pick.relationId, kind: 'point-on-line', pointId, lineId: pick.lineId }];
+        case 'on-curve': return [{ id: pick.relationId, kind: 'point-on-curve', pointId, curveId: pick.curveId }];
         case 'datum': return cadFreshSketchDatumAxes(pick.datum).map((axis, index) => ({ id: pick.relationIds[index], kind: 'fixed-axis', pointId, axis, value: 0 }));
         case 'position': return [];
       }

@@ -608,6 +608,23 @@ describe('graph spatial selection', () => {
     await act(async () => operation.resolve(undefined));
     expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId }); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
+  it('keeps an end Trim cut on a cutting circle', async () => {
+    const h = await spatialFixture(), graph = h.feature.graph!;
+    // The ring crosses the line at x = 2 and x = 8.
+    const feature: CadSketchFeature = { ...h.feature, graph: { ...graph, points: [...graph.points, { id: 'hub', position: [5, 4] }],
+      entities: [...graph.entities, { id: 'ring', kind: 'circle', construction: true, centerPointId: 'hub', radius: 5 }] } };
+    await h.show({ sketch: feature, graphControls: { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } } });
+    await h.pointer('pointerdown', 1, .1, false, 7, 2); await h.pointer('pointerup', 1, .1, false, 7, 2);
+    const trim = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === 'Trim here');
+    await act(async () => trim?.focus());
+    expect(trim?.getAttribute('aria-description')).toMatch(/stays on the cutting curve/);
+    await act(async () => trim?.click());
+    const edits = h.edited.mock.calls[0][0], { trim: target } = edits[0];
+    expect(target).toMatchObject({ kind: 'end', end: 'start', boundary: { entityId: 'ring', position: [2, 0] }, attachRelationId: expect.any(String) });
+    const accepted = applyCadEdits(h.props().graphControls!.document, edits).features[0];
+    if (accepted.kind !== 'sketch') throw new Error('Accepted trim missing.');
+    expect(accepted.graph?.relations).toEqual([{ id: target.attachRelationId, kind: 'point-on-curve', pointId: target.cutPointId, curveId: 'ring' }]);
+  });
   it('trims the hovered edge piece in one click with the Trim tool, without selecting or opening a menu', async () => {
     const h = await trimFixture(); await h.show({ tool: 'trim' });
     const instruction = () => container.querySelector('p.cad-sr-only')?.textContent ?? '';

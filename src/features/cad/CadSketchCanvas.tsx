@@ -54,7 +54,7 @@ const ACQUIRED_POINTS = 4;
 /** A drawing press that travels farther than this is a drag, and a press this close to the last placed point grabs it. */
 const DRAWING_DRAG_PIXELS = 8;
 /** Picks whose relations name source geometry, so the source must not change while they are pending. */
-const referencesSource = (pick: CadFreshSketchPick) => pick.kind === 'coincident' || pick.kind === 'on-line';
+const referencesSource = (pick: CadFreshSketchPick) => pick.kind === 'coincident' || pick.kind === 'on-line' || pick.kind === 'on-curve';
 type DrawingPick = { readonly point: SketchPoint } & (
   | { readonly candidates: readonly CadSketchSnapCandidate[]; readonly candidate?: never }
   | { readonly candidate?: CadSketchSnapCandidate; readonly candidates?: never }
@@ -855,6 +855,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       const target = canInfer && inferCoincidence ? candidate?.target : undefined;
       if (target && 'pointId' in target) return Object.freeze({ kind: 'coincident', point, sourcePointId: target.pointId, relationId: crypto.randomUUID() });
       if (target?.kind === 'on-entity' && target.entityKind === 'line') return Object.freeze({ kind: 'on-line', point, lineId: target.entityId, relationId: crypto.randomUUID() });
+      if (target?.kind === 'on-entity') return Object.freeze({ kind: 'on-curve', point, curveId: target.entityId, relationId: crypto.randomUUID() });
       const datum = target?.kind === 'origin' ? 'origin' as const : target?.kind === 'on-axis' ? target.axis === 'x' ? 'x-axis' as const : 'y-axis' as const : null;
       return datum ? Object.freeze({ kind: 'datum', point, datum, relationIds: Object.freeze(cadFreshSketchDatumAxes(datum).map(() => crypto.randomUUID())) })
         : Object.freeze({ kind: 'position', point });
@@ -1225,10 +1226,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
               : choicePointId === undefined ? 'Choose midpoint' : `Choose Point ${(sourceGraph?.graph.points.findIndex(point => point.id === choicePointId) ?? -1) + 1}`} />
         </g>}
         {points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className="cad-sketch-vertex" />)}
-        {pendingPicks.map((pick, index) => <circle key={index} data-cad-sketch-attachment={pick.kind === 'coincident' ? pick.sourcePointId : pick.kind === 'on-line' ? pick.lineId : pick.datum}
+        {pendingPicks.map((pick, index) => <circle key={index} data-cad-sketch-attachment={pick.kind === 'coincident' ? pick.sourcePointId : pick.kind === 'on-line' ? pick.lineId : pick.kind === 'on-curve' ? pick.curveId : pick.datum}
           cx={pick.point[0] - center[0]} cy={pick.point[1] - center[1]} r={6 * span / (viewportSize.height || 600)} className="cad-sketch-snap-target"><title>{pick.kind === 'coincident'
             ? `Pending coincidence with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === pick.sourcePointId) ?? -1) + 1}`
-            : pick.kind === 'on-line' ? 'Pending point on line' : `Pending ${pick.datum === 'origin' ? 'fix at the origin' : `point on the ${pick.datum === 'x-axis' ? 'X' : 'Y'} axis`}`}</title></circle>)}
+            : pick.kind === 'on-line' ? 'Pending point on line' : pick.kind === 'on-curve' ? 'Pending point on curve' : `Pending ${pick.datum === 'origin' ? 'fix at the origin' : `point on the ${pick.datum === 'x-axis' ? 'X' : 'Y'} axis`}`}</title></circle>)}
       </g>
       {boxSelection.box && <rect className={`cad-sketch-selection-box is-${boxSelection.box.mode}`} pointerEvents="none"
         x={Math.min(boxSelection.box.start[0], boxSelection.box.end[0]) - center[0]} y={center[1] - Math.max(boxSelection.box.start[1], boxSelection.box.end[1])}
@@ -1251,7 +1252,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       if (event.key === 'Backspace' || event.key === 'Escape') { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }, true); }
     }}><span>{instruction}</span>
       {canInfer && <label className="cad-check"><Input type="checkbox" aria-label="Create coincident relations" checked={inferCoincidence} disabled={interactionLocked}
-        title="Attach future snapped points with removable relations: coincident with endpoints and centers, on a line, or on the origin and axes. Switching off releases pending attachments; accepted geometry is unchanged."
+        title="Attach future snapped points with removable relations: coincident with endpoints and centers, on a line, arc or circle, or on the origin and axes. Switching off releases pending attachments; accepted geometry is unchanged."
         onChange={event => { const enabled = event.target.checked; setInferCoincidence(enabled); if (!enabled) { setPicks(current => current.map(pick => ({ kind: 'position', point: pick.point }))); setPathDraft(releaseCadPathDraftPicks); } }} />Create relations</label>}
       {pendingPicks.length > 0 && <span aria-label="Pending relations">{pendingPicks.length} attached</span>}
       {tool === 'path' && <>

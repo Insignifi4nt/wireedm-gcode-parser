@@ -99,6 +99,29 @@ describe('sketch canvas profile picking', () => {
         expect.objectContaining({ end: [0, 0] })] }, true, expect.any(AbortSignal));
     expect(onAddPath.mock.calls[0][0].segments[2]).not.toHaveProperty('endPick');
   });
+  it('keeps a point placed along a circle on it only while Create relations is on', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    const hint = async (x: number, y: number) => {
+      await h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });
+      return container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label');
+    };
+    // The circle's top lies at (12.1, 16.6) and its left at (8.7, 13.2).
+    expect(await hint(12.1, 16.63)).toBe('On circle · Point on curve'); await h.click(12.1, 16.63);
+    expect(container.querySelector('[data-cad-sketch-attachment="circle"] title')?.textContent).toBe('Pending point on curve');
+    await relations(false); expect(await hint(8.67, 13.2)).toBe('On circle · No relation'); await h.click(8.67, 13.2);
+    await h.click(30, 30); await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')?.click(); });
+    expect(onAddPath).toHaveBeenCalledOnce();
+    const path = onAddPath.mock.calls[0][0];
+    expect(path.start).toEqual([expect.closeTo(12.1, 10), expect.closeTo(16.6, 10)]);
+    // Turning the option off released the pending start attachment too.
+    expect(path).not.toHaveProperty('startPick'); expect(path.segments.map((segment: object) => 'endPick' in segment)).toEqual([false, false]);
+  });
+  it('attaches a point placed along a circle with a point-on-curve pick', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    await h.click(12.1, 16.63); await h.click(30, 30);
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')?.click(); });
+    expect(onAddPath.mock.calls[0][0].startPick).toEqual({ kind: 'on-curve', point: [expect.closeTo(12.1, 10), expect.closeTo(16.6, 10)], curveId: 'circle', relationId: expect.any(String) });
+  });
   it('guides new points level with or above the points already placed, and Ctrl releases the guide', async () => {
     const onAddPath = vi.fn(), h = await fixture([], { tool: 'path', onAddPath });
     const move = (x: number, y: number, init: MouseEventInit = {}) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0, ...init });

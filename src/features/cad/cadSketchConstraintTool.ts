@@ -3,6 +3,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } fro
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { resolveCadSketchMidpointOperands } from '@/domain/cad/cadSketchMidpointRelations';
 import { resolveCadSketchPointOnLineOperands } from '@/domain/cad/cadSketchPointOnLineRelations';
+import { resolveCadSketchPointOnCurveOperands } from '@/domain/cad/cadSketchPointOnCurveRelations';
 import { resolveCadSketchSymmetryOperands } from '@/domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchTangentJoint } from '@/domain/cad/cadSketchTangentRelations';
 import type { CadSketchDatum, CadSketchGraphSelection } from './cadSketchGraphSelection';
@@ -15,7 +16,7 @@ export const cadSketchConstraintToolLabels: Readonly<Record<CadSketchConstraintT
   equal: 'Equal', midpoint: 'Midpoint', concentric: 'Concentric', symmetric: 'Symmetric', fix: 'Fix'
 };
 export const cadSketchConstraintToolHelp: Readonly<Record<CadSketchConstraintTool, string>> = {
-  coincident: 'Two points share one position. A point and a line, or an axis, keep the point on it; a point and the origin pin it there.',
+  coincident: 'Two points share one position. A point and a line, arc, circle or axis keep the point on it; a point and the origin pin it there.',
   horizontal: 'A line, or two points, stay level. A point and the origin stay level with it.', vertical: 'A line, or two points, stay upright. A point and the origin stay above or below it.',
   parallel: 'Two lines, or a line and an axis, keep the same direction.', perpendicular: 'Two lines, or a line and an axis, meet at a right angle.',
   tangent: 'A line and an arc that share an endpoint join smoothly.', equal: 'Two lines keep the same length, or two arcs or circles the same radius.',
@@ -91,14 +92,19 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
         return identity(points[0]) === identity(points[1]) ? invalid('These points are already joined.', matching(relation => relation.kind === 'coincident' && samePoints(relation.pointIds, [points[0], points[1]])))
           : ready({ id: newId(), kind: 'coincident', pointIds: [points[0], points[1]] });
       }
-      const line = entities.find(isLine);
+      const line = entities.find(isLine), curve = entities.find(isCurve);
       if (points.length === 1 && line) {
         const operands = { pointId: points[0], lineId: line.id };
         return ready({ id: newId(), kind: 'point-on-line', ...operands }, () => resolveCadSketchPointOnLineOperands(graph, operands));
       }
-      if (points.length === 1) return more('Choose a second point, a line or an axis to keep the point on, or the origin', lines, allPoints, ['origin', 'x-axis', 'y-axis']);
-      if (line) return more('Choose a point to keep on this line', [], allPoints);
-      return more('Choose a point, or the origin or an axis', lines, allPoints, ['origin', 'x-axis', 'y-axis']);
+      // A point on an arc or circle stays on its full circle.
+      if (points.length === 1 && curve) {
+        const operands = { pointId: points[0], curveId: curve.id };
+        return ready({ id: newId(), kind: 'point-on-curve', ...operands }, () => resolveCadSketchPointOnCurveOperands(graph, operands));
+      }
+      if (points.length === 1) return more('Choose a second point, a line, arc, circle or axis to keep the point on, or the origin', [...lines, ...curves], allPoints, ['origin', 'x-axis', 'y-axis']);
+      if (line || curve) return more(`Choose a point to keep on this ${line ? 'line' : curve?.kind}`, [], allPoints);
+      return more('Choose a point, or the origin or an axis', [...lines, ...curves], allPoints, ['origin', 'x-axis', 'y-axis']);
     }
     case 'horizontal': case 'vertical': {
       const line = entities.find(isLine);
@@ -238,6 +244,7 @@ function orders<T>(items: readonly T[]): readonly (readonly T[])[] {
 function sameRelation(a: CadSketchGraphRelation, b: CadSketchGraphRelation): boolean {
   if ('pointId' in a && 'pointId' in b && a.pointId !== b.pointId) return false;
   if ('lineId' in a && 'lineId' in b && a.lineId !== b.lineId) return false;
+  if ('curveId' in a && 'curveId' in b && a.curveId !== b.curveId) return false;
   if (a.kind === 'tangent-joint' && b.kind === 'tangent-joint') return a.endpoints.every(endpoint => b.endpoints.some(other => other.entityId === endpoint.entityId && other.pointId === endpoint.pointId));
   if ('pointIds' in b) return 'pointIds' in a && samePoints(a.pointIds, b.pointIds);
   if ('lineIds' in b) return 'lineIds' in a && samePoints(a.lineIds, b.lineIds);

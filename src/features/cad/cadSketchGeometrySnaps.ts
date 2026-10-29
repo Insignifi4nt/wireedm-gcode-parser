@@ -304,5 +304,5 @@ export function cadSketchSnapTargetLabel(target: CadSketchSnapTarget): string {
 /** The relation a fresh point placed on this target can keep, or null for a position only. */
 export function cadSketchSnapRelation(target: CadSketchSnapTarget): string | null {
   return target.kind === 'origin' ? 'Fixed at origin' : target.kind === 'on-axis' ? `Fixed ${target.axis === 'x' ? 'Y' : 'X'} at 0`
-    : target.kind === 'on-entity' && target.entityKind === 'line' ? 'Point on line' : 'pointId' in target ? 'Coincident' : null;
+    : target.kind === 'on-entity' ? target.entityKind === 'line' ? 'Point on line' : 'Point on curve' : 'pointId' in target ? 'Coincident' : null;
 }
