@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CadError } from '@/domain/cad/cadError';
 import type { CadConstructionPoint } from '@/domain/cad/cadPathConstruction';
-import { cadPathDraftInferences, cadPathDraftPicks, closeCadPathDraft, closeCadPolylineProfile, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft,
+import { cadPathDraftInferences, cadPathDraftPicks, closeCadPathDraft, closesCadPathChain, completedCadPathChain, closeCadPolylineProfile, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft,
   type CadPathDraft, type CadPathDraftPick } from './cadPathDrawing';
 
 const join = (point: CadConstructionPoint, sourcePointId: string): CadPathDraftPick => ({ kind: 'coincident', point, sourcePointId, relationId: `join-${sourcePointId}` });
@@ -148,5 +148,53 @@ describe('pending mixed path drawing', () => {
     const original = JSON.stringify(draft);
     expect(() => updateCadPathDraft(draft, { kind: 'point', point: [2049, 1] })).toThrow('2048');
     expect(() => closeCadPathDraft(draft)).toThrow('2048'); expect(JSON.stringify(draft)).toBe(original);
+  });
+});
+
+describe('line chains', () => {
+  const chain = (points: readonly CadConstructionPoint[], mode: 'line' | 'arc' = 'line') =>
+    points.reduce<CadPathDraft>((draft, point) => updateCadPathDraft(draft, { kind: 'point', point }), createCadPathDraft(mode));
+  it('continues every segment from the previous end and closes only on a return to the start that bounds an area', () => {
+    const draft = chain([[0, 0], [10, 0], [10, 10]]);
+    if (draft.kind !== 'ready') throw new Error('Expected a ready chain');
+    expect(draft.segments.map(segment => segment.kind === 'line' ? [segment.start, segment.end] : segment.kind)).toEqual([[[0, 0], [10, 0]], [[10, 0], [10, 10]]]);
+    expect(closesCadPathChain(draft)).toBe(false);
+    expect(closesCadPathChain(updateCadPathDraft(draft, { kind: 'point', point: [0, 0] }))).toBe(true);
+    // Two lines back to the start bound nothing, and a near miss is no return.
+    expect(closesCadPathChain(chain([[0, 0], [10, 0], [0, 0]]))).toBe(false);
+    expect(closesCadPathChain(updateCadPathDraft(draft, { kind: 'point', point: [0, 1e-9] }))).toBe(false);
+    // One line and one arc back to the start already bound an area.
+    let arc = updateCadPathDraft(chain([[0, 0], [10, 0]]), { kind: 'mode', mode: 'arc' });
+    arc = updateCadPathDraft(updateCadPathDraft(arc, { kind: 'point', point: [0, 0] }), { kind: 'point', point: [5, 5] });
+    expect(closesCadPathChain(arc)).toBe(true);
+  });
+  it('finishes open with the completed segments only, dropping a pending arc endpoint, and has nothing to finish without a segment', () => {
+    expect(completedCadPathChain(createCadPathDraft())).toBeNull();
+    expect(completedCadPathChain(chain([[0, 0]]))).toBeNull();
+    // An arc endpoint waiting for its through point is not a segment yet.
+    expect(completedCadPathChain(chain([[0, 0], [10, 0]], 'arc'))).toBeNull();
+    const ready = chain([[0, 0], [10, 0], [10, 10]]);
+    expect(completedCadPathChain(ready)).toBe(ready);
+    let pending = updateCadPathDraft(updateCadPathDraft(chain([[5, 5]]), { kind: 'point', point: [10, 0], pick: join([10, 0], 'line-end') }), { kind: 'mode', mode: 'arc' });
+    pending = updateCadPathDraft(pending, { kind: 'point', point: [20, 0], pick: join([20, 0], 'arc-end') });
+    const withStart = updateCadPathDraft(updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [5, 5], pick: join([5, 5], 'start') }), { kind: 'point', point: [10, 0] });
+    expect(completedCadPathChain(withStart)).toBe(withStart);
+    const finished = completedCadPathChain(pending);
+    expect(finished).toEqual({ kind: 'ready', start: [5, 5], segments: [expect.objectContaining({ kind: 'line', end: [10, 0], endPick: join([10, 0], 'line-end') })], mode: 'arc' });
+    expect(JSON.stringify(finished)).not.toContain('arc-end'); expect(Object.isFrozen(finished)).toBe(true);
+    // The kept start attachment survives a dropped arc endpoint.
+    const attached = updateCadPathDraft(updateCadPathDraft(withStart, { kind: 'mode', mode: 'arc' }), { kind: 'point', point: [20, 0] });
+    expect(completedCadPathChain(attached)).toMatchObject({ kind: 'ready', startPick: join([5, 5], 'start'), segments: [{ kind: 'line' }] });
+  });
+  it('undoes the last segment back to its start point and switches modes between segments', () => {
+    let draft = chain([[0, 0], [10, 0], [10, 10]]);
+    draft = updateCadPathDraft(draft, { kind: 'undo-last' });
+    expect(draft).toMatchObject({ kind: 'ready', segments: [{ end: [10, 0] }] }); expect(completedCadPathChain(draft)).toBe(draft);
+    draft = updateCadPathDraft(draft, { kind: 'undo-last' });
+    expect(draft).toMatchObject({ kind: 'ready', start: [0, 0], segments: [] }); expect(completedCadPathChain(draft)).toBeNull();
+    draft = updateCadPathDraft(updateCadPathDraft(draft, { kind: 'mode', mode: 'arc' }), { kind: 'point', point: [10, 0] });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [5, 5] });
+    draft = updateCadPathDraft(updateCadPathDraft(draft, { kind: 'mode', mode: 'line' }), { kind: 'point', point: [10, 10] });
+    expect(draft).toMatchObject({ kind: 'ready', mode: 'line', segments: [{ kind: 'arc', end: [10, 0] }, { kind: 'line', start: [10, 0], end: [10, 10] }] });
   });
 });

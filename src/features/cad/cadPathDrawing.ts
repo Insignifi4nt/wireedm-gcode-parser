@@ -42,6 +42,23 @@ export function cadPathDraftEndpoint(draft: Exclude<CadPathDraft, { kind: 'idle'
   return draft.segments.length ? draft.segments[draft.segments.length - 1].end : draft.start;
 }
 
+/** A chain click that returns to its start closes it once the closed chain can bound an area. */
+export function closesCadPathChain(draft: CadPathDraft): boolean {
+  if (draft.kind !== 'ready' || draft.segments.length < 2) return false;
+  const end = cadPathDraftEndpoint(draft);
+  return end[0] === draft.start[0] && end[1] === draft.start[1] && (draft.segments.length > 2 || draft.segments.some(segment => segment.kind === 'arc'));
+}
+
+/**
+ * The completed segments a chain keeps when it finishes open: the rubber band and a pending arc endpoint are dropped.
+ * Null while no segment is complete, so there is nothing to save.
+ */
+export function completedCadPathChain(draft: CadPathDraft): Extract<CadPathDraft, { kind: 'ready' }> | null {
+  if (draft.kind === 'idle' || !draft.segments.length) return null;
+  if (draft.kind === 'ready') return draft;
+  return Object.freeze({ kind: 'ready', start: draft.start, ...(draft.startPick !== undefined ? { startPick: draft.startPick } : {}), segments: draft.segments, mode: 'arc' });
+}
+
 /** Every pending attachment, in drawing order. */
 export function cadPathDraftPicks(draft: CadPathDraft): readonly CadPathDraftPick[] {
   if (draft.kind === 'idle') return [];
