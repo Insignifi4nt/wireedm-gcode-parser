@@ -323,7 +323,8 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   });
   const circleDefined = Boolean(circle && controls.definitionLocked && controls.definition?.entityIds.has(circle.entityId));
   const radiusInteractive = edgesInteractive && !controls.geometryPick && circle?.lockedReason === null && controls.degreesOfFreedom !== 0 && !circleDefined;
-  const dragMarks = preview.kind === 'error' && preview.marks?.sketchId === sketch.id ? preview.marks : null;
+  // A stale rejection belongs to an earlier target, so it marks nothing while the next solve runs.
+  const dragMarks = preview.kind === 'error' && !preview.stale && preview.marks?.sketchId === sketch.id ? preview.marks : null;
   const diagnosis = dragMarks ?? (controls.diagnosis?.sketchId === sketch.id ? controls.diagnosis : null);
   const selected = (kind: CadSketchGraphSelection['kind'], id: string) => controls.selection.some(selection => selection.kind === kind && selection.id === id);
   const focusTarget = (element: SVGGElement, target: CadSketchGraphSelection) => element.closest('.cad-sketch-graph')?.querySelector<SVGGElement>(`[data-cad-sketch-${target.kind === 'point' ? 'point' : 'entity'}="${target.id}"]`)?.focus({ preventScroll: true });
@@ -361,7 +362,8 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       if (event.button !== 0 || !edgeAllowed(segment.id)) return; const target = pickAt ? pickAt(event) : { kind: 'entity' as const, id: segment.id }; if (!target) return;
       event.stopPropagation(); if (event.isPrimary === false || drag.current) return; event.preventDefault(); focusTarget(event.currentTarget, target);
       const own = target.kind === 'entity' && target.id === segment.id, grouped = own && grabsSelection(target, event.shiftKey);
-      if (!grouped) choose(target, event.shiftKey);
+      // A set that would carry a defined point stays put, and the press narrows to the pressed edge as a click would.
+      if (!grouped || interactive && controls.degreesOfFreedom !== 0 && movesDefined(controls.selection)) choose(target, event.shiftKey);
       if (!own || !interactive || controls.geometryPick || event.shiftKey || controls.degreesOfFreedom === 0 || movesDefined(grouped ? controls.selection : [target])) return;
       const boundary = cadSketchGraphBoundary(segment), entity = entities.get(segment.id);
       const anchor = pressedPoint(event, boundary.type === 'line' ? [(boundary.start.x + boundary.end.x) / 2, (boundary.start.y + boundary.end.y) / 2] : [boundary.center.x, boundary.center.y]);
@@ -384,7 +386,11 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return;
       event.preventDefault(); focusTarget(event.currentTarget, target);
       const original = sourcePoints.get(point.id) ?? point, own = target.kind === 'point' && target.id === point.id;
-      if (own && grabsSelection(target, event.shiftKey) && controls.degreesOfFreedom !== 0 && !movesDefined(controls.selection)) { startTranslate(event, controls.selection, original.position, null, target); return; }
+      if (own && grabsSelection(target, event.shiftKey) && controls.degreesOfFreedom !== 0) {
+        // A set that would carry a defined point stays put; the press only narrows to the pressed point, as a click would.
+        if (movesDefined(controls.selection)) choose(target, false); else startTranslate(event, controls.selection, original.position, null, target);
+        return;
+      }
       choose(target, event.shiftKey);
       if (controls.geometryPick || !own) return;
       if (event.shiftKey || !movable(original)) return; // A plain pick above replaces the old set with this point.

@@ -595,8 +595,12 @@ describe('graph definition locks and marks', () => {
     const h = await fixture(), set = [{ kind: 'point', id: 'b' }, { kind: 'entity', id: 'edge' }] as const;
     await h.render({ controls: { ...h.props().controls, selection: set, definition: marks(['a'], []), definitionLocked: true } });
     await h.pointer(h.point('b'), 'pointerdown'); await h.pointer(h.point('b'), 'pointermove', { clientX: 150 }); await h.pointer(h.point('b'), 'pointerup', { clientX: 150 });
-    expect(h.edited.mock.calls.flat().flat()).not.toContainEqual(expect.objectContaining({ kind: 'translate-sketch-geometry' }));
-    expect(h.selected).toHaveBeenCalledWith({ kind: 'point', id: 'b' });
+    // Neither the set nor the pressed free point moves: the press only narrows the selection.
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.capture).not.toHaveBeenCalled();
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'b' });
+    await h.pointer(h.edge(), 'pointerdown'); await h.pointer(h.edge(), 'pointermove', { clientX: 150 }); await h.pointer(h.edge(), 'pointerup', { clientX: 150 });
+    expect(h.edited).not.toHaveBeenCalled(); expect(h.capture).not.toHaveBeenCalled();
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'entity', id: 'edge' });
   });
 
   it('locks the radius grip of a defined circle only while its definition is current', async () => {
@@ -628,6 +632,10 @@ describe('graph definition locks and marks', () => {
     // The drag is the preview now: its own marks replace the published ones, over the accepted definition.
     expect([state('point', 'a'), state('point', 'b'), state('entity', 'edge')]).toEqual([['defined'], ['conflicting'], ['defined']]);
     expect(h.point('b').classList.contains('is-revealed')).toBe(true);
+    // Moving to another target while its solve is pending drops the old rejection's marks, back to the published ones.
+    prepare.mockReturnValue(new Promise(() => undefined));
+    await h.pointer(h.point('b'), 'pointermove', { clientX: 140 }); await act(async () => { await Promise.resolve(); });
+    expect([state('point', 'a'), state('point', 'b'), state('entity', 'edge')]).toEqual([['redundant'], ['redundant'], ['redundant']]);
     await h.key(h.point('b'), 'Escape');
     expect(state('point', 'b')).toEqual(['redundant']);
     await h.render({ controls: { ...h.props().controls, diagnosis: null } });
