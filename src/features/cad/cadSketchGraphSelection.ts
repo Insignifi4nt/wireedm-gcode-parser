@@ -4,6 +4,9 @@ import type { CadScalar } from '@/domain/cad/cadDocument';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
+import type { CadContextMenuItem } from './CadContextMenu';
+import type { CadSketchDimensionPlan } from './cadSketchDimensionPlacement';
+import type { CadSketchPointerStore } from './CadSketchDimensionPreview';
 
 const NO_PARAMETERS: Readonly<Record<string, number>> = Object.freeze({});
 
@@ -29,8 +32,21 @@ export interface CadSketchGeometryPick {
   onPick(selection: CadSketchGraphSelection): void;
   onPickDatum?(datum: CadSketchDatum): void;
   /** Finishes a pick that already has enough geometry, from Enter or a click on empty space. */
-  onConfirm?(): void;
+  onConfirm?(source: 'pointer' | 'key'): void;
   onCancel(): void;
+  /** Takes the sketch position of every pointer move and press over the canvas while the pick lasts. */
+  readonly pointer?: CadSketchPointerStore;
+  /**
+   * The dimension the picks would place, previewed at the pointer. While it is shown, pointer moves only update `pointer`, so they
+   * render the preview and nothing else.
+   */
+  readonly dimensionPreview?: CadSketchDimensionPlan;
+  /** Commands a right release or the menu key opens in place of the overlap chooser, for the pointer position given; null keeps the chooser. */
+  contextMenu?(pointer: { readonly x: number; readonly y: number } | null): { readonly title: string; readonly items: readonly CadContextMenuItem[] } | null;
+  /** Placed dimensions stay selectable, editable, deletable and keep their menus while the pick waits for its first geometry. */
+  readonly dimensionsInteractive?: boolean;
+  /** What Escape does, after the label; `Escape cancels` without it. */
+  readonly escapeLabel?: string;
 }
 /** Screen reach of a plane reference; the origin reaches a little further so it wins where the axes cross. */
 export const CAD_SKETCH_DATUM_PICK_PIXELS = 6;

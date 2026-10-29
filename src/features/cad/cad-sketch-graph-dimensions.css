@@ -27,3 +27,7 @@
 .cad-sketch-highlight { fill: none; stroke: var(--warning, #f0bf71); }
 .cad-sketch-highlight :is(line, path, circle) { stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .cad-sketch-highlight .cad-sketch-highlight-point { fill: var(--warning, #f0bf71); stroke: var(--foreground); stroke-width: 1px; }
+
+/* The Dimension tool's preview at the pointer takes no pointer events, so the click under it places the dimension. */
+.cad-sketch-dimension-preview { pointer-events: none; }
+.cad-sketch-graph-dimension.is-preview { color: var(--primary); }

@@ -41,6 +41,7 @@ import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
 import { cadSketchDimensionPick, cadSketchDimensionSelectionStatus, type CadSketchDimensionPick } from './cadSketchDimensionSelection';
 import { CAD_SKETCH_AXIS_PIXELS, CAD_SKETCH_DATUMS, cadSketchDatumLabels, cadSketchRelationDatum, cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, pickCadSketchDatum, type CadSketchDatum, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
+import { CadSketchDimensionPreview, CadSketchPointerReadout } from './CadSketchDimensionPreview';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { cadFreshSketchDatumAxes, type CadFreshSketchDrawing, type CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
 import { CadSketchSplitPreview, prepareCadSketchSplitPreview, type CadSketchSplitPreview as SplitPreview } from './CadSketchSplitPreview';
@@ -709,6 +710,18 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       : `${entity?.kind === 'line' ? 'Line' : entity?.kind === 'circle' ? 'Circle' : 'Arc'} ${(index ?? -1) + 1}`;
     return { label, onHighlight: () => setPickHighlight(atom), onSelect: () => selectOverlap(atom) };
   }) ?? []), ...(graphCommandItems.length ? [{ kind: 'separator' } satisfies CadContextMenuItem, ...graphCommandItems] : [])];
+  // A pick's own menu belongs to the pick it opened on and the pointer position it was opened for; another pick, or a lock, closes it.
+  const [pickMenu, setPickMenu] = useState<{ readonly geometryPick: NonNullable<typeof geometryPick>; readonly clientX: number; readonly clientY: number; readonly pointer: { readonly x: number; readonly y: number } | null } | null>(null);
+  const openPickMenu = (event: { clientX: number; clientY: number }) => {
+    if (!geometryPick?.contextMenu || interactionLocked) return false;
+    const pointer = geometryPick.pointer?.get() ?? null;
+    if (!geometryPick.contextMenu(pointer)) return false;
+    setPickMenu({ geometryPick, clientX: event.clientX, clientY: event.clientY, pointer });
+    return true;
+  };
+  const currentPickMenu = pickMenu && pickMenu.geometryPick === geometryPick && !interactionLocked ? pickMenu : null;
+  const pickMenuContent = currentPickMenu ? currentPickMenu.geometryPick.contextMenu?.(currentPickMenu.pointer) ?? null : null;
+  useLayoutEffect(() => { if (pickMenu && !currentPickMenu) setPickMenu(null); }, [pickMenu, currentPickMenu]);
   const getDrawingPick = (event: { clientX: number; clientY: number; ctrlKey: boolean; metaKey: boolean }): DrawingPick => {
     const raw = getRawPoint(event) ?? [0, 0], suppressed = event.ctrlKey || event.metaKey, rect = svg.current?.getBoundingClientRect();
     setCursorInput({ point: raw, suppressed, mode: 'pointer' });
@@ -883,7 +896,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); event.stopPropagation(); chooseDatum(datum, event.shiftKey); } }
       : { className: state, 'aria-hidden': true, 'data-cad-sketch-datum': datum };
   };
-  const instruction = positionPick ? `${positionPick.label} · Escape cancels` : geometryPick ? `${geometryPick.label} · Escape cancels`
+  const instruction = positionPick ? `${positionPick.label} · Escape cancels` : geometryPick ? `${geometryPick.label} · ${geometryPick.escapeLabel ?? 'Escape cancels'}`
     : tool === 'trim' ? currentTrim?.kind === 'ready' ? 'Click to remove the red piece · Escape returns to Select' : currentTrim?.reason ?? 'Point at the piece of an edge to remove · Escape returns to Select'
     : pathTool && pathDraft.kind === 'arc-through' ? pathPreview.kind === 'invalid' ? pathPreview.message : 'Click a point on the arc.'
     : tool === 'line' ? pathDraft.kind === 'idle' ? 'Click the line start.' : 'Click the line end.'
@@ -1009,6 +1022,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (datum) { chooseDatum(datum, false); return; }
           acceptDrawingPick(getDrawingPick(event), event); return;
         }
+        if (event.button === 0 && geometryPick?.pointer && !interactionLocked) { const raw = getRawPoint(event); if (raw) geometryPick.pointer.set({ x: raw[0], y: raw[1] }); }
         // A cancelled graph drag can release over empty canvas; its trailing click still belongs to the handle.
         if (event.button === 0 && event.target instanceof Element && event.target.closest('.cad-sketch-graph')) suppressProfileClick.current = true;
       }}
@@ -1065,7 +1079,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             if (geometryPick) {
               // A pick takes the origin or an axis at once, since a press in a pick never drags.
               const datum = datumPick && point && rect.height ? datumUnder(point, span / rect.height, false) : null;
-              if (datum) { chooseDatum(datum, false); suppressProfileClick.current = true; } else geometryPick.onConfirm?.();
+              if (datum) { chooseDatum(datum, false); suppressProfileClick.current = true; } else geometryPick.onConfirm?.('pointer');
               return;
             }
             const grip = pickFilter === 'auto' && onMoveHandle && point && rect.height ? pickGrip(event, point, span / rect.height) : null;
@@ -1136,7 +1150,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (!active || active.pointerId !== event.pointerId) return;
         finishPan(event.pointerId);
         if (active.button !== 2 || event.button !== 2 || active.moved || Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4 || interactionLocked || viewLocked) return;
-        const dimension = active.dimension && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onDimensionMenu ? active.dimension : null;
+        const pickItems = geometryPick?.contextMenu && !positionPick ? openPickMenu(event) : false;
+        if (pickItems) return;
+        const dimension = active.dimension && tool === 'select' && (!geometryPick || geometryPick.dimensionsInteractive) && !positionPick && !isPreview && graphControls?.onDimensionMenu ? active.dimension : null;
         // A label opens its menu at once; a line or arrow opens its dimension's only where no sketch geometry lies under the release.
         if (dimension && !active.dimensionLine) { graphControls?.onDimensionMenu?.(dimension, { clientX: event.clientX, clientY: event.clientY }); return; }
         if (openOverlap(event)) return;
@@ -1180,7 +1196,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           // A dimension line or arrow keeps the cursor where it was too, but a datum or grip under it still takes the hover, as it takes the press;
           // the line's own cover test already found them for this move.
           const onLine = event.target instanceof Element && event.target.closest('[data-cad-sketch-dimension-hit]') !== null;
-          if (!onLine) getDrawingPick(event);
+          // The Dimension tool's preview follows the pointer through its own store, so the move renders the preview alone.
+          const pointer = geometryPick?.pointer, raw = pointer ? getRawPoint(event) : null;
+          if (pointer && raw) pointer.set({ x: raw[0], y: raw[1] });
+          if (!onLine && !geometryPick?.dimensionPreview) getDrawingPick(event);
           if (tool === 'trim') {
             const preview = interactionLocked || viewLocked ? null : trimAt(event);
             setTrimHover(preview && sourceGraph ? { prepared: sourceGraph, preview } : null);
@@ -1222,6 +1241,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const segment = entityId ? sourceGraph?.geometry.segments.find(segment => segment.id === entityId) : null;
           const at = point ?? (segment ? [segment.start.x, segment.start.y] : center);
           const bounds = event.currentTarget.getBoundingClientRect();
+          const shown = geometryPick?.pointer?.get(), menuAt = shown ? [shown.x, shown.y] : at;
+          if (geometryPick?.contextMenu && !positionPick && openPickMenu({ clientX: bounds.left + bounds.width / 2 + (menuAt[0] - center[0]) / width * bounds.width,
+            clientY: bounds.top + bounds.height / 2 - (menuAt[1] - center[1]) / span * bounds.height })) return;
           if (openOverlap({ clientX: bounds.left + bounds.width / 2 + (at[0] - center[0]) / width * bounds.width,
             clientY: bounds.top + bounds.height / 2 - (at[1] - center[1]) / span * bounds.height }, 'keyboard', pointId ? { kind: 'point', id: pointId } : entityId ? { kind: 'entity', id: entityId } : undefined)) return;
           const profileId = selectedProfileId && profilePicker.hasProfile(selectedProfileId) ? selectedProfileId : null;
@@ -1231,15 +1253,17 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         }
         if (event.ctrlKey || event.metaKey || event.altKey || event.target !== event.currentTarget) return;
         if (event.key.toLowerCase() === 'f') { if (!viewLocked) { event.preventDefault(); fit(); } return; }
-        if (geometryPick?.onConfirm && !positionPick && !interactionLocked && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); geometryPick.onConfirm(); return; }
-        if (interactionLocked || geometryPick && !positionPick) return;
-        if (event.key === 'Delete' && !positionPick && tool === 'select' && graphControls?.selection.length && graphControls.onDelete) {
+        if (geometryPick?.onConfirm && !positionPick && !interactionLocked && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); geometryPick.onConfirm('key'); return; }
+        if (interactionLocked || geometryPick && !positionPick && !geometryPick.dimensionsInteractive) return;
+        if (event.key === 'Delete' && !geometryPick && !positionPick && tool === 'select' && graphControls?.selection.length && graphControls.onDelete) {
           event.preventDefault(); event.stopPropagation(); graphControls.onDelete(graphControls.selection[graphControls.selection.length - 1]); return;
         }
         const dimensions = tool === 'select' && !positionPick ? graphControls?.dimensionSelection ?? [] : [];
         if ((event.key === 'Delete' || event.key === 'Backspace') && dimensions.length && graphControls?.onDeleteDimension) {
           event.preventDefault(); event.stopPropagation(); graphControls.onDeleteDimension(); return;
         }
+        // A pick that keeps placed dimensions interactive takes their Delete and nothing else.
+        if (geometryPick && !positionPick) return;
         const step = gridStep * (event.shiftKey ? 10 : 1);
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
           event.preventDefault();
@@ -1318,6 +1342,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)} gridStep={gridStep} snap={snap} gridSnap={gridSnap} active={tool === 'select'}
           filter={graphPickFilter} highlighted={graphHighlight} pickAt={pickGraphAt} coversDimensionLine={coversDimensionLine}
           locked={externalInteractionLocked || Boolean(positionPick && !geometryPick) || submission.applying || points.length > 0 || pathPending || dragPreview !== null || boxPending || overlapPending || choicePending} cancelSignal={cancelSignal} onPendingChange={publishGraphPending} onError={onError} />}
+        {geometryPick?.dimensionPreview && geometryPick.pointer && <CadSketchDimensionPreview plan={geometryPick.dimensionPreview} pointer={geometryPick.pointer} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {graphControls?.patternInteraction && sourceSketch.kind === 'sketch' && (previewSketch ?? sourceSketch).graph && <CadSketchLinearPatternPreview graph={(previewSketch ?? sourceSketch).graph!} parameters={parameters} interaction={graphControls.patternInteraction} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentTrim?.kind === 'ready' && <CadSketchTrimPreview preview={currentTrim} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
@@ -1378,6 +1403,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       onOutsidePointerDown={event => { suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation(); }} />}
     {currentOverlap && <CadContextMenu anchor={{ x: currentOverlap.clientX + (currentOverlap.target ? 12 : 0), y: currentOverlap.clientY + (currentOverlap.target ? 12 : 0) }} title={currentOverlap.target ? currentOverlap.target.kind === 'point' ? 'Sketch point' : 'Sketch edge' : 'Select other'} items={overlapItems} onClose={closeOverlap}
       onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
+    {currentPickMenu && pickMenuContent && <CadContextMenu anchor={{ x: currentPickMenu.clientX, y: currentPickMenu.clientY }} title={pickMenuContent.title} items={pickMenuContent.items} onClose={() => setPickMenu(null)}
+      onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !isPreview && <CadSketchDimensionControls {...dimensionControls} onError={onError} interactionLocked={dimensionControls.interactionLocked || submission.applying || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}
     {!isPreview && inspection && inspection.profileIds.length > 0 ? <div className="cad-sketch-context" role="status">Highlighted geometry · {inspection.profileIds.length} {inspection.profileIds.length === 1 ? 'profile' : 'profiles'}</div>
       : !isPreview && dimensionStatus && <div className="cad-sketch-context" role="status" data-cad-dimension-status="">{dimensionStatus}</div>}
@@ -1398,6 +1425,6 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         {pathPending && <>{sketch.kind === 'sketch' && onAddPath && <Button aria-label="Finish polyline" title="Keep this polyline open without adding a closing edge (Enter)" disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(false)}><ConfirmIcon size={13} /> Finish polyline</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
       </>}
       {(points.length > 0 || singleSegment && pathPending) && <Button onClick={cancelDrawing}><CloseIcon size={13} /> Cancel drawing</Button>}</div></CadDrawingTools>}
-    <div className="cad-view-caption">{formatCadQuantity(Number(cursor[0].toFixed(3)))}, {formatCadQuantity(Number(cursor[1].toFixed(3)))} mm</div>
+    <div className="cad-view-caption">{geometryPick?.dimensionPreview && geometryPick.pointer ? <CadSketchPointerReadout pointer={geometryPick.pointer} fallback={cursor} /> : <>{formatCadQuantity(Number(cursor[0].toFixed(3)))}, {formatCadQuantity(Number(cursor[1].toFixed(3)))} mm</>}</div>
   </div>;
 }
