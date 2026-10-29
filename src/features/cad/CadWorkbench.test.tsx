@@ -1712,7 +1712,11 @@ describe('CAD sketch interaction', () => {
     const sketch = currentDocument.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing radial sketch.');
     const relation = sketch.graph.relations[0]; expect(relation).toMatchObject({ kind: 'radial-size', entityId: 'circle', quantity: 'diameter', value: 10 });
     const label = container.querySelector('[data-cad-sketch-dimension] [role="button"]'); if (!label) throw new Error('Missing radial annotation.');
-    await act(async () => label.dispatchEvent(new MouseEvent('click', { button: 0, bubbles: true, cancelable: true })));
+    // A click selects the dimension only; a double-click opens its editor.
+    await act(async () => label.dispatchEvent(new MouseEvent('click', { button: 0, bubbles: true, cancelable: true, detail: 1 })));
+    expect(container.querySelector('.cad-parameter-editor')).toBeNull(); expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
+    expect(container.querySelector('[data-cad-dimension-status]')?.textContent).toBe('Diameter selected · Double-click or Enter edits · Delete removes');
+    await act(async () => label.dispatchEvent(new MouseEvent('dblclick', { button: 0, bubbles: true, cancelable: true, detail: 2 })));
     expect(field('Diameter').value).toBe('10'); expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'circle' }]);
     expect(currentDocument.features[0]).toBe(sketch); expect(document.activeElement).toBe(field('Diameter'));
     expect([field('Diameter').selectionStart, field('Diameter').selectionEnd]).toEqual([0, 2]);
@@ -1738,6 +1742,143 @@ describe('CAD sketch interaction', () => {
     expect(viewport().getState().selectedSketchGeometrySet).toEqual(pair);
     expect(field('Horizontal distance').value).toBe('-30'); expect(currentDocument.features[0]).toBe(sketch);
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  describe('canvas dimensions', () => {
+    const bracket = () => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Bracket', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 30] }, { id: 'o', position: [10, 10] }],
+      entities: [{ id: 'base', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }, { id: 'side', kind: 'line', startPointId: 'b', endPointId: 'c', construction: false },
+        { id: 'hole', kind: 'circle', centerPointId: 'o', radius: 4, construction: false }],
+      relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 40 }, { id: 'diagonal', kind: 'distance', pointIds: ['a', 'c'], value: 50 },
+        { id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'side', towardPointId: 'c' }], sense: 'cw', value: 90 },
+        { id: 'size', kind: 'radial-size', entityId: 'hole', quantity: 'diameter', value: 8 }, { id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 10 },
+        { id: 'measured', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'side' } }] } }] });
+    const open = async (props?: Parameters<typeof mount>[1]) => {
+      setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+      const source = bracket(); await mount(source, props); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+      return source;
+    };
+    const relations = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.relations; };
+    const label = (id: string) => {
+      const found = container.querySelector<SVGGElement>(`[data-cad-sketch-dimension="${id}"] [role="button"]`); if (!found) throw new Error(`Dimension ${id} missing.`);
+      return found;
+    };
+    const status = () => container.querySelector('[data-cad-dimension-status]')?.textContent ?? null;
+    const selectedDimensions = () => [...container.querySelectorAll('[data-cad-sketch-dimension].is-selected')].map(item => item.getAttribute('data-cad-sketch-dimension'));
+    const highlighted = (kind: 'point' | 'entity' | 'datum') => [...container.querySelectorAll(`[data-cad-highlight-${kind}]`)].map(item => item.getAttribute(`data-cad-highlight-${kind}`));
+    // React derives enter and leave from pointerout and its related target.
+    const hover = async (target: Element, entered = true) => {
+      const canvas = container.querySelector('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+      await act(async () => (entered ? canvas : target).dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: entered ? target : canvas })));
+    };
+    const pick = async (id: string, shiftKey = false) => act(async () => label(id).dispatchEvent(new MouseEvent('click', { button: 0, shiftKey, detail: 1, bubbles: true, cancelable: true })));
+    const press = async (id: string, key: string) => act(async () => { label(id).focus(); label(id).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); });
+    const menuItem = (text: string) => {
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent?.trim() === text); if (!item) throw new Error(`${text} missing.`);
+      return item;
+    };
+
+    it('highlights the measured geometry on hover without changing the document or the selection', async () => {
+      const source = await open();
+      await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'o' } }));
+      for (const [id, points, entities] of [['length', ['a', 'b'], ['base']], ['diagonal', ['a', 'c'], []], ['angle', [], ['base', 'side']], ['size', [], ['hole']], ['measured', [], ['side']]] as const) {
+        await hover(label(id).querySelector('rect')!);
+        expect([highlighted('point'), highlighted('entity')]).toEqual([points, entities]);
+        await hover(label(id).querySelector('rect')!, false);
+        expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
+      }
+      // A datum coordinate has no canvas annotation; its relation row highlights the point and the axis it is measured from.
+      const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]')!, point = container.querySelector<SVGGElement>('[data-cad-sketch-point="o"]')!;
+      vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+      await act(async () => { point.focus(); point.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+      await act(async () => menuItem('Constraints and dimensions').click());
+      const row = [...container.querySelectorAll('ul[aria-label="Sketch relations"] > li')].find(item => item.textContent?.startsWith('Fix X'));
+      if (!row) throw new Error('Datum relation row missing.');
+      await act(async () => row.dispatchEvent(new FocusEvent('focusin', { bubbles: true })));
+      expect([highlighted('point'), highlighted('datum')]).toEqual([['o'], ['y-axis']]);
+      await act(async () => row.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+      expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
+      expect(currentDocument).toBe(source); expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'o' }]);
+    });
+
+    it('selects with a click, toggles with Shift, clears with Escape and opens the editor only on double-click or Enter', async () => {
+      const source = await open();
+      await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'o' } }));
+      await pick('length');
+      expect(viewport().getState().selectedSketchGeometrySet).toEqual([]); expect(container.querySelector('.cad-parameter-editor')).toBeNull();
+      expect(status()).toBe('Length selected · Double-click or Enter edits · Delete removes'); expect(selectedDimensions()).toEqual(['length']);
+      // The selection keeps its geometry highlighted after the pointer leaves.
+      expect(highlighted('entity')).toEqual(['base']); expect(label('length').getAttribute('aria-pressed')).toBe('true');
+      await pick('size', true); expect(status()).toBe('2 dimensions selected · Delete removes them'); expect(selectedDimensions()).toEqual(['length', 'size']);
+      await pick('length', true); expect(selectedDimensions()).toEqual(['size']);
+      await press('diagonal', ' '); expect(selectedDimensions()).toEqual(['diagonal']);
+      await canvasKey('Escape'); expect(selectedDimensions()).toEqual([]); expect(status()).toBeNull();
+      expect(label('length').getAttribute('aria-label')).toBe('Dimension distance 40 mm, press Enter to edit');
+      await press('diagonal', 'Enter'); expect(field('Distance').value).toBe('50');
+      await act(async () => label('angle').dispatchEvent(new MouseEvent('dblclick', { button: 0, detail: 2, bubbles: true, cancelable: true })));
+      expect(field('Angle').value).toBe('90'); expect(currentDocument).toBe(source);
+      expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    });
+
+    it('still applies a selection-first constraint after a dimension was selected', async () => {
+      await open(); await pick('size');
+      await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'side' } }));
+      expect(selectedDimensions()).toEqual([]); expect(status()).toBeNull();
+      await click('Constrain');
+      const vertical = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(entry => entry.textContent?.trim() === 'Vertical');
+      if (!vertical) throw new Error('Vertical missing.'); await act(async () => vertical.click());
+      expect(relations().at(-1)).toEqual({ id: expect.any(String), kind: 'vertical', pointIds: ['b', 'c'] });
+    });
+
+    it('deletes the selected dimensions in one undoable edit and refuses while another edit is applying', async () => {
+      const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+      await open({ build: null, buildState: 'idle', onEditMany });
+      await pick('length'); await pick('size', true); await canvasKey('Delete');
+      expect(onEditMany).toHaveBeenCalledOnce();
+      expect(onEditMany.mock.calls[0][0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'length' }, { kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'size' }]);
+      expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'angle', 'x', 'measured']); expect(status()).toBeNull();
+      // Backspace on an unselected label removes only that dimension.
+      await pick('diagonal'); await press('angle', 'Backspace');
+      expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'x', 'measured']); expect(selectedDimensions()).toEqual(['diagonal']);
+      let finish = () => undefined as void;
+      onEditMany.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+      await press('diagonal', 'Delete'); await press('measured', 'Delete');
+      expect(onEditMany).toHaveBeenCalledTimes(3); expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'x', 'measured']);
+      await act(async () => finish());
+    });
+
+    it('reports a refused removal in the relations list wording and keeps the dimension', async () => {
+      await open({ build: null, buildState: 'idle', onEditMany: edits => {
+        const graph = bracket().features[0];
+        if (edits[0]?.kind === 'remove-sketch-relation' && graph.kind === 'sketch' && graph.graph) throw new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Bracket', graph: graph.graph,
+          rejection: { kind: 'rejected', reason: 'failed', message: 'Solver gave up.', diagnostics: { status: 'failed', degreesOfFreedom: 1, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
+        currentSession.edit(edits);
+      } });
+      statusMessage.mockClear(); await pick('size'); await canvasKey('Delete');
+      expect(statusMessage).toHaveBeenCalledWith(expect.stringContaining('Bracket: The sketch solver could not solve this edit.'), 'error');
+      expect(relations().some(relation => relation.id === 'size')).toBe(true); expect(selectedDimensions()).toEqual(['size']);
+    });
+
+    it('offers edit, reference or driving and delete from the dimension menu, with reasons for unavailable commands', async () => {
+      await open();
+      // The menu key on an unselected dimension selects it first.
+      await press('angle', 'ContextMenu'); expect(selectedDimensions()).toEqual(['angle']);
+      expect(menuItem('Make reference').disabled).toBe(true);
+      expect(menuItem('Make reference').getAttribute('aria-description')).toBe('Reference dimensions measure lengths, point distances, radii and diameters.');
+      await act(async () => menuItem('Edit value…').click()); expect(field('Angle').value).toBe('90');
+      await press('length', 'ContextMenu'); await act(async () => menuItem('Make reference').click());
+      expect(relations().find(relation => relation.id === 'length')).toEqual({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' } });
+      expect(label('length').getAttribute('aria-label')).toMatch(/^Reference dimension /);
+      await press('measured', 'ContextMenu');
+      expect(menuItem('Edit value…').disabled).toBe(true);
+      expect(menuItem('Edit value…').getAttribute('aria-description')).toBe('A reference dimension follows the geometry. Make it driving to set its value.');
+      await act(async () => menuItem('Make driving').click());
+      expect(relations().find(relation => relation.id === 'measured')).toEqual({ id: 'measured', kind: 'distance', pointIds: ['b', 'c'], value: 30 });
+      await pick('size'); await pick('diagonal', true); await press('size', 'ContextMenu');
+      await act(async () => menuItem('Delete 2 dimensions').click());
+      expect(relations().map(relation => relation.id)).toEqual(['length', 'angle', 'x', 'measured']);
+      expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    });
   });
 
   it('picks two points after Dimension without moving geometry, restores canceled selection and keeps the exact ordered axis driver', async () => {

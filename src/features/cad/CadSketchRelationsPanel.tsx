@@ -1,11 +1,11 @@
 import { userFacingMessage } from '@/lib/userMessage';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CloseIcon, ConfirmIcon, LinkIcon, MeasureIcon } from '@wire-edm/icons-react';
 import type { CadDocument, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadSketchReferenceDimension, CadSketchTangentJointRelation } from '@/domain/cad/cadSketchGraph';
-import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension, resolveCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
+import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { resolveCadSketchSymmetryOperands } from '@/domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands } from '@/domain/cad/cadSketchPointOnLineRelations';
 import { resolveCadSketchTangentJoint } from '@/domain/cad/cadSketchTangentRelations';
@@ -27,6 +27,9 @@ import { CadContextHelp } from './CadContextHelp';
 import { CadSketchAngleSectors } from './CadSketchAngleSectors';
 import { CadSketchSelectionMeasurements } from './CadSketchSelectionMeasurements';
 import { CadSketchPreparationError, describeCadSketchConstraintSource, type CadSketchConstraintFeedback, type CadSketchConstraintFeedbackSubject } from './cadSketchConstraintFeedback';
+import { cadSketchDistanceForPair as distanceForPair, cadSketchMatchingReference as matchingReference, cadSketchRadialRelationForEntity as radialRelationForEntity,
+  cadSketchReferenceDrivingLock as referenceDrivingLock, cadSketchRelationHasPointPair as samePair } from './cadSketchDimensionCommands';
+import { cadSketchRelationHighlight, type CadSketchHighlight, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import './cad-sketch-profile.css';
 
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
@@ -38,31 +41,6 @@ const relationLabels = {
 const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
   : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
     : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationLabels[relation.kind];
-function matchingReference(graph: CadSketchGraph, measurement: CadSketchReferenceDimension['measurement']) {
-  return graph.relations.find((r): r is CadSketchReferenceDimension => r.kind === 'reference-dimension' && (r.measurement.kind === 'point-distance'
-    ? measurement.kind === 'point-distance' && r.measurement.pointIds.every(id => measurement.pointIds.includes(id))
-    : measurement.kind !== 'point-distance' && r.measurement.kind === measurement.kind && r.measurement.entityId === measurement.entityId
-      && (r.measurement.kind !== 'radial-size' || measurement.kind === 'radial-size' && r.measurement.quantity === measurement.quantity)));
-}
-function referenceDrivingLock(graph: CadSketchGraph, relation: CadSketchReferenceDimension): string | null {
-  const target = resolveCadSketchReferenceDimension(graph, relation);
-  const selections = target.kind === 'distance' ? target.pointIds.map(id => ({kind:'point' as const,id})) : [{kind:'entity' as const,id:target.entityId}];
-  const owned = selections.map(atom => cadSketchLinearPatternLockReason(graph,atom)).find(Boolean); if (owned) return owned;
-  if (target.kind === 'distance') {
-    const linked = relation.measurement.kind === 'line-length' ? cadSketchExternalReferenceLockReason(graph, {kind:'entity',id:relation.measurement.entityId}) : null;
-    if (linked) return linked;
-    if (distanceForPair(graph, target.pointIds)) return 'An existing dimension already drives this distance. Edit that dimension instead.';
-  } else {
-    const linked = cadSketchExternalReferenceLockReason(graph, { kind:'entity', id:target.entityId });
-    if (linked) return linked;
-    if (radialRelationForEntity(graph, target.entityId)) return 'An existing dimension already drives this curve. Edit that dimension instead.';
-    const entity = graph.entities.find(e => e.id === target.entityId);
-    if (entity?.kind === 'circle' && typeof entity.radius === 'string') return 'The circle radius is driven by its source expression. Edit that expression instead.';
-  }
-  return null;
-}
-const samePair = (relation: CadSketchGraphRelation, pointIds: readonly [string, string]) => 'pointIds' in relation
-  && relation.pointIds.includes(pointIds[0]) && relation.pointIds.includes(pointIds[1]);
 const selectedPointPair = (selection: readonly CadSketchGraphSelection[]): readonly [string, string] | null => selection.length === 2
   && selection[0].kind === 'point' && selection[1].kind === 'point' && selection[0].id !== selection[1].id ? [selection[0].id, selection[1].id] : null;
 function selectedPointLine(selection: readonly CadSketchGraphSelection[], graph: CadSketchGraph): { readonly pointId: string; readonly lineId: string } | null {
@@ -110,9 +88,6 @@ function relationQuantity(value: CadScalar, parameters: CadDocument['parameters'
   try { return `${formatCadQuantity(evaluateCadScalar(value, parameters))}${unit === 'deg' ? '°' : ' mm'}`; }
   catch { return '—'; }
 }
-const distanceForPair = (graph: CadSketchGraph, pointIds: readonly [string, string], axis?: 'x' | 'y') => graph.relations.find(
-  (relation): relation is Extract<CadSketchGraphRelation, { kind: 'distance' | 'axis-distance' }> =>
-    (axis === undefined ? relation.kind === 'distance' : relation.kind === 'axis-distance' && relation.axis === axis) && samePair(relation, pointIds));
 function distanceRelation(graph: CadSketchGraph, pointIds: readonly [string, string], parameters: CadDocument['parameters'], axis?: 'x' | 'y') {
   const existing = distanceForPair(graph, pointIds, axis);
   if (existing) return existing;
@@ -125,8 +100,6 @@ function distanceRelation(graph: CadSketchGraph, pointIds: readonly [string, str
     value: Math.hypot(positions[0][0] - positions[1][0], positions[0][1] - positions[1][1]) }
     : { id: crypto.randomUUID(), kind: 'axis-distance' as const, pointIds, axis, value: positions[1][axis === 'x' ? 0 : 1] - positions[0][axis === 'x' ? 0 : 1] };
 }
-const radialRelationForEntity = (graph: CadSketchGraph, entityId: string) => graph.relations.find(relation => relation.kind === 'radial-size' && relation.entityId === entityId
-  || relation.kind === 'fillet-corner' && relation.arcId === entityId);
 function radialDimension(graph: CadSketchGraph, entity: CadSketchGraphEntity, parameters: CadDocument['parameters']): CadSketchGraphRelation | null {
   if (entity.kind === 'line' || cadSketchExternalReferenceForSelection(graph, { kind: 'entity', id: entity.id })) return null;
   const existing = radialRelationForEntity(graph, entity.id);
@@ -167,6 +140,8 @@ export interface CadSketchRelationsPanelProps {
   onPreviewDocument?(document: CadDocument | null): void;
   onInspectRelation?(relation: CadSketchGraphRelation | null): void;
   onInspectSubject?(subject: CadSketchConstraintFeedbackSubject | null): void;
+  /** Hovering or focusing a relation or issue row highlights its geometry on the canvas, as hovering a dimension does. */
+  highlight?: CadSketchHighlightStore;
   onCornerAccepted?(entityId: string, relationId: string): void;
   onEditPattern?(relationId: string, detach?: true): void;
   onSelectPatternSeed?(entityId: string): void;
@@ -182,8 +157,12 @@ export function CadSketchRelationsPanel(props: CadSketchRelationsPanelProps) {
   return <RelationsForm key={JSON.stringify([props.document.id, props.sketch.id, props.selection, props.cancelSignal])} {...props} graph={graph} />;
 }
 
-function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, onCornerAccepted, onEditPattern, onSelectPatternSeed, onPlaceGeometry, interactionLocked, dimensionOnly: dimensionRequested = false }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
+function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onInspectSubject, highlight, onCornerAccepted, onEditPattern, onSelectPatternSeed, onPlaceGeometry, interactionLocked, dimensionOnly: dimensionRequested = false }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
   const submission = useCadEditSubmission();
+  const highlightOwner = useId(), highlighted = useRef<CadSketchHighlightStore | null>(null);
+  const showHighlight = (target: CadSketchHighlight) => { highlighted.current = highlight ?? null; highlight?.show(highlightOwner, { kind: 'geometry', ...target }); };
+  const hideHighlight = () => { highlighted.current?.hide(highlightOwner); highlighted.current = null; };
+  useEffect(() => () => highlighted.current?.hide(highlightOwner), [highlightOwner]);
   const form = useRef<HTMLFormElement>(null);
   const singleton = selection.length === 1 ? selection[0] : null;
   const pointPair = selectedPointPair(selection);
@@ -503,7 +482,13 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   }, [inspectedSubject, onInspectSubject]);
   const scalarContext = { parameters, acceptedScalars, relationEdits, valueDrafts, setValueDraft, setIssue,
     setRelationPending: setBindingPending, markRelationEdited, changeParameter };
-  const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}>
+  const subjectHighlight = (subject: CadSketchConstraintFeedbackSubject): CadSketchHighlight => {
+    const relation = subject.source.kind === 'relation' ? draft.relations.find(item => item.id === subject.source.id) : undefined;
+    return { pointIds: subject.pointIds, entityIds: subject.entityIds, datums: relation ? cadSketchRelationHighlight(draft, relation).datums : [] };
+  };
+  const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}
+          onPointerEnter={() => showHighlight(cadSketchRelationHighlight(draft, relation))} onPointerLeave={hideHighlight}
+          onFocus={() => showHighlight(cadSketchRelationHighlight(draft, relation))} onBlur={hideHighlight}>
           <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { if(relation.kind === 'linear-pattern') { if (!pending) onEditPattern?.(relation.id); return; } setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
             {labelRelation(relation)}{(relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
             {relation.kind === 'reference-dimension' && <span>({referenceValue(relation)})</span>}
@@ -645,7 +630,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       </>}
     </fieldset>
     {issue && <p className="cad-error" role="alert">{issue}</p>}
-    {feedback && feedback.subjects.length > 0 && <ul className="cad-sketch-diagnostic-list" aria-label="Constraint issues">{feedback.subjects.map((subject, index) => <li key={`${subject.category}/${subject.source.kind}/${subject.source.id}/${index}`}>
+    {feedback && feedback.subjects.length > 0 && <ul className="cad-sketch-diagnostic-list" aria-label="Constraint issues">{feedback.subjects.map((subject, index) => <li key={`${subject.category}/${subject.source.kind}/${subject.source.id}/${index}`}
+      onPointerEnter={() => showHighlight(subjectHighlight(subject))} onPointerLeave={hideHighlight} onFocus={() => showHighlight(subjectHighlight(subject))} onBlur={hideHighlight}>
       <Button type="button" data-cad-diagnostic-source={subject.source.id} aria-pressed={inspectedSubject === subject} disabled={interactionLocked || submission.applying || !canInspectFeedback} title={!canInspectFeedback ? 'Finish or cancel this edit before opening the affected sketch.' : subject.category === 'issue' ? subject.detail : 'Highlight the geometry involved in this constraint issue'}
         onClick={() => setInspectedFailure(current => current?.feedback === feedback && current.subject === subject ? null : { feedback, subject })}>
         <span>{subject.label}</span><small>{subject.category === 'partially-redundant' ? 'Partly redundant' : subject.category === 'issue' ? 'Geometry issue' : subject.category === 'conflicting' ? 'Conflict' : 'Redundant'}</small>

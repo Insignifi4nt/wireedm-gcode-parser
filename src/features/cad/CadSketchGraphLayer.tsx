@@ -19,6 +19,8 @@ import { cadSketchGeometryPickAllows, type CadSketchDatum, type CadSketchGeometr
 import { cadSketchSnapTargetLabel, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
+import { CadSketchHighlightOverlay } from './CadSketchHighlightOverlay';
+import { createCadSketchHighlightStore, NO_SKETCH_DIMENSIONS, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 
 type Prepared = ReturnType<typeof prepareCadSketchGraphInteraction>;
 export interface CadSketchGraphControls {
@@ -40,6 +42,13 @@ export interface CadSketchGraphControls {
   onSelectDatum?(datum: CadSketchDatum, additive: boolean): void;
   onDelete?(selection: CadSketchGraphSelection): void;
   onConfigureRelation?(relation: CadSketchDimensionRelation): void;
+  /** Relation IDs of the dimensions selected on the canvas; a geometry selection replaces them. */
+  readonly dimensionSelection?: readonly string[];
+  onSelectDimension?(relationId: string | null, additive: boolean): void;
+  onDeleteDimension?(relationId: string): void;
+  onDimensionMenu?(relationId: string, at: { readonly clientX: number; readonly clientY: number }): void;
+  /** Hover highlight shared with the dock rows; without one the layer keeps its own. */
+  readonly highlight?: CadSketchHighlightStore;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   readonly onPrepareEdits?: CadPrepareEdits;
   onPreviewDocument?(document: CadDocument | null): void;
@@ -143,6 +152,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   highlighted?: CadSketchGraphSelection | null;
 }) {
   const submission = useCadEditSubmission();
+  const [ownHighlight] = useState(createCadSketchHighlightStore), highlightStore = controls.highlight ?? ownHighlight;
   const [intent, setIntent] = useState<Intent | null>(null);
   const drag = useRef<Drag | null>(null);
   const callbacks = useRef({ controls, onPendingChange, onError }); callbacks.current = { controls, onPendingChange, onError };
@@ -432,8 +442,12 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       <path d={`M ${radiusGripX} ${shownCircle.center[1] - center[1] + 4 * scaleY} l ${4 * scaleX} ${-4 * scaleY} l ${-4 * scaleX} ${-4 * scaleY} l ${-4 * scaleX} ${4 * scaleY} Z`} className="cad-sketch-point-mark" />
       <title>{circle.lockedReason ?? (controls.degreesOfFreedom === 0 ? 'Fully constrained by dimensions and relations' : `Radius ${formatCadQuantity(shownCircle.radius)} mm · Drag to resize, or use arrow keys`)}</title>
     </g>}
+    <CadSketchHighlightOverlay store={highlightStore} prepared={displayed} center={center} mmPerPixel={scaleY} selectedRelationIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSIONS} />
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
-      selectedRelationId={controls.relation?.id} interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)} />}
+      selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore}
+      interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
+      onSelect={(relationId, additive) => controls.onSelectDimension?.(relationId, additive)} onDelete={relationId => controls.onDeleteDimension?.(relationId)}
+      onMenu={(relationId, at) => controls.onDimensionMenu?.(relationId, at)} />}
     {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${preview.kind === 'error' || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.kind === 'translate' ? intent.anchor[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}
       cy={(intent.kind === 'point' ? intent.point.position[1] + intent.translation[1] : intent.kind === 'translate' ? intent.anchor[1] + intent.translation[1] : intent.circle.center[1]) - center[1]} r={5 * scaleY}>

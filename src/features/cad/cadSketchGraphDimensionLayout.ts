@@ -13,6 +13,8 @@ import { formatCadQuantity } from './cadDisplayQuantity';
 export type CadSketchDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'distance' }>;
 export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'axis-distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' | 'line-angle' | 'reference-dimension' }>;
 type Pair = readonly [SketchPoint, SketchPoint];
+/** Slim screen-pixel arrowheads: 5 px long and 3.5 px wide. */
+const ARROW_LENGTH_PIXELS = 5, ARROW_HALF_WIDTH_PIXELS = 1.75;
 type Arrow = readonly [SketchPoint, SketchPoint, SketchPoint];
 interface DimensionGeometry {
   readonly extensions: readonly Pair[];
@@ -51,7 +53,7 @@ function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixe
   const upX = -readY, upY = readX, lineOffset = upX * nx + upY * ny < -1e-12 ? 20 + isoInwardClearance : 20;
   const offset = (point: Point2, pixels: number): SketchPoint => [point.x + nx * pixels * mmPerPixel, point.y + ny * pixels * mmPerPixel];
   const line: Pair = [offset(a, lineOffset), offset(b, lineOffset)];
-  const headLength = Math.min(6 * mmPerPixel, length / 4), headWidth = Math.min(2.5 * mmPerPixel, length / 8);
+  const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, length / 4), headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, length / 8);
   const arrow = (point: SketchPoint, sign: number): Arrow => [point,
     [point[0] + ux * headLength * sign + nx * headWidth, point[1] + uy * headLength * sign + ny * headWidth],
     [point[0] + ux * headLength * sign - nx * headWidth, point[1] + uy * headLength * sign - ny * headWidth]];
@@ -126,7 +128,7 @@ function radialGeometry(center: Point2, radius: number, angle: number, valueMm: 
   const box = cadSketchGraphDimensionLabel(valueMm, kind, reference);
   const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
   const label: SketchPoint = [tip[0] + ux * clearance, tip[1] + uy * clearance];
-  const headLength = Math.min(6 * mmPerPixel, radius / 4), headWidth = Math.min(2.5 * mmPerPixel, radius / 8);
+  const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, radius / 4), headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, radius / 8);
   return { line: [[center.x, center.y], label], extensions: [], label, labelAngle: 0,
     arrows: [[tip, [tip[0] + ux * headLength - uy * headWidth, tip[1] + uy * headLength + ux * headWidth],
       [tip[0] + ux * headLength + uy * headWidth, tip[1] + uy * headLength - ux * headWidth]]] };
@@ -144,7 +146,7 @@ function angularDimension(graph: CadSketchGraph, relation: Extract<CadSketchDime
     const mid = Math.atan2(first.direction.y, first.direction.x) + sweep / 2, ux = Math.cos(mid), uy = Math.sin(mid);
     const box = cadSketchGraphDimensionLabel(valueDegrees, 'angle');
     const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
-    const headLength = Math.min(6 * mmPerPixel, radius * Math.abs(sweep) / 4), headWidth = Math.min(2.5 * mmPerPixel, headLength / 2);
+    const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, radius * Math.abs(sweep) / 4), headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, headLength / 2);
     const arrow = (tip: SketchPoint, direction: Point2, into: number): Arrow => [tip,
       [tip[0] - direction.y * headLength * into + direction.x * headWidth, tip[1] + direction.x * headLength * into + direction.y * headWidth],
       [tip[0] - direction.y * headLength * into - direction.x * headWidth, tip[1] + direction.x * headLength * into - direction.y * headWidth]];

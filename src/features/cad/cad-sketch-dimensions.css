@@ -21,9 +21,12 @@
 .cad-dimension-edit { box-sizing: border-box; max-width: 100%; }
 .cad-dimension-edit label input { width: min(115px, 55%); }
 .cad-sketch-dimension-controls.has-annotations { inset: 0; transform: none; max-width: none; pointer-events: none; }
-.has-annotations .cad-dimension-leaders { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: #91b6c6; stroke-width: 1; overflow: hidden; }
-.cad-dimension-leaders marker path { fill: #91b6c6; stroke: none; }
-.cad-dimension-leaders .cad-dimension-extension { opacity: .55; }
+.has-annotations .cad-dimension-leaders { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--muted-foreground); stroke-width: 1; overflow: hidden; }
+.cad-dimension-leaders marker path { fill: var(--muted-foreground); stroke: none; }
+.cad-dimension-leaders .cad-dimension-extension { opacity: .45; }
+/* The hovered, selected or edited chip draws its leader in the selection colour, like a canvas dimension. */
+.cad-dimension-leaders g.is-active { stroke: var(--primary); }
+.cad-dimension-leaders marker.is-active path { fill: var(--primary); }
 .has-annotations .cad-dimension-chips { display: contents; }
-.cad-workbench .has-annotations .cad-dimension-chips > button { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; padding: 2px 4px; }
+.cad-workbench .has-annotations .cad-dimension-chips > button { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; min-height: 0; padding: 1px 4px; gap: 3px; font-family: var(--font-mono); font-size: 10px; }
 .has-annotations .cad-dimension-edit { position: absolute; pointer-events: auto; transform: translateX(-50%); margin: 0; }
