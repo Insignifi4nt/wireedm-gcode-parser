@@ -8,16 +8,21 @@ const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['d
 export const isCadSketchDimensionRelation = (relation: CadSketchGraphRelation): relation is CadSketchDimensionRelation => DIMENSION_KINDS.has(relation.kind);
 
 /**
- * One selected dimension: its relation ID, or a profile chip's field, and what it measures. A different dimension that reuses the ID,
- * after undo, redo or an agent edit, is a different pick and never inherits the selection.
+ * One selected dimension: its relation ID, or a profile chip's field, and what it was authored to measure. A different dimension that
+ * reuses the ID, after undo, redo or an agent edit, is a different pick and never inherits the selection.
+ * - `form` is the kind of relation, such as a driving distance or a reference to a line's length.
+ * - `identity` is what that form names: a reference to a line keeps the line, so it survives a Trim or Extend that rewrites an endpoint.
+ * - `measures` is the measured quantity that a driving and a reference form share, so Make reference and Make driving keep the pick.
  */
-export interface CadSketchDimensionPick { readonly id: string; readonly identity: string }
+export interface CadSketchDimensionPick { readonly id: string; readonly form: string; readonly identity: string; readonly measures: string }
 /** Dimensions selected on the canvas or on a profile, in selection order. Geometry selection replaces it. */
 export const NO_SKETCH_DIMENSIONS: readonly CadSketchDimensionPick[] = Object.freeze([]);
 export const NO_SKETCH_DIMENSION_IDS: readonly string[] = Object.freeze([]);
 const MAX_SELECTED_DIMENSIONS = 64;
-export const sameCadSketchDimensionPick = (a: CadSketchDimensionPick, b: CadSketchDimensionPick) => a.id === b.id && a.identity === b.identity;
+/** Whether two picks name the same dimension: the same form must name the same thing; another form must measure the same quantity. */
+export const sameCadSketchDimensionPick = (a: CadSketchDimensionPick, b: CadSketchDimensionPick) => a.id === b.id && (a.form === b.form ? a.identity === b.identity : a.measures === b.measures);
 const samePick = sameCadSketchDimensionPick;
+const equalPick = (a: CadSketchDimensionPick, b: CadSketchDimensionPick) => a.id === b.id && a.form === b.form && a.identity === b.identity && a.measures === b.measures;
 
 /** A plain pick selects one dimension; an additive pick toggles it in or out of the current set. */
 export function selectCadSketchDimension(current: readonly CadSketchDimensionPick[], pick: CadSketchDimensionPick, additive = false): readonly CadSketchDimensionPick[] {
@@ -38,33 +43,69 @@ export function cadSketchDimensionIds(current: readonly CadSketchDimensionPick[]
 const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
   : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(',')}}` : JSON.stringify(value);
 /**
- * What a dimension measures, without its value or ID. Editing the value keeps the selection, and so do Make reference and
+ * The pick for a dimension relation, without its value. Editing the value keeps the selection, and so do Make reference and
  * Make driving, which keep the measured length, distance, radius or diameter. A relation that measures something else does not.
  */
-export function cadSketchDimensionIdentity(graph: CadSketchGraph, relation: CadSketchDimensionRelation): string {
+export function cadSketchDimensionPickOf(graph: CadSketchGraph, relation: CadSketchDimensionRelation): CadSketchDimensionPick {
   const pair = (pointIds: readonly string[]) => [...pointIds].sort();
+  const pick = (form: string, identity: unknown, measures: unknown = identity) => ({ id: relation.id, form, identity: canonical(identity), measures: canonical(measures) });
   switch (relation.kind) {
-    case 'distance': return canonical(['point-distance', pair(relation.pointIds)]);
-    case 'radial-size': return canonical(['radial-size', relation.entityId, relation.quantity]);
+    case 'distance': return pick('distance', pair(relation.pointIds), ['point-distance', pair(relation.pointIds)]);
+    case 'radial-size': return pick('radial-size', [relation.entityId, relation.quantity], ['radial-size', relation.entityId, relation.quantity]);
     case 'reference-dimension': {
-      const measurement = relation.measurement;
-      if (measurement.kind === 'radial-size') return canonical(['radial-size', measurement.entityId, measurement.quantity]);
-      if (measurement.kind === 'point-distance') return canonical(['point-distance', pair(measurement.pointIds)]);
+      const measurement = relation.measurement, form = `reference/${measurement.kind}`;
+      if (measurement.kind === 'radial-size') return pick(form, [measurement.entityId, measurement.quantity], ['radial-size', measurement.entityId, measurement.quantity]);
+      if (measurement.kind === 'point-distance') return pick(form, pair(measurement.pointIds), ['point-distance', pair(measurement.pointIds)]);
+      // A line reference names its line; only its match with a driving distance goes through the line's current endpoints.
       const line = graph.entities.find(entity => entity.id === measurement.entityId);
-      return line?.kind === 'line' ? canonical(['point-distance', pair([line.startPointId, line.endPointId])]) : canonical(['line-length', measurement.entityId]);
+      return pick(form, measurement.entityId, line?.kind === 'line' ? ['point-distance', pair([line.startPointId, line.endPointId])] : [form, measurement.entityId]);
     }
-    default: return canonical(Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id' && key !== 'value' && key !== 'values')));
+    default: return pick(relation.kind, Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id' && key !== 'value' && key !== 'values')));
   }
 }
 /** The pick for a canvas dimension, or null when the relation is gone or is not a dimension. */
 export function cadSketchDimensionPick(graph: CadSketchGraph, relationId: string): CadSketchDimensionPick | null {
   const relation = graph.relations.find(item => item.id === relationId);
-  return relation && isCadSketchDimensionRelation(relation) ? { id: relation.id, identity: cadSketchDimensionIdentity(graph, relation) } : null;
+  return relation && isCadSketchDimensionRelation(relation) ? cadSketchDimensionPickOf(graph, relation) : null;
 }
-/** Undo, redo, deletion and agent edits can remove or replace a selected dimension; the rest stay selected. */
+/** Whether a pick still names the dimension the graph holds under its ID. */
+export function isCadSketchDimensionPickCurrent(graph: CadSketchGraph | undefined, pick: CadSketchDimensionPick): boolean {
+  const current = graph ? cadSketchDimensionPick(graph, pick.id) : null;
+  return Boolean(current && samePick(current, pick));
+}
+/**
+ * Undo, redo, deletion and agent edits can remove or replace a selected dimension; the rest stay selected. A kept pick takes the
+ * dimension's current form and endpoints, so a later Make driving still matches a line reference whose endpoint was rewritten.
+ */
 export function reconcileCadSketchDimensionSelection(graph: CadSketchGraph | undefined, current: readonly CadSketchDimensionPick[]): readonly CadSketchDimensionPick[] {
-  if (!graph) return current.length ? NO_SKETCH_DIMENSIONS : current;
-  return keepCadSketchDimensionPicks(current, pick => cadSketchDimensionPick(graph, pick.id)?.identity === pick.identity);
+  if (!current.length) return current;
+  if (!graph) return NO_SKETCH_DIMENSIONS;
+  let changed = false;
+  const kept = current.flatMap(pick => {
+    const now = cadSketchDimensionPick(graph, pick.id);
+    if (!now || !samePick(now, pick)) { changed = true; return []; }
+    if (!equalPick(now, pick)) changed = true;
+    return [equalPick(now, pick) ? pick : now];
+  });
+  return !changed ? current : kept.length ? Object.freeze(kept) : NO_SKETCH_DIMENSIONS;
+}
+/**
+ * Mount keys for dimension annotations. A relation keeps its key while each new graph names the same dimension, so focus and a
+ * menu's focus return stay with it; a replacement under the same ID gets a new key, so it never inherits either.
+ */
+export function createCadSketchDimensionKeys() {
+  let entries = new Map<string, { pick: CadSketchDimensionPick; generation: number }>(), next = 0;
+  return (graph: CadSketchGraph): ReadonlyMap<string, string> => {
+    const updated = new Map<string, { pick: CadSketchDimensionPick; generation: number }>(), keys = new Map<string, string>();
+    for (const relation of graph.relations) {
+      if (!isCadSketchDimensionRelation(relation)) continue;
+      const pick = cadSketchDimensionPickOf(graph, relation), previous = entries.get(relation.id);
+      const entry = previous && samePick(previous.pick, pick) ? { pick, generation: previous.generation } : { pick, generation: next++ };
+      updated.set(relation.id, entry); keys.set(relation.id, `${relation.id}/${entry.generation}`);
+    }
+    entries = updated;
+    return keys;
+  };
 }
 
 /** Sentence-case name of a canvas dimension, as the relations list names it. */

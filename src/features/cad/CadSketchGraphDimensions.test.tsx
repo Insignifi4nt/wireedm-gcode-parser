@@ -48,7 +48,7 @@ describe('graph dimension selection and editing', () => {
       expect(label.getAttribute('aria-label')).toBe(`Dimension ${axis === 'x' ? 'horizontal' : 'vertical'} distance ${value} mm, From Point 2 → To Point 1, press Enter to edit`);
       expect(label.getAttribute('transform')).toContain('scale(0.1 -0.1)');
       await key(label, ' ');
-      expect(view.select).toHaveBeenCalledExactlyOnceWith('offset', false); expect(view.configure).not.toHaveBeenCalled();
+      expect(view.select).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'offset' }), false); expect(view.configure).not.toHaveBeenCalled();
       await key(label, 'Enter');
       expect(view.configure).toHaveBeenCalledExactlyOnceWith(source.relations[0]); expect(view.parent).not.toHaveBeenCalled();
       await act(async () => view.render({ interactive: false })); view.configure.mockClear(); view.select.mockClear();
@@ -67,7 +67,7 @@ describe('graph dimension selection and editing', () => {
     const label = container.querySelector<SVGGElement>('[role="button"]');
     if (!label) throw new Error('Radial dimension label missing.');
     await click(label);
-    expect(view.select).toHaveBeenCalledExactlyOnceWith('size', false); expect(view.configure).not.toHaveBeenCalled();
+    expect(view.select).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'size' }), false); expect(view.configure).not.toHaveBeenCalled();
     // The second click of a double-click does not select again; the double-click opens the editor.
     await click(label, { detail: 2 }); await doubleClick(label);
     expect(view.select).toHaveBeenCalledOnce(); expect(view.configure).toHaveBeenCalledExactlyOnceWith(source.relations[0]);
@@ -89,9 +89,9 @@ describe('graph dimension selection and editing', () => {
     const right = await pointer(label, 'pointerdown', 2);
     expect(right.defaultPrevented).toBe(false); expect(view.parent).toHaveBeenCalledOnce(); view.parent.mockClear();
     await click(label, { shiftKey: true });
-    expect(view.select).toHaveBeenLastCalledWith('dimension', true);
+    expect(view.select).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'dimension' }), true);
     await key(label, 'Delete'); await key(label, 'Backspace');
-    expect(view.remove.mock.calls).toEqual([['dimension'], ['dimension']]);
+    expect(view.remove.mock.calls.map(([dimension]) => dimension.id)).toEqual(['dimension', 'dimension']);
     // With nothing selected, Escape passes on to the canvas and the workbench.
     await key(label, 'Escape');
     expect(view.select).toHaveBeenCalledTimes(1); expect(view.parent).toHaveBeenCalledOnce(); view.parent.mockClear();
@@ -99,7 +99,7 @@ describe('graph dimension selection and editing', () => {
     await key(label, 'Escape');
     expect(view.select).toHaveBeenLastCalledWith(null, false);
     await key(label, 'ContextMenu'); await key(label, 'F10', { shiftKey: true });
-    expect(view.menu).toHaveBeenCalledTimes(2); expect(view.menu.mock.calls[0][0]).toBe('dimension');
+    expect(view.menu).toHaveBeenCalledTimes(2); expect(view.menu.mock.calls[0][0].id).toBe('dimension');
     expect(view.menu.mock.calls[0][1]).toEqual({ clientX: expect.any(Number), clientY: expect.any(Number) });
     expect(view.configure).not.toHaveBeenCalled(); expect(view.parent).not.toHaveBeenCalled();
     expect(graph.relations[0]).toMatchObject({ value: ' length ' });
@@ -156,7 +156,7 @@ describe('graph dimension selection and editing', () => {
       // The relation open in the editor draws like a selected dimension.
       expect(label.getAttribute('aria-pressed')).toBe('true');
     }
-    expect(view.select.mock.calls).toEqual([...labels].map(() => [relation.id, false]));
+    expect(view.select.mock.calls).toEqual([...labels].map(() => [expect.objectContaining({ id: relation.id }), false]));
     expect(view.configure).toHaveBeenCalledTimes(labels.length); expect(view.configure.mock.calls.every(([value]) => value === relation)).toBe(true);
     expect(view.parent).not.toHaveBeenCalled(); expect(JSON.stringify(corner)).toBe(before);
   });

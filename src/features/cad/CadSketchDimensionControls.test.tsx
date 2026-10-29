@@ -199,6 +199,40 @@ describe('on-part sketch dimension selection', () => {
     expect(edit).not.toHaveBeenCalled();
   });
 
+  it('never leaves focus, or returns it from a menu or editor, on a chip whose constraint was replaced', async () => {
+    const { session, edit } = await renderControls(slot());
+    const pressFocused = (name: string) => act(async () => { document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })); });
+    const replaceWidth = (id: string) => act(async () => session.replace(slot([{ id, kind: 'dimension', quantity: 'width' }, length])));
+    // Keyboard only: the focused chip's constraint is replaced, so Delete has nothing to act on.
+    const focused = chip('Width'); await act(async () => focused.focus());
+    await replaceWidth('width-2'); expect(chip('Width')).not.toBe(focused); expect(document.activeElement).not.toBe(chip('Width'));
+    await pressFocused('Delete'); await pressFocused('Backspace'); expect(edit).not.toHaveBeenCalled();
+    // A menu that the replacement closes does not hand focus to the new chip.
+    await key('Width', 'ContextMenu'); expect(menuOpen()).toBe(true);
+    await replaceWidth('width-3'); expect(menuOpen()).toBe(false); expect(document.activeElement).not.toBe(chip('Width'));
+    await pressFocused('Delete'); expect(edit).not.toHaveBeenCalled();
+    // Nor does an editor closed after the replacement.
+    await key('Width', 'Enter'); expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    await replaceWidth('width-4'); await click('Close dimension editor');
+    expect(document.activeElement).not.toBe(chip('Width')); await pressFocused('Delete'); expect(edit).not.toHaveBeenCalled();
+    // A chip whose value changes keeps its focus, and Delete removes that dimension.
+    const kept = chip('Length'); await act(async () => kept.focus());
+    await act(async () => session.edit([{ kind: 'set-parameter', name: 'tilt', value: 20 }]));
+    expect(chip('Length')).toBe(kept); expect(document.activeElement).toBe(kept); await pressFocused('Delete');
+    expect(edit).toHaveBeenCalledExactlyOnceWith([{ kind: 'remove-sketch-dimension', sketchId: 'sketch', profileId: 'profile', dimensionId: 'length' }], expect.any(AbortSignal));
+  });
+
+  it('selects the chip its editor opens on and keeps it selected through Cancel and Apply', async () => {
+    const { edit } = await renderControls(slot());
+    const widthSelected = (value = 8) => expect(pressed()).toEqual([`Dimension width ${value} mm, press Enter to edit`]);
+    await pick('Length'); await key('Width', 'Enter'); widthSelected();
+    await click('Cancel'); widthSelected(); expect(document.activeElement).toBe(chip('Width'));
+    await act(async () => chip('Width').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, detail: 2 })));
+    await input('Width value', '9'); await click('Apply'); widthSelected(9);
+    await key('Width', 'Delete');
+    expect(edit).toHaveBeenLastCalledWith([{ kind: 'remove-sketch-dimension', sketchId: 'sketch', profileId: 'profile', dimensionId: 'width' }], expect.any(AbortSignal));
+  });
+
   it('never carries a selection to a constraint added after the selected one went away', async () => {
     const { session, edit } = await renderControls(slot());
     await pick('Width'); await pick('Length', true); expect(pressed()).toHaveLength(2);

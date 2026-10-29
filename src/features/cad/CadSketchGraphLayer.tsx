@@ -20,7 +20,7 @@ import { cadSketchSnapTargetLabel, type CadSketchSnapCandidate } from './cadSket
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
 import { CadSketchHighlightOverlay } from './CadSketchHighlightOverlay';
-import { createCadSketchHighlightStore, NO_SKETCH_DIMENSION_IDS, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
+import { createCadSketchHighlightStore, NO_SKETCH_DIMENSION_IDS, type CadSketchDimensionPick, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 
 type Prepared = ReturnType<typeof prepareCadSketchGraphInteraction>;
 export interface CadSketchGraphControls {
@@ -44,9 +44,10 @@ export interface CadSketchGraphControls {
   onConfigureRelation?(relation: CadSketchDimensionRelation): void;
   /** Relation IDs of the dimensions selected on the canvas; a geometry selection replaces them. */
   readonly dimensionSelection?: readonly string[];
-  onSelectDimension?(relationId: string | null, additive: boolean): void;
-  onDeleteDimension?(relationId: string): void;
-  onDimensionMenu?(relationId: string, at: { readonly clientX: number; readonly clientY: number }): void;
+  /** Label commands name the dimension the label was drawn for; Delete without one removes the dimension selection. */
+  onSelectDimension?(dimension: CadSketchDimensionPick | null, additive: boolean): void;
+  onDeleteDimension?(dimension?: CadSketchDimensionPick): void;
+  onDimensionMenu?(dimension: CadSketchDimensionPick, at: { readonly clientX: number; readonly clientY: number }): void;
   /** Hover highlight shared with the dock rows; without one the layer keeps its own. */
   readonly highlight?: CadSketchHighlightStore;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
@@ -446,8 +447,8 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
       selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore}
       interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
-      onSelect={(relationId, additive) => controls.onSelectDimension?.(relationId, additive)} onDelete={relationId => controls.onDeleteDimension?.(relationId)}
-      onMenu={(relationId, at) => controls.onDimensionMenu?.(relationId, at)} />}
+      onSelect={(dimension, additive) => controls.onSelectDimension?.(dimension, additive)} onDelete={dimension => controls.onDeleteDimension?.(dimension)}
+      onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} />}
     {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${preview.kind === 'error' || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.kind === 'translate' ? intent.anchor[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}
       cy={(intent.kind === 'point' ? intent.point.position[1] + intent.translation[1] : intent.kind === 'translate' ? intent.anchor[1] + intent.translation[1] : intent.circle.center[1]) - center[1]} r={5 * scaleY}>

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import {
-  cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionSelectionStatus, cadSketchRelationHighlight, createCadSketchHighlightStore, NO_SKETCH_DIMENSION_IDS,
-  NO_SKETCH_DIMENSIONS, reconcileCadSketchDimensionSelection, selectCadSketchDimension, type CadSketchDimensionPick
+  cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionSelectionStatus, cadSketchRelationHighlight, createCadSketchDimensionKeys, createCadSketchHighlightStore,
+  isCadSketchDimensionPickCurrent, NO_SKETCH_DIMENSION_IDS, NO_SKETCH_DIMENSIONS, reconcileCadSketchDimensionSelection, selectCadSketchDimension, type CadSketchDimensionPick
 } from './cadSketchDimensionSelection';
 import { cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
 
@@ -41,7 +41,7 @@ describe('sketch dimension selection', () => {
 
   it('caps an additive selection', () => {
     let current: readonly CadSketchDimensionPick[] = NO_SKETCH_DIMENSIONS;
-    for (let index = 0; index < 70; index++) current = selectCadSketchDimension(current, { id: `d${index}`, identity: 'distance' }, true);
+    for (let index = 0; index < 70; index++) current = selectCadSketchDimension(current, { id: `d${index}`, form: 'distance', identity: 'pair', measures: 'pair' }, true);
     expect(current).toHaveLength(64);
   });
 
@@ -52,7 +52,7 @@ describe('sketch dimension selection', () => {
     expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withoutSize, current))).toEqual(['length']);
     // Positional relations and datum coordinates are not canvas dimensions.
     expect(cadSketchDimensionPick(graph, 'parallel-free')).toBeNull(); expect(cadSketchDimensionPick(graph, 'x')).toBeNull();
-    expect(reconcileCadSketchDimensionSelection(graph, [{ id: 'x', identity: pick('length').identity }])).toBe(NO_SKETCH_DIMENSIONS);
+    expect(reconcileCadSketchDimensionSelection(graph, [{ ...pick('length'), id: 'x' }])).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(undefined, current)).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(graph, NO_SKETCH_DIMENSIONS)).toBe(NO_SKETCH_DIMENSIONS);
   });
@@ -75,9 +75,46 @@ describe('sketch dimension selection', () => {
     const referenced = { ...graph, relations: graph.relations.map(relation => relation.id === 'length' ? { id: 'length', kind: 'reference-dimension' as const, measurement: { kind: 'line-length' as const, entityId: 'base' } }
       : relation.id === 'diagonal' ? { id: 'diagonal', kind: 'reference-dimension' as const, measurement: { kind: 'point-distance' as const, pointIds: ['c', 'a'] as const } }
         : relation.id === 'size' ? { id: 'size', kind: 'reference-dimension' as const, measurement: { kind: 'radial-size' as const, entityId: 'hole', quantity: 'diameter' as const } } : relation) };
-    expect(reconcileCadSketchDimensionSelection(referenced, current)).toBe(current);
+    const kept = reconcileCadSketchDimensionSelection(referenced, current);
+    expect(cadSketchDimensionIds(kept)).toEqual(['length', 'diagonal', 'size']);
+    // The kept picks take the reference form, and Make driving brings them back.
+    expect(kept.map(item => item.form)).toEqual(['reference/line-length', 'reference/point-distance', 'reference/radial-size']);
+    expect(reconcileCadSketchDimensionSelection(graph, kept)).toEqual(current);
     // A reference to another line under the same ID is a different dimension.
     expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withRelation({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'side' } }), current))).toEqual(['diagonal', 'size']);
+  });
+
+  it('keeps a line reference selected when Trim or Extend rewrites an endpoint of its line, and through a later Make driving', () => {
+    const measured = { id: 'measured', kind: 'reference-dimension' as const, measurement: { kind: 'line-length' as const, entityId: 'base' } };
+    const referenced = { ...graph, relations: [...graph.relations.filter(relation => relation.id !== 'length'), measured] };
+    const current = Object.freeze([cadSketchDimensionPick(referenced, 'measured')!]);
+    // Trim gives the base line a new end point; the reference still names the base line.
+    const trimmed = { ...referenced, points: [...referenced.points, { id: 'n', position: [25, 0] as const }],
+      entities: referenced.entities.map(entity => entity.id === 'base' && entity.kind === 'line' ? { ...entity, endPointId: 'n' } : entity) };
+    const kept = reconcileCadSketchDimensionSelection(trimmed, current);
+    expect(cadSketchDimensionIds(kept)).toEqual(['measured']);
+    const driving = { ...trimmed, relations: trimmed.relations.map(relation => relation.id === 'measured' ? { id: 'measured', kind: 'distance' as const, pointIds: ['a', 'n'] as const, value: 25 } : relation) };
+    expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(driving, kept))).toEqual(['measured']);
+    // Pointing the reference at another line, or a driving length between other points, is a different dimension.
+    const repointed = { ...trimmed, relations: trimmed.relations.map(relation => relation.id === 'measured' ? { ...measured, measurement: { kind: 'line-length' as const, entityId: 'side' } } : relation) };
+    expect(reconcileCadSketchDimensionSelection(repointed, kept)).toBe(NO_SKETCH_DIMENSIONS);
+    const elsewhere = { ...trimmed, relations: trimmed.relations.map(relation => relation.id === 'measured' ? { id: 'measured', kind: 'distance' as const, pointIds: ['a', 'b'] as const, value: 40 } : relation) };
+    expect(reconcileCadSketchDimensionSelection(elsewhere, kept)).toBe(NO_SKETCH_DIMENSIONS);
+  });
+
+  it('keeps a mount key while the ID names the same dimension and renews it when a replacement takes the ID', () => {
+    const keys = createCadSketchDimensionKeys(), first = keys(graph).get('length');
+    expect(keys(withRelation({ id: 'length', kind: 'distance', pointIds: ['b', 'a'], value: 41 })).get('length')).toBe(first);
+    expect(keys(withRelation({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' } })).get('length')).toBe(first);
+    expect(keys(graph).get('length')).toBe(first);
+    const replaced = keys(withRelation({ id: 'length', kind: 'distance', pointIds: ['a', 'c'], value: 50 })).get('length');
+    expect(replaced).not.toBe(first);
+    // Restoring the first dimension replaces the one shown, so it mounts afresh too.
+    expect(keys(graph).get('length')).not.toBe(replaced);
+    expect(keys(graph).has('parallel-free')).toBe(false);
+    expect(isCadSketchDimensionPickCurrent(graph, pick('length'))).toBe(true);
+    expect(isCadSketchDimensionPickCurrent(withRelation({ id: 'length', kind: 'distance', pointIds: ['a', 'c'], value: 50 }), pick('length'))).toBe(false);
+    expect(isCadSketchDimensionPickCurrent(undefined, pick('length'))).toBe(false);
   });
 
   it('describes the selection for the status line without opening the editor', () => {

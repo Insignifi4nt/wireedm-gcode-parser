@@ -38,7 +38,7 @@ import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { cadArcSvgPath } from './cadSketchSvg';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
-import { cadSketchDimensionSelectionStatus } from './cadSketchDimensionSelection';
+import { cadSketchDimensionPick, cadSketchDimensionSelectionStatus, type CadSketchDimensionPick } from './cadSketchDimensionSelection';
 import { CAD_SKETCH_AXIS_PIXELS, CAD_SKETCH_DATUMS, cadSketchDatumLabels, cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, pickCadSketchDatum, type CadSketchDatum, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
@@ -255,7 +255,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     window.addEventListener('blur', blurred);
     return () => { window.removeEventListener('blur', blurred); finishProfileDrag(); };
   }, [finishProfileDrag]);
-  const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; button: number; buttonMask: number; moved: boolean; element: SVGSVGElement; dimensionId: string | null } | null>(null);
+  const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; button: number; buttonMask: number; moved: boolean; element: SVGSVGElement; dimension: CadSketchDimensionPick | null } | null>(null);
   const finishPan = useCallback((pointerId?: number) => {
     const active = pan.current;
     if (!active || pointerId !== undefined && pointerId !== active.pointerId) return;
@@ -951,9 +951,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (event.button === 1 || event.button === 2) {
           if (viewLocked) return;
           event.preventDefault(); event.currentTarget.focus({ preventScroll: true });
-          // A still right release on a dimension opens that dimension's menu rather than the geometry menu.
+          // A still right release on a dimension opens the menu of the dimension pressed, which the workbench checks is still there.
           const dimensionId = event.button === 2 && event.target instanceof Element ? event.target.closest('[data-cad-sketch-dimension]')?.getAttribute('data-cad-sketch-dimension') ?? null : null;
-          pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget, dimensionId };
+          const dimension = dimensionId && sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchDimensionPick(sourceSketch.graph, dimensionId) : null;
+          pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget, dimension };
           try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); }
         } else if (event.button === 0 && !interactionLocked) {
           // SVG's native focus ring is measured in drawing units. Keep pointer
@@ -1037,8 +1038,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (!active || active.pointerId !== event.pointerId) return;
         finishPan(event.pointerId);
         if (active.button !== 2 || event.button !== 2 || active.moved || Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4 || interactionLocked || viewLocked) return;
-        if (active.dimensionId && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onDimensionMenu) {
-          graphControls.onDimensionMenu(active.dimensionId, { clientX: event.clientX, clientY: event.clientY }); return;
+        if (active.dimension && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onDimensionMenu) {
+          graphControls.onDimensionMenu(active.dimension, { clientX: event.clientX, clientY: event.clientY }); return;
         }
         if (openOverlap(event)) return;
         const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
@@ -1127,7 +1128,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         }
         const dimensions = tool === 'select' && !positionPick ? graphControls?.dimensionSelection ?? [] : [];
         if ((event.key === 'Delete' || event.key === 'Backspace') && dimensions.length && graphControls?.onDeleteDimension) {
-          event.preventDefault(); event.stopPropagation(); graphControls.onDeleteDimension(dimensions[dimensions.length - 1]); return;
+          event.preventDefault(); event.stopPropagation(); graphControls.onDeleteDimension(); return;
         }
         const step = gridStep * (event.shiftKey ? 10 : 1);
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchGraphDimensionLabel, layoutCadSketchGraphDimensions, type CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
-import type { CadSketchHighlightStore } from './cadSketchDimensionSelection';
+import { cadSketchDimensionPickOf, createCadSketchDimensionKeys, type CadSketchDimensionPick, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import type { SketchPoint } from './cadSketchInteraction';
 import './cad-sketch-graph-dimensions.css';
 
@@ -17,10 +17,13 @@ export interface CadSketchGraphDimensionsProps {
   readonly interactive: boolean;
   /** Opens the dimension editor: double-click or Enter. */
   onConfigure(relation: CadSketchDimensionRelation): void;
-  /** A plain click selects one dimension, Shift toggles it and Escape clears with `null`. */
-  onSelect?(relationId: string | null, additive: boolean): void;
-  onDelete?(relationId: string): void;
-  onMenu?(relationId: string, at: { readonly clientX: number; readonly clientY: number }): void;
+  /**
+   * A plain click selects one dimension, Shift toggles it and Escape clears with `null`. Each command names the dimension the label
+   * was drawn for, so its owner can refuse a label that a replacement under the same ID has since taken over.
+   */
+  onSelect?(dimension: CadSketchDimensionPick | null, additive: boolean): void;
+  onDelete?(dimension: CadSketchDimensionPick): void;
+  onMenu?(dimension: CadSketchDimensionPick, at: { readonly clientX: number; readonly clientY: number }): void;
   /** Hovering a dimension highlights the geometry it measures. */
   readonly highlight?: CadSketchHighlightStore;
 }
@@ -31,15 +34,18 @@ const NO_IDS: readonly string[] = Object.freeze([]);
 export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel, selectedRelationId, selectedIds = NO_IDS, interactive, onConfigure, onSelect, onDelete, onMenu, highlight }: CadSketchGraphDimensionsProps) {
   const dimensions = useMemo(() => layoutCadSketchGraphDimensions(graph, parameters, mmPerPixel), [graph, parameters, mmPerPixel]);
   const pointNumbers = useMemo(() => new Map(graph.points.map((point, index) => [point.id, index + 1])), [graph.points]);
+  // A label keeps its element while the graph names the same dimension; a replacement mounts afresh, so it never takes over focus.
+  const [dimensionKeys] = useState(createCadSketchDimensionKeys);
+  const keys = useMemo(() => dimensionKeys(graph), [dimensionKeys, graph]);
   const hovered = useRef<string | null>(null);
   const hide = () => { if (hovered.current) highlight?.hide(hovered.current); hovered.current = null; };
   const hideOnUnmount = useRef(hide); hideOnUnmount.current = hide;
   useEffect(() => () => hideOnUnmount.current(), []);
-  // A dimension that leaves the drawing, or a canvas that stops accepting picks, drops its hover highlight.
+  // A dimension that leaves the drawing or is replaced, or a canvas that stops accepting picks, drops its hover highlight.
   useEffect(() => {
     const owner = hovered.current;
-    if (owner && (!interactive || !graph.relations.some(relation => `dimension:${relation.id}` === owner))) hideOnUnmount.current();
-  }, [graph, interactive]);
+    if (owner && (!interactive || ![...keys.values()].some(key => `dimension:${key}` === owner))) hideOnUnmount.current();
+  }, [keys, interactive]);
   const line = (points: readonly [SketchPoint, SketchPoint], className?: string) => <line className={className} x1={points[0][0] - center[0]} y1={points[0][1] - center[1]}
     x2={points[1][0] - center[0]} y2={points[1][1] - center[1]} />;
   return <g className="cad-sketch-graph-dimensions" role="group" aria-label="Sketch dimensions">
@@ -51,7 +57,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
       const roles = relation.kind === 'axis-distance'
         ? `, From Point ${pointNumbers.get(relation.pointIds[0])} → To Point ${pointNumbers.get(relation.pointIds[1])}` : '';
       const selected = selectedIds.includes(relation.id), inspected = selectedRelationId === relation.id;
-      const owner = `dimension:${relation.id}`;
+      const mountKey = keys.get(relation.id) ?? relation.id, owner = `dimension:${mountKey}`, pick = cadSketchDimensionPickOf(graph, relation);
       const enter = () => { if (!interactive || !highlight) return; hovered.current = owner; highlight.show(owner, { kind: 'relation', relationId: relation.id }); };
       const leave = () => { if (hovered.current === owner) hide(); };
       const down = (event: PointerEvent<SVGGElement>) => {
@@ -62,7 +68,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
       };
       const click = (event: MouseEvent<SVGGElement>) => {
         if (event.button !== 0) return; event.preventDefault(); event.stopPropagation();
-        if (interactive && event.detail <= 1) onSelect?.(relation.id, event.shiftKey);
+        if (interactive && event.detail <= 1) onSelect?.(pick, event.shiftKey);
       };
       const doubleClick = (event: MouseEvent<SVGGElement>) => { event.preventDefault(); event.stopPropagation(); if (interactive) onConfigure(relation); };
       const key = (event: KeyboardEvent<SVGGElement>) => {
@@ -74,13 +80,13 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
         event.preventDefault(); event.stopPropagation();
         if (!interactive) return;
         if (event.key === 'Enter') onConfigure(relation);
-        else if (event.key === ' ') onSelect?.(relation.id, event.shiftKey);
+        else if (event.key === ' ') onSelect?.(pick, event.shiftKey);
         else if (event.key === 'Escape') onSelect?.(null, false);
-        else if (menu) { const box = event.currentTarget.getBoundingClientRect(); onMenu?.(relation.id, { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }); }
-        else onDelete?.(relation.id);
+        else if (menu) { const box = event.currentTarget.getBoundingClientRect(); onMenu?.(pick, { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }); }
+        else onDelete?.(pick);
       };
       const tone = selected || inspected ? ' is-selected' : reference ? ' is-reference' : '';
-      return <g key={`${relation.id}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`} data-cad-sketch-dimension={relation.id}
+      return <g key={`${mountKey}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`} data-cad-sketch-dimension={relation.id}
         data-cad-dimension-reference={reference || undefined} data-cad-dimension-kind={dimension.kind} data-cad-dimension-side={dimension.kind === 'setback' ? dimension.side : undefined}
         className={`cad-sketch-graph-dimension${tone}${interactive ? ' is-interactive' : ''}`}
         onPointerEnter={enter} onPointerLeave={leave} onPointerDown={down} onClick={click} onDoubleClick={doubleClick}>

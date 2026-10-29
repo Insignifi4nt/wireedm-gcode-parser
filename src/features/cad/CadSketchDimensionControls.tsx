@@ -64,7 +64,10 @@ function changeDimension(geometry: CadProfile, name: Dimension['name'], value: n
 }
 const valueText = formatCadQuantity;
 /** A chip's field and the constraint behind it: a replacement constraint on the same field is a different chip and is never selected. */
-const chipPick = (dimension: Dimension): CadSketchDimensionPick => ({ id: dimension.name, identity: `${dimension.quantity ?? ''}/${dimension.constraintId ?? ''}` });
+const chipPick = (dimension: Dimension): CadSketchDimensionPick => {
+  const identity = `${dimension.quantity ?? ''}/${dimension.constraintId ?? ''}`;
+  return { id: dimension.name, form: 'profile', identity, measures: identity };
+};
 const PROFILE_REFERENCE_REASON = 'Profile dimensions always drive their profile. Copy the outline to an editable sketch to measure it with a reference dimension.';
 export function CadSketchDimensionControls({ document: cadDocument, sketch, profile, parameters, anchor, project, onEditMany, onPendingChange, interactionLocked, cancelSignal, onInspectInput, onConfigure, onError }: CadSketchDimensionControlsProps) {
   const arrowId = useId();
@@ -136,10 +139,12 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
   useLayoutEffect(() => { if (selected !== selection) setSelection(selected); }, [selected, selection]);
   useLayoutEffect(() => { if (hovered && !dimensions.some(dimension => dimension.name === hovered)) setHovered(null); }, [hovered, dimensions]);
   const isSelected = (dimension: Dimension) => selected.some(pick => sameCadSketchDimensionPick(chipPick(dimension), pick));
+  // The edited chip stays selected, or becomes the selection, so after Apply or Cancel Delete removes the chip drawn selected.
   const openEditor = (dimension: Dimension) => {
     if (interactionLocked || editor || submission.applying) return;
     let resolved: number; try { resolved = evaluateCadScalar(dimension.scalar, parameters) * dimension.scale; } catch { return; }
     editorDocument.current = cadDocument; previous.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!isSelected(dimension)) setSelection(selectCadSketchDimension(NO_SKETCH_DIMENSIONS, chipPick(dimension)));
     setMenu(null); setEditor({ name: dimension.name, value: String(resolved), error: '' }); onInspectInput?.(dimension.name);
   };
   // Delete on a selected chip removes every selected driving dimension; on another chip it removes just that one.
@@ -183,7 +188,8 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
       const dimensionBinding = bindingFor(dimension.scalar, parameters);
       let resolved: number; try { resolved = evaluateCadScalar(dimension.scalar, parameters) * dimension.scale; } catch { return null; }
       const chipSelected = isSelected(dimension);
-      return <Button variant="annotation" key={dimension.name} type="button" style={annotation ? { left: annotation.label.x, top: annotation.label.y } : undefined}
+      // A chip whose constraint is replaced mounts afresh, so neither focus nor a closing menu or editor returns to the replacement.
+      return <Button variant="annotation" key={`${dimension.name}/${chipPick(dimension).identity}`} type="button" style={annotation ? { left: annotation.label.x, top: annotation.label.y } : undefined}
         aria-label={`Dimension ${dimension.label.toLowerCase()} ${valueText(resolved)}${dimension.unit ? ` ${dimension.unit}` : ''}, press Enter to edit`} aria-pressed={chipSelected} aria-expanded={editor?.name === dimension.name}
         disabled={interactionLocked || Boolean(editor && editor.name !== dimension.name)} title={`${dimension.label}: ${valueText(resolved)} ${dimension.unit}${dimensionBinding.kind === 'parameter' ? ` · linked to ${dimensionBinding.name}` : dimensionBinding.kind === 'expression' ? ` · ${dimensionBinding.expression} (linked expression)` : ''}`}
         onPointerEnter={() => setHovered(dimension.name)} onPointerLeave={() => setHovered(current => current === dimension.name ? null : current)}
