@@ -38,9 +38,9 @@ async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>
     return { clientX: (x - state.centerMm[0] - box[0]) / box[2] * 800, clientY: (state.centerMm[1] - y - box[1]) / box[3] * 600 };
   }
   async function point(x: number, y: number, type = 'click', detail = 1) { await act(async () => svg.dispatchEvent(new MouseEvent(type, { ...position(x, y), button: 0, bubbles: true, detail }))); }
-  async function pointer(type: string, x: number, y: number) {
+  async function pointer(type: string, x: number, y: number, { pointerId = 7, pointerType }: { readonly pointerId?: number; readonly pointerType?: string } = {}) {
     const event = new MouseEvent(type, { ...position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true });
-    Object.defineProperties(event, { pointerId: { value: 7 }, isPrimary: { value: true } });
+    Object.defineProperties(event, { pointerId: { value: pointerId }, isPrimary: { value: true }, ...pointerType ? { pointerType: { value: pointerType } } : {} });
     await act(async () => svg.dispatchEvent(event));
   }
   /** A mouse click: its press places the point and its trailing click is suppressed. A double-click's second click has detail 2. */
@@ -214,6 +214,49 @@ describe('line chains', () => {
     await h.tap(10, 10); expect(h.instruction()).toBe('Click the line end.');
     await h.tap(30, 10); await h.key('Enter');
     expect(onAddPath).toHaveBeenCalledTimes(2); expect(onAddPath.mock.calls[1][0].segments.map((segment: { end: readonly number[] }) => segment.end.map(Math.round))).toEqual([[30, 10]]);
+  });
+
+  it.each([
+    ['its own revision', 'idle'], ['an undo after it', 'start'], ['an undo during the next press', 'start'],
+  ] as const)('keeps the click a chain save spent through %s only, so a quick click on the former start then does what it shows', async (revision, result) => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath, documentVersion: 'drawn' });
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30); await h.tap(10, 10);
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(onAddPath.mock.calls[0][1]).toBe(true);
+    await h.render({ documentVersion: 'saved' });
+    if (revision === 'an undo after it') await h.render({ documentVersion: 'undone' });
+    await h.pointer('pointerdown', 10, 10);
+    if (revision === 'an undo during the next press') await h.render({ documentVersion: 'undone' });
+    await h.pointer('pointerup', 10, 10); await h.point(10, 10, 'click', 2);
+    // The saved chain spends the click; once an undo removes it, the click starts the next chain.
+    expect(h.instruction()).toBe(result === 'idle' ? idleLine : 'Click the line end.');
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it('treats the revision after a rejected chain save as another edit, so the click that save spent is forgotten', async () => {
+    const onAddPath = vi.fn().mockRejectedValueOnce(new Error('The chain crosses a locked edge.'));
+    const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath, documentVersion: 'drawn' });
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30); await h.tap(10, 10);
+    expect(h.error).toHaveBeenLastCalledWith('The chain crosses a locked edge.');
+    // An agent edit lands after the rejection; the next quick click on the start closes the kept chain again.
+    await h.render({ documentVersion: 'agent' });
+    await h.tap(10, 10, 2);
+    expect(onAddPath).toHaveBeenCalledTimes(2); expect(onAddPath.mock.calls[1][1]).toBe(true);
+  });
+
+  it.each(['a press another pointer still holds', 'a click by another kind of pointer'] as const)('never completes a double-click from %s', async first => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.click('Toggle snapping');
+    await h.tap(10, 10); await h.tap(30, 10);
+    // One finger, or a pen, places the next point; a second finger, or a mouse, clicking beside it soon after makes a plain pick.
+    const [one, other] = first === 'a press another pointer still holds' ? [{ pointerId: 2, pointerType: 'touch' }, { pointerId: 3, pointerType: 'touch' }]
+      : [{ pointerId: 2, pointerType: 'pen' }, { pointerId: 1, pointerType: 'mouse' }];
+    await h.pointer('pointerdown', 50, 10, one);
+    if (first === 'a click by another kind of pointer') { await h.pointer('pointerup', 50, 10, one); await h.point(50, 10); }
+    await h.pointer('pointerdown', 51.5, 10, other); await h.pointer('pointerup', 51.5, 10, other);
+    await h.point(51.5, 10, 'click', 2);
+    expect(onAddPath).not.toHaveBeenCalled(); expect(h.button('Finish chain').disabled).toBe(false);
+    await h.click('Finish chain');
+    expect(ends(onAddPath)).toEqual([[30, 10], [50, 10], [51.5, 10]]); expect(h.error).not.toHaveBeenCalled();
   });
 
   it.each(['a tool change', 'a cancellation'] as const)('ends a press held through %s, so its drag draws nothing', async change => {

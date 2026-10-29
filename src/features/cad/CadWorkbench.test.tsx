@@ -1821,6 +1821,28 @@ describe('CAD sketch interaction', () => {
     await click('Select'); expect(toolButton('Select').getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('starts a chain from a quick click on the former start once an undo removes the closed chain', async () => {
+    await mount(); await startSketch(); await snapToGrid(); await click('Line');
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    const tap = async (x: number, y: number, detail = 1) => {
+      for (const type of ['pointerdown', 'pointerup', 'click']) {
+        const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerdown' ? 1 : 0, bubbles: true, cancelable: true, clientX: x, clientY: y, detail });
+        Object.defineProperties(event, { pointerId: { value: 12 }, isPrimary: { value: type !== 'click' } });
+        await act(async () => canvas.dispatchEvent(event));
+      }
+    };
+    await tap(300, 200); await tap(450, 200); await tap(375, 100); await tap(300, 200);
+    expect(sketchGraph().entities).toHaveLength(3);
+    await act(async () => { currentSession.undo(); });
+    expect(sketchGraph().entities).toHaveLength(0);
+    // The undo is not the chain's own revision, so the click its closure spent is gone and this one starts the next chain.
+    await tap(300, 200, 2);
+    expect(button('Finish chain').disabled).toBe(true); expect(workflow).toHaveBeenLastCalledWith(true);
+    await tap(450, 200); await click('Finish chain');
+    expect(sketchGraph().entities).toHaveLength(1);
+  });
+
   it('closes a free line chain on its start into shared point identities and changes only a selected edge to construction', async () => {
     await mount(); await startSketch(); await snapToGrid(); await click('Line');
     // Unticked, the start on the origin only copies its position.
