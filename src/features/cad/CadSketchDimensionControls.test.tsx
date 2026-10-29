@@ -166,6 +166,20 @@ describe('on-part sketch dimension selection', () => {
     await pick('Length'); expect(active()).toEqual(['length']);
   });
 
+  it('drops the leader highlight of a hovered chip whose constraint is replaced, which sends it no pointer leave', async () => {
+    const { session } = await renderControls(slot(), undefined, point => ({ x: 200 + point[0] * 4, y: 150 - point[1] * 4 }));
+    const active = () => Array.from(container.querySelectorAll('.cad-dimension-leaders g.is-active')).map(group => group.getAttribute('data-cad-dimension'));
+    const surface = container.querySelector('.cad-sketch-dimension-controls'); if (!surface) throw new Error('Missing dimension controls');
+    const hovered = chip('Width'); await act(async () => surface.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: hovered })));
+    expect(active()).toEqual(['width']);
+    // A value change keeps the chip and its hover.
+    await act(async () => session.edit([{ kind: 'set-parameter', name: 'tilt', value: 20 }]));
+    expect(chip('Width')).toBe(hovered); expect(active()).toEqual(['width']);
+    // A replacement constraint on the same field mounts a new chip, which the pointer has not entered.
+    await act(async () => session.replace(slot([{ id: 'width-2', kind: 'dimension', quantity: 'width' }, length])));
+    expect(hovered.isConnected).toBe(false); expect(findChip('Width')).not.toBeNull(); expect(active()).toEqual([]);
+  });
+
   it('deletes the selected driving dimensions in one edit and leaves expression sizes in place', async () => {
     const { session, edit } = await renderControls(slot());
     await pick('Width'); await pick('Length', true); await key('Length', 'Delete');

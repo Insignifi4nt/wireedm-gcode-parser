@@ -1929,6 +1929,61 @@ describe('CAD sketch interaction', () => {
       expect(canvasRenders).toHaveBeenCalled();
     });
 
+    describe('a dock row highlight after an outside edit, which sends the row no blur or pointer leave', () => {
+      const shown = () => [highlighted('point'), highlighted('entity')];
+      const enter = async (kind: 'focused' | 'hovered', row: HTMLElement) => act(async () => {
+        if (kind === 'focused') row.focus(); else row.closest('form')!.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row }));
+      });
+
+      it.each(['focused', 'hovered'] as const)('hides the highlight of a %s relation row that the edit removes', async kind => {
+        await open(); await geometryMenu('base', 'Constraints and dimensions');
+        const row = relationRow('Distance relation 1'); await enter(kind, row);
+        expect(shown()).toEqual([['a', 'b'], ['base']]);
+        let left = 0; for (const name of ['blur', 'focusout', 'pointerout', 'pointerleave']) row.addEventListener(name, () => { left += 1; });
+        await replace(current => current.filter(relation => relation.id !== 'length'));
+        expect(row.isConnected).toBe(false); expect(left).toBe(0); expect(relationsPanel()).not.toBeNull();
+        expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
+      });
+
+      // An outside edit resets the panel, which mounts its rows afresh: the pointer stays over the row, while focus goes to the body.
+      it.each([['hovered', [['b', 'c'], ['side']]], ['focused', [[], []]]] as const)('follows a %s relation row whose operands the edit changes', async (kind, after) => {
+        await open(); await geometryMenu('base', 'Constraints and dimensions');
+        const row = relationRow('Distance relation 1'); await enter(kind, row);
+        expect(shown()).toEqual([['a', 'b'], ['base']]);
+        await swap({ id: 'length', kind: 'distance', pointIds: ['b', 'c'], value: 30 });
+        expect(row.isConnected).toBe(false); expect(relationRow('Distance relation 1').getAttribute('aria-label')).toContain('Point 2 and Point 3');
+        expect(shown()).toEqual(after);
+      });
+
+      it.each(['focused', 'hovered'] as const)('draws the highlight of a %s relation row again when the panel converts its relation in place', async kind => {
+        await open(); await geometryMenu('base', 'Constraints and dimensions'); await editRow('Reference dimension relation 6');
+        const row = relationRow('Reference dimension relation 6'); await enter(kind, row);
+        expect(shown()).toEqual([[], ['side']]);
+        // Make driving turns the draft into a driving length between the line's ends, in the same row; the drawn sketch,
+        // and with it the selected dimension's own highlight, keeps the reference until Apply.
+        await click('Make driving');
+        expect(row.isConnected).toBe(true); if (kind === 'focused') expect(document.activeElement).toBe(row);
+        expect(row.getAttribute('aria-label')).toMatch(/^Inspect Distance relation 6 /);
+        expect(shown()).toEqual([['b', 'c'], ['side']]);
+      });
+
+      it('hides the highlight of a hovered issue row that the edit removes', async () => {
+        await open({ build: null, buildState: 'idle', onEditMany: () => {
+          const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
+          throw new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Bracket', graph: feature.graph, rejection: { kind: 'rejected', reason: 'conflicting', message: 'Over-defined.',
+            diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length', 'diagonal'], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
+        } });
+        await geometryMenu('base', 'Constraints and dimensions');
+        await act(async () => relationsPanel()!.querySelector<HTMLButtonElement>('button[aria-label^="Remove Angle"]')!.click()); await click('Apply');
+        const issue = container.querySelector<HTMLElement>('ul[aria-label="Constraint issues"] > li'); if (!issue) throw new Error('Issue row missing.');
+        await enter('hovered', issue); expect(shown()).toEqual([['a', 'b'], []]);
+        // The unapplied removal keeps the draft, and the issues belong to the document the Apply was refused for.
+        await replace(current => [...current, { id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }]);
+        expect(issue.isConnected).toBe(false); expect(relationsPanel()).not.toBeNull();
+        expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
+      });
+    });
+
     it('never carries the selection or an open menu to a relation that reuses a dimension ID', async () => {
       await open();
       await pick('length');

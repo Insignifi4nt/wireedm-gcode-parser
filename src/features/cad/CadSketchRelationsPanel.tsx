@@ -185,12 +185,23 @@ export function CadSketchRelationsPanel(props: CadSketchRelationsPanelProps) {
   return <RelationsForm key={JSON.stringify([props.document.id, props.sketch.id, props.selection, props.cancelSignal])} {...props} graph={graph} />;
 }
 
+/** The dock row whose geometry the canvas highlights: `relation/<id>` or `issue/<list key>`, the row element and whether focus or the pointer showed it. */
+interface HighlightedRow { readonly store: CadSketchHighlightStore; readonly row: string; readonly element: Element; readonly focused: boolean }
+const issueRowKey = (subject: CadSketchConstraintFeedbackSubject, index: number) => `${subject.category}/${subject.source.kind}/${subject.source.id}/${index}`;
+
 function RelationsForm({ document: cadDocument, sketch, graph, selection, initialCommand, onEditMany, onPendingChange, onPrepareEdits, onPreviewDocument, onInspectRelation, onEditRelation, onInspectSubject, highlight, onCornerAccepted, onEditPattern, onSelectPatternSeed, onPlaceGeometry, interactionLocked, dimensionOnly: dimensionRequested = false }: CadSketchRelationsPanelProps & { graph: CadSketchGraph }) {
   const submission = useCadEditSubmission();
-  const highlightOwner = useId(), highlighted = useRef<CadSketchHighlightStore | null>(null);
-  const showHighlight = (target: CadSketchHighlight) => { highlighted.current = highlight ?? null; highlight?.show(highlightOwner, { kind: 'geometry', ...target }); };
-  const hideHighlight = () => { highlighted.current?.hide(highlightOwner); highlighted.current = null; };
-  useEffect(() => () => highlighted.current?.hide(highlightOwner), [highlightOwner]);
+  const highlightOwner = useId(), highlighted = useRef<HighlightedRow | null>(null);
+  const hideHighlight = () => { highlighted.current?.store.hide(highlightOwner); highlighted.current = null; };
+  /** Pointer and focus handlers for a row; showing records the row, so no state changes and nothing renders but the overlay. */
+  const highlightRow = (row: string, target: () => CadSketchHighlight) => {
+    const show = (element: Element, focused: boolean) => {
+      highlighted.current = highlight ? { store: highlight, row, element, focused } : null; highlight?.show(highlightOwner, { kind: 'geometry', ...target() });
+    };
+    return { onPointerEnter: (event: { currentTarget: Element }) => show(event.currentTarget, false), onPointerLeave: hideHighlight,
+      onFocus: (event: { currentTarget: Element }) => show(event.currentTarget, true), onBlur: hideHighlight };
+  };
+  useEffect(() => () => highlighted.current?.store.hide(highlightOwner), [highlightOwner]);
   const form = useRef<HTMLFormElement>(null);
   const singleton = selection.length === 1 ? selection[0] : null;
   const pointPair = selectedPointPair(selection);
@@ -580,9 +591,18 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     const relation = subject.source.kind === 'relation' ? draft.relations.find(item => item.id === subject.source.id) : undefined;
     return { pointIds: subject.pointIds, entityIds: subject.entityIds, datums: relation ? cadSketchRelationHighlight(draft, relation).datums : [] };
   };
+  // A row that an edit removes or remounts gets no blur or pointer leave, so after every render the highlight follows its row:
+  // it is drawn again from the current draft while the row is listed, and hidden once the row is gone or a remount took its focus.
+  useLayoutEffect(() => {
+    const shown = highlighted.current; if (!shown) return;
+    const kept = !shown.focused || shown.element.isConnected;
+    const relation = kept && !corner && !dimensionOnly ? relations.find(item => `relation/${item.id}` === shown.row) : undefined;
+    const subject = kept && !relation ? feedback?.subjects.find((item, index) => `issue/${issueRowKey(item, index)}` === shown.row) : undefined;
+    const target = relation ? cadSketchRelationHighlight(draft, relation) : subject ? subjectHighlight(subject) : null;
+    if (target) shown.store.show(highlightOwner, { kind: 'geometry', ...target }); else hideHighlight();
+  });
   const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}
-          onPointerEnter={() => showHighlight(cadSketchRelationHighlight(draft, relation))} onPointerLeave={hideHighlight}
-          onFocus={() => showHighlight(cadSketchRelationHighlight(draft, relation))} onBlur={hideHighlight}>
+          {...highlightRow(`relation/${relation.id}`, () => cadSketchRelationHighlight(draft, relation))}>
           <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { if(relation.kind === 'linear-pattern') { if (!pending) onEditPattern?.(relation.id); return; } setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
             {listedRelationLabel(relation) ?? labelRelation(relation)}{!listedRelationLabel(relation) && (relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
             {relation.kind === 'reference-dimension' && <span>({referenceValue(relation)})</span>}
@@ -742,8 +762,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       </>}
     </fieldset>
     {issue && <p className="cad-error" role="alert">{issue}</p>}
-    {feedback && feedback.subjects.length > 0 && <ul className="cad-sketch-diagnostic-list" aria-label="Constraint issues">{feedback.subjects.map((subject, index) => <li key={`${subject.category}/${subject.source.kind}/${subject.source.id}/${index}`}
-      onPointerEnter={() => showHighlight(subjectHighlight(subject))} onPointerLeave={hideHighlight} onFocus={() => showHighlight(subjectHighlight(subject))} onBlur={hideHighlight}>
+    {feedback && feedback.subjects.length > 0 && <ul className="cad-sketch-diagnostic-list" aria-label="Constraint issues">{feedback.subjects.map((subject, index) => <li key={issueRowKey(subject, index)}
+      {...highlightRow(`issue/${issueRowKey(subject, index)}`, () => subjectHighlight(subject))}>
       <Button type="button" data-cad-diagnostic-source={subject.source.id} aria-pressed={inspectedSubject === subject} disabled={interactionLocked || submission.applying || !canInspectFeedback} title={!canInspectFeedback ? 'Finish or cancel this edit before opening the affected sketch.' : subject.category === 'issue' ? subject.detail : 'Highlight the geometry involved in this constraint issue'}
         onClick={() => setInspectedFailure(current => current?.feedback === feedback && current.subject === subject ? null : { feedback, subject })}>
         <span>{subject.label}</span><small>{subject.category === 'partially-redundant' ? 'Partly redundant' : subject.category === 'issue' ? 'Geometry issue' : subject.category === 'conflicting' ? 'Conflict' : 'Redundant'}</small>
