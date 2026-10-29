@@ -71,6 +71,11 @@ interface DrawingSnapChoice {
   readonly saveLine?: boolean;
 }
 interface DrawingPlacement { readonly time: number; readonly clientX: number; readonly clientY: number }
+/**
+ * A click while drawing and the draft change it left. `pointerId` is its pointer while the press is still down, then null;
+ * `finished` when the click saved a chain.
+ */
+interface DrawingClick extends DrawingPlacement { readonly changes: number; readonly pointerId: number | null; readonly finished: boolean }
 interface DrawingCursor { readonly point: SketchPoint; readonly mode: 'pointer' | 'position'; readonly suppressed: boolean }
 /** What the workbench needs to finish or leave a drawing while the canvas is not focused. */
 export interface CadSketchDrawingControls {
@@ -250,17 +255,19 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const suppressProfileClick = useRef(false);
   /**
    * A primary press while drawing. The press places its pick at once; a drag past the slop then places the next pick on
-   * release, so press-drag-release draws like two clicks. A press beside the last placed point is held until release:
-   * a drag draws from that point, and a plain click places it then. `changes` is the draft change the press left.
+   * release, so press-drag-release draws like two clicks. A held press places nothing until it is judged: one beside the
+   * last placed point (`last`) draws from that point if it drags and places its pick on a plain release, and one that could
+   * complete a double-click (`second`) places its own pick once it drags. `changes` is the draft change the press left.
    * A drag that starts an idle Line saves its one line on release.
    */
   const drawingPress = useRef<DrawingPlacement & { readonly pointerId: number; changes: number; readonly fromIdle: boolean;
-    readonly held: { readonly last: SketchPoint; readonly raw: SketchPoint; readonly scale: SketchPoint } | null; dragged: boolean } | null>(null);
+    held: { readonly last: SketchPoint | null; readonly raw: SketchPoint; readonly scale: SketchPoint; readonly second: DrawingClick | null } | null; dragged: boolean } | null>(null);
   /**
-   * The latest press that stayed a click while drawing, whether or not it placed a point, so a second press there soon after
-   * reads as a double-click. A drag is no click and clears it.
+   * The latest click while drawing, whether or not it placed a point, so a press there soon after reads as the second click
+   * of a double-click. A press is a click only once it completes, so one that is cancelled, loses its capture before its
+   * release or drags clears it.
    */
-  const lastClick = useRef<DrawingPlacement & { readonly changes: number } | null>(null);
+  const lastClick = useRef<DrawingClick | null>(null);
   /** The open chain save in flight, and what runs once it is accepted: the workbench's next tool, or leaving the tool. */
   const chainSave = useRef<{ after?: () => void } | null>(null);
   /**
@@ -273,11 +280,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const abandonedPresses = useRef(new Set<number>());
   const dropDatumPress = useCallback(() => { if (!datumPress.current) return; abandonedPresses.current.add(datumPress.current.pointerId); datumPress.current = null; }, []);
   /**
-   * Counts drawing draft changes and whether the latest one added a point. A press keeps its release only while its own
-   * change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick during the press, ends it.
+   * Counts drawing draft changes, whether the latest one added a point and whether it saved a chain. A press keeps its
+   * release only while its own change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick
+   * during the press, ends it.
    */
-  const draftChanges = useRef({ count: 0, added: false });
-  const noteDraftChange = (added: boolean) => { draftChanges.current = { count: draftChanges.current.count + 1, added }; };
+  const draftChanges = useRef({ count: 0, added: false, finished: false });
+  const noteDraftChange = (added: boolean) => { draftChanges.current = { count: draftChanges.current.count + 1, added, finished: false }; };
   const pendingChange = useRef(onPendingChange);
   pendingChange.current = onPendingChange;
   const edgeSubmission = useRef<CadSketchOverlapPick | null>(null);
@@ -818,6 +826,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (!attachedSourceCurrent()) return;
         // Escape or a tool switch during a chain's save runs its step once the chain is accepted, and never aborts the drawn segments.
         const owned = singleSegment ? null : { after }; chainSave.current = owned;
+        // A click that saves the chain spends the double-click it begins.
+        if (owned) draftChanges.current = { ...draftChanges.current, finished: true };
         submitEdit(signal => onAddPath(draft, closed, signal), () => {
           reset();
           if (!owned || chainSave.current !== owned) return;
@@ -843,21 +853,38 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (snapChoice) closeSnapChoice();
     finishPath(false, completed, after); return true;
   };
-  /** A press soon after the latest click and within the drag slop of it, with the draft unchanged since, completes a double-click. */
+  /**
+   * The latest click, when a press soon after it and within the drag slop of it, with the draft unchanged since, could
+   * complete its double-click.
+   */
   const secondPress = (press: DrawingPlacement) => {
     const previous = lastClick.current;
-    return Boolean(previous && previous.changes === draftChanges.current.count && press.time - previous.time <= DOUBLE_CLICK_MS
-      && Math.hypot(press.clientX - previous.clientX, press.clientY - previous.clientY) <= DRAWING_DRAG_PIXELS);
+    return previous && previous.changes === draftChanges.current.count && press.time - previous.time <= DOUBLE_CLICK_MS
+      && Math.hypot(press.clientX - previous.clientX, press.clientY - previous.clientY) <= DRAWING_DRAG_PIXELS ? previous : null;
   };
   /**
-   * Records a press that stayed a click, after whatever it placed, so the next press can complete a double-click. A press whose
+   * Records a click after whatever it placed, so the next press can complete a double-click. A press records it while still
+   * down, with its `pointerId` until the release, so a cancel, a lost capture or a drag first can drop it. A press whose
    * `pick` opens the snap chooser is no click: the chooser takes the next press, and a press outside that dismisses it is one.
    */
-  const noteClick = (at: DrawingPlacement, pick?: DrawingPick) => {
-    lastClick.current = pick?.candidates ? null : { time: at.time, clientX: at.clientX, clientY: at.clientY, changes: draftChanges.current.count };
+  const noteClick = (at: DrawingPlacement, pick?: DrawingPick, pointerId: number | null = null) => {
+    const change = draftChanges.current;
+    lastClick.current = pick?.candidates ? null : { time: at.time, clientX: at.clientX, clientY: at.clientY, changes: change.count, pointerId, finished: change.finished };
   };
-  /** A double-click finishes a chain that can stay open without a zero-length segment, and does nothing more when none is complete. */
-  const finishDoubleClick = () => { lastClick.current = null; finishOpenChain(); };
+  /** The latest click while the press that made it, by `pointerId`, is still down. */
+  const pressedClick = (pointerId: number) => {
+    const click = lastClick.current;
+    return click && click.pointerId !== null && click.pointerId === pointerId ? click : null;
+  };
+  /**
+   * A double-click finishes a chain that can stay open without a zero-length segment, and is then the click that saved it.
+   * False with nothing complete to save, so the click stays an ordinary one.
+   */
+  const finishDoubleClick = (at: DrawingPlacement) => {
+    lastClick.current = null;
+    if (!finishOpenChain()) return false;
+    noteClick(at); return true;
+  };
   /**
    * One Escape for the drawing. A chain that can stay open saves its completed segments and the tool stays; any other pending
    * drawing is discarded. During a chain's save the Escape leaves the tool once the save is accepted, so it never aborts drawn
@@ -1113,19 +1140,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             const snapsBack = Boolean(chainOpen && last && !pick.candidates && pick.point[0] === last[0] && pick.point[1] === last[1]);
             const beside = last && (snapsBack || bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
               event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS);
-            // Once a chain has its start, a drag from that point adds a segment to the chain like any later drag.
-            const press = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, time: event.timeStamp, changes: draftChanges.current.count,
-              fromIdle: chainOpen && pathDraft.kind === 'idle' && pathMode === 'line',
-              held: beside && last ? { last, raw: getRawPoint(event) ?? [0, 0], scale: [width / bounds.width, span / bounds.height] as SketchPoint } : null, dragged: false };
-            // The second press of a double-click finishes a chain wherever it lands, whether or not either press placed a point.
-            // One beside the last point decides on release, so a tap followed by a tap-drag still draws. With nothing complete to
-            // save, the press stays an ordinary click.
-            if (chainOpen && !beside && secondPress(press)) { lastClick.current = null; if (finishOpenChain()) return; }
+            // A press that could complete a double-click is judged on release too, wherever it lands, since only a still one
+            // finishes a chain. Once a chain has its start, a drag from that point adds a segment to the chain like any later drag.
+            const at = { clientX: event.clientX, clientY: event.clientY, time: event.timeStamp }, second = chainOpen ? secondPress(at) : null;
+            const press = { pointerId: event.pointerId, ...at, changes: draftChanges.current.count, fromIdle: chainOpen && pathDraft.kind === 'idle' && pathMode === 'line',
+              held: beside || second ? { last: beside && last ? last : null, raw: getRawPoint(event) ?? [0, 0], scale: [width / bounds.width, span / bounds.height] as SketchPoint, second } : null, dragged: false };
             drawingPress.current = press;
             try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
-            if (beside) return;
+            if (press.held) return;
             acceptDrawingPick(pick, event);
-            noteClick(press, pick);
+            noteClick(press, pick, event.pointerId);
             // Only a press that added a point draws on release; a finished, rejected or ambiguous pick ends the gesture.
             const change = draftChanges.current;
             if (change.count !== press.changes && change.added) press.changes = change.count; else drawingPress.current = null;
@@ -1163,24 +1187,32 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           }
         }
       }}
-      onPointerUpCapture={event => { if (abandonedPresses.current.delete(event.pointerId)) suppressProfileClick.current = true; }}
+      onPointerUpCapture={event => {
+        if (abandonedPresses.current.delete(event.pointerId)) suppressProfileClick.current = true;
+        // Its release completes a drawing click.
+        const click = pressedClick(event.pointerId);
+        if (click) lastClick.current = { ...click, pointerId: null };
+      }}
       onPointerUp={(event) => {
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
           drawingPress.current = null;
-          // Nothing more once the draft changed again during the press, for example by a cancel or a keyboard pick.
-          if (event.button !== 0 || interactionLocked || draftChanges.current.count !== press.changes || !(points.length > 0 || pathPending)) return;
+          // Nothing more once the draft changed again during the press, for example by a cancel or a keyboard pick. A held press
+          // away from the last point placed nothing, so it may also begin a drawing or end an idle one.
+          const held = press.held;
+          if (event.button !== 0 || interactionLocked || draftChanges.current.count !== press.changes || !(points.length > 0 || pathPending || held && !held.last)) return;
           if (press.dragged) {
             // A drag is no click, so it never starts a double-click.
             acceptDrawingPick(getDrawingPick(event), event, press.fromIdle); lastClick.current = null;
-          }
-          // A held press that did not drag is a deliberate short pick, unless it repeats the last point exactly or completes a
-          // double-click, which finishes a chain. It resolves again at the pressed sketch position so Ctrl or Cmd pressed during
-          // the hold still releases snaps and relations.
-          else if (press.held) {
-            if (chainOpen && secondPress(press)) { finishDoubleClick(); return; }
-            const pick = resolveDrawingPick(press.held.raw, event.ctrlKey || event.metaKey, 'pointer', press.held.scale);
-            if (pick.point[0] !== press.held.last[0] || pick.point[1] !== press.held.last[1]) acceptDrawingPick(pick, { clientX: press.clientX, clientY: press.clientY });
+          } else if (held) {
+            // A still second click finishes a chain with something to finish; its first click already placed its point. The
+            // second click after a click that saved the chain is spent and starts nothing.
+            if (held.second?.finished) { lastClick.current = null; return; }
+            if (held.second && finishDoubleClick(press)) return;
+            // Otherwise a held press is a deliberate short pick, unless it repeats the last point exactly. It resolves again at
+            // the pressed sketch position so Ctrl or Cmd pressed during the hold still releases snaps and relations.
+            const pick = resolveDrawingPick(held.raw, event.ctrlKey || event.metaKey, 'pointer', held.scale);
+            if (!held.last || pick.point[0] !== held.last[0] || pick.point[1] !== held.last[1]) acceptDrawingPick(pick, { clientX: press.clientX, clientY: press.clientY });
             noteClick(press, pick);
           }
           return;
@@ -1220,15 +1252,33 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (!geometryPick && !positionPick && pickFilter === 'auto' && point && rect.height) onContextMenu?.({ clientX: event.clientX, clientY: event.clientY, trigger: 'pointer', profileId: profilePicker.pick(point, span / rect.height), pointMm: point });
       }}
       onPointerCancel={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress();
-        // A cancelled pointer ends in no click.
+        // A cancelled pointer ends in no click, so its press cannot begin a double-click either.
+        if (pressedClick(event.pointerId)) lastClick.current = null;
         abandonedPresses.current.delete(event.pointerId); boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
-      onLostPointerCapture={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress(); boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
+      onLostPointerCapture={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress();
+        // Capture lost before the release ends the press in no click. After the release, the click no longer names its pointer.
+        if (pressedClick(event.pointerId)) lastClick.current = null;
+        boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
       onPointerMove={(event) => {
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
           if (!(event.buttons & 1)) drawingPress.current = null;
-          else if (!press.dragged && Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY) > DRAWING_DRAG_PIXELS) press.dragged = true;
+          else if (!press.dragged && Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY) > DRAWING_DRAG_PIXELS) {
+            press.dragged = true;
+            // A held second press away from the last point draws like any drag once it moves. Its own pick is placed now, and
+            // rendered at once, so the release places the next pick on the updated draft.
+            const held = press.held;
+            if (held && !held.last) {
+              press.held = null;
+              flushSync(() => acceptDrawingPick(resolveDrawingPick(held.raw, event.ctrlKey || event.metaKey, 'pointer', held.scale), { clientX: press.clientX, clientY: press.clientY }));
+              const change = draftChanges.current;
+              if (change.count !== press.changes && change.added) press.changes = change.count; else drawingPress.current = null;
+            }
+          }
         }
+        // A press that drags is no click.
+        const click = pressedClick(event.pointerId);
+        if (click && Math.hypot(event.clientX - click.clientX, event.clientY - click.clientY) > DRAWING_DRAG_PIXELS) lastClick.current = null;
         const reference = datumPress.current;
         if (reference && event.pointerId === reference.pointerId && (!(event.buttons & 1) || Math.hypot(event.clientX - reference.clientX, event.clientY - reference.clientY) > 4)) datumPress.current = null;
         if (boxSelection.active()) { boxSelection.move(event); return; }
@@ -1335,7 +1385,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           }
         } else if (drawing) {
           // A double-click that no press placed, such as a synthetic one, finishes a chain on its second click.
-          if (chainOpen && event.detail >= 2 && pathDraft.kind !== 'idle') finishDoubleClick();
+          if (chainOpen && event.detail >= 2 && pathDraft.kind !== 'idle') finishDoubleClick({ time: event.timeStamp, clientX: event.clientX, clientY: event.clientY });
           else acceptDrawingPick(getDrawingPick(event), event);
         }
       }}>
@@ -1442,7 +1492,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       onOutsidePointerDown={event => {
         suppressProfileClick.current = true; event.preventDefault(); event.stopPropagation();
         // The press that dismisses the chooser is still a click, so a double-click there finishes the chain.
-        if (chainOpen && event.button === 0) noteClick({ time: event.timeStamp, clientX: event.clientX, clientY: event.clientY });
+        if (chainOpen && event.button === 0) noteClick({ time: event.timeStamp, clientX: event.clientX, clientY: event.clientY }, undefined, event.pointerId);
       }} />}
     {currentOverlap && <CadContextMenu anchor={{ x: currentOverlap.clientX + (currentOverlap.target ? 12 : 0), y: currentOverlap.clientY + (currentOverlap.target ? 12 : 0) }} title={currentOverlap.target ? currentOverlap.target.kind === 'point' ? 'Sketch point' : 'Sketch edge' : 'Select other'} items={overlapItems} onClose={closeOverlap}
       onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}

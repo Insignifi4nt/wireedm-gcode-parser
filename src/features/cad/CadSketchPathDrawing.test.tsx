@@ -58,7 +58,7 @@ async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>
     if (!result) throw new Error(`Missing ${label}`); return result;
   }
   async function click(label: string) { await act(async () => button(label).click()); }
-  return { svg, session, added, pending, error, render, point, key, button, click, tap, drag, instruction };
+  return { svg, session, added, pending, error, render, point, pointer, key, button, click, tap, drag, instruction };
 }
 
 const graphSketch: CadSketchFeature = { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: { points: [], entities: [], relations: [] } };
@@ -133,6 +133,50 @@ describe('line chains', () => {
       .toEqual(segments);
   });
 
+  const ends = (onAddPath: ReturnType<typeof vi.fn>) => onAddPath.mock.calls[0][0].segments.map((segment: { end: readonly number[] }) => segment.end.map(value => Math.round(value * 10) / 10));
+
+  it('adds the short segment of a quick second pick beside the start, since nothing is complete to finish', async () => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.click('Toggle snapping');
+    // 1.5 mm is under 6 px at the default zoom, within the drag slop of the first click and beside the point it placed.
+    await h.tap(10, 10); await h.tap(11.5, 10);
+    expect(onAddPath).not.toHaveBeenCalled(); expect(h.button('Finish chain').disabled).toBe(false);
+    await h.click('Finish chain');
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(ends(onAddPath)).toEqual([[11.5, 10]]); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it.each(['a closure on the start', 'an open finish'] as const)('spends the next click of a double-click begun by %s once the chain is saved, starting nothing', async finish => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30);
+    // The save is accepted before the next press, so the press finds Line idle.
+    if (finish === 'a closure on the start') { await h.tap(10, 10); await h.tap(10, 10, 2); }
+    else { await h.tap(30, 30, 2); await h.tap(30, 30, 3); }
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(onAddPath.mock.calls[0][1]).toBe(finish === 'a closure on the start');
+    expect(ends(onAddPath)).toEqual(finish === 'a closure on the start' ? [[30, 10], [30, 30], [10, 10]] : [[30, 10], [30, 30]]);
+    expect(h.instruction()).toBe(idleLine); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('[aria-label="Finish chain"]')).toBeNull(); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it.each(['pointercancel', 'lostpointercapture'] as const)('does not count a press ended by %s before its release as the first click of a double-click', async end => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.click('Toggle snapping');
+    await h.tap(10, 10); await h.tap(30, 10);
+    // The ended press still placed its point; a click beside it soon after is a plain pick, not a finishing second click.
+    await h.pointer('pointerdown', 50, 10); await h.pointer(end, 50, 10);
+    await h.tap(51.5, 10);
+    expect(onAddPath).not.toHaveBeenCalled();
+    await h.click('Finish chain');
+    expect(ends(onAddPath)).toEqual([[30, 10], [50, 10], [51.5, 10]]); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps a released click when its capture ends after the release, so a double-click there still finishes', async () => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10);
+    // A browser releases the pointer capture after the release and before the click.
+    for (const type of ['pointerdown', 'pointerup', 'lostpointercapture']) await h.pointer(type, 30, 30);
+    await h.point(30, 30); await h.tap(30, 30, 2);
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(ends(onAddPath)).toEqual([[30, 10], [30, 30]]);
+  });
 
   it('draws and finishes a chain from the keyboard alone', async () => {
     const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });

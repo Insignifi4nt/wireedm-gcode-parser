@@ -324,6 +324,23 @@ describe('sketch canvas profile picking', () => {
     if (finisher === 'a tool switch') expect(after).toHaveBeenCalledOnce();
   });
 
+  it('draws a quick drag after the press that dismissed the snap chooser instead of finishing the chain', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+    await relations(true);
+    await h.click(12, 30); await h.click(12, 20); await h.click(22.2, 3.3);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull();
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+    // The first press dismisses the chooser. The second, on the same spot soon after, drags, so it draws from its press to its release.
+    await press('pointerdown', 30, 40); await press('pointerup', 30, 40); await h.click(30, 40);
+    await press('pointerdown', 30, 40); await press('pointermove', 40, 40); await press('pointerup', 40, 40); await h.click(40, 40);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.click());
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled();
+    const [draft, closed] = onAddPath.mock.calls[0];
+    expect(closed).toBe(false);
+    expect(draft.segments.map((segment: { end: readonly number[] }) => segment.end)).toEqual([[expect.closeTo(12, 9), expect.closeTo(20, 9)], [expect.closeTo(30, 9), expect.closeTo(40, 9)], [expect.closeTo(40, 9), expect.closeTo(40, 9)]]);
+  });
+
   it.each(['an idle Line', 'a pending chain', 'a chain end beside the targets'] as const)('reopens the snap chooser on a quick press after Escape on %s, without reading a double-click', async setup => {
     const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
     await relations(true);

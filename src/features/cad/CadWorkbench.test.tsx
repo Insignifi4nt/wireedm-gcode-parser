@@ -1794,6 +1794,26 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
+  it('spends the second click of a double-click on the chain start once its closure is saved, leaving Line idle and the sketch finishable', async () => {
+    await mount(); await startSketch(); await snapToGrid(); await click('Line');
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    const tap = async (x: number, y: number, detail = 1) => {
+      for (const type of ['pointerdown', 'pointerup', 'click']) {
+        const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerdown' ? 1 : 0, bubbles: true, cancelable: true, clientX: x, clientY: y, detail });
+        Object.defineProperties(event, { pointerId: { value: 12 }, isPrimary: { value: type !== 'click' } });
+        await act(async () => canvas.dispatchEvent(event));
+      }
+    };
+    await tap(300, 200); await tap(450, 200); await tap(375, 100);
+    // The first click closes the chain and its save is accepted before the second press arrives.
+    await tap(300, 200); await tap(300, 200, 2);
+    expect(sketchGraph().entities).toHaveLength(3); expect(sketchGraph().points).toHaveLength(3);
+    expect(toolButton('Line').getAttribute('aria-pressed')).toBe('true'); expect(workflow).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('button[aria-label="Finish chain"]')).toBeNull(); expect(button('Finish sketch').disabled).toBe(false);
+    await click('Select'); expect(toolButton('Select').getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('closes a free line chain on its start into shared point identities and changes only a selected edge to construction', async () => {
     await mount(); await startSketch(); await snapToGrid(); await click('Line');
     // Unticked, the start on the origin only copies its position.
