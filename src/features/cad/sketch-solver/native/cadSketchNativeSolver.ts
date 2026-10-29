@@ -1,4 +1,5 @@
-import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, encodeCadSketchEquationModel, type CadSketchEquationModel } from './cadSketchEquationModel';
+import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, CAD_SKETCH_PARAMETER_DETERMINED, CAD_SKETCH_PARAMETER_FREE, CAD_SKETCH_PARAMETER_NOT_ANALYSED,
+  encodeCadSketchEquationModel, type CadSketchEquationModel, type CadSketchNativeOptions } from './cadSketchEquationModel';
 
 export interface CadSketchNativeSolution {
   /** `too-large`: a connected group needs more factor memory or work than the solver allows. */
@@ -21,6 +22,14 @@ export interface CadSketchNativeSolution {
    * values to every target, in millimetres.
    */
   readonly drag?: { readonly outcome: CadSketchNativeDragOutcome; readonly targetDistance: number };
+  /**
+   * Present exactly when the solve asked for it: each parameter's definition code, free to move,
+   * determined by the equations, or not analysed. A fixed parameter is determined and one no
+   * equation reads is free; the others are analysed only in a group that converged with its rank
+   * certain and no constraint of it conflicting, within a work allowance of their own, and are
+   * never analysed when the diagnosis is unavailable.
+   */
+  readonly definition?: readonly number[];
 }
 
 export type CadSketchNativeDragOutcome = 'reached' | 'projected' | 'stalled' | 'limited';
@@ -49,7 +58,7 @@ export type CadSketchNativeDiagnosis =
 
 export interface CadSketchNativeSolver {
   /** Throws once the instance has stopped: after a trap or an invalid result it never runs again. */
-  solve(model: CadSketchEquationModel): CadSketchNativeSolution;
+  solve(model: CadSketchEquationModel, options?: CadSketchNativeOptions): CadSketchNativeSolution;
   /** Bytes of linear memory the instance holds; it never shrinks. */
   memoryBytes(): number;
 }
@@ -73,12 +82,8 @@ const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns', 'suspected', 'unce
 const DRAG_OUTCOMES = ['reached', 'projected', 'stalled', 'limited'] as const;
 const HEADER = 9;
 
-/**
- * Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). `protocol` asks a module
- * an earlier release shipped in the buffer version it speaks, as the native baseline comparison does.
- */
-export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssembly.Module | string | URL, observeMemory?: (memory: WebAssembly.Memory) => void,
-  protocol = CAD_SKETCH_NATIVE_PROTOCOL_VERSION): Promise<CadSketchNativeSolver> {
+/** Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). */
+export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssembly.Module | string | URL, observeMemory?: (memory: WebAssembly.Memory) => void): Promise<CadSketchNativeSolver> {
   // Explicit byte callers, including the Node benchmark, do not need a bundler asset loader.
   source ??= (await import('../../../../../packages/sketch-solver/wasm/sketch_solver.wasm?url')).default;
   const bytes = typeof source === 'string' || source instanceof URL ? await (await fetch(source)).arrayBuffer() : source;
@@ -87,35 +92,20 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
   if (!isExports(exports)) throw new CadSketchNativeProtocolError('The native sketch solver module has unexpected exports.');
   observeMemory?.(exports.memory);
   let stopped = false;
-  return { memoryBytes: () => exports.memory.buffer.byteLength, solve(model) {
+  return { memoryBytes: () => exports.memory.buffer.byteLength, solve(model, options = {}) {
     if (stopped) throw new Error('The native sketch solver instance stopped after a failure.');
-    const input = encodeCadSketchEquationModel(model, protocol);
+    if (options.analyseDefinition && model.equations.some(equation => equation.temporary)) throw new Error('A drag cannot ask which parameters are defined.');
+    const input = encodeCadSketchEquationModel(model, options);
     try {
       const pointer = exports.buffer_alloc(input.length);
       new Float64Array(exports.memory.buffer, pointer, input.length).set(input);
       const output = exports.solve(pointer, input.length);
       // Memory may have grown during the solve; read through a fresh view.
       const length = new Float64Array(exports.memory.buffer, output, 1)[0];
-      const result = new Float64Array(exports.memory.buffer, output, length).slice();
-      const [, version, status, iterations, residual, diagnosed, degreesOfFreedom, dragged, targetDistance] = result;
-      if (version !== protocol) throw new CadSketchNativeProtocolError('The native sketch solver replied with another protocol version.');
-      if (status === 2) throw new Error('The native sketch solver rejected its input.');
-      const values = Array.from(result.subarray(HEADER, HEADER + model.values.length)), labels = Array.from(result.subarray(HEADER + model.values.length));
-      const kind = STATUSES[status], diagnosis = DIAGNOSES[diagnosed], drag = DRAG_OUTCOMES[dragged];
-      const dragging = model.equations.some(equation => equation.temporary);
-      if (kind === undefined || diagnosis === undefined || length !== HEADER + model.values.length + model.equations.length
-        || values.some(value => !Number.isFinite(value)) || labels.some(label => label !== 0 && label !== 1 && label !== 2)
-        || !(Number.isNaN(degreesOfFreedom) || diagnosis === 'diagnosed' && Number.isSafeInteger(degreesOfFreedom) && degreesOfFreedom >= 0)
-        // Only a group that did not converge is blamed for repeated relations.
-        || diagnosis === 'from-start' && kind !== 'not-converged'
-        || !(dragging ? drag !== undefined && Number.isFinite(targetDistance) && targetDistance >= 0 : Number.isNaN(dragged) && Number.isNaN(targetDistance)))
-        throw new Error('The native sketch solver returned an invalid result.');
+      const solution = decodeCadSketchNativeOutput(model, options, new Float64Array(exports.memory.buffer, output, length).slice());
       exports.buffer_free(pointer, input.length);
       exports.buffer_free(output, length);
-      return { status: kind, iterations, residual, values, diagnosis: diagnosis === 'diagnosed'
-        ? { kind: diagnosis, degreesOfFreedom: Number.isNaN(degreesOfFreedom) ? null : degreesOfFreedom, labels }
-        : diagnosis === 'unavailable' ? { kind: diagnosis } : { kind: diagnosis, labels },
-        ...drag === undefined ? {} : { drag: { outcome: drag, targetDistance } } };
+      return solution;
     } catch (error) {
       // A trap anywhere, including allocation or freeing, can leave the allocator inconsistent, and an
       // invalid result means the module cannot be trusted: nothing more is freed and the instance never
@@ -124,4 +114,46 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
       throw error;
     }
   } };
+}
+
+/**
+ * The solution in the output `result` of solving `model` with `options`, checked strictly. Throws a
+ * protocol error for another protocol version, and an error for rejected input or any result the
+ * solver cannot give.
+ */
+export function decodeCadSketchNativeOutput(model: CadSketchEquationModel, options: CadSketchNativeOptions, result: Float64Array): CadSketchNativeSolution {
+  const [length, version, status, iterations, residual, diagnosed, degreesOfFreedom, dragged, targetDistance] = result;
+  if (version !== CAD_SKETCH_NATIVE_PROTOCOL_VERSION) throw new CadSketchNativeProtocolError('The native sketch solver replied with another protocol version.');
+  if (status === 2) throw new Error('The native sketch solver rejected its input.');
+  const n = model.values.length, m = model.equations.length, defining = options.analyseDefinition === true;
+  const values = Array.from(result.subarray(HEADER, HEADER + n)), labels = Array.from(result.subarray(HEADER + n, HEADER + n + m));
+  const definition = Array.from(result.subarray(HEADER + n + m));
+  const kind = STATUSES[status], diagnosis = DIAGNOSES[diagnosed], drag = DRAG_OUTCOMES[dragged];
+  const dragging = model.equations.some(equation => equation.temporary);
+  if (kind === undefined || diagnosis === undefined || length !== result.length || length !== HEADER + n + m + n
+    || values.some(value => !Number.isFinite(value)) || labels.some(label => label !== 0 && label !== 1 && label !== 2)
+    || !definedAsExpected(model, defining, diagnosis === 'unavailable', definition)
+    || !(Number.isNaN(degreesOfFreedom) || diagnosis === 'diagnosed' && Number.isSafeInteger(degreesOfFreedom) && degreesOfFreedom >= 0)
+    // Only a group that did not converge is blamed for repeated relations.
+    || diagnosis === 'from-start' && kind !== 'not-converged'
+    || !(dragging ? drag !== undefined && Number.isFinite(targetDistance) && targetDistance >= 0 : Number.isNaN(dragged) && Number.isNaN(targetDistance)))
+    throw new Error('The native sketch solver returned an invalid result.');
+  return { status: kind, iterations, residual, values, diagnosis: diagnosis === 'diagnosed'
+    ? { kind: diagnosis, degreesOfFreedom: Number.isNaN(degreesOfFreedom) ? null : degreesOfFreedom, labels }
+    : diagnosis === 'unavailable' ? { kind: diagnosis } : { kind: diagnosis, labels },
+    ...drag === undefined ? {} : { drag: { outcome: drag, targetDistance } }, ...defining ? { definition } : {} };
+}
+
+/**
+ * Whether definition `codes` are ones the solver can give: all not analysed unless asked for;
+ * otherwise a fixed parameter determined, one no equation reads free, and no other analysed when
+ * the diagnosis is unavailable.
+ */
+function definedAsExpected(model: CadSketchEquationModel, defining: boolean, unavailable: boolean, codes: readonly number[]): boolean {
+  if (!defining) return codes.every(code => code === CAD_SKETCH_PARAMETER_NOT_ANALYSED);
+  const read = new Array<boolean>(model.values.length).fill(false);
+  for (const equation of model.equations) for (const operand of equation.operands) read[operand] = true;
+  return codes.every((code, index) => model.fixed[index] ? code === CAD_SKETCH_PARAMETER_DETERMINED
+    : !read[index] ? code === CAD_SKETCH_PARAMETER_FREE
+    : code === CAD_SKETCH_PARAMETER_NOT_ANALYSED || !unavailable && (code === CAD_SKETCH_PARAMETER_FREE || code === CAD_SKETCH_PARAMETER_DETERMINED));
 }

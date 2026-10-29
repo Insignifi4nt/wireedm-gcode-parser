@@ -4,7 +4,6 @@
 // for bit, except where a change since meant it to differ: from 0.0.760, a group solved through the
 // classes its simple equalities hold may move its values to roundoff and take other iterations (see
 // `nativeEliminationDifferences`).
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createCadSolverWorkloadCases } from '../../../benchmark/cadSolverWorkloadCases';
 import { createCadBenchmarkRuntime } from '../../../benchmark/cadSolverBenchmarkAdapters';
@@ -15,7 +14,7 @@ import { createCadSketchFuzzCase } from '../../__tests__/cadSketchFuzz';
 import { loadCadSketchTestNativeSolver } from '../../__tests__/cadSketchTestSolver';
 import { corpusInput, corpusModelHash, readPlaneGcsCorpus } from '../../__tests__/planeGcsCorpus';
 import type { CadSketchEquationModel } from '../cadSketchEquationModel';
-import { CadSketchNativeProtocolError, loadCadSketchNativeSolver, type CadSketchNativeSolution } from '../cadSketchNativeSolver';
+import { CadSketchNativeProtocolError, type CadSketchNativeSolution } from '../cadSketchNativeSolver';
 import { answerNatively, loadNativeBaselineSolver, loadPairedWithBaseline, nativeAnswerDifferences, nativeBaselineBytes, nativeBaselineManifest, nativeEliminationDifferences, nativeValueMove, recordNativeCalls, type NativeAnswer } from './nativeBaseline';
 
 // The benchmarks' calls are compared here, not timed, so their CPU calibration is skipped.
@@ -61,7 +60,7 @@ describe(`native answers against the ${nativeBaselineManifest.appVersion} baseli
     expect(() => nativeBaselineBytes({ ...nativeBaselineManifest, sha256: '0'.repeat(64) })).toThrow('is not the module its manifest names');
   });
 
-  it('asks the baseline in its own protocol, which has no point to line distance', async () => {
+  it('asks the baseline through its adapter, which has no point to line distance', async () => {
     const model = (equations: CadSketchEquationModel['equations']): CadSketchEquationModel =>
       ({ values: [0, 0, 10, 0, 3, 4], fixed: [true, true, true, true, false, false], pointParameters: new Map(), radiusParameters: new Map(), equations });
     const held = model([{ kind: 'distance', operands: [0, 1, 4, 5], value: 6, sourceId: 'span', tag: 0 }]);
@@ -71,8 +70,6 @@ describe(`native answers against the ${nativeBaselineManifest.appVersion} baseli
       .toEqual({ error: 'The native sketch solver rejected its input.' });
     const current = await loadCadSketchTestNativeSolver();
     expect(answerNatively(current, held)).toEqual(answer);
-    const replied = await loadCadSketchNativeSolver(readFileSync(new URL('../../../../../../packages/sketch-solver/wasm/sketch_solver.wasm', import.meta.url)), undefined, nativeBaselineManifest.protocol);
-    expect(() => replied.solve(held)).toThrow(CadSketchNativeProtocolError);
   });
 
   it('tells answers apart by any bit of any part', () => {

@@ -230,6 +230,32 @@ describe('accepted sketch constraint inspection', () => {
 
   });
 
+  it('asks native which points and entities are defined, then pages and counts each state', async () => {
+    const original = source(), sketch = original.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing fixture graph');
+    // A free point joined to the driven line: the line is defined, the tail is not.
+    const document = parseCadDocument({ ...original, features: [{ ...sketch, graph: { ...sketch.graph, points: [...sketch.graph.points, { id: 'c', position: [25, 4] }],
+      entities: [...sketch.graph.entities, { id: 'tail', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }] } }] });
+    const inputs: unknown[] = [];
+    const inspection = await inspectCadSketchConstraints(document, 'sketch', async () => ({ solve: input => { inputs.push(input); return solver.solve(input); } }));
+    expect(inputs).toMatchObject([{ analyseDefinition: true }]);
+    expect(pageCadSketchConstraints(inspection, { section: 'points' }).items).toMatchObject([{ id: 'a', definition: 'defined' }, { id: 'b', definition: 'defined' },
+      { id: 'c', definition: 'under-defined' }]);
+    expect(pageCadSketchConstraints(inspection, { section: 'entities' }).items).toMatchObject([{ source: { id: 'edge' }, definition: 'defined',
+      points: [{ id: 'a', definition: 'defined' }, { id: 'b', definition: 'defined' }] }, { source: { id: 'tail' }, definition: 'under-defined' }]);
+    expect(summarizeCadSketchConstraintAnalysis(inspection.analysis, inspection)).toMatchObject({ degreesOfFreedom: 2,
+      definition: { points: { defined: 2, underDefined: 1, unknown: 0 }, entities: { defined: 1, underDefined: 1, unknown: 0 } } });
+    expect(summarizeCadSketchConstraintAnalysis(inspection.analysis)).not.toHaveProperty('definition');
+    // Nothing is classified without a solution.
+    const duplicated = parseCadDocument({ ...document, features: [{ ...sketch, graph: { ...sketch.graph, relations: [...sketch.graph.relations,
+      { id: 'duplicate', kind: 'distance', pointIds: ['a', 'b'], value: ' span ' }] } }] });
+    const rejected = await inspectCadSketchConstraints(duplicated, 'sketch', async () => solver);
+    expect(rejected.analysis.kind).toBe('rejected');
+    expect(pageCadSketchConstraints(rejected, { section: 'points' }).items.map(row => 'definition' in row && row.definition)).toEqual(['unknown', 'unknown']);
+    expect(summarizeCadSketchConstraintAnalysis(rejected.analysis, rejected)).toMatchObject({
+      definition: { points: { defined: 0, underDefined: 0, unknown: 2 }, entities: { defined: 0, underDefined: 0, unknown: 1 } } });
+  });
+
   it('reports redundant native relation identities without repairing accepted source', async () => {
     const original = source(), sketch = original.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing fixture graph');

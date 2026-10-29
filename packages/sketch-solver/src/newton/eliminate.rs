@@ -37,11 +37,11 @@ use crate::sparse::minimum_degree;
 
 const NONE: usize = usize::MAX;
 
-/// A group solved through its classes, with the whole group's diagnosis at `TAU` where it ended
-/// and the work that diagnosis spent.
+/// A group solved through its classes, with the whole group's diagnosis at `TAU` where it ended,
+/// its definition when asked for, and the work that diagnosis spent.
 pub(super) struct Eliminated {
     pub(super) group: GroupOutcome,
-    pub(super) diagnosis: (usize, Vec<Witness>, bool),
+    pub(super) diagnosis: (usize, Vec<Witness>, bool, Option<Vec<u8>>),
     pub(super) spent: usize,
 }
 
@@ -95,8 +95,9 @@ impl Classes {
 
 /// Solves a group through the classes its simple equalities hold, from `values` with the group's
 /// `rows` there, or leaves `values` exactly as they were and returns `None` when it must be solved
-/// whole. `scratch` is a problem-wide column map of `NONE`, left as it was.
-pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, rows: &[Row], scratch: &mut [usize]) -> Option<Eliminated> {
+/// whole. `scratch` is a problem-wide column map of `NONE`, left as it was. With `allowance`, the
+/// diagnosis analyses definition too, and takes from it only when the group is solved this way.
+pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, rows: &[Row], scratch: &mut [usize], allowance: Option<&mut usize>) -> Option<Eliminated> {
     let problem = system.problem;
     let (n, column) = (system.unknowns.len(), system.column);
     let equations: Vec<_> = system.equations.iter().map(|&e| &problem.equations[e]).collect();
@@ -197,11 +198,15 @@ pub(super) fn solve_group(system: &System, values: &mut [f64], limits: Limits, r
     let ended = system.rows(values, None);
     if !assess(&ended).accepted { restore(values); return None; }
     let budget = limits.work.saturating_sub(work);
-    match diagnose_group(system, values, &ordering.position, TAU, budget, limits.fill) {
+    let mut left = allowance.as_deref().copied();
+    match diagnose_group(system, values, &ordering.position, TAU, budget, limits.fill, left.as_mut()) {
         // Constant rows repeat eliminated ones; any other dependent row could hold only nearly.
-        (Some((rank, witnesses, true)), spent) if spent <= budget && rank + constant_count == equations.len() => Some(Eliminated {
-            group: GroupOutcome { status: Status::Converged, iterations: solved.iterations, residual: worst(&ended), position: Some(ordering.position), work, drag: None },
-            diagnosis: (rank, witnesses, true), spent }),
+        (Some((rank, witnesses, true, definition)), spent) if spent <= budget && rank + constant_count == equations.len() => {
+            if let (Some(allowance), Some(left)) = (allowance, left) { *allowance = left; }
+            Some(Eliminated {
+                group: GroupOutcome { status: Status::Converged, iterations: solved.iterations, residual: worst(&ended), position: Some(ordering.position), work, drag: None },
+                diagnosis: (rank, witnesses, true, definition), spent })
+        }
         _ => { restore(values); None }
     }
 }

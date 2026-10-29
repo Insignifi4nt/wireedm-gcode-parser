@@ -2,7 +2,7 @@ import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } fr
 import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from '../cadSketchSolverStages';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations } from './compileCadSketchEquations';
-import { applyCadSketchEquationSolution, cadSketchEquationDiagnostics, cadSketchEquationResidual, type CadSketchEquationModel } from './cadSketchEquationModel';
+import { applyCadSketchEquationSolution, cadSketchEquationDefinition, cadSketchEquationDiagnostics, cadSketchEquationResidual, type CadSketchEquationModel } from './cadSketchEquationModel';
 import type { CadSketchNativeDiagnosis, CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketchNativeSolver';
 
 /**
@@ -50,6 +50,9 @@ const STALLED_DRAG = 'The point could not be moved toward the target from this s
  * Projected means native's first- and second-order necessary conditions for a local minimum of the
  * target distance held up to its resolution. That proves neither a local minimum nor the nearest
  * configuration: another solver can end closer, for example on another assembly of a linkage.
+ * A solved result of input that asks for definition says which points and entities native found
+ * defined where it ended, before any group kept its start or short decimals were tried, which move
+ * no value by more than the driver tolerance; a drag never asks.
  * Errors from `solver` propagate; the caller treats them as a failed native instance.
  * `observe` receives stage timings for benchmarks.
  */
@@ -61,14 +64,15 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     try { model = compileCadSketchEquations(input); }
     catch (error) { return { reason: 'compile', result: { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics(null) } }; }
     clock.next('nativeCall');
-    const solution = solver.solve(model);
+    const options = { analyseDefinition: input.analyseDefinition === true && !input.drag };
+    const solution = solver.solve(model, options);
     clock.next('mapping');
     const attempt = settle(input, model, solution, check);
     if (attempt.result.kind === 'solved' || input.drag) return attempt;
     // A point held on a curve that starts on its center has no radial direction to move along, so a
     // failed solve tries again from starts one radius out. Only an answer at its most certain replaces it.
     for (const values of centerStarts(input.graph, model)) {
-      const seeded = { ...model, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded)), check);
+      const seeded = { ...model, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded, options)), check);
       if (retried.result.kind === 'solved' && !retried.reason) return retried;
     }
     return attempt;
@@ -77,7 +81,10 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
 
 function settle(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, check: Check): CadSketchNativeAttempt {
   const judged = judge(input, model, solution, check), withheld = WITHHELD[solution.diagnosis.kind];
-  const attempt: CadSketchNativeAttempt = withheld && !judged.reason ? { ...judged, reason: withheld } : judged;
+  const withheldAttempt: CadSketchNativeAttempt = withheld && !judged.reason ? { ...judged, reason: withheld } : judged;
+  const { result } = withheldAttempt, attempt = result.kind === 'solved' && solution.definition
+    ? { ...withheldAttempt, result: { ...result, diagnostics: { ...result.diagnostics, definition: cadSketchEquationDefinition(input.graph, model, solution.definition) } } }
+    : withheldAttempt;
   return solution.drag ? { ...attempt, drag: solution.drag } : attempt;
 }
 

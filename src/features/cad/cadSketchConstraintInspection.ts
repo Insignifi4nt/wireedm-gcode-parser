@@ -31,7 +31,10 @@ const unknownDiagnostics = (): CadSketchSolveDiagnostics => ({ status: null, deg
   conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
 const freezeData = (value: unknown) => deepFreezeCadData(value, { skipFrozen: true });
 
-/** Analyze copied numeric geometry; the accepted source and its exact drivers remain authoritative. */
+/**
+ * Analyze copied numeric geometry; the accepted source and its exact drivers remain authoritative.
+ * The solve also asks which points and entities are fully defined, which only inspection asks.
+ */
 export async function inspectCadSketchConstraints(document: CadDocument, sketchId: string,
   getSolver: () => Promise<Pick<CadSketchSolverClient, 'solve'>>, signal?: AbortSignal): Promise<CadSketchConstraintInspection> {
   signal?.throwIfAborted();
@@ -43,7 +46,7 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
   else {
     try {
       const solver = await getSolver(); signal?.throwIfAborted();
-      const result = await solver.solve({ graph, parameters: accepted.parameters }, signal); signal?.throwIfAborted();
+      const result = await solver.solve({ graph, parameters: accepted.parameters, analyseDefinition: true }, signal); signal?.throwIfAborted();
       const diagnostics = { ...result.diagnostics, degreesOfFreedom: result.diagnostics.degreesOfFreedom !== null && result.diagnostics.degreesOfFreedom >= 0
         ? result.diagnostics.degreesOfFreedom : null };
       analysis = result.kind === 'solved' ? { kind: 'solved', diagnostics }
@@ -85,6 +88,23 @@ const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 
+/**
+ * `defined`: the lasting relations and drivers leave none of its coordinates (or a circle's radius)
+ * free to move; `under-defined`: some can still move; `unknown`: not analysed, as for a sketch not
+ * solved, a group that did not converge, has conflicting constraints or a rank too close to call,
+ * or analysis that ran out of its work.
+ */
+export type CadSketchDefinitionState = 'defined' | 'under-defined' | 'unknown';
+
+/** The definition state of each graph point and entity the analysis classified; any other is unknown. */
+function cadSketchDefinitionStates(analysis: CadSketchConstraintAnalysis) {
+  const definition = analysis.kind === 'solved' ? analysis.diagnostics.definition : undefined;
+  const states = new Map<string, CadSketchDefinitionState>();
+  for (const id of [...definition?.definedPointIds ?? [], ...definition?.definedEntityIds ?? []]) states.set(id, 'defined');
+  for (const id of [...definition?.underDefinedPointIds ?? [], ...definition?.underDefinedEntityIds ?? []]) states.set(id, 'under-defined');
+  return (id: string): CadSketchDefinitionState => states.get(id) ?? 'unknown';
+}
+
 /** Exact source rows are paged separately from bounded native diagnostic summaries. */
 export function pageCadSketchConstraints(inspection: CadSketchConstraintInspection, input: { section?: CadSketchConstraintSection; offset?: number; limit?: number }) {
   const graph = inspection.graph, points = new Map(graph?.points.map(point => [point.id, point]));
@@ -92,6 +112,7 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
   const conflicting = new Set(diagnostics.conflictingIds), redundant = new Set(diagnostics.redundantIds), partiallyRedundant = new Set(diagnostics.partiallyRedundantIds);
   const diagnosticState = (id: string) => analysis.kind === 'unavailable' || analysis.kind === 'legacy' ? null
     : { conflicting: conflicting.has(id), redundant: redundant.has(id), partiallyRedundant: partiallyRedundant.has(id) };
+  const definition = cadSketchDefinitionStates(analysis);
   const adjacency = new Map<string, string[]>();
   for (const entity of graph?.entities ?? []) for (const id of entityPoints(entity)) {
     const edges = adjacency.get(id) ?? []; edges.push(entity.id); adjacency.set(id, edges);
@@ -107,14 +128,15 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
   const point = (id: string) => {
     const source = points.get(id); if (!source) throw new CadError('missing-sketch-point', 'The inspected point no longer exists.');
     const entities = adjacency.get(id) ?? [];
-    return { id, ...pattern('point', id), position: source.position.map(value => scalar(value, false, referenceComponents?.pointIds.has(id))), diagnostics: diagnosticState(id), entityIds: entities.slice(0, 8), entityCount: entities.length,
+    return { id, ...pattern('point', id), position: source.position.map(value => scalar(value, false, referenceComponents?.pointIds.has(id))), diagnostics: diagnosticState(id),
+      definition: definition(id), entityIds: entities.slice(0, 8), entityCount: entities.length,
       omittedEntityCount: Math.max(0, entities.length - 8) };
   };
   if (input.section === 'points') return page(graph?.points ?? [], input, source => point(source.id));
   if (input.section === 'entities') {
     const reader = graph ? createCadSketchMeasurementReader(graph, inspection.parameters) : null;
     return page(graph?.entities ?? [], input, source => {
-      const row = { source, ...pattern('entity', source.id), diagnostics: diagnosticState(source.id), points: entityPoints(source).map(point),
+      const row = { source, ...pattern('entity', source.id), diagnostics: diagnosticState(source.id), definition: definition(source.id), points: entityPoints(source).map(point),
         ...(source.kind === 'circle' ? { radius: scalar(source.radius, false, referenceComponents?.circleIds.has(source.id)) } : {}) };
       try { return { ...row, measurement: reader ? { coordinateSystem: 'sketch-local' as const, ...reader.entity(source.id) } : null }; }
       catch (error) { return { ...row, measurement: null, measurementDiagnostic: summarizeMessage(error instanceof Error ? error.message : 'Unable to measure this edge.') }; }
@@ -134,14 +156,20 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
       : source.kind === 'chamfer-corner' ? { values: source.values.map(value => scalar(value, true)) } : {}) }));
 }
 
-/** Do not duplicate unbounded native ID/message arrays beside a source page. */
-export function summarizeCadSketchConstraintAnalysis(analysis: CadSketchConstraintAnalysis) {
-  const { diagnostics } = analysis;
+/**
+ * Do not duplicate unbounded native ID/message arrays beside a source page. With the inspected
+ * sketch's point and entity counts, the summary also counts each definition state.
+ */
+export function summarizeCadSketchConstraintAnalysis(analysis: CadSketchConstraintAnalysis, totals?: { readonly pointCount: number; readonly entityCount: number }) {
+  const { diagnostics } = analysis, solved = analysis.kind === 'solved' ? diagnostics.definition : undefined;
+  const counts = (defined: number, underDefined: number, total: number) => ({ defined, underDefined, unknown: total - defined - underDefined });
   const ids = (values: readonly string[]) => ({ ids: values.slice(0, 8), count: values.length, omittedCount: Math.max(0, values.length - 8) });
   return { kind: analysis.kind, status: diagnostics.status, degreesOfFreedom: diagnostics.degreesOfFreedom,
     ...(analysis.kind === 'rejected' ? { reason: analysis.reason } : {}),
     ...('message' in analysis ? summarizeMessage(analysis.message) : {}),
     conflicting: ids(diagnostics.conflictingIds), redundant: ids(diagnostics.redundantIds), partiallyRedundant: ids(diagnostics.partiallyRedundantIds),
     issues: diagnostics.issues.slice(0, 2).map(summarizeDiagnostic), issueCount: diagnostics.issues.length,
-    omittedIssueCount: Math.max(0, diagnostics.issues.length - 2) };
+    omittedIssueCount: Math.max(0, diagnostics.issues.length - 2),
+    ...totals ? { definition: { points: counts(solved?.definedPointIds.length ?? 0, solved?.underDefinedPointIds.length ?? 0, totals.pointCount),
+      entities: counts(solved?.definedEntityIds.length ?? 0, solved?.underDefinedEntityIds.length ?? 0, totals.entityCount) } } : {} };
 }
