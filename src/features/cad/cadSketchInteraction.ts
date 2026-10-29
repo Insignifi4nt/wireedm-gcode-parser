@@ -1,7 +1,7 @@
 import type { CadProfile } from '@/domain/cad/cadDocument';
 
 export type SketchPoint = readonly [number, number];
-/** `path` is the Polyline tool; curves draw with it too. */
+/** `line` chains connected lines and arcs. `path`, the former Polyline tool, is its alias, and curves draw with it. */
 export type SketchTool = 'select' | 'trim' | 'line' | 'arc' | 'rectangle' | 'circle' | 'slot' | 'path';
 
 export function snapSketchPoint(point: SketchPoint, gridStep: number, enabled: boolean): SketchPoint {

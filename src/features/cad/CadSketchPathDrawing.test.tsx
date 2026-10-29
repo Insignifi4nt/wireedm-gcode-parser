@@ -37,7 +37,18 @@ async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>
     const state = controls?.getState(); if (!state || state.mode === 'solid') throw new Error('Sketch frame missing');
     return { clientX: (x - state.centerMm[0] - box[0]) / box[2] * 800, clientY: (state.centerMm[1] - y - box[1]) / box[3] * 600 };
   }
-  async function point(x: number, y: number, type = 'click') { await act(async () => svg.dispatchEvent(new MouseEvent(type, { ...position(x, y), button: 0, bubbles: true, detail: 1 }))); }
+  async function point(x: number, y: number, type = 'click', detail = 1) { await act(async () => svg.dispatchEvent(new MouseEvent(type, { ...position(x, y), button: 0, bubbles: true, detail }))); }
+  async function pointer(type: string, x: number, y: number) {
+    const event = new MouseEvent(type, { ...position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true });
+    Object.defineProperties(event, { pointerId: { value: 7 }, isPrimary: { value: true } });
+    await act(async () => svg.dispatchEvent(event));
+  }
+  /** A mouse click: its press places the point and its trailing click is suppressed. A double-click's second click has detail 2. */
+  async function tap(x: number, y: number, detail = 1) { await pointer('pointerdown', x, y); await pointer('pointerup', x, y); await point(x, y, 'click', detail); }
+  async function drag(from: readonly [number, number], to: readonly [number, number]) {
+    await pointer('pointerdown', ...from); await pointer('pointermove', ...to); await pointer('pointerup', ...to); await point(...to);
+  }
+  const instruction = () => (container.querySelector('p.cad-sr-only')?.textContent ?? '').split(' Keyboard:')[0];
   async function key(key: string, init: KeyboardEventInit = {}) {
     const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
     await act(async () => svg.dispatchEvent(event)); return event;
@@ -47,8 +58,94 @@ async function fixture(overrides: Partial<ComponentProps<typeof CadSketchCanvas>
     if (!result) throw new Error(`Missing ${label}`); return result;
   }
   async function click(label: string) { await act(async () => button(label).click()); }
-  return { svg, session, added, pending, error, render, point, key, button, click };
+  return { svg, session, added, pending, error, render, point, key, button, click, tap, drag, instruction };
 }
+
+const graphSketch: CadSketchFeature = { id: 'sketch', name: 'Sketch', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: { points: [], entities: [], relations: [] } };
+const idleLine = 'Click the line start, or drag to draw one line.';
+
+describe('line chains', () => {
+  it('saves the same open chain from a double-click, Enter, Finish or Escape, and keeps the tool for the next one', async () => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    const finishers = [() => h.tap(30, 30, 2), () => h.key('Enter'), () => h.click('Finish chain'), () => h.key('Escape')];
+    for (const [index, finish] of finishers.entries()) {
+      await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30);
+      // Two clicks no longer save a line: the chain stays pending until it is finished.
+      expect(onAddPath).toHaveBeenCalledTimes(index); expect(h.pending).toHaveBeenLastCalledWith(true);
+      await finish(); expect(onAddPath).toHaveBeenCalledTimes(index + 1); expect(h.instruction()).toBe(idleLine);
+    }
+    const [[draft, closed], ...rest] = onAddPath.mock.calls;
+    expect(closed).toBe(false); expect(draft.kind).toBe('ready'); expect(draft.segments.map((segment: { kind: string }) => segment.kind)).toEqual(['line', 'line']);
+    // Each save mints fresh ids for its inferred horizontal and vertical relations.
+    const shape = (value: unknown) => JSON.parse(JSON.stringify(value).replace(/"relationId":"[^"]+"/g, '"relationId":"fresh"'));
+    for (const call of rest) expect(shape(call.slice(0, 2))).toEqual(shape([draft, false]));
+    expect(h.error).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
+  });
+
+  it('saves one line from a drag with nothing pending, while a drag during a chain adds to it', async () => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.drag([10, 10], [30, 14]);
+    expect(onAddPath).toHaveBeenCalledTimes(1); expect(onAddPath.mock.calls[0][1]).toBe(false); expect(onAddPath.mock.calls[0][0].segments).toHaveLength(1);
+    expect(h.instruction()).toBe(idleLine);
+    await h.tap(10, 30); await h.drag([10, 30], [30, 34]); await h.drag([30, 34], [40, 20]);
+    expect(onAddPath).toHaveBeenCalledTimes(1); expect(h.button('Finish chain').disabled).toBe(false);
+    await h.key('Enter'); expect(onAddPath.mock.calls[1][0].segments).toHaveLength(2);
+  });
+
+  it('discards a lone start on Escape and leaves a further Escape unhandled, so it can return to Select', async () => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); expect(h.instruction()).toBe('Click the line end.'); expect(h.button('Finish chain').disabled).toBe(true);
+    expect((await h.key('Escape')).defaultPrevented).toBe(true);
+    expect(onAddPath).not.toHaveBeenCalled(); expect(h.instruction()).toBe(idleLine); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect((await h.key('Escape')).defaultPrevented).toBe(false);
+    // A double-click on the start alone draws nothing.
+    await h.tap(10, 10); await h.tap(10, 10, 2); expect(onAddPath).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled(); expect(h.instruction()).toBe('Click the line end.');
+  });
+
+  it.each(['arc', 'rectangle', 'circle', 'slot'] as const)('discards a pending %s on Escape and leaves a further Escape unhandled', async tool => {
+    const h = await fixture({ sketch: graphSketch, tool, onAddPath: vi.fn() });
+    await h.tap(10, 10); expect(h.pending).toHaveBeenLastCalledWith(true);
+    expect((await h.key('Escape')).defaultPrevented).toBe(true); expect(h.pending).toHaveBeenLastCalledWith(false);
+    expect((await h.key('Escape')).defaultPrevented).toBe(false); expect(h.added).not.toHaveBeenCalled();
+  });
+
+  it('keeps the drawn chain and the tool when its save is rejected, so Escape or Enter can retry it', async () => {
+    const onAddPath = vi.fn(() => { throw new Error('The chain crosses a locked edge.'); }); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10);
+    expect((await h.key('Escape')).defaultPrevented).toBe(true); expect(h.error).toHaveBeenLastCalledWith('The chain crosses a locked edge.');
+    expect(h.instruction()).toMatch(/^Click the next point./); expect(h.button('Finish chain').disabled).toBe(false); expect(h.pending).toHaveBeenLastCalledWith(true);
+    await h.key('Enter'); expect(onAddPath).toHaveBeenCalledTimes(2); expect(onAddPath.mock.calls[1].slice(0, 2)).toEqual(onAddPath.mock.calls[0].slice(0, 2));
+  });
+
+  it('leaves the tool once a chain save that an Escape interrupted is accepted, without aborting the save', async () => {
+    let accept = () => {};
+    const onAddPath = vi.fn((_draft: unknown, _closed: boolean, _signal?: AbortSignal) => new Promise<void>(resolve => { accept = resolve; }));
+    const onExitTool = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath, onExitTool });
+    await h.tap(10, 10); await h.tap(30, 10); await h.key('Enter'); expect(onAddPath).toHaveBeenCalledTimes(1);
+    expect((await h.key('Escape')).defaultPrevented).toBe(true);
+    expect(onAddPath.mock.calls[0][2]?.aborted).toBe(false); expect(onExitTool).not.toHaveBeenCalled();
+    await act(async () => accept()); expect(onExitTool).toHaveBeenCalledTimes(1); expect(h.instruction()).toBe(idleLine);
+  });
+
+  it('keeps the explicit close of a sketch that holds only closed profiles', async () => {
+    const h = await fixture({ tool: 'line' });
+    // A drag from idle starts a profile rather than saving a line, and a double-click adds nothing.
+    await h.drag([10, 10], [30, 10]); await h.tap(30, 30); await h.tap(30, 30, 2);
+    expect(h.added).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+    expect(container.querySelector('button[aria-label="Finish chain"]')).toBeNull(); expect(h.instruction()).toBe('Click the next endpoint; Close profile to finish.');
+    await h.key('Escape'); expect(h.added).not.toHaveBeenCalled(); expect(h.instruction()).toBe('Click the chain start.');
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30); await h.key('Enter');
+    expect(h.added).toHaveBeenCalledTimes(1); expect(h.added.mock.calls[0][0]).toMatchObject({ kind: 'polygon' });
+  });
+
+  it('keeps a new curve pending through a drag from idle and a double-click until Finish curve', async () => {
+    const onAddCurve = vi.fn(), onCancelCurve = vi.fn();
+    const h = await fixture({ sketch: { id: 'rail', name: 'Rail', kind: 'curve', plane: 'XZ', offset: 0, suppressed: false, segments: [] }, curveCreation: true, onAddCurve, onCancelCurve });
+    await h.drag([10, 10], [30, 10]); await h.tap(30, 30); await h.tap(30, 30, 2);
+    expect(onAddCurve).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled(); expect(h.instruction()).toBe('Click the next endpoint; Finish curve to save.');
+    await h.click('Finish curve'); expect(onAddCurve).toHaveBeenCalledTimes(1); expect(onAddCurve.mock.calls[0][0]).toHaveLength(2);
+  });
+});
 
 describe('mixed line and three-point arc drawing', () => {
   it.each([true, false])('attaches deliberate existing-point snaps while honoring disabled snapping (%s)', async enabled => {
@@ -64,7 +161,7 @@ describe('mixed line and three-point arc drawing', () => {
     await h.point(2.2, 3.3, 'pointermove');
     expect(container.querySelector('[data-cad-sketch-snap="a"]') !== null).toBe(enabled);
     // Space accepts the displayed snap, just as a pointer click does.
-    await h.key(' '); await h.point(22.2, 3.3); await h.click('Finish polyline');
+    await h.key(' '); await h.point(22.2, 3.3); await h.click('Finish chain');
     expect(h.error).not.toHaveBeenCalled(); expect(h.added).not.toHaveBeenCalled(); expect(onAddPath).toHaveBeenCalledTimes(1);
     const draft = onAddPath.mock.calls[0][0];
     expect(draft.kind).toBe('ready'); expect(draft.startPick?.sourcePointId).toBe(enabled ? 'a' : undefined);

@@ -6,6 +6,7 @@ import { createCadDocument } from '@/domain/cad/cadSchema';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { CadSketchCanvas } from './CadSketchCanvas';
+import { cadArcSvgPath } from './cadSketchSvg';
 import { cadSketchDefinitionMarks } from './cadSketchDefinitionMarks';
 import type { CadRenderedViewControls } from './cadViewportControls';
 
@@ -21,6 +22,12 @@ vi.mock('@/domain/cad/compileCadSketchGeometry', async importOriginal => {
   return { ...original, cadSketchGraphBoundary: vi.fn(original.cadSketchGraphBoundary) };
 });
 const edgeRenders = vi.mocked(cadSketchGraphBoundary);
+// A pending chain's arcs draw their path once per render of the drawn segments, which the rubber band never asks for.
+vi.mock('./cadSketchSvg', async importOriginal => {
+  const original = await importOriginal<typeof import('./cadSketchSvg')>();
+  return { ...original, cadArcSvgPath: vi.fn(original.cadArcSvgPath) };
+});
+const arcPaths = vi.mocked(cadArcSvgPath);
 // Each picker the canvas prepares counts its queries, so a test can bound the work one pointer move does.
 const picks = vi.hoisted(() => ({ graph: 0, profile: 0, edge: 0, grip: 0 }));
 vi.mock('./cadSketchGraphInteraction', async importOriginal => {
@@ -124,6 +131,23 @@ describe('sketch canvas cursor rendering', () => {
     clearRenders(); await show({ graphControls: { ...props().graphControls!, definition: definition(['a', 'b', 'c', 'd'], ['ab', 'cd']) } });
     expect(renderedPoints().sort()).toEqual(['c', 'd']); expect(renderedEdges()).toEqual(['cd']);
     expect(marked('entity', 'defined')).toEqual(['ab', 'cd']);
+  });
+
+  it('hovers over a long pending line chain without rendering graph rows or its drawn segments again', async () => {
+    const onAddPath = vi.fn(), onPendingChange = vi.fn();
+    const { pointer, move } = await mountCanvas({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] }, { tool: 'line', onAddPath, onPendingChange });
+    const tap = async (x: number, y: number) => { await pointer('pointerdown', x, y); await pointer('pointerup', x, y); };
+    const mode = async (label: string) => { const control = [...container.querySelectorAll('button')].find(item => item.textContent?.trim() === label); if (!control) throw new Error(`Missing ${label}`); await act(async () => control.click()); };
+    // Thirty zigzag lines, then a three-point arc, then a line, all away from the saved graph.
+    for (let index = 0; index <= 30; index++) await tap(-45 + index * 3, 30 + index % 2 * 5);
+    await mode('3-point Arc'); await tap(52, 30); await tap(48.5, 33); await mode('Line'); await tap(55, 24);
+    expect(container.querySelectorAll('[data-cad-path-segments] > *')).toHaveLength(32);
+    clearRenders(); arcPaths.mockClear();
+    await move(10, 18); await move(14, 20); await move(-20, 15); await move(40, 12);
+    expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]); expect(arcPaths).not.toHaveBeenCalled();
+    // Nothing is saved or solved while the chain is pending.
+    expect(onAddPath).not.toHaveBeenCalled(); expect(onPendingChange).toHaveBeenLastCalledWith(true);
   });
 
   it('highlights the axis under the pointer anywhere along it without rendering graph rows again', async () => {
