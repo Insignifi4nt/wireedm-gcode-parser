@@ -262,9 +262,9 @@ fn leaning() -> Builder {
 fn leads_the_factor_dropped_are_allowed_for_before_a_column_is_determined() {
     // Over `P.x`, `P.y`, `Q.y` and `R.x`, the free direction is about `(1, -5e-11, -5e-11, 5e-6)`:
     // `R.x` moves by more than `1e3 TAU`. The first row's lead in `P.x` is within `TAU`, so the
-    // factor drops it and leaves `P.x` out of every row, and through the factor alone `R.x` and the
-    // others look determined. Allowing for the lead dropped, `P.x` is still free and the others are
-    // unknown: the allowance hides whether `R.x` moves, and also that `P.y` and `Q.y` barely do.
+    // factor drops it and leaves `P.x` out of every row, and through the factor alone `R.x` looks
+    // determined. Against the rows themselves, `P.x` is free, `P.y` and `Q.y` move within `TAU` and
+    // are determined, and `R.x` is unknown: its free direction is one the factor does not show.
     let unit = |entries: Vec<(usize, f64)>| {
         let norm = entries.iter().map(|e| e.1 * e.1).sum::<f64>().sqrt();
         Row { entries: entries.into_iter().map(|(k, x)| (k, x / norm)).collect(), residual: 0.0, tolerance: 1e-10 }
@@ -274,9 +274,72 @@ fn leads_the_factor_dropped_are_allowed_for_before_a_column_is_determined() {
     let diagnosis = diagnose_defining(4, &rows, TAU, usize::MAX, usize::MAX, Some(&mut left)).0.unwrap();
     assert!(diagnosis.certain);
     assert_eq!(diagnosis.rank, 3);
-    assert_eq!(diagnosis.definition, Some(vec![F, U, U, U]));
+    assert_eq!(diagnosis.definition, Some(vec![F, D, D, U]));
     // Through the wire, over `P`, `Q`, `R` and `A`.
-    assert_eq!(definition(&leaning()), vec![F, U, D, U, U, D, D, D]);
+    assert_eq!(definition(&leaning()), vec![F, D, D, D, U, D, D, D]);
+}
+
+/// The anchors of two pairs of lines held equal in length, `P A0 = Q B0` and `P A1 = Q B1`: `A1` is
+/// about `2.5e-7` from `A0`, and `B1` a unit in the last place from `B0`.
+const ANCHORS: [[f64; 2]; 4] = [[-0.17790289092808964, -0.9840480483184895], [0.4820456924349914, 0.8761460782340292],
+    [-0.17790313831017066, -0.9840480035950443], [0.4820456924349914, 0.8761460782340296]];
+
+fn two_sum(a: f64, b: f64) -> (f64, f64) {
+    let sum = a + b;
+    let part = sum - a;
+    (sum, (a - (sum - part)) + (b - part))
+}
+
+/// How far the unit free direction of two rows over three columns moves each column: their cross
+/// product over its length. Each product is exact and each difference is summed exactly before
+/// it is rounded, so each part is right to about a unit in its last place.
+fn moved_by_cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    let part = |x: f64, y: f64, z: f64, w: f64| {
+        let (p, q) = (x * y, z * w);
+        let (sum, error) = two_sum(p, -q);
+        sum + (error + (x.mul_add(y, -p) - z.mul_add(w, -q)))
+    };
+    let c = [part(a[1], b[2], a[2], b[1]), part(a[2], b[0], a[0], b[2]), part(a[0], b[1], a[1], b[0])];
+    let length = c.iter().map(|x| x * x).sum::<f64>().sqrt();
+    c.map(|x| x.abs() / length)
+}
+
+fn rows_of(dense: &[[f64; 3]]) -> Vec<Row> {
+    dense.iter().map(|row| Row { entries: row.iter().copied().enumerate().filter(|e| e.1 != 0.0).collect(), residual: 0.0, tolerance: 1e-10 }).collect()
+}
+
+#[test]
+fn nearly_parallel_rows_leave_a_column_moved_beyond_tau_unknown_though_the_factor_shows_less() {
+    // Two lengths held equal to two nearly equal ones, through the wire over `P` with a fixed y,
+    // `Q` and the fixed anchors. One degree of freedom is left: `Q` moves, and so does `P.x`, by
+    // more than `TAU` per unit but by less than `1e3 TAU`.
+    let mut builder = Builder::new();
+    let (p, q) = ([builder.parameter(0.0, false), builder.parameter(0.0, true)], builder.point(0.0, 0.0, false));
+    let anchors = ANCHORS.map(|[x, y]| builder.point(x, y, true));
+    for k in [0, 2] {
+        let (a, b) = (anchors[k], anchors[k + 1]);
+        builder.equation(Kind::EqualLength, 0.0, &[p[0], p[1], a[0], a[1], q[0], q[1], b[0], b[1]]);
+    }
+    let mut expected = vec![U, D, F, F];
+    expected.extend([D; 8]);
+    assert_eq!(definition(&builder), expected);
+    // The rows the solve diagnoses there, over `P.x`, `Q.x` and `Q.y`, scaled as it scales them.
+    // They are about `2.5e-7` apart, and their free direction moves `P.x` by about `4.2e-10` per
+    // unit. Through the factor, whose second pivot is about as small, rounding shows less than
+    // `TAU`; only a certified distance within `TAU` determines a column.
+    let dense = [[0.17515273869454295, 0.47459387964653305, 0.8626019751483608], [0.1751529747804111, 0.474593859400427, 0.8626019383498859]];
+    let moved = moved_by_cross(dense[0], dense[1]);
+    assert!(moved[0] > 4.1e-10 && moved[0] < 4.3e-10 && moved[1] > 0.4 && moved[2] > 0.4, "moved {moved:?}");
+    // In every column order.
+    for order in [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]] {
+        let placed = dense.map(|row| { let mut placed = [0.0; 3]; for c in 0..3 { placed[order[c]] = row[c]; } placed });
+        let mut left = usize::MAX;
+        let diagnosis = diagnose_defining(3, &rows_of(&placed), TAU, usize::MAX, usize::MAX, Some(&mut left)).0.unwrap();
+        assert!(diagnosis.certain);
+        let mut expected = vec![F; 3];
+        expected[order[0]] = U;
+        assert_eq!(diagnosis.definition, Some(expected), "order {order:?}");
+    }
 }
 
 /// The most a unit direction that `rows` leave free moves column `j`: the distance of its unit row
@@ -335,6 +398,45 @@ fn random_rows_with_entries_near_tau_are_classified_by_how_their_free_directions
         }
     }
     assert!(determined > 1000 && free > 10_000, "determined {determined}, free {free}");
+}
+
+#[test]
+fn random_nearly_parallel_rows_are_classified_by_an_exact_reference_where_rounding_reaches_tau() {
+    // Two rows over three columns, built like two lengths held equal to two nearly equal ones. The
+    // second row is the first moved by `3e-7` to `1e-5` in one column. In the other columns it is
+    // moved by a few units in the last place, or a quarter of the time by up to `1e-12`. Each row
+    // is then scaled. The free direction moves those other columns by about `1e-11` to `1e-5` per
+    // unit, and rounding in the factor reaches `TAU`. Each code is checked against the rows' cross
+    // product; between `TAU` and `1e3 TAU` only not analysed is right.
+    let mut seed = 0x0dd5_u64;
+    let mut next = move || {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let (mut free, mut determined, mut between) = (0, 0, 0);
+    for _ in 0..20_000 {
+        let a: [f64; 3] = std::array::from_fn(|_| (0.1 + 0.9 * next()) * if next() < 0.5 { -1.0 } else { 1.0 });
+        let (mut b, apart) = (a, (3.0 * next()) as usize);
+        let sign = if next() < 0.5 { -1.0 } else { 1.0 };
+        b[apart] += sign * 10f64.powf(-6.5 + 1.5 * next());
+        let wide = next() < 0.25;
+        for c in (0..3).filter(|&c| c != apart) {
+            let units = (17.0 * next()) as i64 - 8;
+            b[c] = if wide { b[c] + units as f64 * 1e-13 * next() } else { f64::from_bits((b[c].to_bits() as i64 + units) as u64) };
+        }
+        let (s, t) = (10f64.powf(2.0 * next() - 1.0), 10f64.powf(2.0 * next() - 1.0));
+        let dense = [a.map(|x| x * s), b.map(|x| x * t)];
+        let mut left = usize::MAX;
+        let diagnosis = diagnose_defining(3, &rows_of(&dense), TAU, usize::MAX, usize::MAX, Some(&mut left)).0.unwrap();
+        if !diagnosis.certain || diagnosis.rank < 2 { continue; }
+        let moved = moved_by_cross(dense[0], dense[1]);
+        for (j, &code) in diagnosis.definition.unwrap().iter().enumerate() {
+            if moved[j] > TAU && moved[j] <= 1e3 * TAU { between += 1; }
+            if code == D { determined += 1; assert!(moved[j] <= TAU * (1.0 + 1e-9), "determined, moved {:e} by rows {dense:?}", moved[j]); }
+            if code == F { free += 1; assert!(moved[j] > 1e3 * TAU * (1.0 - 1e-9), "free, moved {:e} by rows {dense:?}", moved[j]); }
+        }
+    }
+    assert!(determined > 1000 && free > 20_000 && between > 5000, "determined {determined}, free {free}, between {between}");
 }
 
 #[test]

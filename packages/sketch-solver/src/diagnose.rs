@@ -34,13 +34,13 @@
 //! unknown. A row that exactly copies a row left out earlier, or its negation, depends on that row
 //! alone, so a repeated relation is still labelled beside an undecided one.
 //!
-//! Where rank is certain at `TAU`, each column's definition can be asked for (see `define`): it is
-//! determined when no direction the independent rows leave free is shown to move it by more than
-//! `TAU` per unit of that direction, and free when one of those directions is shown to move it by
-//! more than `CERTAIN`. Both are shown through the factor, allowing for the leads it dropped within
-//! `TAU`. Between the two, or once the probes' own allowance runs out, it is not analysed. Rounding
-//! in the factor is not bounded, as it is not for rank; it moves what is measured by about
-//! `epsilon / CERTAIN` at most, well below `CERTAIN`.
+//! Where rank is certain at `TAU`, each column's definition can be asked for (see `define`).
+//! Determined means the certified projection of the column's unit vector onto the directions the
+//! independent rows leave free is at most `TAU`, the dependence distance. Free means a direction
+//! certified to move every row by at most `TAU` per unit is certified to move the column by more
+//! than `CERTAIN`. The factor only proposes either. Each is certified against the rows given in
+//! compensated arithmetic, with a bound on that arithmetic's own rounding. Between `TAU` and
+//! `CERTAIN`, and once the probes' own allowance runs out, the column is not analysed.
 
 use crate::sparse::SparseRow;
 
@@ -143,7 +143,7 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work, allow
         }
     }
     if rank > 0 && !clear_of_dependence(&r, work)? { certain = false; }
-    let definition = allowance.filter(|_| certain && distance == TAU).map(|allowance| define(&mut r, rank, truncated, allowance));
+    let definition = allowance.filter(|_| certain && distance == TAU).map(|allowance| define(&mut r, rows, &norms, &independent, truncated, allowance));
     // A unit row's residual, or the residual itself for a row without unknowns.
     let scaled = |i: usize, value: f64| if norms[i] > 0.0 { value / norms[i] } else { value };
     let witnesses = witnesses.into_iter().map(|(j, support)| {
@@ -154,62 +154,79 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work, allow
     Some(Diagnosis { rank, witnesses, certain, definition })
 }
 
-/// Each column's definition by the independent unit rows, `rank` of them, whose rank is certain at
-/// `TAU`. `r` factors them less the leads their insertions dropped, so for any unit direction the
-/// norm of its rows times that direction is within `truncated` of the norm of theirs, `truncated`
-/// being the sum of each insertion's dropped length: rotations keep such norms, and the leads one
-/// insertion drops lie in distinct columns. With `least` a bound from below on the smallest
-/// singular value of the rows of `r`, a unit direction either set leaves free lies within
-/// `truncated / (least - truncated)` of one the other leaves free, so `probe` allows that much
-/// each way. `least` is `CERTAIN`, as rank is certain, or the comparison floor of `r` where that
-/// is higher and the rows dropped enough leads for it to matter.
-/// `DETERMINED`, `FREE` or `NOT_ANALYSED` as `probe` finds; all `DETERMINED` when no direction is
-/// left free, and all `NOT_ANALYSED` when `truncated` is not below half of `least`; `NOT_ANALYSED`
-/// for the columns left once the probes would take more than `allowance`, which they take from.
-/// `r` is left as it was.
-fn define(r: &mut [SparseRow], rank: usize, truncated: f64, allowance: &mut usize) -> Vec<u8> {
+/// Each column's definition by the rows given, whose rows `independent` are independent with rank
+/// certain at `TAU`. `r` factors those as unit rows, less the leads their insertions dropped, and
+/// `truncated` is the sum of each insertion's dropped length. The free space is the set of
+/// directions the independent rows leave still. Leaving out the dependent rows can only enlarge
+/// it, so what holds over it holds over every row.
+///
+/// - `DETERMINED`: the free space is certified to move the column by at most `TAU` per unit. `span`
+///   finds a combination of the rows that misses the column's unit vector by at most that, and the
+///   unit vector's projection onto the free space is no longer than that miss. `TAU` is the
+///   dependence distance, so a column is determined just when fixing it would add only a dependent
+///   equation.
+/// - `FREE`: a direction is certified to move every row by at most `TAU` per unit, and the column
+///   by more than `CERTAIN` per unit plus the most the nearest exact free direction can differ by
+///   (see `Direction::frees`).
+/// - `NOT_ANALYSED`: everything else, including columns moved by more than `TAU` but not shown to
+///   move by more than `CERTAIN`, and the columns left once the probes would take more than
+///   `allowance`, which they take from.
+///
+/// `probe` only proposes a code through `r`. Rounding there can move what it measures by about
+/// `epsilon` over the smallest pivot, more than `TAU`, so only a certificate decides.
+///
+/// With no direction left free, every column is determined. That rests on rank's certainty: the
+/// independent unit rows' smallest singular value is shown through `r` to reach `CERTAIN`, so it is
+/// at least `CERTAIN` less `truncated`, which is more than half of `CERTAIN` when `truncated` is
+/// below that. The factor's own rounding moves it by about `epsilon` times the rows' norm, as it
+/// does for rank. Where `truncated` is not below half of `CERTAIN`, no column is shown free and a
+/// full-rank group is not analysed. `r` is left as it was.
+fn define(r: &mut [SparseRow], rows: &[Row], norms: &[f64], independent: &[usize], truncated: f64, allowance: &mut usize) -> Vec<u8> {
     let n = r.len();
     let mut work = Work { done: 0, budget: *allowance, fill: usize::MAX, out: false };
-    let least = if truncated == 0.0 || (rank == n && truncated < CERTAIN / 2.0) { Some(CERTAIN) }
-        else { comparison_floor(r, &mut work).map(|floor| floor.max(CERTAIN)) };
+    // A bound from below on the independent unit rows' smallest singular value.
+    let floor = (truncated < CERTAIN / 2.0).then_some(CERTAIN - truncated);
     let mut codes = vec![NOT_ANALYSED; n];
-    if let Some(least) = least.filter(|&least| truncated < least / 2.0) {
-        if rank == n { codes.fill(DETERMINED); } else {
-            let (slack, mut freedom) = (truncated / (least - truncated), Freedom::new(n));
-            for j in 0..n {
-                if let Some(code) = probe(r, j, slack, &mut freedom, &mut work) { codes[j] = code; }
-                if work.run_out() { break; }
-            }
+    if independent.len() == n {
+        if floor.is_some() { codes.fill(DETERMINED); }
+    } else if let Some(mut group) = Group::new(r, rows, norms, independent, &mut work) {
+        let mut freedom: Vec<Option<Direction>> = (0..n).map(|_| None).collect();
+        for j in 0..n {
+            if let Some(code) = probe(r, &mut group, j, floor, &mut freedom, &mut work) { codes[j] = code; }
+            if work.run_out() { break; }
         }
     }
     *allowance = allowance.saturating_sub(work.done);
     codes
 }
 
-/// Column `j`'s unit row rotated into `r` as `insert` does, leaving `r` as it was. A rotation leaves
-/// its cosine times what it would leave with the row subtracted outright, so each lead is measured
-/// against the product of the cosines so far: what is left is that product times `e_j` less a
-/// combination of the rows and of the leads dropped. Dropped leads within `TAU`, so measured, put
-/// `e_j` within the root of their sum of squares of the rows' span, and so no unit direction the
-/// rows leave free moves column `j` by more; with `slack` for the independent rows' own directions,
-/// within `TAU` is `DETERMINED`. A lead above `TAU` that reaches an empty pivot `k` is, so
-/// measured, how far the free direction of `k` moves column `j` per unit it moves `k`; it moves
-/// `j` by more than `CERTAIN` and `slack` per unit of its own length when that is above their sum
-/// times the direction's norm, and the lead itself above `CERTAIN`, as an insertion claims a
-/// pivot: `FREE`. Where that is not shown the lead is dropped and the probe goes on to the next
-/// empty pivot, whose direction is zero at `k`. `None` when none shows it, and when the work runs
-/// out.
-fn probe(r: &mut [SparseRow], j: usize, slack: f64, freedom: &mut Freedom, work: &mut Work) -> Option<u8> {
+/// Most corrections `Group::span` makes to its coefficients.
+const CORRECTIONS: usize = 8;
+
+/// Proposes a code for column `j` by rotating its unit row into `r` as `insert` does, leaving `r`
+/// as it was. A rotation leaves its cosine times what it would leave with the row subtracted
+/// outright, so each lead is measured against the product of the cosines so far.
+///
+/// - If every lead that reaches an empty pivot is within `TAU`, so measured, and their root sum of
+///   squares is too, the column looks determined. It is `DETERMINED` if `Group::span` certifies
+///   it.
+/// - A lead above `TAU` that reaches an empty pivot `k` shows the free direction of `k` moving the
+///   column. The column is `FREE` if that direction is certified to free it. Otherwise the lead is
+///   dropped and the probe goes on to the next empty pivot, whose direction is zero at `k`; the
+///   column can then no longer look determined.
+///
+/// `None` when nothing is certified, and when the work runs out.
+fn probe(r: &mut [SparseRow], group: &mut Group, j: usize, floor: Option<f64>, freedom: &mut [Option<Direction>], work: &mut Work) -> Option<u8> {
     let (mut v, mut shrink, mut dropped, mut undecided): (SparseRow, f64, f64, bool) = (vec![(j, 1.0)], 1.0, 0.0, false);
     loop {
-        // `None` when the work ran out; then the empty pivot reached, with its lead, or `None`
-        // when nothing is left. Only the pivots before it are rotated, so the rows past it are as
-        // they were when the probe goes on.
+        // `None` when the work ran out; then the empty pivot reached, or `None` when nothing is
+        // left. Only the pivots before it are rotated, so the rows past it are as they were when
+        // the probe goes on.
         let mut undo = Vec::new();
         let reached = loop {
             let Some(&(k, lead)) = v.first() else { break Some(None) };
             if r[k].is_empty() {
-                if lead.abs() > TAU { break Some(Some((k, lead.abs()))); }
+                if lead.abs() > TAU { break Some(Some(k)); }
                 dropped += (lead / shrink).powi(2);
                 v.remove(0);
                 continue;
@@ -220,67 +237,266 @@ fn probe(r: &mut [SparseRow], j: usize, slack: f64, freedom: &mut Freedom, work:
             v = rest;
         };
         for (k, row) in undo.into_iter().rev() { r[k] = row; }
-        let Some((k, lead)) = reached? else { return (!undecided && dropped.sqrt() + slack <= TAU).then_some(DETERMINED) };
-        let norm = freedom.norm(r, k, work)?;
-        if lead > CERTAIN && lead > (CERTAIN + slack) * shrink * norm { return Some(FREE); }
+        let Some(k) = reached? else {
+            if undecided || dropped.sqrt() > TAU { return None; }
+            return (group.span(r, j, work)? <= TAU).then_some(DETERMINED);
+        };
+        if freedom[k].is_none() { freedom[k] = Some(group.direction(r, k, work)?); }
+        if freedom[k].as_ref().is_some_and(|direction| direction.frees(j, floor)) { return Some(FREE); }
         undecided = true;
         v.remove(0);
     }
 }
 
-/// Norms of the directions the rows of a factor leave free, one for each column `k` without a
-/// pivot: one at `k`, zero at the other columns without pivots, and at each pivot what keeps its
-/// row still, by back substitution from `k` through the rows that reach it. Each is found once,
-/// when a probe first reaches its column.
-struct Freedom {
-    /// The rows holding each column past their lead, built for the first norm.
-    columns: Option<Vec<Vec<usize>>>,
-    norms: Vec<Option<f64>>,
-    /// A direction as it is found, and the pivots queued for it; zero and clear between them.
-    x: Vec<f64>,
-    queued: Vec<bool>,
+/// The free direction of a column `k` without a pivot in the factor, with bounds on its length and
+/// on how far it moves the rows given. It is one at `k`, zero at the other columns without pivots,
+/// and at each pivot what keeps that pivot's row still.
+struct Direction {
+    /// By increasing column.
+    entries: SparseRow,
+    /// Bounds from below and above on the length of `entries`.
+    shortest: f64,
+    longest: f64,
+    /// A bound from above on the length of what it moves the nonzero unit rows given.
+    moved: f64,
 }
 
-impl Freedom {
-    fn new(n: usize) -> Freedom { Freedom { columns: None, norms: vec![None; n], x: vec![0.0; n], queued: vec![false; n] } }
+impl Direction {
+    /// Whether the direction frees column `j`. It must move every row by at most `TAU` per unit of
+    /// its length, within the rank tolerance. It must also move the column by more than `CERTAIN`
+    /// per unit plus `moved` over `floor`, a bound from below on the independent unit rows'
+    /// smallest singular value. The exact free direction nearest it, its part those rows leave
+    /// still, differs from it by at most `moved` over `floor`, so that direction also moves the
+    /// column by more than `CERTAIN` per unit. Never with no `floor`.
+    fn frees(&self, j: usize, floor: Option<f64>) -> bool {
+        let (Some(floor), Ok(at)) = (floor, self.entries.binary_search_by_key(&j, |e| e.0)) else { return false };
+        // Each operation here rounds by at most half an epsilon.
+        self.moved <= TAU * self.shortest
+            && self.entries[at].1.abs() > (CERTAIN * self.longest + self.moved / floor) * (1.0 + 4.0 * f64::EPSILON)
+    }
+}
 
-    /// The norm of the free direction of column `k`, which has no pivot in `r`; `None` when the
-    /// work runs out.
-    fn norm(&mut self, r: &[SparseRow], k: usize, work: &mut Work) -> Option<f64> {
-        if let Some(norm) = self.norms[k] { return Some(norm); }
-        let Freedom { columns, norms, x, queued } = self;
-        let columns = match columns {
-            Some(columns) => columns,
-            None => {
-                let entries = r.len() + r.iter().map(|row| row.len()).sum::<usize>();
-                work.afford(entries)?;
-                work.spend(entries)?;
-                let mut built = vec![Vec::new(); r.len()];
-                for (p, row) in r.iter().enumerate() {
-                    for &(c, _) in row.iter().skip(1) { built[c].push(p); }
-                }
-                columns.insert(built)
+/// The rows given, by column, as the certificates read them. Its scratch space over columns and
+/// rows is zero and clear between uses.
+struct Group<'a> {
+    rows: &'a [Row],
+    norms: &'a [f64],
+    /// The nonzero rows holding each column, in increasing order.
+    holding: Vec<Vec<usize>>,
+    independent: Vec<bool>,
+    /// The rows of the factor holding each column past their lead.
+    columns: Vec<Vec<usize>>,
+    /// The most terms a compensated sum over one column takes: one for the unit vector and two for
+    /// each row.
+    terms: usize,
+    high: Vec<f64>,
+    low: Vec<f64>,
+    size: Vec<f64>,
+    queued: Vec<bool>,
+    marked: Vec<bool>,
+}
+
+impl<'a> Group<'a> {
+    /// `None` when the work runs out.
+    fn new(r: &[SparseRow], rows: &'a [Row], norms: &'a [f64], independent: &[usize], work: &mut Work) -> Option<Group<'a>> {
+        let n = r.len();
+        work.take(2 * n + rows.len() + rows.iter().map(|row| row.entries.len()).sum::<usize>() + r.iter().map(|row| row.len()).sum::<usize>())?;
+        let (mut holding, mut columns, mut flags) = (vec![Vec::new(); n], vec![Vec::new(); n], vec![false; rows.len()]);
+        for (i, row) in rows.iter().enumerate().filter(|&(i, _)| norms[i] > 0.0) {
+            for &(c, _) in &row.entries { holding[c].push(i); }
+        }
+        for (p, row) in r.iter().enumerate() {
+            for &(c, _) in row.iter().skip(1) { columns[c].push(p); }
+        }
+        for &i in independent { flags[i] = true; }
+        let terms = 1 + 2 * holding.iter().map(Vec::len).max().unwrap_or(0);
+        Some(Group { rows, norms, holding, independent: flags, columns, terms, high: vec![0.0; n], low: vec![0.0; n], size: vec![0.0; n],
+            queued: vec![false; n], marked: vec![false; rows.len()] })
+    }
+
+    /// A bound from above on the distance of `e_j` from the span of the independent rows, which
+    /// bounds how far any unit free direction moves column `j`. Coefficients of the rows given come
+    /// from the seminormal equations through `r`. They are corrected while what they miss of `e_j`
+    /// shrinks, until the bound is within `TAU`, and kept in twice the working precision. `miss`
+    /// gives the bound. `None` when the work runs out.
+    fn span(&mut self, r: &[SparseRow], j: usize, work: &mut Work) -> Option<f64> {
+        let (mut coefficients, mut missing, mut norm, mut bound): (Vec<Coefficient>, SparseRow, f64, f64) = (Vec::new(), vec![(j, 1.0)], 1.0, 1.0);
+        for _ in 0..CORRECTIONS {
+            if bound <= TAU { break; }
+            let change = self.correction(r, &missing, work)?;
+            if change.is_empty() { break; }
+            work.take(coefficients.len() + change.len())?;
+            let trial = corrected(&coefficients, &change);
+            let (miss, size, within) = self.miss(j, &trial, work)?;
+            if size >= norm { break; }
+            (coefficients, missing, norm, bound) = (trial, miss, size, within);
+        }
+        Some(bound)
+    }
+
+    /// The change of coefficients of the independent rows given that the seminormal equations
+    /// through `r` take for `missing` over the pivot columns: `R^T R z = missing`, then each row's
+    /// entries times `z` over its squared norm. By increasing row; `None` when the work runs out.
+    fn correction(&mut self, r: &[SparseRow], missing: &SparseRow, work: &mut Work) -> Option<Vec<(usize, f64)>> {
+        use std::{cmp::Reverse, collections::BinaryHeap};
+        let Group { rows, norms, holding, independent, columns, high: w, low: z, queued, marked, .. } = self;
+        // `R^T w = missing` from the first pivot it reaches, then `R z = w` from the last, through
+        // the rows reaching those, each pivot once every one it reads is known.
+        let (mut ahead, mut taken, mut out) = (BinaryHeap::new(), Vec::new(), false);
+        for &(c, x) in missing.iter().filter(|e| !r[e.0].is_empty()) {
+            (w[c], queued[c]) = (x, true);
+            ahead.push(Reverse(c));
+        }
+        while let Some(Reverse(k)) = ahead.pop() {
+            taken.push(k);
+            if work.take(r[k].len()).is_none() { out = true; break; }
+            w[k] /= r[k][0].1;
+            for &(c, x) in r[k][1..].iter().filter(|e| !r[e.0].is_empty()) {
+                w[c] -= x * w[k];
+                if !queued[c] { queued[c] = true; ahead.push(Reverse(c)); }
             }
-        };
+        }
+        let started: Vec<usize> = taken.iter().copied().chain(ahead.into_iter().map(|Reverse(k)| k)).collect();
+        for &k in &started { queued[k] = false; }
+        let (mut behind, mut solved) = (BinaryHeap::new(), Vec::new());
+        if !out {
+            for &k in &taken { queued[k] = true; behind.push(k); }
+            while let Some(k) = behind.pop() {
+                solved.push(k);
+                if work.take(r[k].len() + columns[k].len()).is_none() { out = true; break; }
+                z[k] = (w[k] - r[k][1..].iter().map(|&(c, x)| x * z[c]).sum::<f64>()) / r[k][0].1;
+                for &p in &columns[k] {
+                    if !queued[p] { queued[p] = true; behind.push(p); }
+                }
+            }
+        }
+        let mut change = Vec::new();
+        if !out {
+            out = work.take(solved.iter().map(|&k| holding[k].len()).sum()).is_none();
+            let mut held = Vec::new();
+            for &k in solved.iter().filter(|_| !out) {
+                for &i in holding[k].iter().filter(|&&i| independent[i]) {
+                    if !marked[i] { marked[i] = true; held.push(i); }
+                }
+            }
+            out = out || work.take(held.iter().map(|&i| rows[i].entries.len()).sum()).is_none();
+            held.sort_unstable();
+            for &i in &held {
+                marked[i] = false;
+                if !out { change.push((i, rows[i].entries.iter().map(|&(c, x)| x * z[c]).sum::<f64>() / (norms[i] * norms[i]))); }
+            }
+        }
+        for &k in &started { w[k] = 0.0; }
+        for k in solved.into_iter().chain(behind) { (z[k], queued[k]) = (0.0, false); }
+        (!out).then_some(change)
+    }
+
+    /// What `coefficients` of the rows given miss of `e_j` per column, with its computed norm and a
+    /// bound from above on the exact miss's norm; `None` when the work runs out. Each column's miss
+    /// is a Dot2 sum (Ogita, Rump and Oishi, 2005): two exact products per row, one for each part
+    /// of its coefficient, summed exactly with the errors carried. Barring underflow, a sum of at
+    /// most `terms` terms whose magnitudes add up to `S` is within `u |exact| + gamma(terms)^2 S` of
+    /// the exact sum, `u` being the unit roundoff. The bound also allows for rounding in the norm
+    /// and in the magnitudes.
+    fn miss(&mut self, j: usize, coefficients: &[Coefficient], work: &mut Work) -> Option<(SparseRow, f64, f64)> {
+        work.take(2 * (1 + coefficients.iter().map(|&(i, ..)| self.rows[i].entries.len()).sum::<usize>()))?;
+        let Group { rows, high, low, size, queued, terms, .. } = self;
+        let mut touched = vec![j];
+        (high[j], size[j], queued[j]) = (1.0, 1.0, true);
+        for &(i, upper, lower) in coefficients {
+            for &(c, x) in &rows[i].entries {
+                if !queued[c] { queued[c] = true; touched.push(c); }
+                for part in [upper, lower] {
+                    let (term, error) = two_product(-part, x);
+                    let (sum, carried) = two_sum(high[c], term);
+                    (high[c], low[c], size[c]) = (sum, low[c] + (carried + error), size[c] + term.abs());
+                }
+            }
+        }
+        touched.sort_unstable();
+        let (mut missing, mut squares, mut sizes) = (Vec::with_capacity(touched.len()), 0.0, 0.0);
+        for &c in &touched {
+            let value = high[c] + low[c];
+            if value != 0.0 { missing.push((c, value)); }
+            (squares, sizes) = (squares + value * value, sizes + size[c]);
+            (high[c], low[c], size[c], queued[c]) = (0.0, 0.0, 0.0, false);
+        }
+        let norm = squares.sqrt();
+        let bound = (norm * (1.0 + gamma(touched.len() + 4)) + 4.0 * gamma(*terms).powi(2) * sizes) * (1.0 + gamma(4));
+        Some((missing, norm, bound))
+    }
+
+    /// The free direction of column `k`, which has no pivot in `r`, by back substitution from `k`
+    /// through the rows that reach it. Its length is bounded from both sides: a sum of squares of
+    /// `len` terms and its root round by at most `gamma(len + 2)` relatively. What it moves each
+    /// nonzero unit row given is bounded from above by a Dot2 sum as in `miss`, over the row's
+    /// norm, which rounds in the same way. `None` when the work runs out.
+    fn direction(&mut self, r: &[SparseRow], k: usize, work: &mut Work) -> Option<Direction> {
+        let Group { rows, norms, holding, columns, low: x, queued, marked, .. } = self;
         // Pivots from the last, each once every later one it reads has moved.
         let (mut reached, mut taken, mut squares, mut out) = (std::collections::BinaryHeap::new(), vec![k], 1.0, false);
         x[k] = 1.0;
         for &p in &columns[k] { queued[p] = true; reached.push(p); }
         while let Some(p) = reached.pop() {
             taken.push(p);
-            let cost = r[p].len() + columns[p].len();
-            if work.afford(cost).and_then(|()| work.spend(cost)).is_none() { out = true; break; }
+            if work.take(r[p].len() + columns[p].len()).is_none() { out = true; break; }
             x[p] = -r[p][1..].iter().map(|&(c, e)| e * x[c]).sum::<f64>() / r[p][0].1;
             squares += x[p] * x[p];
             for &q in &columns[p] {
                 if !queued[q] { queued[q] = true; reached.push(q); }
             }
         }
+        let (mut moved, mut held) = (0.0, Vec::new());
+        out = out || work.take(taken.iter().map(|&c| holding[c].len()).sum()).is_none();
+        for &c in taken.iter().filter(|_| !out) {
+            for &i in &holding[c] {
+                if !marked[i] { marked[i] = true; held.push(i); }
+            }
+        }
+        out = out || work.take(held.iter().map(|&i| rows[i].entries.len()).sum()).is_none();
+        for &i in &held {
+            marked[i] = false;
+            if out { continue; }
+            let (mut high, mut low, mut size) = (0.0, 0.0, 0.0);
+            for &(c, e) in &rows[i].entries {
+                let (term, error) = two_product(e, x[c]);
+                let (sum, carried) = two_sum(high, term);
+                (high, low, size) = (sum, low + (carried + error), size + term.abs());
+            }
+            let len = rows[i].entries.len();
+            let bound = ((high + low).abs() + 2.0 * gamma(len + 1).powi(2) * size) * (1.0 + gamma(4)) / (norms[i] * (1.0 - gamma(len + 2)));
+            moved += bound * bound;
+        }
+        let mut entries: SparseRow = taken.iter().map(|&p| (p, x[p])).filter(|e| e.1 != 0.0).collect();
+        let len = taken.len();
         for p in taken.into_iter().chain(reached) { (x[p], queued[p]) = (0.0, false); }
         if out { return None; }
-        norms[k] = Some(squares.sqrt());
-        norms[k]
+        entries.sort_unstable_by_key(|e| e.0);
+        let length = squares.sqrt();
+        Some(Direction { entries, shortest: length * (1.0 - gamma(len + 2)), longest: length * (1.0 + gamma(len + 2)),
+            moved: moved.sqrt() * (1.0 + gamma(held.len() + 2)) })
     }
+}
+
+/// `coefficients` with `change` added, both by increasing row, in twice the working precision.
+fn corrected(coefficients: &[Coefficient], change: &[(usize, f64)]) -> Vec<Coefficient> {
+    let (mut sum, mut i, mut d) = (Vec::with_capacity(coefficients.len() + change.len()), 0, 0);
+    while i < coefficients.len() || d < change.len() {
+        let row = coefficients.get(i).map_or(usize::MAX, |c| c.0).min(change.get(d).map_or(usize::MAX, |e| e.0));
+        let (high, low) = if coefficients.get(i).is_some_and(|c| c.0 == row) { i += 1; (coefficients[i - 1].1, coefficients[i - 1].2) } else { (0.0, 0.0) };
+        let step = if change.get(d).is_some_and(|e| e.0 == row) { d += 1; change[d - 1].1 } else { 0.0 };
+        let (total, error) = two_sum(high, step);
+        let (high, low) = two_sum(total, error + low);
+        sum.push((row, high, low));
+    }
+    sum
+}
+
+/// `k u / (1 - k u)` for the unit roundoff `u`, a bound on the relative rounding of `k` operations
+/// in sequence.
+fn gamma(k: usize) -> f64 {
+    let ku = k as f64 * (f64::EPSILON / 2.0);
+    ku / (1.0 - ku)
 }
 
 /// How many of `rows`, zero rows included, lie within `distance` of the span of earlier ones once
@@ -357,6 +573,11 @@ impl Work {
     fn afford(&mut self, entries: usize) -> Option<()> {
         self.out |= self.done.saturating_add(entries) > self.budget;
         (!self.out).then_some(())
+    }
+    /// `afford` then `spend`.
+    fn take(&mut self, entries: usize) -> Option<()> {
+        self.afford(entries)?;
+        self.spend(entries)
     }
     fn run_out(&self) -> bool { self.out || self.done > self.budget }
     /// The work spent, past `budget` when it ran out, which callers read as running out.

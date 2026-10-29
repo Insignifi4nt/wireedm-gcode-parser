@@ -71,18 +71,36 @@ describe('native sketch definition', () => {
       definedEntityIds: ['hole'], underDefinedEntityIds: ['edge'] });
   });
 
-  it('never defines geometry that a coefficient within the dependence distance lets move', () => {
+  it('never defines geometry that only a lead within the dependence distance shows moving', () => {
     // `p` sits 5e-11 right of `a`, so the factor drops the tiny lead of `p.x` in their distance.
     // The one free direction then moves `r.x` by about 5e-6 per unit, which only the dropped lead
-    // shows: `r` and the line through it are unknown, never defined.
+    // shows: `r` and the line through it are unknown, never defined. It moves `q.y` by only about
+    // 5e-11 per unit, within the dependence distance, so `q` is defined.
     const graph = parseCadSketchGraph({
       points: [{ id: 'p', position: [5e-11, 0] }, { id: 'q', position: ['0', 0] }, { id: 'r', position: [1e-5, '-1'] }, { id: 'a', position: ['0', '-1'] }],
       entities: [{ id: 'qr', kind: 'line', construction: false, startPointId: 'q', endPointId: 'r' }],
       relations: [{ id: 'pa', kind: 'distance', pointIds: ['p', 'a'], value: 1 }, { id: 'level', kind: 'horizontal', pointIds: ['p', 'q'] },
         { id: 'arm', kind: 'distance', pointIds: ['q', 'r'], value: 1.00000000005 }]
     });
-    expect(definitionOf({ graph, parameters: {}, analyseDefinition: true })).toEqual({ definedPointIds: ['a'], underDefinedPointIds: ['p'],
+    expect(definitionOf({ graph, parameters: {}, analyseDefinition: true })).toEqual({ definedPointIds: ['q', 'a'], underDefinedPointIds: ['p'],
       definedEntityIds: [], underDefinedEntityIds: [] });
+  });
+
+  it('never defines geometry that rounding in the factor shows moved by less than the dependence distance', () => {
+    // Two equal lengths from nearly the same anchors leave one free direction. It moves `p.x` by
+    // about 4.4e-10 per unit, beyond the dependence distance, though rounding in the factor shows
+    // it below that: `p` and its lines are unknown, never defined.
+    const anchor = (id: string, x: number, y: number) => ({ id, position: [String(x), String(y)] as [string, string] });
+    const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
+    const graph = parseCadSketchGraph({
+      points: [{ id: 'p', position: [0, '0'] }, { id: 'q', position: [0, 0] }, anchor('a0', -0.17790289092808964, -0.9840480483184895),
+        anchor('b0', 0.4820456924349914, 0.8761460782340292), anchor('a1', -0.17790313831017066, -0.9840480035950443),
+        anchor('b1', 0.4820456924349914, 0.8761460782340296)],
+      entities: [line('pa0', 'p', 'a0'), line('qb0', 'q', 'b0'), line('pa1', 'p', 'a1'), line('qb1', 'q', 'b1')],
+      relations: [{ id: 'first', kind: 'equal-length', lineIds: ['pa0', 'qb0'] }, { id: 'second', kind: 'equal-length', lineIds: ['pa1', 'qb1'] }]
+    });
+    expect(definitionOf({ graph, parameters: {}, analyseDefinition: true })).toEqual({ definedPointIds: ['a0', 'b0', 'a1', 'b1'], underDefinedPointIds: ['q'],
+      definedEntityIds: [], underDefinedEntityIds: ['qb0', 'qb1'] });
   });
 
   it('maps a parameter not analysed to unknown unless another part is free', () => {
