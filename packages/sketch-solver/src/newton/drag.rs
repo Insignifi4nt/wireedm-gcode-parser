@@ -167,7 +167,7 @@ fn row_length(kind: Kind, o: &[f64], free: &[bool]) -> Option<f64> {
         Kind::Difference | Kind::Value | Kind::Midpoint => None,
         // Between two fixed points a distance is a constant, or minus a free radius: linear.
         Kind::Distance | Kind::DistanceToParameter => movable(0).then(|| length(o[2] - o[0], o[3] - o[1])),
-        Kind::PointOnLine => line(2),
+        Kind::PointOnLine | Kind::PointLineDistance => line(2),
         Kind::Parallel | Kind::Perpendicular | Kind::Angle | Kind::EqualLength => [line(0), line(4)].into_iter().flatten().reduce(f64::min),
         Kind::SymmetricMidpoint | Kind::SymmetricPerpendicular => line(4),
     }

@@ -15,14 +15,18 @@ import type { CadSketchDefinition } from '../cadSketchSolverTypes';
  * - `angle` (same operands): signed angle from a1 -> a2 to b1 -> b2 = value radians
  * - `symmetric-midpoint`, `symmetric-perpendicular` [px, py, qx, qy, ax, ay, bx, by]: the midpoint of p and q
  *   lies on the line through a and b, and q - p is perpendicular to it
+ * - `point-line-distance` [px, py, ax, ay, bx, by]: signed distance from p to the line through a and b = value,
+ *   positive to the left of a -> b
  */
 export const cadSketchEquationKinds = ['difference', 'value', 'midpoint', 'distance', 'distance-to-parameter', 'point-on-line',
-  'parallel', 'perpendicular', 'angle', 'equal-length', 'symmetric-midpoint', 'symmetric-perpendicular'] as const;
+  'parallel', 'perpendicular', 'angle', 'equal-length', 'symmetric-midpoint', 'symmetric-perpendicular',
+  'point-line-distance'] as const;
 export type CadSketchEquationKind = typeof cadSketchEquationKinds[number];
 
 export const cadSketchEquationArity: Readonly<Record<CadSketchEquationKind, number>> = {
   difference: 2, value: 1, midpoint: 3, distance: 4, 'distance-to-parameter': 5, 'point-on-line': 6,
-  parallel: 8, perpendicular: 8, angle: 8, 'equal-length': 8, 'symmetric-midpoint': 8, 'symmetric-perpendicular': 8
+  parallel: 8, perpendicular: 8, angle: 8, 'equal-length': 8, 'symmetric-midpoint': 8, 'symmetric-perpendicular': 8,
+  'point-line-distance': 6
 };
 
 export interface CadSketchEquation {
@@ -50,7 +54,7 @@ export interface CadSketchEquationModel {
   readonly equations: readonly CadSketchEquation[];
 }
 
-export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 6;
+export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 7;
 /** Option bit of the Rust `problem::DEFINE`: also analyse each parameter's definition. */
 export const CAD_SKETCH_NATIVE_DEFINE = 1;
 
@@ -98,9 +102,9 @@ export function cadSketchEquationResidual(equation: CadSketchEquation, values: r
     case 'midpoint': return (o[0] + o[1]) * 0.5 - o[2];
     case 'distance': return Math.hypot(o[2] - o[0], o[3] - o[1]) - value;
     case 'distance-to-parameter': return Math.hypot(o[2] - o[0], o[3] - o[1]) - o[4];
-    case 'point-on-line': {
-      const dx = o[4] - o[2], dy = o[5] - o[3];
-      return cross(dx, dy, o[0] - o[2], o[1] - o[3]) / Math.hypot(dx, dy);
+    case 'point-on-line': case 'point-line-distance': {
+      const dx = o[4] - o[2], dy = o[5] - o[3], signed = cross(dx, dy, o[0] - o[2], o[1] - o[3]) / Math.hypot(dx, dy);
+      return equation.kind === 'point-on-line' ? signed : signed - value;
     }
     case 'parallel': case 'perpendicular': case 'angle': case 'equal-length': {
       const ax = o[2] - o[0], ay = o[3] - o[1], bx = o[6] - o[4], by = o[7] - o[5];

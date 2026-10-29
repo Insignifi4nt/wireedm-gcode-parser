@@ -23,7 +23,7 @@ export function nativeBaselineBytes(manifest = nativeBaselineManifest) {
   return bytes;
 }
 
-/** The buffer protocol the baseline module speaks: protocol 6 without its options word and definition block. */
+/** The buffer protocol the baseline module speaks: the current one without its options word, definition block and point to line distance. */
 export const NATIVE_BASELINE_PROTOCOL_VERSION = 5;
 
 /**

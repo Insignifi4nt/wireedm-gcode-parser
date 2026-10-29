@@ -466,9 +466,9 @@ function nativeModule({ alloc, free, solve, data }: { readonly alloc: number[]; 
 
 describe('native solver instances', () => {
   const unreachable = [0, 11], at8 = [65, 8, 11], at1024 = [65, 128, 8, 11], none = [11];
-  // An empty model's reply: length, protocol 6, converged, no iterations or residual, nothing to
+  // An empty model's reply: length, protocol 7, converged, no iterations or residual, nothing to
   // diagnose, no freedom count, no drag outcome or target distance.
-  const reply = new Float64Array([9, 6, 0, 0, 0, 2, NaN, NaN, NaN]);
+  const reply = new Float64Array([9, 7, 0, 0, 0, 2, NaN, NaN, NaN]);
   const empty: CadSketchEquationModel = { values: [], fixed: [], pointParameters: new Map(), radiusParameters: new Map(), equations: [] };
 
   it('reads a reply and frees both buffers', async () => {
@@ -484,12 +484,12 @@ describe('native solver instances', () => {
     // One free value held at 0 and dragged toward 5: projected, 5 mm short, one degree of freedom.
     const dragged: CadSketchEquationModel = { ...empty, values: [0], fixed: [false],
       equations: [{ kind: 'value', operands: [0], value: 5, tag: 0, sourceId: 'drag', temporary: true }] };
-    const drag = (outcome: number, distance: number) => new Float64Array([12, 6, 0, 1, 0, 0, 1, outcome, distance, 0, 0, 0]);
+    const drag = (outcome: number, distance: number) => new Float64Array([12, 7, 0, 1, 0, 0, 1, outcome, distance, 0, 0, 0]);
     const solve = (model: CadSketchEquationModel, data: Float64Array) => loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data })).then(solver => solver.solve(model));
     expect(await solve(dragged, drag(1, 5))).toMatchObject({ values: [0], drag: { outcome: 'projected', targetDistance: 5 } });
     expect(await solve(dragged, drag(3, 5))).toMatchObject({ drag: { outcome: 'limited', targetDistance: 5 } });
     // An uncertain rank keeps its labels and leaves freedom unknown; a count with it is invalid.
-    const diagnosed = (status: number, diagnosis: number, freedom = NaN) => new Float64Array([12, 6, status, 1, 0, diagnosis, freedom, 1, 5, 0, 0, 0]);
+    const diagnosed = (status: number, diagnosis: number, freedom = NaN) => new Float64Array([12, 7, status, 1, 0, diagnosis, freedom, 1, 5, 0, 0, 0]);
     expect(await solve(dragged, diagnosed(0, 4))).toMatchObject({ diagnosis: { kind: 'uncertain', labels: [0] } });
     await expect(solve(dragged, diagnosed(0, 4, 1))).rejects.toThrow('invalid result');
     // Blame from the start comes only with a group that did not converge; a group not diagnosed
@@ -508,7 +508,7 @@ describe('native solver instances', () => {
     // A fixed value, a value held at 5 and one no equation reads, then their definition codes.
     const model: CadSketchEquationModel = { ...empty, values: [1, 0, 7], fixed: [true, false, false],
       equations: [{ kind: 'value', operands: [1], value: 5, tag: 0, sourceId: 'held' }] };
-    const answer = (codes: readonly number[], { length = 9 + 3 + 1 + codes.length, version = 6, diagnosis = 0 } = {}) =>
+    const answer = (codes: readonly number[], { length = 9 + 3 + 1 + codes.length, version = 7, diagnosis = 0 } = {}) =>
       new Float64Array([length, version, 0, 1, 0, diagnosis, diagnosis === 0 ? 1 : NaN, NaN, NaN, 1, 5, 7, 0, ...codes]);
     const solve = (data: Float64Array, analyseDefinition?: boolean) => loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data }))
       .then(solver => solver.solve(model, analyseDefinition === undefined ? undefined : { analyseDefinition }));

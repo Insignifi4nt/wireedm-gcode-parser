@@ -45,6 +45,18 @@ describe('CAD tool argument boundary and discovery', () => {
       expect(await edit.execute({ expectedVersion: 'current', edits: [invalid] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
     expect(controller).not.toHaveBeenCalled();
   });
+  it('takes a point to line distance only with the side of the line its point keeps', async () => {
+    const controller = vi.fn<() => CadController>(() => { throw new Error('A distance without its side reached the controller.'); });
+    const edit = cadSiteTools(controller).find(tool => tool.name === 'cad_edit_document');
+    if (!edit) throw new Error('Edit tool missing.');
+    const relation = { id: 'rib_gap', kind: 'point-line-distance', pointId: 'rib_start', lineId: 'base', side: 'left', value: 12 };
+    expect(Value.Check(CadEditSchema, { kind: 'set-sketch-relation', sketchId: 'sketch', relation })).toBe(true);
+    const { side: _side, ...sideless } = relation;
+    for (const invalid of [sideless, { ...relation, side: 'above' }])
+      expect(await edit.execute({ expectedVersion: 'current', edits: [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: invalid }] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(controller).not.toHaveBeenCalled();
+  });
+
   it('discovers the document-level profile copy edit and rejects caller geometry before controller access', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed profile copy reached controller.'); });
     const tools = cadSiteTools(controller), edit = tools.find(tool => tool.name === 'cad_edit_document');

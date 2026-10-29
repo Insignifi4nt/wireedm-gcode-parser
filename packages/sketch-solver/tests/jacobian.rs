@@ -45,7 +45,7 @@ fn every_kind_matches_central_differences() {
 
 #[test]
 fn residuals_vanish_on_satisfied_geometry() {
-    let cases: [(Kind, &[f64], f64); 12] = [
+    let cases: [(Kind, &[f64], f64); 13] = [
         (Kind::Difference, &[2.0, 7.0], 5.0),
         (Kind::Value, &[3.5], 3.5),
         (Kind::Midpoint, &[1.0, 5.0, 3.0], 0.0),
@@ -58,6 +58,7 @@ fn residuals_vanish_on_satisfied_geometry() {
         (Kind::EqualLength, &[0.0, 0.0, 3.0, 4.0, 1.0, 1.0, 1.0, 6.0], 0.0),
         (Kind::SymmetricMidpoint, &[-2.0, 3.0, 4.0, 3.0, 1.0, 0.0, 1.0, 9.0], 0.0),
         (Kind::SymmetricPerpendicular, &[-2.0, 3.0, 4.0, 3.0, 1.0, 0.0, 1.0, 9.0], 0.0),
+        (Kind::PointLineDistance, &[1.0, 5.0, 0.0, 0.0, 4.0, 0.0], 5.0),
     ];
     for (kind, operands, target) in cases {
         assert!(value(kind, operands, target).abs() < 1e-14, "{kind:?}");
@@ -78,4 +79,25 @@ fn zero_lengths_have_finite_gradients() {
     let result = residual(Kind::Distance, &duals, 2.0);
     assert_eq!(result.value, -2.0);
     assert!(result.gradient.iter().all(|g| g.is_finite()));
+}
+
+#[test]
+fn a_point_line_distance_is_signed_by_the_side_of_the_line() {
+    // Left of a to b is positive; reversing the line flips the sign, not the length.
+    let line = |p: [f64; 2], forward: bool| if forward { [p[0], p[1], 0.0, 0.0, 4.0, 0.0] } else { [p[0], p[1], 4.0, 0.0, 0.0, 0.0] };
+    assert_eq!(value(Kind::PointLineDistance, &line([1.0, 3.0], true), 3.0), 0.0);
+    assert_eq!(value(Kind::PointLineDistance, &line([1.0, -3.0], true), -3.0), 0.0);
+    assert_eq!(value(Kind::PointLineDistance, &line([1.0, 3.0], false), -3.0), 0.0);
+    assert_eq!(value(Kind::PointLineDistance, &line([1.0, 3.0], true), 2.0), 1.0);
+    // The support is infinite: a point past either end measures to its extension.
+    assert_eq!(value(Kind::PointLineDistance, &line([9.0, 2.0], true), 2.0), 0.0);
+    // Far from the origin the residual keeps its accuracy relative to the operands.
+    let far = [1e6 + 1.0, 2e6 + 3.0, 1e6, 2e6, 1e6 + 4.0, 2e6];
+    assert!(value(Kind::PointLineDistance, &far, 3.0).abs() < 1e-9);
+}
+
+#[test]
+fn a_point_line_distance_to_a_zero_length_line_is_not_finite() {
+    let duals: Vec<Dual> = [1.0, 1.0, 2.0, 2.0, 2.0, 2.0].iter().enumerate().map(|(slot, &v)| Dual::variable(v, slot)).collect();
+    assert!(!residual(Kind::PointLineDistance, &duals, 1.0).value.is_finite());
 }

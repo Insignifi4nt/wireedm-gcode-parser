@@ -32,7 +32,7 @@ export class CadSketchSplitDependencyError extends CadError {
   }
 }
 
-/** One source-oriented cut, with no coordinate welding or whole-entity relation transfer. */
+/** One source-oriented cut, with no coordinate welding or whole-entity relation transfer beyond the retained piece's support. */
 export function splitCadSketchEntity({ graph: input, parameters, split }: {
   readonly graph: CadSketchGraph; readonly parameters: Readonly<Record<string, number>>; readonly split: CadSketchSplitTarget;
 }): CadSketchSplitResult {
@@ -40,7 +40,8 @@ export function splitCadSketchEntity({ graph: input, parameters, split }: {
     throw new CadError('invalid-sketch-split', 'Choose a line or open arc and a finite split parameter strictly between zero and one.');
   const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === split.entityId);
   if (!entity || entity.kind !== split.kind) throw new CadError('invalid-sketch-split-target', 'The split source must remain the requested line or open arc.');
-  const blockers = graph.relations.filter(relation => relation.kind !== 'reference-dimension' && cadSketchRelationEntityIds(relation).includes(entity.id));
+  // A point's distance from a line stays on the retained piece, which keeps the line's support.
+  const blockers = graph.relations.filter(relation => relation.kind !== 'reference-dimension' && relation.kind !== 'point-line-distance' && cadSketchRelationEntityIds(relation).includes(entity.id));
   if (blockers.length) throw new CadSketchSplitDependencyError(blockers.map(relation => relation.id));
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entity.id);
   if (!segment || segment.kind === 'circle') throw new CadError('invalid-sketch-split-target', 'This split source is not supported.');

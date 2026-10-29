@@ -15,6 +15,7 @@ import { appendCadSketchEntities, deleteCadSketchElements, setCadSketchConstruct
 import { CadSketchCornerCommandTreatmentSchema, createCadSketchCornerTreatmentFromIds, type CadSketchCornerCommandTreatment } from './cadSketchCornerTreatment';
 import { CAD_SKETCH_SELECTION_LIMIT, CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { translateCadSketchGraph } from './cadSketchTranslation';
+import { keepCadSketchPointLineSides } from './cadSketchPointLineDistanceRelations';
 import { CadSketchPlacementRequestSchema, placeCadSketchGraph, type CadSketchPlacementRequest } from './cadSketchPlacement';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
 import { CadSketchTrimTargetSchema, trimCadSketchEntity, type CadSketchTrimTarget, CadSketchExtendTargetSchema, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
@@ -123,6 +124,7 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
     return index;
   };
   for (const edit of edits) {
+    const before = new Map(features.map(feature => [feature.id, feature]));
     switch (edit.kind) {
       case 'add-feature': {
         if (features.some(feature => feature.id === edit.feature.id)) throw new CadError('duplicate-id', `Feature "${edit.feature.id}" already exists.`);
@@ -328,6 +330,13 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
       }
       default: { const exhaustive: never = edit; throw exhaustive; }
     }
+    // Whatever rewrote a sketch, a line it turned around keeps its distances on their physical sides.
+    features = features.map(feature => {
+      const previous = before.get(feature.id);
+      if (previous === feature || previous?.kind !== 'sketch' || feature.kind !== 'sketch' || !previous.graph || !feature.graph) return feature;
+      const graph = keepCadSketchPointLineSides(previous.graph, feature.graph);
+      return graph === feature.graph ? feature : { ...feature, graph };
+    });
   }
   const schemaVersion = features.some(feature => feature.kind === 'sketch' && feature.graph) ? 2 : document.schemaVersion;
   return { ...document, schemaVersion, name, parameters, features, ...(parameterGroups ? { parameterGroups } : {}), ...(parameterMetadata ? { parameterMetadata } : {}) };

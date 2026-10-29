@@ -103,6 +103,36 @@ describe('native sketch definition', () => {
       definedEntityIds: [], underDefinedEntityIds: ['qb0', 'qb1'] });
   });
 
+  it('defines only the coordinate a point to line distance holds along the normal of its line', () => {
+    // Fixed supports: `base` along X, `post` along Y and `slope` on the diagonal; `p` is 4 left of
+    // `base`, 3 right of `post` and 1/√2 left of `slope`.
+    const fixed = (id: string, position: [number, number]) => ({ id: `fix-${id}`, kind: 'fixed-point' as const, pointId: id, position });
+    const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
+    const gap = (id: string, lineId: string, side: 'left' | 'right', value: number) => ({ id, kind: 'point-line-distance' as const, pointId: 'p', lineId, side, value });
+    const sketch = (...relations: ReturnType<typeof gap>[]) => parseCadSketchGraph({
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, 10] }, { id: 'd', position: [10, 10] }, { id: 'p', position: [3.5, 3.5] }],
+      entities: [line('base', 'a', 'b'), line('post', 'a', 'c'), line('slope', 'a', 'd'), line('arm', 'p', 'b')],
+      relations: [fixed('a', [0, 0]), fixed('b', [10, 0]), fixed('c', [0, 10]), fixed('d', [10, 10]), ...relations]
+    });
+    const supports = { definedPointIds: ['a', 'b', 'c', 'd'], definedEntityIds: ['base', 'post', 'slope'] };
+    for (const one of [gap('above', 'base', 'left', 4), gap('beside', 'post', 'right', 3), gap('across', 'slope', 'left', Math.SQRT1_2)]) {
+      expect(definitionOf({ graph: sketch(one), parameters: {}, analyseDefinition: true }), one.id)
+        .toEqual({ ...supports, underDefinedPointIds: ['p'], underDefinedEntityIds: ['arm'] });
+    }
+    // Free 1, determined 2: along `base` only Y is held, along `post` only X, and on the diagonal
+    // both coordinates still slide together.
+    const codes = (...relations: ReturnType<typeof gap>[]) => {
+      const graph = sketch(...relations), model = compileCadSketchEquations({ graph, parameters: {} }), at = model.pointParameters.get('p')!;
+      return solver.solve(model, { analyseDefinition: true }).definition!.slice(at, at + 2);
+    };
+    expect(codes(gap('above', 'base', 'left', 4))).toEqual([1, 2]);
+    expect(codes(gap('beside', 'post', 'right', 3))).toEqual([2, 1]);
+    expect(codes(gap('across', 'slope', 'left', Math.SQRT1_2))).toEqual([1, 1]);
+    const held = { ...supports, definedPointIds: [...supports.definedPointIds, 'p'], definedEntityIds: [...supports.definedEntityIds, 'arm'], underDefinedPointIds: [], underDefinedEntityIds: [] };
+    expect(definitionOf({ graph: sketch(gap('above', 'base', 'left', 4), gap('beside', 'post', 'right', 3)), parameters: {}, analyseDefinition: true })).toEqual(held);
+    expect(definitionOf({ graph: sketch(gap('across', 'slope', 'left', Math.SQRT1_2), gap('beside', 'post', 'right', 3)), parameters: {}, analyseDefinition: true })).toEqual(held);
+  });
+
   it('maps a parameter not analysed to unknown unless another part is free', () => {
     const graph = widthOnly([0, 0]), model = compileCadSketchEquations({ graph, parameters: {} });
     const codes = model.values.map(() => 2), at = (id: string, axis: 0 | 1) => model.pointParameters.get(id)! + axis;

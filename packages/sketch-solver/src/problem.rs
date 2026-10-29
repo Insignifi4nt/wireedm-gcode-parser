@@ -22,7 +22,7 @@
 use crate::equations::Kind;
 use crate::newton::DragOutcome;
 
-pub const VERSION: f64 = 6.0;
+pub const VERSION: f64 = 7.0;
 pub const TEMPORARY: f64 = 1.0;
 /// Option bit: analyse each parameter's definition.
 pub const DEFINE: usize = 1;

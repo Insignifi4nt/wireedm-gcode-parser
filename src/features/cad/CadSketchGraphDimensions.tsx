@@ -24,7 +24,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
     {dimensions.map(dimension => {
       const { quantity, text, width, height } = cadSketchGraphDimensionLabel(dimension.kind === 'angle' ? dimension.valueDegrees : dimension.valueMm, dimension.kind, dimension.relation.kind === 'reference-dimension');
       const name = dimension.kind === 'distance-x' ? 'horizontal distance' : dimension.kind === 'distance-y' ? 'vertical distance'
-        : dimension.kind === 'radius' || dimension.kind === 'diameter' || dimension.kind === 'angle' ? dimension.kind : dimension.kind === 'setback' ? `chamfer setback ${dimension.side + 1}` : 'distance';
+        : dimension.kind === 'radius' || dimension.kind === 'diameter' || dimension.kind === 'angle' ? dimension.kind : dimension.kind === 'setback' ? `chamfer setback ${dimension.side + 1}` : dimension.kind === 'point-line' ? 'point to line distance' : 'distance';
       const roles = dimension.relation.kind === 'axis-distance'
         ? `, From Point ${pointNumbers.get(dimension.relation.pointIds[0])} → To Point ${pointNumbers.get(dimension.relation.pointIds[1])}` : '';
       return <g key={`${dimension.relation.id}/${dimension.kind === 'setback' ? dimension.side : dimension.kind}`} data-cad-sketch-dimension={dimension.relation.id}
