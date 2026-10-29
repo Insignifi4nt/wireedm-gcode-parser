@@ -344,3 +344,24 @@ describe('saved reference annotation geometry', () => {
     expect(JSON.stringify(graph)).toBe(exact);
   });
 });
+
+describe('point to line distance layout', () => {
+  it('draws the perpendicular from the support to the point, extending the line to a foot beyond it', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'p', position: [5, 4] }, { id: 'q', position: [30, -6] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'b', endPointId: 'a' }], relations: [
+        { id: 'gap', kind: 'point-line-distance', pointId: 'p', lineId: 'base', value: ' gap ' },
+        { id: 'measured', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'q', lineId: 'base' } }] });
+    const [driving, reference] = layoutCadSketchGraphDimensions(graph, { gap: 4 }, .1);
+    if (driving?.kind !== 'point-line' || reference?.kind !== 'point-line') throw new Error('Point to line annotations missing.');
+    expect(driving).toMatchObject({ relation: graph.relations[0], valueMm: 4, extensions: [] });
+    expect(driving.line.flat().map(value => value + 0)).toEqual([5, 0, 5, 4]);
+    expect(driving.arrows.map(arrow => arrow[0].map(value => value + 0))).toEqual([[5, 0], [5, 4]]);
+    expect(Math.abs(Math.sin(driving.labelAngle))).toBeCloseTo(1, 12);
+    expect(reference).toMatchObject({ relation: graph.relations[1], valueMm: 6 });
+    expect(reference.line.flat().map(value => value + 0)).toEqual([30, 0, 30, -6]);
+    // The base runs from (20, 0) back to the origin; its support continues past (20, 0) to the foot.
+    expect(reference.extensions).toHaveLength(1);
+    expect(reference.extensions[0][0]).toEqual([20, 0]); expect(reference.extensions[0][1][0]).toBeCloseTo(30.2, 12); expect(reference.extensions[0][1][1] + 0).toBe(0);
+    expect(cadSketchGraphDimensionLabel(6, 'point-line', true).text).toBe('(6 mm)');
+  });
+});

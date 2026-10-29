@@ -6,12 +6,14 @@ import { createArcSegment } from '@/domain/path-intel/segments';
 import { resolveCadSketchCornerTopology } from '@/domain/cad/cadSketchCornerGeometry';
 import { resolveCadSketchRadialEntity } from '@/domain/cad/cadSketchRadialRelations';
 import { cadSketchLineAngleGeometry } from '@/domain/cad/cadSketchAngleRelations';
+import { cadSketchLineDirection } from '@/domain/cad/cadSketchLineRelations';
+import { cadSketchSignedPointLineDistance, resolveCadSketchPointLineDistanceOperands } from '@/domain/cad/cadSketchPointLineDistanceRelations';
 import type { Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 
 export type CadSketchDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'distance' }>;
-export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'axis-distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' | 'line-angle' | 'reference-dimension' }>;
+export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'point-line-distance' | 'axis-distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' | 'line-angle' | 'reference-dimension' }>;
 type Pair = readonly [SketchPoint, SketchPoint];
 type Arrow = readonly [SketchPoint, SketchPoint, SketchPoint];
 interface DimensionGeometry {
@@ -25,6 +27,8 @@ interface LinearDimensionGeometry extends DimensionGeometry { readonly valueMm: 
 export type CadSketchGraphDimensionLayout = LinearDimensionGeometry & (
   { readonly kind: 'distance'; readonly relation: CadSketchDistanceRelation | CadSketchReferenceDimension }
   | { readonly kind: 'distance-x' | 'distance-y'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'axis-distance' }> }
+  /** Perpendicular from the line's support to the point, with an extension of the line when its foot is beyond the segment. */
+  | { readonly kind: 'point-line'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'point-line-distance' | 'reference-dimension' }> }
   | { readonly kind: 'radius'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'fillet-corner' | 'radial-size' | 'reference-dimension' }> }
   | { readonly kind: 'diameter'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'radial-size' | 'reference-dimension' }> }
   | { readonly kind: 'setback'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'chamfer-corner' }>; readonly side: 0 | 1; readonly lineId: string }
@@ -121,6 +125,34 @@ function separateAlignedDimensions(dimensions: readonly CadSketchGraphDimensionL
   return result;
 }
 
+function pointLineDimension(graph: CadSketchGraph, relation: Extract<CadSketchDimensionRelation, { kind: 'point-line-distance' | 'reference-dimension' }>,
+  points: ReadonlyMap<string, Point2>, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
+  try {
+    const descriptor = relation.kind === 'reference-dimension' ? resolveCadSketchReferenceDimension(graph, relation) : relation;
+    if (descriptor.kind !== 'point-line-distance') return [];
+    const { line } = resolveCadSketchPointLineDistanceOperands(graph, descriptor), axis = cadSketchLineDirection(line, points), point = points.get(descriptor.pointId);
+    if (!axis || !point) return [];
+    const signed = cadSketchSignedPointLineDistance(point, axis), length = Math.abs(signed);
+    const valueMm = relation.kind === 'reference-dimension' ? length : evaluateCadScalar(relation.value, parameters);
+    if (!Number.isFinite(length) || length === 0 || !Number.isFinite(valueMm) || valueMm <= 0) return [];
+    // The dimension line runs from the foot on the support to the point; arrows widen along the support.
+    const foot = { x: point.x + axis.y * signed, y: point.y - axis.x * signed }, ux = (point.x - foot.x) / length, uy = (point.y - foot.y) / length;
+    let readX = ux, readY = uy;
+    if (readX < -1e-12 || Math.abs(readX) <= 1e-12 && readY < 0) { readX = -readX; readY = -readY; }
+    const box = cadSketchGraphDimensionLabel(valueMm, 'point-line', relation.kind === 'reference-dimension'), lift = (box.height / 2 + isoTextGap) * mmPerPixel;
+    const headLength = Math.min(6 * mmPerPixel, length / 4), headWidth = Math.min(2.5 * mmPerPixel, length / 8);
+    const arrow = (tip: Point2, sign: number): Arrow => [[tip.x, tip.y],
+      [tip.x + ux * headLength * sign + axis.x * headWidth, tip.y + uy * headLength * sign + axis.y * headWidth],
+      [tip.x + ux * headLength * sign - axis.x * headWidth, tip.y + uy * headLength * sign - axis.y * headWidth]];
+    // Beyond either end of the segment the support is drawn out to the foot, a little past it.
+    const along = (foot.x - axis.start.x) * axis.x + (foot.y - axis.start.y) * axis.y, beyond = 2 * mmPerPixel;
+    const extensions: Pair[] = along < 0 ? [[[axis.start.x, axis.start.y], [foot.x - axis.x * beyond, foot.y - axis.y * beyond]]]
+      : along > axis.length ? [[[axis.end.x, axis.end.y], [foot.x + axis.x * beyond, foot.y + axis.y * beyond]]] : [];
+    return [{ kind: 'point-line', relation, valueMm, line: [[foot.x, foot.y], [point.x, point.y]], extensions, arrows: [arrow(foot, 1), arrow(point, -1)],
+      label: [foot.x / 2 + point.x / 2 - readY * lift, foot.y / 2 + point.y / 2 + readX * lift], labelAngle: Math.atan2(readY, readX) }];
+  } catch { return []; }
+}
+
 function radialGeometry(center: Point2, radius: number, angle: number, valueMm: number, kind: 'radius' | 'diameter', mmPerPixel: number, reference = false): Omit<LinearDimensionGeometry, 'valueMm'> {
   const ux = Math.cos(angle), uy = Math.sin(angle), tip: SketchPoint = [center.x + ux * radius, center.y + uy * radius];
   const box = cadSketchGraphDimensionLabel(valueMm, kind, reference);
@@ -204,7 +236,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDime
 
 /** Display-only declared dimensions. Scalar drivers and source IDs remain authoritative. */
 export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'axis-distance' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner' || relation.kind === 'line-angle' || relation.kind === 'reference-dimension')) return [];
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner' || relation.kind === 'line-angle' || relation.kind === 'reference-dimension')) return [];
   const points = new Map(graph.points.map(point => [point.id, {
     x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters)
   }]));
@@ -230,9 +262,11 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
     if (relation.kind === 'line-angle') return [...angularDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'radial-size' || relation.kind === 'reference-dimension' && relation.measurement.kind === 'radial-size') return [...radialDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return [...cornerDimensions(graph, relation, points, parameters, mmPerPixel)];
+    if (relation.kind === 'point-line-distance' || relation.kind === 'reference-dimension' && relation.measurement.kind === 'point-line-distance')
+      return [...pointLineDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind !== 'distance' && relation.kind !== 'axis-distance' && relation.kind !== 'reference-dimension') return [];
     const descriptor = relation.kind === 'reference-dimension' ? resolveCadSketchReferenceDimension(graph, relation) : relation;
-    if (descriptor.kind === 'radial-size') return [];
+    if (descriptor.kind === 'radial-size' || descriptor.kind === 'point-line-distance') return [];
     const a = points.get(descriptor.pointIds[0]), b = points.get(descriptor.pointIds[1]);
     if (!a || !b) return [];
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), valueMm = relation.kind === 'reference-dimension' ? length : evaluateCadScalar(relation.value, parameters);

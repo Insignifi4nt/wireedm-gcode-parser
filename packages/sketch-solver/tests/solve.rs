@@ -533,3 +533,18 @@ fn reports_the_residual_of_the_values_it_returns_after_moving_nearer() {
         assert_eq!(first.residual, again.residual, "{degrees} degrees");
     }
 }
+
+#[test]
+fn holds_a_parallel_line_at_a_signed_distance_from_another() {
+    // A free line kept parallel to a fixed one, its start 4 to the right of the fixed line's direction.
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 0.0, true);
+    let b = builder.point(10.0, 0.0, true);
+    let c = builder.point(1.0, -1.5, false);
+    let d = builder.point(8.0, -2.5, false);
+    builder.equation(Kind::PointLineDistance, -4.0, &[c[0], c[1], a[0], a[1], b[0], b[1]]);
+    builder.equation(Kind::Parallel, 0.0, &[a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    assert!(close(values[c[1]], -4.0) && close(values[d[1]], -4.0), "{values:?}");
+}

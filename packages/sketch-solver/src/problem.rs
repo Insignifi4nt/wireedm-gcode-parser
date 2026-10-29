@@ -17,7 +17,7 @@
 use crate::equations::Kind;
 use crate::newton::DragOutcome;
 
-pub const VERSION: f64 = 5.0;
+pub const VERSION: f64 = 6.0;
 pub const TEMPORARY: f64 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

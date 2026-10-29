@@ -9,6 +9,7 @@ import { resolveCadSketchMidpointOperands } from '../../../../domain/cad/cadSket
 import { resolveCadSketchSymmetryOperands } from '../../../../domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands } from '../../../../domain/cad/cadSketchPointOnLineRelations';
 import { resolveCadSketchPointOnCurveOperands } from '../../../../domain/cad/cadSketchPointOnCurveRelations';
+import { cadSketchPointLineDistanceTarget, cadSketchSignedPointLineDistance, resolveCadSketchPointLineDistanceOperands } from '../../../../domain/cad/cadSketchPointLineDistanceRelations';
 import { resolveCadSketchTangentJoint } from '../../../../domain/cad/cadSketchTangentRelations';
 import { cadSketchLinearPatternInstances } from '../../../../domain/cad/cadSketchLinearPattern';
 import type { Point2 } from '../../../../domain/path-intel/types';
@@ -88,6 +89,15 @@ export function compileCadSketchEquations(input: CadSketchSolveInput): CadSketch
         const { line: guide } = resolveCadSketchPointOnLineOperands(graph, relation);
         directed(guide, 'A point-on-line guide has no numeric endpoints.');
         add('point-on-line', [...point(relation.pointId), ...line(guide)], 0, id); break;
+      }
+      case 'point-line-distance': {
+        const { line: guide } = resolveCadSketchPointLineDistanceOperands(graph, relation), target = cadSketchPointLineDistanceTarget(relation, input.parameters);
+        const axis = cadSketchLineDirection(guide, numericPoints), at = numericPoints.get(relation.pointId);
+        if (!axis || !at) throw new Error('A point to line distance has no numeric operands.');
+        // The point keeps the side of the support it starts on, so a value edit or a drag never
+        // flips it across; a point on the support starts to the left of the line's direction.
+        const side = cadSketchSignedPointLineDistance(at, axis) < 0 ? -1 : 1;
+        add('point-line-distance', [...point(relation.pointId), ...line(guide)], side * target, id); break;
       }
       case 'point-on-curve': {
         // The full supporting circle: the point's spoke matches an arc's start spoke, or a circle's radius.

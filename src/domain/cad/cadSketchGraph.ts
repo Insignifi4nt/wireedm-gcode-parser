@@ -9,6 +9,7 @@ import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { resolveCadSketchSymmetryOperands, checkCadSketchSymmetricRelation } from './cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands, checkCadSketchPointOnLineRelation } from './cadSketchPointOnLineRelations';
 import { resolveCadSketchPointOnCurveOperands, checkCadSketchPointOnCurveRelation } from './cadSketchPointOnCurveRelations';
+import { validateCadSketchPointLineDistance, checkCadSketchPointLineDistanceRelation } from './cadSketchPointLineDistanceRelations';
 import { resolveCadSketchTangentJoint, checkCadSketchTangentJoint } from './cadSketchTangentRelations';
 import { validateCadSketchLinearPattern, checkCadSketchLinearPattern } from './cadSketchLinearPattern';
 import type { Point2 } from '@/domain/path-intel/types';
@@ -44,6 +45,7 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ id, kind: Type.Literal('reference-dimension'), measurement: Type.Union([
       Type.Object({ kind: Type.Literal('line-length'), entityId: id }, strict),
       Type.Object({ kind: Type.Literal('point-distance'), pointIds: pair }, strict),
+      Type.Object({ kind: Type.Literal('point-line-distance'), pointId: id, lineId: id }, strict),
       Type.Object({ kind: Type.Literal('radial-size'), entityId: id, quantity: Type.Union([Type.Literal('radius'), Type.Literal('diameter')]) }, strict)
     ]) }, strict),
     Type.Object({ id, kind: Type.Literal('external-reference'), entityId: id, sourceSketchId: id, source: Type.Union([
@@ -66,6 +68,7 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ id, kind: Type.Literal('fixed-point'), pointId: id, position: CadPoint2Schema }, strict),
     Type.Object({ id, kind: Type.Literal('fixed-axis'), pointId: id, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('distance'), pointIds: pair, value: CadScalarSchema }, strict),
+    Type.Object({ id, kind: Type.Literal('point-line-distance'), pointId: id, lineId: id, value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('axis-distance'), pointIds: pair, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('fillet-corner'), pointId: id, lineIds: pair, arcId: id, value: CadScalarSchema }, strict),
     Type.Object({ id, kind: Type.Literal('chamfer-corner'), pointId: id, lineIds: pair, chamferId: id, values: Type.Tuple([CadScalarSchema, CadScalarSchema]) }, strict)
@@ -89,6 +92,7 @@ export type CadSketchMidpointRelation = Extract<CadSketchGraphRelation, { kind: 
 export type CadSketchSymmetricRelation = Extract<CadSketchGraphRelation, { kind: 'symmetric' }>;
 export type CadSketchPointOnLineRelation = Extract<CadSketchGraphRelation, { kind: 'point-on-line' }>;
 export type CadSketchPointOnCurveRelation = Extract<CadSketchGraphRelation, { kind: 'point-on-curve' }>;
+export type CadSketchPointLineDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'point-line-distance' }>;
 export type CadSketchTangentJointRelation = Extract<CadSketchGraphRelation, { kind: 'tangent-joint' }>;
 const issueCodes = ['invalid-expression', 'invalid-coordinate', 'degenerate-entity', 'invalid-radius', 'arc-radius-mismatch', 'invalid-distance', 'relation-residual'] as const;
 export const CadSketchGraphIssueSchema = Type.Object({
@@ -141,6 +145,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
     if (item.kind === 'midpoint') resolveCadSketchMidpointOperands(graph, item);
     if (item.kind === 'point-on-line') resolveCadSketchPointOnLineOperands(graph, item);
     if (item.kind === 'point-on-curve') resolveCadSketchPointOnCurveOperands(graph, item);
+    if (item.kind === 'point-line-distance') validateCadSketchPointLineDistance(graph, item);
     if (item.kind === 'tangent-joint') resolveCadSketchTangentJoint(graph, item);
     if (item.kind === 'symmetric') resolveCadSketchSymmetryOperands(graph, item);
     if (item.kind === 'radial-size') {
@@ -258,6 +263,7 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
       if (relation.kind === 'symmetric') { issues.push(...checkCadSketchSymmetricRelation(graph, relation, points)); continue; }
       if (relation.kind === 'point-on-line') { issues.push(...checkCadSketchPointOnLineRelation(graph, relation, points)); continue; }
       if (relation.kind === 'point-on-curve') { issues.push(...checkCadSketchPointOnCurveRelation(graph, relation, points, parameters)); continue; }
+      if (relation.kind === 'point-line-distance') { issues.push(...checkCadSketchPointLineDistanceRelation(graph, relation, points, parameters)); continue; }
       if (relation.kind === 'tangent-joint') { issues.push(...checkCadSketchTangentJoint(graph, relation, points)); continue; }
       if (relation.kind === 'reference-dimension') continue; // Passive intent; geometry checks above remain authoritative.
       if (relation.kind === 'external-reference') {
