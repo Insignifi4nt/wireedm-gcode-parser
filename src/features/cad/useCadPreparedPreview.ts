@@ -4,14 +4,20 @@ import type { CadDocument } from '@/domain/cad/cadDocument';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { needsCadSketchPreparation } from './cadEditPreparation';
 import { CadSketchPreparationError, type CadSketchConstraintFeedback } from './cadSketchConstraintFeedback';
+import type { CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
 
 export type CadPrepareEdits = (edits: readonly CadEdit[], signal: AbortSignal) => Promise<CadDocument>;
 type Preview = { readonly kind: 'idle' | 'waiting' } | { readonly kind: 'ready'; readonly document: CadDocument }
-  | { readonly kind: 'error'; readonly message: string; readonly feedback?: CadSketchConstraintFeedback };
+  | { readonly kind: 'error'; readonly message: string; readonly feedback?: CadSketchConstraintFeedback; readonly marks?: CadSketchDiagnosisMarks | null };
 
 function previewError(error: unknown, fallback: string): Extract<Preview, { kind: 'error' }> {
   return { kind: 'error', message: userFacingMessage(error, fallback),
-    ...(error instanceof CadSketchPreparationError ? { feedback: error.feedback } : {}) };
+    ...(error instanceof CadSketchPreparationError ? { feedback: error.feedback, marks: error.marks } : {}) };
+}
+
+/** The operands a rejected preview reported, which the canvas colours until the preview changes or ends. */
+export function cadPreviewMarks(preview: Preview): CadSketchDiagnosisMarks | null {
+  return preview.kind === 'error' ? preview.marks ?? null : null;
 }
 
 /** Keep solved sketch candidates disposable and discard late results from a different input. */

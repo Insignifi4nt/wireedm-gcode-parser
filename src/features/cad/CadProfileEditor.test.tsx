@@ -76,7 +76,7 @@ describe('imported analytic profile editing', () => {
     await input(field('Radius'), '7');
     expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [document.features[0],
       { ...second, profiles: [{ ...second.profiles[0], geometry: { ...second.profiles[0].geometry, radius: '7' } }] }
-    ] }));
+    ] }), null);
     expect(second.profiles[0].geometry).toMatchObject({ radius: 3 });
   });
   it('starts again from each revision of the part that holds the profile, also where the revision kept its object', async () => {

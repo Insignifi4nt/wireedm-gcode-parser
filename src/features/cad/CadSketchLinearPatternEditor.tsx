@@ -9,7 +9,7 @@ import type { CadEdit } from '@/domain/cad/cadOperations';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { CadScalarEditContext, ScalarField, type CadScalarValueDraft, type CadScalarEditContextValue } from './CadFields';
 import { CadContextHelp } from './CadContextHelp';
-import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { CadSketchCommandForm, useCadSketchCommandSession, type CadSketchCommandSessionProps } from './useCadSketchCommandSession';
 
 export type CadSketchLinearPatternRequest = { readonly kind: 'create'; readonly seedEntityId: string } | { readonly kind: 'edit'; readonly relationId: string; readonly detach?: true };
@@ -73,7 +73,7 @@ export function CadSketchLinearPatternEditor(props: Props) {
     ...(detaching ? [{ kind: 'remove-sketch-relation' as const, sketchId: owner.sketch.id, relationId: draft.id }] : [])
   ], [scalarPending, parameterEdits, owner, draft, detaching]);
   const prepared = useCadPreparedPreview(owner.document, edits, props.onPrepareEdits, session.previewEnabled);
-  useLayoutEffect(() => { props.onPreviewDocument(prepared.kind === 'ready' ? prepared.document : null); }, [prepared, props.onPreviewDocument]);
+  useLayoutEffect(() => { props.onPreviewDocument(prepared.kind === 'ready' ? prepared.document : null, cadPreviewMarks(prepared)); }, [prepared, props.onPreviewDocument]);
   const issue = countInvalid ? 'Count must be a whole number from 1 to 32, including the seed.' : session.error ?? (prepared.kind === 'error' ? prepared.message : null);
   const result = { seedEntityId: draft.seed.entityId, relationId: detaching ? null : draft.id };
   return <CadSketchCommandForm label="Sketch linear pattern" title="Linear pattern" icon={<LinearPatternIcon size={14} />} session={session}

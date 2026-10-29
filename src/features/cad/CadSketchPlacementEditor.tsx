@@ -9,7 +9,7 @@ import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelecti
 import type { CadSketchGraphControls } from './CadSketchGraphLayer';
 import type { CadSketchDatum } from './cadSketchGraphSelection';
 import type { SketchPoint } from './cadSketchInteraction';
-import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { CadSketchCommandForm, useCadSketchCommandSession, type CadSketchCommandSessionProps } from './useCadSketchCommandSession';
 
 export interface CadSketchPlacementInteraction {
@@ -76,7 +76,7 @@ export function CadSketchPlacementEditor(props: Props) {
   [picking, anchor, target, angleValid, angle, owner]);
   const prepared = useCadPreparedPreview(owner.document, edits, props.onPrepareEdits, session.previewEnabled);
   const changed = prepared.kind === 'ready' && !Value.Equal(prepared.document, owner.document);
-  useLayoutEffect(() => props.onPreviewDocument(prepared.kind === 'ready' ? prepared.document : null), [prepared, props.onPreviewDocument]);
+  useLayoutEffect(() => props.onPreviewDocument(prepared.kind === 'ready' ? prepared.document : null, cadPreviewMarks(prepared)), [prepared, props.onPreviewDocument]);
   const repick = (slot: Slot) => { if (!session.closed()) { touch(); setPicking(slot); } };
   const disabled = props.interactionLocked || session.applying;
 

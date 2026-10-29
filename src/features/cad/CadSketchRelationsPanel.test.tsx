@@ -139,7 +139,7 @@ describe('selected sketch entity relations', () => {
     expect(button('Add angle').disabled).toBe(false); expect(field('Parallel').disabled).toBe(false); expect(field('Perpendicular').disabled).toBe(false);
     await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
     const sketch = source.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Survivors missing.');
-    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: { ...sketch.graph, relations: [] } })] }));
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: { ...sketch.graph, relations: [] } })] }), null);
     await click('Cancel'); expect(h.session.getSnapshot().document).toBe(source); expect(h.edit).not.toHaveBeenCalled();
     expect(button('Add angle').disabled).toBe(true); expect(field('Parallel').disabled).toBe(true);
     await clickRelation('Remove', 'Collinear', 1); await click('Apply');
@@ -249,7 +249,7 @@ describe('selected sketch entity relations', () => {
     expect(h.session.getSnapshot().document).toBe(source);
     expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: expect.objectContaining({
       points: [{ id: 'a', position: [10, 5] }, { id: 'b', position: [30, 5] }, { id: 'outside', position: [' 30 ', '0'] }]
-    }) })] }));
+    }) })] }), null);
     await click('Cancel'); expect(h.edit).not.toHaveBeenCalled(); expect(h.pending).toHaveBeenLastCalledWith(false);
     await h.render([...selections].reverse()); await input('Move X', '10'); await input('Move Y', '5'); await click('Apply');
     expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'translate-sketch-geometry', sketchId: 'sketch', selections: [...selections].reverse(), translation: [10, 5] }], expect.any(AbortSignal));
@@ -346,7 +346,7 @@ describe('selected sketch entity relations', () => {
     await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
     expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: expect.objectContaining({
       relations: [expect.objectContaining({ kind, lineIds: ['second', 'first'] })]
-    }) })] }));
+    }) })] }), null);
     await click('Apply');
     const accepted = h.session.getSnapshot().document, sketch = accepted.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing accepted graph.');
@@ -373,7 +373,7 @@ describe('selected sketch entity relations', () => {
     expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: {
       points: [{ id: 'a', position: [' 0 ', ' 0 '] }, { id: 'b', position: [0, 0] }], entities: [],
       relations: [expect.objectContaining({ kind: 'coincident', pointIds: ['b', 'a'] })]
-    } })] }));
+    } })] }), null);
     expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
     await click('Apply'); const accepted = h.session.getSnapshot().document;
     await act(async () => field('Coincident').click()); await act(async () => field('Coincident').click());
@@ -423,6 +423,31 @@ describe('selected sketch entity relations', () => {
     expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
   });
 
+  it('marks every operand of a rejected Apply until the draft changes', async () => {
+    const source = lineDocument(), sketch = source.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing graph.');
+    const graph = sketch.graph;
+    const edit = vi.fn<NonNullable<CadSketchRelationsPanelProps['onEditMany']>>(async edits => {
+      const added = edits.flatMap(edit => edit.kind === 'set-sketch-relation' ? [edit.relation] : []);
+      throw new CadSketchPreparationError({ sketchId: sketch.id, sketchName: sketch.name, graph: { ...graph, relations: [...graph.relations, ...added] },
+        rejection: { kind: 'rejected', reason: 'conflicting', message: 'Conflicting', diagnostics: {
+          status: 'failed', degreesOfFreedom: null, conflictingIds: added.map(relation => relation.id), redundantIds: ['vertical'], partiallyRedundantIds: [], issues: [] } } });
+    });
+    const h = await mount(source, { kind: 'entity', id: 'line' }, { initialCommand: { kind: 'length' }, onPrepareEdits: undefined, onEditMany: edit });
+    await input('Length mm', '12.5000');
+    expect(h.preview).toHaveBeenLastCalledWith(null, null);
+    await click('Apply');
+    expect(edit).toHaveBeenCalledOnce();
+    const [document, marks] = h.preview.mock.lastCall ?? [];
+    expect(document).toBeNull();
+    expect(marks).toMatchObject({ sketchId: 'sketch', conflicting: { pointIds: new Set(['a', 'b']), entityIds: new Set() }, redundant: { pointIds: new Set(['a', 'b']) } });
+    expect(container.querySelector('[data-cad-diagnostic-source]')).not.toBeNull();
+    // A changed draft drops the rejection and its marks.
+    await input('Length mm', '13');
+    expect(h.preview).toHaveBeenLastCalledWith(null, null);
+    expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
   it('aborts the old pair owner on selection change without clearing a mixed selection relation draft', async () => {
     let resolve: () => void = () => { throw new Error('No pending pair application.'); };
     const pending = new Promise<void>(accept => { resolve = accept; });
@@ -461,7 +486,7 @@ describe('selected sketch entity relations', () => {
     await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
     expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ features: [expect.objectContaining({ graph: expect.objectContaining({
       relations: [expect.objectContaining({ kind, pointIds: ['a', 'b'] })]
-    }) })] }));
+    }) })] }), null);
     expect(h.session.getSnapshot().document).toBe(source);
     await click('Apply'); const accepted = h.session.getSnapshot().document;
     await act(async () => field(opposite).click());
@@ -488,7 +513,7 @@ describe('selected sketch entity relations', () => {
     await click('Keep relation'); await click('Close Distance relation help');
     await input('Distance mm', '12.5000');
     await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
-    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ parameters: { span: 12.5 } }));
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ parameters: { span: 12.5 } }), null);
     expect(h.session.getSnapshot().document).toBe(source);
     await click('Cancel'); expect(h.pending).toHaveBeenLastCalledWith(false);
     expect(h.edit).not.toHaveBeenCalled();
@@ -568,7 +593,7 @@ describe('selected sketch entity relations', () => {
     await input('Radius mm', '7.25');
     expect(h.session.getSnapshot().document).toBe(accepted);
     await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
-    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ parameters: { radius: 7.25 }, features: expect.any(Array) }));
+    expect(h.preview).toHaveBeenLastCalledWith(expect.objectContaining({ parameters: { radius: 7.25 }, features: expect.any(Array) }), null);
     await click('Apply');
     expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'set-parameter', name: 'radius', value: 7.25 }], expect.any(AbortSignal));
     expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { entities: [{ radius: ' radius ' }, { radius: 'radius * 2' }] } });

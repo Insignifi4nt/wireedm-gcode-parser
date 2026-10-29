@@ -4,7 +4,7 @@ import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { cadSketchReferenceSources } from '@/domain/cad/cadSketchExternalReferences';
 import type { CadSketchGraphControls } from './CadSketchGraphLayer';
-import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { CadSketchCommandForm, useCadSketchCommandSession, type CadSketchCommandSessionProps } from './useCadSketchCommandSession';
 
 export type CadSketchReferenceInteraction = {
@@ -46,7 +46,7 @@ export function CadSketchReferenceEditor(props: Props) {
   const edits = useMemo<readonly CadEdit[] | null>(() => !source || !entityId ? null : [{ kind: 'use-sketch-entity', sketchId: owner.sketch.id,
     sourceSketchId: source.id, sourceEntityId: entityId, idPrefix: owner.idPrefix }], [source, entityId, owner]);
   const prepared = useCadPreparedPreview(owner.document, edits, props.onPrepareEdits, session.previewEnabled);
-  useLayoutEffect(() => { props.onPreviewDocument(prepared.kind === 'ready' ? prepared.document : session.applying ? session.submittedDocument : null); }, [prepared, session.applying, props.onPreviewDocument]);
+  useLayoutEffect(() => { props.onPreviewDocument(prepared.kind === 'ready' ? prepared.document : session.applying ? session.submittedDocument : null, cadPreviewMarks(prepared)); }, [prepared, session.applying, props.onPreviewDocument]);
   return <CadSketchCommandForm label="Use reference" session={session} canApply={Boolean(edits) && prepared.kind === 'ready'}
     issue={session.error ?? (prepared.kind === 'error' ? prepared.message : null)}
     help="Linked construction geometry follows its preceding source. Choose a sketch in the tree, then a line or circle in the canvas. Projection uses the shared plane normal; this sketch keeps its own height. Detach explicitly before editing the reference itself."

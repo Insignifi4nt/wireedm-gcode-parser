@@ -24,8 +24,8 @@ it('owns two positions, aborts old preview on repick and accepts only its exact 
  const h=await harness((edits,signal)=>{const result=deferred<CadDocument>();requests.push({edits,signal,result});return result.promise;});
  expect(h.offered().geometryPick?.eligiblePointIds).toEqual(['a','b','c']);await act(async()=>h.offered().geometryPick!.onPick({kind:'point',id:'c'}));await h.pick([30,20]);await input('Rotation','90');await act(async()=>vi.advanceTimersByTimeAsync(100));
  expect(requests.at(-1)?.edits).toEqual([{kind:'place-sketch-geometry',sketchId:'detail',selections:[{kind:'entity',id:'arc'},{kind:'entity',id:'chord'}],anchor:[0,0],target:[30,20],angleDegrees:90}]);
- const old=requests.at(-1)!;await act(async()=>button('Choose target').click());expect(old.signal.aborted).toBe(true);expect(h.preview).toHaveBeenLastCalledWith(null);
- await act(async()=>old.result.resolve(applyCadEdits(h.source,old.edits)));expect(h.preview).toHaveBeenLastCalledWith(null);expect(h.edit).not.toHaveBeenCalled();
+ const old=requests.at(-1)!;await act(async()=>button('Choose target').click());expect(old.signal.aborted).toBe(true);expect(h.preview).toHaveBeenLastCalledWith(null, null);
+ await act(async()=>old.result.resolve(applyCadEdits(h.source,old.edits)));expect(h.preview).toHaveBeenLastCalledWith(null, null);expect(h.edit).not.toHaveBeenCalled();
  await h.pick([40,20]);const last=requests.at(-1)!,candidate=applyCadEdits(h.source,last.edits);await act(async()=>last.result.resolve(candidate));expect(button('Apply').disabled).toBe(false);
  await act(async()=>button('Apply').click());expect(h.edit).toHaveBeenCalledExactlyOnceWith(last.edits,expect.any(AbortSignal));const sketch=candidate.features[0];if(sketch.kind!=='sketch')throw Error('Missing candidate');await h.render({document:candidate,documentVersion:'two',sketch});expect(h.cancelled).not.toHaveBeenCalled();await act(async()=>h.completion.resolve(undefined));expect(h.accepted).toHaveBeenCalledOnce();
 });

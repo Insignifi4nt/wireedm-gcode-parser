@@ -6,6 +6,8 @@ import type { CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadSketchGraphLayer } from './CadSketchGraphLayer';
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
+import { cadSketchDefinitionMarks } from './cadSketchDefinitionMarks';
 
 let root: Root, container: HTMLDivElement;
 beforeEach(() => {
@@ -560,4 +562,75 @@ it('routes a point grip to its command owner without starting a move, selecting 
   await h.key(h.point(), 'ArrowRight'); await h.key(h.point(), 'Delete'); await h.key(h.edge(), 'Enter'); await h.key(h.point('b'), 'Enter');
   expect(onPick).toHaveBeenCalledTimes(1); expect(h.selected).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
   await h.key(h.point('mixed'), 'Enter'); expect(onPick).toHaveBeenLastCalledWith({ kind: 'point', id: 'mixed' });
+});
+
+describe('graph definition locks and marks', () => {
+  const marks = (definedPointIds: string[], definedEntityIds: string[]) => cadSketchDefinitionMarks({ definedPointIds, underDefinedPointIds: [], definedEntityIds, underDefinedEntityIds: [] });
+  const title = (target: Element) => target.querySelector('title')?.textContent ?? '';
+
+  it('refuses drag, nudge and translation of points the shown version proves defined, never for unknown or older definitions', async () => {
+    const h = await fixture();
+    // Point a is defined; b and the edge are under defined; mixed has no answer.
+    await h.render({ controls: { ...h.props().controls, definition: marks(['a'], []), definitionLocked: true } });
+    expect(h.point().classList.contains('is-defined')).toBe(true); expect(h.point().classList.contains('is-locked')).toBe(true);
+    expect(title(h.point())).toContain('Fully defined by dimensions and relations');
+    expect(h.point().getAttribute('aria-disabled')).not.toBe('true');
+    await h.pointer(h.point(), 'pointerdown'); await h.pointer(h.point(), 'pointermove', { clientX: 120 }); await h.pointer(h.point(), 'pointerup', { clientX: 120 });
+    expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: 'a' }); expect(h.capture).not.toHaveBeenCalled();
+    await h.key(h.point(), 'ArrowRight');
+    // The edge would carry the defined point with it.
+    await h.pointer(h.edge(), 'pointerdown'); await h.pointer(h.edge(), 'pointermove', { clientX: 120 }); await h.pointer(h.edge(), 'pointerup', { clientX: 120 });
+    expect(h.capture).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    for (const id of ['b', 'mixed']) expect(h.point(id).classList.contains('is-locked') || h.point(id).classList.contains('is-defined')).toBe(false);
+    await h.key(h.point('b'), 'ArrowRight');
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'b', translation: [5, 0] }], expect.any(AbortSignal));
+    // An older version's definition keeps its colour but no longer locks.
+    h.edited.mockClear(); await h.render({ version: 'next', controls: { ...h.props().controls, definitionLocked: false } });
+    expect(h.point().classList.contains('is-defined')).toBe(true); expect(h.point().classList.contains('is-locked')).toBe(false);
+    await h.key(h.point(), 'ArrowRight');
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'a', translation: [5, 0] }], expect.any(AbortSignal));
+  });
+
+  it('refuses a group drag that holds a defined point and narrows to the pressed point', async () => {
+    const h = await fixture(), set = [{ kind: 'point', id: 'b' }, { kind: 'entity', id: 'edge' }] as const;
+    await h.render({ controls: { ...h.props().controls, selection: set, definition: marks(['a'], []), definitionLocked: true } });
+    await h.pointer(h.point('b'), 'pointerdown'); await h.pointer(h.point('b'), 'pointermove', { clientX: 150 }); await h.pointer(h.point('b'), 'pointerup', { clientX: 150 });
+    expect(h.edited.mock.calls.flat().flat()).not.toContainEqual(expect.objectContaining({ kind: 'translate-sketch-geometry' }));
+    expect(h.selected).toHaveBeenCalledWith({ kind: 'point', id: 'b' });
+  });
+
+  it('locks the radius grip of a defined circle only while its definition is current', async () => {
+    const h = await circleFixture();
+    await h.render({ controls: { ...h.props().controls, definition: marks(['mixed'], ['bore']), definitionLocked: true } });
+    expect(h.grip().getAttribute('aria-disabled')).toBe('true'); expect(title(h.grip())).toBe('Fully defined by dimensions and relations');
+    expect(container.querySelector('[data-cad-sketch-entity="bore"]')?.classList.contains('is-defined')).toBe(true);
+    await h.pointer(h.grip(), 'pointerdown'); await h.key(h.grip(), 'ArrowRight');
+    expect(h.capture).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+    // A defined center alone leaves the radius free.
+    await h.render({ controls: { ...h.props().controls, definition: marks(['mixed'], []) } });
+    expect(h.grip().getAttribute('aria-disabled')).toBeNull();
+    await h.render({ controls: { ...h.props().controls, definition: marks(['mixed'], ['bore']), definitionLocked: false } });
+    expect(h.grip().getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('marks the operands of a rejected drag in place of the published diagnosis until the drag ends', async () => {
+    const h = await fixture();
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
+    const graph = sketch.graph, rejection = (conflictingIds: string[], redundantIds: string[]) => new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Sketch', graph, dragPointId: 'b',
+      rejection: { kind: 'rejected', reason: conflictingIds.length ? 'conflicting' : 'redundant', message: 'Rejected', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds, redundantIds, partiallyRedundantIds: [], issues: [] } } });
+    const prepare = vi.fn().mockRejectedValue(rejection(['b'], []));
+    await h.render({ controls: { ...h.props().controls, definition: marks(['a', 'b'], ['edge']), diagnosis: rejection([], ['edge']).marks, onPrepareEdits: prepare } });
+    const state = (kind: 'point' | 'entity', id: string) => ['defined', 'conflicting', 'redundant'].filter(mark => container.querySelector(`[data-cad-sketch-${kind}="${id}"]`)?.classList.contains(`is-${mark}`));
+    expect([state('point', 'a'), state('point', 'b'), state('entity', 'edge')]).toEqual([['redundant'], ['redundant'], ['redundant']]);
+    await h.pointer(h.point('b'), 'pointerdown'); await h.pointer(h.point('b'), 'pointermove', { clientX: 120 });
+    await act(async () => { await Promise.resolve(); });
+    expect(prepare).toHaveBeenCalled();
+    // The drag is the preview now: its own marks replace the published ones, over the accepted definition.
+    expect([state('point', 'a'), state('point', 'b'), state('entity', 'edge')]).toEqual([['defined'], ['conflicting'], ['defined']]);
+    expect(h.point('b').classList.contains('is-revealed')).toBe(true);
+    await h.key(h.point('b'), 'Escape');
+    expect(state('point', 'b')).toEqual(['redundant']);
+    await h.render({ controls: { ...h.props().controls, diagnosis: null } });
+    expect([state('point', 'a'), state('point', 'b'), state('entity', 'edge')]).toEqual([['defined'], ['defined'], ['defined']]);
+  });
 });

@@ -36,7 +36,8 @@ describe('prepared sketch preview feedback ownership', () => {
     await act(async () => root.render(<Probe />));
     expect(observed.current).toEqual({ kind: 'waiting' });
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(observed.current).toEqual({ kind: 'error', message: failure.message, feedback: failure.feedback });
+    expect(observed.current).toEqual({ kind: 'error', message: failure.message, feedback: failure.feedback, marks: failure.marks });
+    expect(failure.marks?.conflicting.pointIds).toEqual(new Set(['a']));
     expect(prepare).toHaveBeenCalledOnce();
   });
 

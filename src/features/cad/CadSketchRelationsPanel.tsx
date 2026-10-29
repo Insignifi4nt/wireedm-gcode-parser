@@ -22,7 +22,8 @@ import { CadScalarEditContext, ScalarField, SelectField, type CadScalarValueDraf
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
 import { cadSketchDatumRelationLabel, type CadSketchDatum } from './cadSketchGraphSelection';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
-import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import type { CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadContextHelp } from './CadContextHelp';
 import { CadSketchAngleSectors } from './CadSketchAngleSectors';
@@ -214,7 +215,7 @@ export interface CadSketchRelationsPanelProps {
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   onPendingChange(pending: boolean): void;
   onPrepareEdits?: CadPrepareEdits;
-  onPreviewDocument?(document: CadDocument | null): void;
+  onPreviewDocument?(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
   onInspectRelation?(relation: CadSketchGraphRelation | null): void;
   onInspectSubject?(subject: CadSketchConstraintFeedbackSubject | null): void;
   onCornerAccepted?(entityId: string, relationId: string): void;
@@ -328,6 +329,8 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const [error, setError] = useState<string | CadSketchConstraintFeedback | null>(initialAngle?.error ?? initialLineDistance?.error ?? initialDistance?.error
     ?? (initialCommand?.kind === 'datum-distance' && !datumDimensions.length ? 'This point already has its position from a fixed point or an expression.' : null)), [resetVersion, setResetVersion] = useState(0);
   const [inspectedFailure, setInspectedFailure] = useState<{ feedback: CadSketchConstraintFeedback; subject: CadSketchConstraintFeedbackSubject } | null>(null);
+  /** The full operand marks of the rejected Apply whose feedback `error` holds; any other error drops them. */
+  const [appliedFailure, setAppliedFailure] = useState<{ feedback: CadSketchConstraintFeedback; marks: CadSketchDiagnosisMarks | null } | null>(null);
   const [activeRelationId, setActiveRelationId] = useState<string | null>(initialCommand?.kind === 'inspect' ? initialCommand.relationId : initialDimension?.id ?? null);
   // A dimension started from the toolbar or picked on the canvas is ready for typing: its first editable value takes focus, Enter applies and Escape resets.
   const [typedRelationId] = useState(() => initialCommand && initialCommand.kind !== 'relations' ? activeRelationId : null);
@@ -593,17 +596,19 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const measurementDocument = prepared.kind === 'ready' ? prepared.document : !changed ? source.document : null;
   const measurementSketch = measurementDocument?.features.find(f => f.id === sketch.id);
   const measurementGraph = measurementSketch?.kind === 'sketch' ? measurementSketch.graph : null;
+  const failedApply = typeof error === 'object' && error !== null;
+  const failureMarks = source.document !== cadDocument ? null : failedApply ? appliedFailure?.feedback === error ? appliedFailure.marks : null : cadPreviewMarks(prepared);
   useLayoutEffect(() => {
-    onPreviewDocument?.(prepared.kind === 'ready' ? prepared.document : null);
+    onPreviewDocument?.(prepared.kind === 'ready' ? prepared.document : null, failureMarks);
     return () => onPreviewDocument?.(null);
-  }, [prepared, onPreviewDocument]);
+  }, [prepared, failureMarks, onPreviewDocument]);
   // The lines may already stay parallel through other relations, as two Vertical lines do; the distance then stands alone.
   useEffect(() => {
     if (!impliedParallelId || prepared.kind !== 'error' || !prepared.feedback || !redundantRelation(prepared.feedback, impliedParallelId)) return;
     setDraft(current => ({ ...current, relations: current.relations.filter(relation => relation.id !== impliedParallelId) })); setImpliedParallelId(null);
   }, [prepared, impliedParallelId]);
   const blockingIssue = candidate.issue ?? (prepared.kind === 'error' ? prepared.message : null);
-  const feedback = source.document === cadDocument ? typeof error === 'object' && error !== null ? error : prepared.kind === 'error' ? prepared.feedback : undefined : undefined;
+  const feedback = source.document === cadDocument ? failedApply ? error : prepared.kind === 'error' ? prepared.feedback : undefined : undefined;
   const issue = typeof error === 'string' ? error : feedback?.message ?? blockingIssue;
   const canInspectFeedback = feedback?.sketchId === sketch.id;
   const inspectedSubject = canInspectFeedback && inspectedFailure && inspectedFailure.feedback === feedback ? inspectedFailure.subject : null;
@@ -639,6 +644,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           if (retained.length) apply(retained, null); else reset();
           return;
         }
+        if (cause instanceof CadSketchPreparationError) setAppliedFailure({ feedback: cause.feedback, marks: cause.marks });
         setError(cause instanceof CadSketchPreparationError ? cause.feedback : userFacingMessage(cause, 'Unable to apply this sketch relation.'));
       });
       apply(candidate.edits, impliedParallelId);
