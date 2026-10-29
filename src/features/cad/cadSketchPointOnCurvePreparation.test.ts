@@ -55,6 +55,53 @@ describe('prepared point on a curve', () => {
     expect(graphOf(changed.document).relations).toEqual([onArc, onRing]);
   });
 
+  it('moves a point that starts on the curve center out to the curve instead of reporting a conflict', async () => {
+    const base = curvesPart(), graph = graphOf(base);
+    // Separate points that only share their positions with the arc and ring centers, one with a driven X.
+    const source = parseCadDocument({ ...base, features: [{ ...base.features[0], graph: { ...graph, points: graph.points.map(point =>
+      point.id === 'p' ? { ...point, position: [0, 0] as const } : point.id === 'q' ? { ...point, position: ['30', 0] as const } : point) } }] });
+    const prepared = await prepareCadEdits(source, [set(onArc), set(onRing)], runtime);
+    expect(prepared.sketchDiagnostics[0].diagnostics).toMatchObject({ status: 'success', conflictingIds: [], redundantIds: [], issues: [] });
+    expect(distance(position(prepared.document, 'p'), [0, 0])).toBeCloseTo(10, 9);
+    expect(position(prepared.document, 'q')).toEqual([30, 5]);
+    expect(position(prepared.document, 'c')).toEqual([30, 0]);
+    expect(checkCadSketchGraph(graphOf(prepared.document), prepared.document.parameters)).toEqual([]);
+  });
+
+  it('solves a centered start as before when other geometry can move, and leaves an axis held by a relation in place', async () => {
+    const part = (graph: object) => parseCadDocument({ ...createCadDocument('Centered points', 'centered-points'), schemaVersion: 2, parameters: {}, features: [{
+      id: 'sketch', name: 'Centered', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph }] });
+    // A driven point on the center of an arc whose center can slide: the center moves, as it did without any retry.
+    const sliding = part({ points: [{ id: 'o', position: [0, '0'] }, { id: 's', position: ['10', '0'] }, { id: 'e', position: [0, 10] }, { id: 'p', position: ['0', '0'] }],
+      entities: [{ id: 'arc', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 's', endPointId: 'e', direction: 'ccw' }], relations: [] });
+    const slid = await prepareCadEdits(sliding, [set(onArc)], runtime);
+    expect(slid.sketchDiagnostics[0].diagnostics).toMatchObject({ status: 'success', conflictingIds: [], issues: [] });
+    expect(position(slid.document, 'o')[0]).toBeCloseTo(5, 9); expect(position(slid.document, 'p')).toEqual([0, 0]);
+    // Fix X keeps the point's X, so it reaches the ring along Y.
+    const held = part({ points: [{ id: 'c', position: ['0', '0'] }, { id: 'q', position: [0, 0] }],
+      entities: [{ id: 'ring', kind: 'circle', construction: false, centerPointId: 'c', radius: '5' }], relations: [{ id: 'q-x', kind: 'fixed-axis', pointId: 'q', axis: 'x', value: 0 }] });
+    const reached = await prepareCadEdits(held, [set(onRing)], runtime);
+    expect(reached.sketchDiagnostics[0].diagnostics).toMatchObject({ status: 'success', conflictingIds: [], issues: [] });
+    expect(position(reached.document, 'q')[0]).toBeCloseTo(0, 9); expect(position(reached.document, 'q')[1]).toBeCloseTo(5, 9);
+    // Two centered points with different driven axes each move along the axis they have free, in one solve.
+    const mixed = part({ points: [{ id: 'c1', position: ['0', '0'] }, { id: 'c2', position: ['20', '0'] }, { id: 'p1', position: ['0', 0] }, { id: 'p2', position: [20, '0'] }],
+      entities: [{ id: 'r1', kind: 'circle', construction: false, centerPointId: 'c1', radius: '5' }, { id: 'r2', kind: 'circle', construction: false, centerPointId: 'c2', radius: '5' }],
+      relations: [] });
+    const both = await prepareCadEdits(mixed, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'p1-on', kind: 'point-on-curve', pointId: 'p1', curveId: 'r1' } },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'p2-on', kind: 'point-on-curve', pointId: 'p2', curveId: 'r2' } }], runtime);
+    expect(both.sketchDiagnostics[0].diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 0, conflictingIds: [], issues: [] });
+    expect(position(both.document, 'p1')).toEqual([0, 5]); expect(position(both.document, 'p2')).toEqual([25, 0]);
+    // Two free points on one center start apart, so a length between them can be met too.
+    const shared = part({ points: [{ id: 'c', position: ['0', '0'] }, { id: 'a', position: [0, 0] }, { id: 'b', position: [0, 0] }],
+      entities: [{ id: 'ring', kind: 'circle', construction: false, centerPointId: 'c', radius: '5' }], relations: [] });
+    const spaced = await prepareCadEdits(shared, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'a-on', kind: 'point-on-curve', pointId: 'a', curveId: 'ring' } },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'b-on', kind: 'point-on-curve', pointId: 'b', curveId: 'ring' } },
+      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'ab', kind: 'distance', pointIds: ['a', 'b'], value: 5 } }], runtime);
+    expect(spaced.sketchDiagnostics[0].diagnostics).toMatchObject({ status: 'success', degreesOfFreedom: 1, conflictingIds: [], issues: [] });
+    for (const id of ['a', 'b']) expect(distance(position(spaced.document, id), [0, 0])).toBeCloseTo(5, 9);
+    expect(distance(position(spaced.document, 'a'), position(spaced.document, 'b'))).toBeCloseTo(5, 9);
+  });
+
   it('keeps a trim cut on its arc cutter while that arc later grows', async () => {
     const base = curvesPart(), graph = graphOf(base);
     // A line crosses the quarter arc at 30°; trimming its far end cuts there.
