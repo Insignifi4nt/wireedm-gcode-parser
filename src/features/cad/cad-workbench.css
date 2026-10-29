@@ -204,14 +204,21 @@
 .cad-axis-x.is-selected, .cad-axis-y.is-selected, .cad-sketch-origin.is-selected { stroke: var(--primary); }
 .cad-axis-x.is-relation-highlighted, .cad-axis-y.is-relation-highlighted, .cad-sketch-origin.is-relation-highlighted { stroke: var(--warning, #f0bf71); }
 .cad-sketch-axes :is(.is-pick-highlighted, .is-selected, .is-relation-highlighted, :focus-visible) > .cad-sketch-axis-line { stroke-opacity: 0.85; }
-.cad-profile { fill: none; stroke: #9fc2d3; cursor: pointer; }
+/*
+ * Definition and failed-preview marks set only the colour the default and construction strokes read, so selection, hover, focus,
+ * relation and pick highlights still draw over them. Green keeps 8:1 on the view (4:1 at the construction mix), red and purple 4:1.
+ */
+.cad-sketch-graph .is-defined { --cad-sketch-state: #5ed88a; --cad-sketch-construction-state: color-mix(in srgb, #5ed88a 60%, transparent); }
+.cad-sketch-graph .is-conflicting { --cad-sketch-state: var(--destructive); --cad-sketch-construction-state: var(--destructive); }
+.cad-sketch-graph .is-redundant { --cad-sketch-state: #b48cf0; --cad-sketch-construction-state: #b48cf0; }
+.cad-profile { fill: none; stroke: var(--cad-sketch-state, #9fc2d3); cursor: pointer; }
 .cad-profile.is-selected { stroke: #8ce9f5; fill: #7ae3ee22; }
 .cad-profile:focus-visible { stroke: #baf4ff; }
 .cad-profile.is-parameter-highlighted { stroke: #f0bf71; fill: #e4a85b14; }
 .cad-gear-inspection { stroke: #f0bf71; fill: none; }
 .cad-gear-inspection-sample { fill: #f0bf71; stroke: #202a31; }
 .cad-sketch-context { position: absolute; bottom: 32px; left: 12px; color: var(--muted-foreground); background: var(--card); border: 1px solid var(--border); padding: 4px 7px; font-size: 10px; pointer-events: none; }
-.cad-profile.is-construction { stroke: #628594; fill: none; }
+.cad-profile.is-construction { stroke: var(--cad-sketch-construction-state, #628594); fill: none; }
 .cad-profile-preview { stroke: #71d2e1; fill: #56c7d214; pointer-events: none; }
 .cad-sketch-split-preview { fill: none; stroke-width: 2px; }
 .cad-sketch-split-preview > * { vector-effect: non-scaling-stroke; }
@@ -245,11 +252,11 @@
 .cad-sketch-graph.is-draggable :is(.cad-sketch-entity:not([aria-disabled]), .cad-sketch-graph-point:not(.is-locked, [aria-disabled])) { cursor: grab; }
 .cad-sketch-graph.is-dragging, .cad-sketch-graph.is-dragging * { cursor: grabbing; }
 .cad-sketch-point-hit { fill: transparent; stroke: none; }
-.cad-sketch-point-mark { fill: var(--card); stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; transition: opacity 80ms; }
+.cad-sketch-point-mark { fill: var(--card); stroke: var(--cad-sketch-state, var(--primary)); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; transition: opacity 80ms; }
 /* Shared vertices appear on hover, focus or when revealed by selection, relations and picks; hit targets stay in place. */
 .cad-sketch-graph-point[data-cad-sketch-point]:not(.is-revealed, :hover, :focus-visible) .cad-sketch-point-mark { opacity: 0; }
 .cad-sketch-graph-point:is(:hover, :focus-visible, .is-active) .cad-sketch-point-mark { fill: var(--primary); stroke: var(--foreground); }
-.cad-sketch-graph-point.is-locked .cad-sketch-point-mark { fill: var(--muted-foreground); stroke: var(--card); }
+.cad-sketch-graph-point.is-locked .cad-sketch-point-mark { fill: var(--cad-sketch-state, var(--muted-foreground)); stroke: var(--card); }
 .cad-sketch-graph-point.is-locked.is-active .cad-sketch-point-mark { fill: var(--primary); stroke: var(--foreground); }
 .cad-sketch-drag-target { fill: none; stroke: var(--primary); stroke-width: 1px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .cad-sketch-drag-target.is-invalid { stroke: var(--destructive); }

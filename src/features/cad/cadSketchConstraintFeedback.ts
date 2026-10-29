@@ -1,6 +1,7 @@
 import { CadError } from '@/domain/cad/cadError';
 import type { CadSketchGraph, CadSketchGraphIssue, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
+import { cadSketchDiagnosisMarks, type CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
 import { cadSketchDatumRelationLabel } from './cadSketchGraphSelection';
 import { cadSketchSolverRecoveryMessages } from './sketch-solver/cadSketchSolverMessages';
 import type { CadSketchSolveDiagnostics, CadSketchSolveResult } from './sketch-solver/cadSketchSolverTypes';
@@ -116,6 +117,8 @@ export class CadSketchPreparationError extends CadError {
   readonly feedback: CadSketchConstraintFeedback;
   readonly diagnostics: CadSketchSolveDiagnostics;
   readonly solverMessage: string;
+  /** Every reported operand, not only the summarized subjects, so the canvas can colour them. */
+  readonly marks: CadSketchDiagnosisMarks | null;
   constructor(input: PreparationFailureInput) {
     const presentation = feedback(input);
     super(`sketch-${input.rejection.reason}`, presentation.message);
@@ -123,5 +126,6 @@ export class CadSketchPreparationError extends CadError {
     const diagnostics = input.rejection.diagnostics;
     this.diagnostics = Object.freeze({ ...diagnostics, conflictingIds: Object.freeze([...diagnostics.conflictingIds]), redundantIds: Object.freeze([...diagnostics.redundantIds]),
       partiallyRedundantIds: Object.freeze([...diagnostics.partiallyRedundantIds]), issues: Object.freeze(diagnostics.issues.map(issue => Object.freeze({ ...issue, source: Object.freeze({ ...issue.source }) }))) });
+    this.marks = cadSketchDiagnosisMarks(input.sketchId, input.graph, diagnostics);
   }
 }

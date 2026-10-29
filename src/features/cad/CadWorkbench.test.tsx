@@ -18,7 +18,7 @@ import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './ca
 import type { CadViewportContextMenuRequest } from './CadViewport';
 import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
-import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
+import type { CadSketchConstraintAnalysis, CadSketchConstraintInspection } from './cadSketchConstraintInspection';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { cadSketchDimensionSelectionStatus } from './cadSketchDimensionSelection';
 import { useCadSketchEditing } from './useCadSketchEditing';
@@ -1050,7 +1050,7 @@ describe('CAD sketch interaction', () => {
     const renders = async (change: () => void) => { workbenchRenders = 0; await act(async () => change()); return workbenchRenders; };
     expect(answers.map(answer => answer.version)).toEqual([session.getSnapshot().version]);
     expect(await renders(() => answers[0].resolve(0))).toBe(1);
-    expect(status()).toBe('Fully constrained'); expect(radiusLocked()).toBe(true);
+    expect(status()).toBe('Fully defined'); expect(radiusLocked()).toBe(true);
 
     // A new document hides the earlier freedom without another render.
     const moved = currentDocument.features[0]; if (moved.kind !== 'sketch' || !moved.graph) throw new Error('Sketch graph missing.');
@@ -1063,12 +1063,12 @@ describe('CAD sketch interaction', () => {
     expect(await renders(() => setReady(true))).toBe(1); expect(status()).toBe('Checking freedom…');
     expect(answers).toHaveLength(3); expect(answers[2].version).toBe(session.getSnapshot().version);
     expect(await renders(() => answers[2].resolve(0))).toBe(1);
-    expect(status()).toBe('Fully constrained'); expect(radiusLocked()).toBe(true);
+    expect(status()).toBe('Fully defined'); expect(radiusLocked()).toBe(true);
     expect(await renders(() => answers[1].resolve(4))).toBe(0); expect(radiusLocked()).toBe(true);
     // A pause hides the answer and resuming shows it again, each a render after the status reports it. The same answer
     // from the new analysis keeps it.
     expect(await renders(() => setReady(false))).toBe(2); expect(status()).toBe('Editing…'); expect(radiusLocked()).toBe(false);
-    expect(await renders(() => setReady(true))).toBe(2); expect(status()).toBe('Fully constrained'); expect(radiusLocked()).toBe(true);
+    expect(await renders(() => setReady(true))).toBe(2); expect(status()).toBe('Fully defined'); expect(radiusLocked()).toBe(true);
     expect(answers).toHaveLength(4);
     expect(await renders(() => answers[3].resolve(0))).toBe(0); expect(radiusLocked()).toBe(true);
   });
@@ -3289,4 +3289,180 @@ it('keeps a linked Use endpoint available as the first Dimension point and as a 
   expect(button('Dimension').disabled).toBe(false);await click('Dimension');
   const target=container.querySelector<SVGGElement>('[data-cad-sketch-point="o"]')!;await act(async()=>target.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
   expect(button('Horizontal distance').disabled).toBe(false);expect(button('Vertical distance').disabled).toBe(false);expect(currentDocument).toBe(source);
+});
+
+describe('sketch definition colours and locks', () => {
+  type Answer = { sketchId: string; version?: string; signal?: AbortSignal; resolve(analysis: CadSketchConstraintAnalysis): void };
+  const solved = (degreesOfFreedom: number, defined: { points: string[]; entities: string[] }, under: { points: string[]; entities: string[] } = { points: [], entities: [] }): CadSketchConstraintAnalysis => ({
+    kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [],
+      definition: { definedPointIds: defined.points, underDefinedPointIds: under.points, definedEntityIds: defined.entities, underDefinedEntityIds: under.entities } } });
+  /** Mounts a session whose sketch analyses wait for the test to answer them. */
+  async function mountAnalysed(source: CadDocument, onPrepareEdits?: CadWorkbenchProps['onPrepareEdits']) {
+    const session = new CadSession(source); currentSession = session;
+    const answers: Answer[] = [];
+    const inspect = vi.fn((sketchId: string, version?: string, signal?: AbortSignal) => new Promise<CadSketchConstraintInspection>(resolve => answers.push({ sketchId, version, signal, resolve: analysis => resolve({
+      sketchId, pointCount: 0, entityCount: 0, relationCount: 0, legacyProfileCount: 0, legacyDimensionCount: 0, degreesOfFreedomScope: 'graph', graph: null, parameters: {}, analysis }) })));
+    function Harness() {
+      const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot); currentDocument = snapshot.document;
+      return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} build={null} buildVersion={null} buildState="idle" dirty={snapshot.dirty}
+        canUndo={snapshot.canUndo} canRedo={snapshot.canRedo} onEdit={edit => { session.edit([edit]); }} onEditMany={edits => session.edit(edits)} onPrepareEdits={onPrepareEdits}
+        onInspectSketchConstraints={inspect} onWorkflowChange={open => session.setWorkflowOpen(open)} onUndo={() => session.undo()} onRedo={() => session.redo()} onStatusMessage={statusMessage}
+        onSave={save} onBack={vi.fn()} onSendToCam={sendToCam} onOpenDocument={vi.fn()} onNewDocument={vi.fn()} onImportDocument={async () => undefined}
+        onExportDocument={vi.fn()} onExportSolid={async () => undefined} onOpenDxfExport={async () => undefined} onViewportControlsReady={controls => { currentViewport = controls; }} />;
+    }
+    await act(async () => root.render(<Harness />));
+    return { session, answers, answer: async (index: number, analysis: CadSketchConstraintAnalysis) => act(async () => answers[index].resolve(analysis)) };
+  }
+  const status = () => container.querySelector('[aria-label="Sketch constraint status"]')?.textContent;
+  const entity = (id: string) => { const found = container.querySelector(`[data-cad-sketch-entity="${id}"]`); if (!found) throw new Error(`Edge ${id} missing.`); return found; };
+  const point = (id: string) => { const found = container.querySelector(`[data-cad-sketch-point="${id}"]`); if (!found) throw new Error(`Point ${id} missing.`); return found; };
+  const marked = (mark: string) => [...container.querySelectorAll(`.cad-sketch-graph .is-${mark}`)].map(item => item.getAttribute('data-cad-sketch-entity') ?? `point ${item.getAttribute('data-cad-sketch-point')}`).sort();
+  const keyDown = async (target: Element, key: string) => act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
+  const sketchFeature = (id: string, points: readonly (readonly [string, number, number])[], entities: readonly object[], relations: readonly object[] = [], profiles: readonly object[] = []) => ({
+    id, kind: 'sketch', name: id === 'sketch' ? 'Bracket' : 'Second', plane: 'XY', offset: 0, suppressed: false, profiles,
+    graph: { points: points.map(([pointId, x, y]) => ({ id: pointId, position: [x, y] })), entities, relations } });
+  const bracketPoints = [['a', 0, 0], ['b', 20, 0], ['c', 0, 10], ['d', 20, 12], ['e', 40, 5], ['f', 0, -10], ['g', 20, -10]] as const;
+  const bracketEdges = [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'free', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+    { id: 'guide', kind: 'line', construction: true, startPointId: 'f', endPointId: 'g' }, { id: 'bore', kind: 'circle', construction: false, centerPointId: 'e', radius: 5 }];
+
+  it('colours each defined part of a partly defined sketch, keeps legacy profiles and references as they are, and locks only defined points', async () => {
+    const plate = { id: 'plate', name: 'Plate', construction: false, role: 'outer', geometry: { kind: 'rectangle', x: 60, y: 0, width: 30, height: 20, cornerRadius: 0 } };
+    const source = parseCadDocument({ ...createCadDocument('Bracket', 'definition-bracket'), schemaVersion: 2, features: [sketchFeature('sketch', bracketPoints, bracketEdges, [], [plate])] });
+    const h = await mountAnalysed(source);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    expect(marked('defined')).toEqual([]);
+    // The base and the construction guide are fully defined, the free line is not, and the bore has no answer.
+    await h.answer(0, solved(4, { points: ['a', 'b', 'f', 'g'], entities: ['base', 'guide'] }, { points: ['c', 'd'], entities: ['free'] }));
+    expect(status()).toBe('Under defined · 4 DOF');
+    expect(marked('defined')).toEqual(['base', 'guide', 'point a', 'point b', 'point f', 'point g']);
+    expect(entity('guide').classList.contains('is-construction')).toBe(true);
+    const legacy = container.querySelector('[aria-label="Select Plate profile"]'); if (!legacy) throw new Error('Legacy profile missing.');
+    expect(legacy.classList.contains('is-defined')).toBe(false);
+    expect([...container.querySelectorAll('[data-cad-sketch-datum]')].filter(datum => datum.classList.contains('is-defined'))).toEqual([]);
+    expect(point('a').classList.contains('is-locked')).toBe(true); expect(point('a').querySelector('title')?.textContent).toContain('Fully defined by dimensions and relations');
+    expect(point('c').classList.contains('is-locked')).toBe(false);
+    // Selection draws over the definition colour without dropping it.
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'base' } }));
+    expect(entity('base').classList.contains('is-selected')).toBe(true); expect(entity('base').classList.contains('is-defined')).toBe(true);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'a' } }));
+    expect(point('a').classList.contains('is-active')).toBe(true); expect(point('a').classList.contains('is-defined')).toBe(true);
+    // A defined point refuses a nudge; an under-defined one moves.
+    await keyDown(point('a'), 'ArrowRight'); expect(currentDocument).toBe(source);
+    await keyDown(point('c'), 'ArrowRight'); expect(currentDocument).not.toBe(source);
+    const moved = currentDocument.features[0]; if (moved.kind !== 'sketch' || !moved.graph) throw new Error('Sketch graph missing.');
+    expect(moved.graph.points.find(item => item.id === 'c')?.position).not.toEqual([0, 10]);
+    // The moved sketch waits for its own answer: colours stay, locks go.
+    expect(status()).toBe('Checking freedom…'); expect(marked('defined')).toContain('base'); expect(point('a').classList.contains('is-locked')).toBe(false);
+  });
+
+  it('keeps dimension selection, focus and Delete working over defined geometry, where a lock refuses only moves', async () => {
+    setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+    const source = parseCadDocument({ ...createCadDocument('Bracket', 'definition-dimension'), schemaVersion: 2, features: [
+      sketchFeature('sketch', bracketPoints, bracketEdges, [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 20 }])] });
+    const h = await mountAnalysed(source);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const defineBase = () => h.answer(h.answers.length - 1, solved(6, { points: ['a', 'b', 'f', 'g'], entities: ['base', 'guide'] }));
+    await defineBase(); expect(point('a').classList.contains('is-locked')).toBe(true);
+    const label = () => { const found = container.querySelector<SVGGElement>('[data-cad-sketch-dimension="length"] [role="button"]'); if (!found) throw new Error('Length label missing.'); return found; };
+    const selectedDimensions = () => [...container.querySelectorAll('[data-cad-sketch-dimension].is-selected')].map(item => item.getAttribute('data-cad-sketch-dimension'));
+    const highlighted = () => [...container.querySelectorAll('[data-cad-highlight-point], [data-cad-highlight-entity]')].map(item => item.getAttribute('data-cad-highlight-point') ?? item.getAttribute('data-cad-highlight-entity')).sort();
+    const graph = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph; };
+    // The selected dimension's highlight draws above the green rows, which keep their definition.
+    await act(async () => label().dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true, cancelable: true })));
+    expect(selectedDimensions()).toEqual(['length']); expect(highlighted()).toEqual(['a', 'b', 'base']);
+    expect(marked('defined')).toEqual(['base', 'guide', 'point a', 'point b', 'point f', 'point g']);
+    expect(entity('base').compareDocumentPosition(container.querySelector('[data-cad-sketch-highlight]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Focus on a defined point leaves the selection, and Delete there removes the selected dimension, not the point.
+    await act(async () => (point('a') as SVGGElement).focus()); expect(selectedDimensions()).toEqual(['length']);
+    await keyDown(point('a'), 'Delete');
+    expect(graph().relations.map(relation => relation.id)).toEqual([]); expect(graph().points.map(item => item.id)).toContain('a');
+    // Once the new version is defined too, a press on a defined point still selects it, and Delete on another focused
+    // defined point removes that selection; with nothing selected, Delete removes the focused defined point.
+    await defineBase(); expect(point('a').classList.contains('is-locked')).toBe(true);
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    const view = viewport().getState().view; if (!view || view.mode === 'solid') throw new Error('Sketch frame missing.');
+    const viewWidth = Number(canvas.getAttribute('viewBox')?.split(' ')[2]);
+    for (const type of ['pointerdown', 'pointerup']) await act(async () => {
+      const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true,
+        clientX: 300 + (0 - view.centerMm[0]) / viewWidth * 600, clientY: 200 - (0 - view.centerMm[1]) / view.heightSpanMm * 400 });
+      Object.defineProperties(event, { pointerId: { value: 12 }, isPrimary: { value: true } });
+      point('a').dispatchEvent(event);
+    });
+    expect(point('a').classList.contains('is-active')).toBe(true);
+    await act(async () => (point('b') as SVGGElement).focus()); await keyDown(point('b'), 'Delete');
+    expect(graph().points.map(item => item.id)).not.toContain('a'); expect(graph().points.map(item => item.id)).toContain('b');
+    await defineBase(); expect(point('f').classList.contains('is-locked')).toBe(true);
+    await act(async () => (point('f') as SVGGElement).focus()); await keyDown(point('f'), 'Delete');
+    expect(graph().points.map(item => item.id)).not.toContain('f');
+  });
+
+  it('never applies an older answer to parameter changes, undo or another sketch, and keeps colours until the new answer', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Bracket', 'definition-stale'), schemaVersion: 2, parameters: { w: 2 }, features: [
+      sketchFeature('sketch', bracketPoints, bracketEdges), sketchFeature('second', bracketPoints, bracketEdges)] });
+    const h = await mountAnalysed(source);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await h.answer(0, solved(6, { points: ['a', 'b'], entities: ['base'] }));
+    expect(marked('defined')).toEqual(['base', 'point a', 'point b']); expect(point('a').classList.contains('is-locked')).toBe(true);
+    // A parameter change while the new analysis is pending keeps the colours but never the locks.
+    await act(async () => h.session.edit([{ kind: 'set-parameter', name: 'w', value: 3 }]));
+    expect(status()).toBe('Checking freedom…'); expect(h.answers).toHaveLength(2);
+    expect(marked('defined')).toEqual(['base', 'point a', 'point b']); expect(point('a').classList.contains('is-locked')).toBe(false);
+    await keyDown(point('a'), 'ArrowRight');
+    const nudged = currentDocument; expect(nudged.features[0]).not.toBe(source.features[0]);
+    // Undo restores the earlier document object under a new version, so its answer still does not lock.
+    await act(async () => h.session.undo());
+    expect(currentDocument.parameters).toEqual({ w: 3 }); expect(point('a').classList.contains('is-locked')).toBe(false);
+    await act(async () => h.session.undo()); expect(currentDocument).toBe(source);
+    expect(point('a').classList.contains('is-locked')).toBe(false); expect(marked('defined')).toEqual(['base', 'point a', 'point b']);
+    // Answers for the versions undo left behind change nothing.
+    for (const index of h.answers.keys()) if (index > 0 && index < h.answers.length - 1) await h.answer(index, solved(0, { points: bracketPoints.map(([id]) => id), entities: ['base', 'free', 'guide', 'bore'] }));
+    expect(point('a').classList.contains('is-locked')).toBe(false); expect(marked('defined')).toEqual(['base', 'point a', 'point b']);
+    // The current answer replaces the colours and locks.
+    await h.answer(h.answers.length - 1, solved(4, { points: ['c', 'd'], entities: ['free'] }));
+    expect(marked('defined')).toEqual(['free', 'point c', 'point d']);
+    expect([point('a').classList.contains('is-locked'), point('c').classList.contains('is-locked')]).toEqual([false, true]);
+    // Another sketch with the same identities shows nothing until its own answer arrives.
+    await click('Finish sketch'); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'second' }));
+    expect(h.answers.at(-1)?.sketchId).toBe('second');
+    expect(marked('defined')).toEqual([]); expect(point('c').classList.contains('is-locked')).toBe(false);
+    await h.answer(h.answers.length - 1, solved(6, { points: ['a', 'b'], entities: ['base'] }));
+    expect(marked('defined')).toEqual(['base', 'point a', 'point b']); expect(point('a').classList.contains('is-locked')).toBe(true);
+  });
+
+  it('marks every operand of a rejected preview beyond the eight it lists until the preview ends, over the analysis marks', async () => {
+    const rungs = Array.from({ length: 11 }, (_, index) => index);
+    const source = parseCadDocument({ ...createCadDocument('Ladder', 'definition-ladder'), schemaVersion: 2, features: [sketchFeature('sketch',
+      [...rungs.flatMap(index => [[`l${index}`, 0, index * 5], [`r${index}`, 10, index * 5]] as const), ['t0', 0, -20], ['t1', 30, -15]],
+      [...rungs.map(index => ({ id: `rung${index}`, kind: 'line', construction: false, startPointId: `l${index}`, endPointId: `r${index}` })),
+        { id: 'target', kind: 'line', construction: false, startPointId: 't0', endPointId: 't1' }],
+      rungs.slice(1).map(index => ({ id: `eq${index - 1}`, kind: 'equal-length', lineIds: [`rung${index - 1}`, `rung${index}`] })))] });
+    const sketch = source.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Ladder missing.');
+    const graph = sketch.graph, equalIds = graph.relations.map(relation => relation.id);
+    const prepare = vi.fn<NonNullable<CadWorkbenchProps['onPrepareEdits']>>(async edits => {
+      const added = edits.flatMap(edit => edit.kind === 'set-sketch-relation' ? [edit.relation] : []);
+      throw new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Ladder', graph: { ...graph, relations: [...graph.relations, ...added] }, rejection: { kind: 'rejected', reason: 'conflicting',
+        message: 'Conflicting', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: added.map(relation => relation.id), redundantIds: equalIds, partiallyRedundantIds: [], issues: [] } } });
+    });
+    const h = await mountAnalysed(source, prepare);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    // An analysis the solver rejects marks its own operands.
+    await h.answer(0, { kind: 'rejected', reason: 'redundant', message: 'Redundant.', diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: [], redundantIds: ['eq0'], partiallyRedundantIds: [], issues: [] } });
+    expect(status()).toBe('Redundant relations');
+    const analysisMarks = ['point l0', 'point l1', 'point r0', 'point r1', 'rung0', 'rung1'];
+    expect(marked('redundant')).toEqual(analysisMarks); expect(marked('conflicting')).toEqual([]);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'target' } }));
+    await click('Dimension'); await canvasKey('Enter'); const length = container.querySelector<HTMLInputElement>('input[aria-label="Length mm"]'); if (!length) throw new Error('Length field missing.'); await input(length, '40');
+    for (let turn = 0; turn < 3; turn++) await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
+    expect(prepare).toHaveBeenCalled();
+    // All ten redundant relations hold their lines, though the feedback lists eight subjects.
+    expect(container.textContent).toContain('more');
+    expect(marked('redundant')).toEqual([...rungs.flatMap(index => [`point l${index}`, `point r${index}`]), ...rungs.map(index => `rung${index}`)].sort());
+    expect(marked('conflicting')).toEqual(['point t0', 'point t1']);
+    expect(point('t0').classList.contains('is-revealed')).toBe(true);
+    // Ending the preview returns to the analysis marks.
+    await click('Cancel');
+    expect(marked('conflicting')).toEqual([]); expect(marked('redundant')).toEqual(analysisMarks);
+    expect(currentDocument).toBe(source);
+  });
 });

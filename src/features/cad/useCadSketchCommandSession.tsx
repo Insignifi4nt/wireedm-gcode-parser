@@ -4,6 +4,7 @@ import { Value } from '@sinclair/typebox/value';
 import { Button } from '@/components/ui/button';
 import { CloseIcon, ConfirmIcon } from '@wire-edm/icons-react';
 import type { CadDocument } from '@/domain/cad/cadDocument';
+import type { CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { CadContextHelp } from './CadContextHelp';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
@@ -13,7 +14,8 @@ export interface CadSketchCommandSessionProps {
   documentVersion: string;
   interactionLocked: boolean;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
-  onPreviewDocument(document: CadDocument | null): void;
+  /** `marks` colours the operands of a rejected preview on the canvas until the preview changes or ends. */
+  onPreviewDocument(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
   onPendingChange(pending: boolean): void;
   onCancel(): void;
 }

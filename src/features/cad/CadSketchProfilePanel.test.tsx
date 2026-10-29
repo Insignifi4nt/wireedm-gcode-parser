@@ -53,9 +53,9 @@ describe('explicit sketch intent panel', () => {
     await act(async () => { await vi.waitFor(() => expect(requests).toHaveLength(2)); });
     const solved = (size: number) => parseCadDocument({ ...source, parameters: { size }, features: [{ ...sketch, graph: { ...sketch.graph!, points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: [size, 0] }] } }] });
     await act(async () => requests[0].resolve(solved(35))); expect(preview.mock.calls.some(([value]) => value !== null)).toBe(false);
-    const current = solved(36); await act(async () => requests[1].resolve(current)); expect(preview).toHaveBeenLastCalledWith(current);
+    const current = solved(36); await act(async () => requests[1].resolve(current)); expect(preview).toHaveBeenLastCalledWith(current, null);
     expect(legacyPreview.mock.calls.some(([value]) => value !== null)).toBe(false); expect(session.getSnapshot()).toBe(before);
-    await click('Cancel'); expect(preview).toHaveBeenLastCalledWith(null); expect(session.getSnapshot()).toBe(before);
+    await click('Cancel'); expect(preview).toHaveBeenLastCalledWith(null, null); expect(session.getSnapshot()).toBe(before);
   });
 
   it('keeps an accepted tiny named width visible in its constraint list and exact through unchanged Apply and Cancel', async () => {

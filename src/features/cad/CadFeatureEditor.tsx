@@ -31,7 +31,8 @@ import { CadFeatureReferencePickingContext, type CadFeatureReferencePickCommand 
 import { cadScalarValueIntent, parseCadNumericQuantity } from '@/domain/cad/cadScalarValueIntent';
 import { inspectCadExtrudeDepth, type CadExtrudeDepthControl, type CadExtrudeDepthState } from './cadExtrudeDepthInteraction';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
-import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import type { CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
 import { CadInspectorTitle } from './CadInspectorTitle';
 
 export const featureLabels: Record<CadFeature['kind'], string> = {
@@ -369,7 +370,7 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
   onPreviewProfile?(profile: CadSketchProfile | null): void;
   onPreviewParameters?(parameters: CadDocument['parameters'] | null): void;
   onPrepareEdits?: CadPrepareEdits;
-  onPreviewDocument?(document: CadDocument | null): void;
+  onPreviewDocument?(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
 }) {
   const submission = useCadEditSubmission();
   const [draft, setDraft] = useState(profile);
@@ -400,7 +401,7 @@ export function CadProfileEditor({ profile, document, onApply, onCancel, onPendi
   const preparedPreview = useCadPreparedPreview(document, previewEdits, onPrepareEdits, changed && !bindingPending && !pluginIssues.length && previewValid && !submission.applying);
   useLayoutEffect(() => {
     const candidate = preparedPreview.kind === 'ready' ? preparedPreview.document : null;
-    onPreviewDocument?.(candidate);
+    onPreviewDocument?.(candidate, cadPreviewMarks(preparedPreview));
     const preview = !onPreviewDocument && changed && draft.id === profile.id && !pluginIssues.length && previewValid && !document.features.some(feature => feature.kind === 'sketch' && feature.graph);
     onPreviewProfile?.(preview ? draft : null); onPreviewParameters?.(preview ? effectiveParameters : null);
     return () => { onPreviewDocument?.(null); onPreviewProfile?.(null); onPreviewParameters?.(null); };
