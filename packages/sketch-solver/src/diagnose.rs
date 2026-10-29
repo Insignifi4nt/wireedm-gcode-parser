@@ -33,6 +33,12 @@
 //! have a smallest singular value of at least `CERTAIN`. Its witnesses are dependencies found, but more may exist, so freedom is
 //! unknown. A row that exactly copies a row left out earlier, or its negation, depends on that row
 //! alone, so a repeated relation is still labelled beside an undecided one.
+//!
+//! Where rank is certain at `TAU`, each column's definition can be asked for (see `define`): it is
+//! determined when its unit row lies within `TAU` of the span of the independent rows, so no
+//! direction they leave free moves it by more than `TAU` per unit of that direction, and free when
+//! one of those directions is shown to move it by more than `CERTAIN`. Between the two, or once the
+//! probes' own allowance runs out, it is not analysed.
 
 use crate::sparse::SparseRow;
 
@@ -48,6 +54,14 @@ pub const STALLED: f64 = 1e-6;
 /// Label bits of an equation: its constraint is redundant through it, or conflicts.
 pub const REDUNDANT: u8 = 1;
 pub const CONFLICTING: u8 = 2;
+
+/// Definition codes of a parameter: not analysed, free to move, or determined (see `define`).
+pub const NOT_ANALYSED: u8 = 0;
+pub const FREE: u8 = 1;
+pub const DETERMINED: u8 = 2;
+/// Most counted entries the definition probes of one solve may take. They take them apart from the
+/// work of the solve and its diagnosis, so asking for definition changes neither.
+pub const DEFINITION_WORK: usize = 20_000_000;
 
 /// One row of the group's Jacobian at the diagnosed values.
 pub struct Row {
@@ -65,6 +79,8 @@ pub struct Diagnosis {
     /// `CERTAIN`. Otherwise rank is unclear: the witnesses found are dependencies within
     /// `distance`, but more may exist, so freedom is unknown.
     pub certain: bool,
+    /// Each column position's definition code, when it was asked for and rank is certain at `TAU`.
+    pub definition: Option<Vec<u8>>,
 }
 
 /// A dependent row with the earlier rows that reproduce it.
@@ -81,12 +97,19 @@ pub struct Witness {
 /// fit would hold more than `fill`, is left out and leaves the diagnosis uncertain: the factor is
 /// then as it was, so the rows after it are decided as before.
 pub fn diagnose(n: usize, rows: &[Row], distance: f64, budget: usize, fill: usize) -> (Option<Diagnosis>, usize) {
+    diagnose_defining(n, rows, distance, budget, fill, None)
+}
+
+/// `diagnose`, with each column's definition when `allowance` is given, `distance` is `TAU` and
+/// rank is certain. The probes take their work from `allowance` alone, so the diagnosis and the
+/// work it reports are the same as without them.
+pub fn diagnose_defining(n: usize, rows: &[Row], distance: f64, budget: usize, fill: usize, allowance: Option<&mut usize>) -> (Option<Diagnosis>, usize) {
     let mut work = Work { done: 0, budget, fill, out: false };
-    let found = diagnose_within(n, rows, distance, &mut work);
+    let found = diagnose_within(n, rows, distance, &mut work, allowance);
     (found, work.spent())
 }
 
-fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Option<Diagnosis> {
+fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work, allowance: Option<&mut usize>) -> Option<Diagnosis> {
     let mut r: Vec<SparseRow> = vec![Vec::new(); n];
     let mut rank = 0;
     // Each dependent row with the earlier rows of its witness.
@@ -116,6 +139,7 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
         }
     }
     if rank > 0 && !clear_of_dependence(&r, work)? { certain = false; }
+    let definition = allowance.filter(|_| certain && distance == TAU).map(|allowance| define(&mut r, rank, allowance));
     // A unit row's residual, or the residual itself for a row without unknowns.
     let scaled = |i: usize, value: f64| if norms[i] > 0.0 { value / norms[i] } else { value };
     let witnesses = witnesses.into_iter().map(|(j, support)| {
@@ -123,7 +147,119 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work) -> Op
         let bound = support.iter().map(|&(i, c)| c.abs() * scaled(i, rows[i].tolerance)).sum::<f64>() + scaled(j, rows[j].tolerance);
         Witness { rows: support.iter().map(|s| s.0).chain([j]).collect(), agrees: combined.abs() <= bound }
     }).collect();
-    Some(Diagnosis { rank, witnesses, certain })
+    Some(Diagnosis { rank, witnesses, certain, definition })
+}
+
+/// Each column's definition by the independent unit rows that `r` factors, `rank` of them, whose
+/// rank is certain at `TAU`: `DETERMINED`, `FREE` or `NOT_ANALYSED` as `probe` finds, all
+/// `DETERMINED` when no direction is left free, and `NOT_ANALYSED` for the columns left once the
+/// probes would take more than `allowance`, which they take from. `r` is left as it was.
+fn define(r: &mut [SparseRow], rank: usize, allowance: &mut usize) -> Vec<u8> {
+    let n = r.len();
+    if rank == n { return vec![DETERMINED; n]; }
+    let mut work = Work { done: 0, budget: *allowance, fill: usize::MAX, out: false };
+    let (mut freedom, mut codes) = (Freedom::new(n), vec![NOT_ANALYSED; n]);
+    for j in 0..n {
+        if let Some(code) = probe(r, j, &mut freedom, &mut work) { codes[j] = code; }
+        if work.run_out() { break; }
+    }
+    *allowance = allowance.saturating_sub(work.done);
+    codes
+}
+
+/// Column `j`'s unit row rotated into `r` as `insert` does, leaving `r` as it was. A rotation leaves
+/// its cosine times what it would leave with the row subtracted outright, so each lead is measured
+/// against the product of the cosines so far: what is left is that product times `e_j` less a
+/// combination of the rows and of the leads dropped. Dropped leads within `TAU`, so measured, whose
+/// sum of squares stays within `TAU` squared put `e_j` within `TAU` of the rows' span:
+/// `DETERMINED`. A lead above `TAU` that reaches an empty pivot `k` is, so measured, how far the
+/// free direction of `k` moves column `j` per unit it moves `k`; it moves `j` by more than
+/// `CERTAIN` per unit of its own length when that is above `CERTAIN` times the direction's norm,
+/// and the lead itself above `CERTAIN`, as an insertion claims a pivot: `FREE`. Where that is not
+/// shown the lead is dropped and the probe goes on to the next empty pivot, whose direction is
+/// zero at `k`. `None` when none shows it, and when the work runs out.
+fn probe(r: &mut [SparseRow], j: usize, freedom: &mut Freedom, work: &mut Work) -> Option<u8> {
+    let (mut v, mut shrink, mut dropped, mut undecided): (SparseRow, f64, f64, bool) = (vec![(j, 1.0)], 1.0, 0.0, false);
+    loop {
+        // `None` when the work ran out; then the empty pivot reached, with its lead, or `None`
+        // when nothing is left. Only the pivots before it are rotated, so the rows past it are as
+        // they were when the probe goes on.
+        let mut undo = Vec::new();
+        let reached = loop {
+            let Some(&(k, lead)) = v.first() else { break Some(None) };
+            if r[k].is_empty() {
+                if lead.abs() > TAU { break Some(Some((k, lead.abs()))); }
+                dropped += (lead / shrink).powi(2);
+                v.remove(0);
+                continue;
+            }
+            let Some((kept, rest)) = rotate(&r[k], &v, work) else { break None };
+            shrink *= (r[k][0].1 / kept[0].1).abs();
+            undo.push((k, std::mem::replace(&mut r[k], kept)));
+            v = rest;
+        };
+        for (k, row) in undo.into_iter().rev() { r[k] = row; }
+        let Some((k, lead)) = reached? else { return (!undecided && dropped.sqrt() <= TAU).then_some(DETERMINED) };
+        let norm = freedom.norm(r, k, work)?;
+        if lead > CERTAIN && lead > CERTAIN * shrink * norm { return Some(FREE); }
+        undecided = true;
+        v.remove(0);
+    }
+}
+
+/// Norms of the directions the rows of a factor leave free, one for each column `k` without a
+/// pivot: one at `k`, zero at the other columns without pivots, and at each pivot what keeps its
+/// row still, by back substitution from `k` through the rows that reach it. Each is found once,
+/// when a probe first reaches its column.
+struct Freedom {
+    /// The rows holding each column past their lead, built for the first norm.
+    columns: Option<Vec<Vec<usize>>>,
+    norms: Vec<Option<f64>>,
+    /// A direction as it is found, and the pivots queued for it; zero and clear between them.
+    x: Vec<f64>,
+    queued: Vec<bool>,
+}
+
+impl Freedom {
+    fn new(n: usize) -> Freedom { Freedom { columns: None, norms: vec![None; n], x: vec![0.0; n], queued: vec![false; n] } }
+
+    /// The norm of the free direction of column `k`, which has no pivot in `r`; `None` when the
+    /// work runs out.
+    fn norm(&mut self, r: &[SparseRow], k: usize, work: &mut Work) -> Option<f64> {
+        if let Some(norm) = self.norms[k] { return Some(norm); }
+        let Freedom { columns, norms, x, queued } = self;
+        let columns = match columns {
+            Some(columns) => columns,
+            None => {
+                let entries = r.len() + r.iter().map(|row| row.len()).sum::<usize>();
+                work.afford(entries)?;
+                work.spend(entries)?;
+                let mut built = vec![Vec::new(); r.len()];
+                for (p, row) in r.iter().enumerate() {
+                    for &(c, _) in row.iter().skip(1) { built[c].push(p); }
+                }
+                columns.insert(built)
+            }
+        };
+        // Pivots from the last, each once every later one it reads has moved.
+        let (mut reached, mut taken, mut squares, mut out) = (std::collections::BinaryHeap::new(), vec![k], 1.0, false);
+        x[k] = 1.0;
+        for &p in &columns[k] { queued[p] = true; reached.push(p); }
+        while let Some(p) = reached.pop() {
+            taken.push(p);
+            let cost = r[p].len() + columns[p].len();
+            if work.afford(cost).and_then(|()| work.spend(cost)).is_none() { out = true; break; }
+            x[p] = -r[p][1..].iter().map(|&(c, e)| e * x[c]).sum::<f64>() / r[p][0].1;
+            squares += x[p] * x[p];
+            for &q in &columns[p] {
+                if !queued[q] { queued[q] = true; reached.push(q); }
+            }
+        }
+        for p in taken.into_iter().chain(reached) { (x[p], queued[p]) = (0.0, false); }
+        if out { return None; }
+        norms[k] = Some(squares.sqrt());
+        norms[k]
+    }
 }
 
 /// How many of `rows`, zero rows included, lie within `distance` of the span of earlier ones once

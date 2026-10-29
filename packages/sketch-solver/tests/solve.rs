@@ -219,8 +219,8 @@ fn rejects_malformed_buffers() {
     assert!(!invalid(&valid));
     assert!(invalid(&valid[..valid.len() - 1]));
     assert!(invalid(&[valid.clone(), vec![0.0]].concat()));
-    // Version, counts, value, fixed flag, kind, value, tag, flags and operand.
-    for (index, bad) in [(0, 1.0), (1, 2.5), (3, f64::NAN), (5, 0.5), (7, 12.0), (8, f64::INFINITY), (9, 0.5), (9, -1.0), (10, 2.0), (11, 2.0)] {
+    // Version, counts, options, value, fixed flag, kind, value, tag, flags and operand.
+    for (index, bad) in [(0, 1.0), (0, 5.0), (1, 2.5), (3, 2.0), (3, 3.0), (3, 0.5), (3, -1.0), (4, f64::NAN), (6, 0.5), (8, 12.0), (9, f64::INFINITY), (10, 0.5), (10, -1.0), (11, 2.0), (12, 2.0)] {
         let mut buffer = valid.clone();
         buffer[index] = bad;
         assert!(invalid(&buffer), "index {index}");
@@ -235,7 +235,7 @@ fn rejects_malformed_buffers() {
     let second = buffer.len() - 3;
     buffer[second] = 0.0;
     assert!(!invalid(&buffer));
-    buffer[9] = 2.0;
+    buffer[10] = 2.0;
     assert!(invalid(&buffer));
 }
 

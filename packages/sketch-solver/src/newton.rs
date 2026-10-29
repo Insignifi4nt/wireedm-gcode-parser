@@ -10,7 +10,7 @@
 
 use crate::dual::{Dual, WIDTH};
 use crate::equations::{Kind, is_direction, reach, residual};
-use crate::diagnose::{self, CONFLICTING, STALLED, TAU, Witness, diagnose};
+use crate::diagnose::{self, CONFLICTING, DEFINITION_WORK, DETERMINED, FREE, NOT_ANALYSED, STALLED, TAU, Witness, diagnose_defining};
 use crate::problem::{Diagnosis, Problem, Status};
 use crate::sparse::{Factor, SparseRow, minimum_degree};
 
@@ -62,6 +62,11 @@ pub struct Outcome {
     pub degrees_of_freedom: Option<usize>,
     /// `diagnose` label bits of each equation, zero unless diagnosed.
     pub labels: Vec<u8>,
+    /// `diagnose` definition code of each parameter, `NOT_ANALYSED` unless the problem asks for
+    /// them. A fixed parameter is determined and one no equation reads is free; the others are
+    /// analysed only in a group that converged with its rank certain and no constraint of it
+    /// conflicting, where it ended.
+    pub definition: Vec<u8>,
     /// How the drag targets ended, the worst of any group's; `None` without targets.
     pub drag: Option<DragOutcome>,
     /// Euclidean distance in millimetres from the targeted coordinates to their targets, fixed
@@ -317,9 +322,19 @@ pub fn solve_whole(problem: &Problem, values: &mut [f64], limits: Limits) -> Out
 fn solve_with(problem: &Problem, values: &mut [f64], limits: Limits, eliminating: bool) -> Outcome {
     let (members, column) = groups(problem);
     let mut outcome = Outcome { status: Status::Converged, iterations: 0, residual: 0.0, diagnosis: Diagnosis::Diagnosed,
-        degrees_of_freedom: None, labels: vec![0; problem.equations.len()], drag: None, target_distance: f64::NAN };
+        degrees_of_freedom: None, labels: vec![0; problem.equations.len()], definition: vec![NOT_ANALYSED; problem.values.len()],
+        drag: None, target_distance: f64::NAN };
     // Drag targets change how every group is solved, so a problem without them is solved as before.
     let dragging = problem.equations.iter().any(|equation| equation.temporary);
+    // Definition is analysed apart from the solve's work, which it leaves as it was; each group
+    // analysed keeps its equations, unknowns and codes until its labels are known.
+    let defining = problem.definition && !dragging;
+    let (mut allowance, mut defined) = (DEFINITION_WORK, Vec::new());
+    if defining {
+        for (p, code) in outcome.definition.iter_mut().enumerate() {
+            if column[p] == usize::MAX { *code = if problem.fixed[p] { DETERMINED } else { FREE }; }
+        }
+    }
     let mut squared_distance = 0.0;
     let unknowns = problem.fixed.iter().filter(|&&fixed| !fixed).count();
     if unknowns == 0 { outcome.diagnosis = Diagnosis::NoUnknowns; }
@@ -334,7 +349,7 @@ fn solve_with(problem: &Problem, values: &mut [f64], limits: Limits, eliminating
         // A group solved through its classes was diagnosed where it ended, as below.
         let (group, diagnosed_at_tau) = if dragging { (drag::solve_group(&system, values, limits, &mut held), None) } else {
             let rows = system.rows(values, None);
-            match eliminating.then(|| eliminate::solve_group(&system, values, limits, &rows, &mut classes)).flatten() {
+            match eliminating.then(|| eliminate::solve_group(&system, values, limits, &rows, &mut classes, defining.then_some(&mut allowance))).flatten() {
                 Some(eliminated) => (eliminated.group, Some((eliminated.diagnosis, eliminated.spent))),
                 None => (solve_group_from(&system, values, limits, MAX_ITERATIONS, rows), None),
             }
@@ -362,9 +377,9 @@ fn solve_with(problem: &Problem, values: &mut [f64], limits: Limits, eliminating
         // rank was unclear, so a clear diagnosis is never lost to the looser distance.
         let mut work = group.work;
         // What was found within `distance`, and whether the work ran out first.
-        let diagnose_at = |values: &[f64], distance, work: &mut usize| {
+        let diagnose_at = |values: &[f64], distance, work: &mut usize, allowance: Option<&mut usize>| {
             let budget = limits.work.saturating_sub(*work);
-            let (found, spent) = diagnose_group(&system, values, &position, distance, budget, limits.fill);
+            let (found, spent) = diagnose_group(&system, values, &position, distance, budget, limits.fill, allowance);
             *work = work.saturating_add(spent);
             (found, spent > budget)
         };
@@ -377,21 +392,21 @@ fn solve_with(problem: &Problem, values: &mut [f64], limits: Limits, eliminating
         let converged = group.status == Status::Converged;
         let at_tau = match diagnosed_at_tau {
             Some((found, spent)) => { work = work.saturating_add(spent); (Some(found), false) }
-            None => diagnose_at(values, TAU, &mut work),
+            None => diagnose_at(values, TAU, &mut work, (defining && converged).then_some(&mut allowance)),
         };
         let diagnosed = match at_tau {
             (Some(found), _) if found.2 => Some((found, Diagnosis::Diagnosed)),
             (Some(found), _) if converged => Some((found, Diagnosis::Uncertain)),
-            (None, true) if converged => Some(((0, Vec::new(), false), Diagnosis::Incomplete)),
+            (None, true) if converged => Some(((0, Vec::new(), false, None), Diagnosis::Incomplete)),
             // A drag's diagnoses fall back anyway.
             _ if group.status == Status::NotConverged => match (!dragging).then(|| repeated(&system, values, &start, limits, &mut work)).flatten() {
-                Some(witnesses) => Some(((0, witnesses, false), Diagnosis::FromStart)),
-                None => diagnose_at(values, STALLED, &mut work).0.filter(|found| found.2).map(|stalled| (stalled, Diagnosis::Suspected)),
+                Some(witnesses) => Some(((0, witnesses, false, None), Diagnosis::FromStart)),
+                None => diagnose_at(values, STALLED, &mut work, None).0.filter(|found| found.2).map(|stalled| (stalled, Diagnosis::Suspected)),
             },
             _ => None,
         };
         match diagnosed {
-            Some(((group_rank, group_witnesses, certain), kind)) => {
+            Some(((group_rank, group_witnesses, certain, mut group_definition), kind)) => {
                 // A solution that stands with freedom left moves toward the one nearest its start.
                 // The move stands only when the group is diagnosed the same where it ends, as a
                 // nearer solution can be singular; otherwise the diagnosed solution is kept.
@@ -402,8 +417,11 @@ fn solve_with(problem: &Problem, values: &mut [f64], limits: Limits, eliminating
                     // Iterations count whether or not the correction stands.
                     outcome.iterations = outcome.iterations.max(group.iterations + correction.iterations);
                     if correction.moved {
-                        let (found, _) = diagnose_group(&system, values, &position, TAU, limits.work.saturating_sub(work), limits.fill);
-                        if found.is_some_and(|(found_rank, found_witnesses, found_certain)| found_certain && found_rank == group_rank && found_witnesses.is_empty()) {
+                        // Where it ends, definition is analysed again, and stands with the move.
+                        let mut left = allowance;
+                        let (found, _) = diagnose_group(&system, values, &position, TAU, limits.work.saturating_sub(work), limits.fill, group_definition.is_some().then_some(&mut left));
+                        if let Some((_, _, _, moved_definition)) = found.filter(|(found_rank, found_witnesses, found_certain, _)| *found_certain && *found_rank == group_rank && found_witnesses.is_empty()) {
+                            (group_definition, allowance) = (moved_definition, left);
                             outcome.residual = fold(worst(&system.rows(values, None)));
                         } else {
                             for (&p, &value) in system.unknowns.iter().zip(&solved) { values[p] = value; }
@@ -412,6 +430,7 @@ fn solve_with(problem: &Problem, values: &mut [f64], limits: Limits, eliminating
                 }
                 rank += group_rank;
                 witnesses.extend(group_witnesses);
+                if let Some(codes) = group_definition { defined.push((system.equations, system.unknowns, codes)); }
                 // The most severe group decides; see `Diagnosis::severity`.
                 if kind.severity() > outcome.diagnosis.severity() { outcome.diagnosis = kind; }
             }
@@ -428,6 +447,13 @@ fn solve_with(problem: &Problem, values: &mut [f64], limits: Limits, eliminating
                 outcome.labels = labels;
             }
             None => outcome.diagnosis = Diagnosis::Unavailable,
+        }
+    }
+    // Without labels no group is shown to be free of conflicts.
+    if outcome.diagnosis != Diagnosis::Unavailable {
+        for (equations, unknowns, codes) in defined {
+            if equations.iter().any(|&e| outcome.labels[e] & CONFLICTING != 0) { continue; }
+            for (&p, code) in unknowns.iter().zip(codes) { outcome.definition[p] = code; }
         }
     }
     outcome
@@ -496,16 +522,19 @@ fn unmet(system: &System, values: &[f64]) -> Vec<Witness> {
 }
 
 /// The rank of a group's lasting equations at `values`, dependent within `distance`, their
-/// witnesses by equation index and whether rank is certain, with the work spent.
-fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize, fill: usize) -> (Option<(usize, Vec<Witness>, bool)>, usize) {
+/// witnesses by equation index, whether rank is certain and, when `allowance` is given, each
+/// column's definition code (see `diagnose_defining`), with the work spent.
+fn diagnose_group(system: &System, values: &[f64], position: &[usize], distance: f64, budget: usize, fill: usize, allowance: Option<&mut usize>)
+    -> (Option<(usize, Vec<Witness>, bool, Option<Vec<u8>>)>, usize) {
     let rows = system.rows(values, None);
     let jacobian = system.jacobian(&rows, position);
     let lasting: Vec<usize> = (0..rows.len()).filter(|&i| !system.problem.equations[system.equations[i]].temporary).collect();
     let diagnosed: Vec<diagnose::Row> = lasting.iter()
         .map(|&i| diagnose::Row { entries: jacobian.rows[i].0.clone(), residual: rows[i].residual, tolerance: rows[i].tolerance }).collect();
-    let (diagnosis, spent) = diagnose(position.len(), &diagnosed, distance, budget, fill);
+    let (diagnosis, spent) = diagnose_defining(position.len(), &diagnosed, distance, budget, fill, allowance);
     (diagnosis.map(|diagnosis| (diagnosis.rank, diagnosis.witnesses.into_iter().map(|witness| Witness {
-        rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect(), diagnosis.certain)), spent)
+        rows: witness.rows.iter().map(|&i| system.equations[lasting[i]]).collect(), agrees: witness.agrees }).collect(), diagnosis.certain,
+        diagnosis.definition.map(|codes| position.iter().map(|&k| codes[k]).collect()))), spent)
 }
 
 /// Witnesses of a group's lasting equations that repeat each other: rows that compute the same
