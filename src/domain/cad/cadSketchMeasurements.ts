@@ -47,5 +47,14 @@ export function createCadSketchMeasurementReader(graph: CadSketchGraph, paramete
       center: coordinate(source.centerPointId), start: coordinate(source.startPointId), end: coordinate(source.endPointId), clockwise: source.direction === 'cw' });
     return { kind: 'arc', radiusMm: arc.radius, sweepDegrees: arc.sweepRadians * 180 / Math.PI, lengthMm: arc.length };
   };
-  return { point, betweenPoints, entity };
+  /** Distance from a point to a line's infinite support, positive to the left of its start to its end. */
+  const pointToLine = (pointId: string, lineId: string) => {
+    const line = entities.get(lineId);
+    if (line?.kind !== 'line') throw new CadError('missing-sketch-entity', 'The measured line is no longer available.');
+    entity(lineId);
+    const [px, py] = point(pointId), [ax, ay] = point(line.startPointId), [bx, by] = point(line.endPointId);
+    const dx = bx - ax, dy = by - ay;
+    return { signedMm: (dx * (py - ay) - dy * (px - ax)) / Math.hypot(dx, dy) };
+  };
+  return { point, betweenPoints, entity, pointToLine };
 }

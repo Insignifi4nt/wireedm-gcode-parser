@@ -4,7 +4,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import type { CadPrepareEdits } from './useCadPreparedPreview';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
-import { CAD_SKETCH_DATUMS, cadSketchDatumLabels, isCadSketchGraphSelected, reconcileCadSketchGraphSelection, toggleCadSketchGraphSelection, type CadSketchDatum, type CadSketchGeometryPick, cadSketchGraphSelectionsEqual } from './cadSketchGraphSelection';
+import { CAD_SKETCH_DATUMS, cadSketchDatumLabels, cadSketchRelationDatum, isCadSketchGraphSelected, reconcileCadSketchGraphSelection, toggleCadSketchGraphSelection, type CadSketchDatum, type CadSketchGeometryPick, cadSketchGraphSelectionsEqual } from './cadSketchGraphSelection';
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { createCadFreshSketchDrawing, createCadFreshSketchGraph, type CadFreshSketchDrawing } from '@/domain/cad/cadFreshSketchGraph';
 import { createCadPathDraftGraph } from './cadPathDraftGraph';
@@ -226,7 +226,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const [graphPick, setGraphPick] = useState<{ sketchId: string; selections: readonly CadSketchGraphSelection[]; datums?: readonly CadSketchDatum[]; dimensions?: readonly CadSketchDimensionPick[] } | null>(null);
   /** Hover highlight shared by canvas dimensions and dock rows; only the canvas overlay subscribes. */
   const [sketchHighlight] = useState(createCadSketchHighlightStore);
-  const [dimensionPickRequest, setDimensionPickRequest] = useState<{ readonly document: CadDocument; readonly version: string; readonly sketchId: string; readonly previousTool: SketchTool; readonly previousGraphPick: typeof graphPick; readonly previousProfileId: string | null; readonly eligibleEntityIds: readonly string[]; readonly eligiblePointIds: readonly string[]; readonly firstPointId: string | null; readonly firstLineId: string | null; readonly firstDatum: CadSketchDatum | null } | null>(null);
+  const [dimensionPickRequest, setDimensionPickRequest] = useState<{ readonly document: CadDocument; readonly version: string; readonly sketchId: string; readonly previousTool: SketchTool; readonly previousGraphPick: typeof graphPick; readonly previousProfileId: string | null; readonly eligibleEntityIds: readonly string[]; readonly sizedEntityIds: readonly string[]; readonly eligiblePointIds: readonly string[]; readonly firstPointId: string | null; readonly firstLineId: string | null; readonly firstCurveId: string | null; readonly firstDatum: CadSketchDatum | null } | null>(null);
   /**
    * The command open in the relations panel. A dimension editor carries the dimension it edits and the geometry that dimension measures:
    * the panel works on that geometry without selecting it, so the selection, and Delete, stay on the dimension.
@@ -447,6 +447,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     setGraphRelationCommand(null);
     if (dimensions.length) { setProfileId(null); setProfileCommand(null); }
   }, [sketchId, sketch, graphDimensionPicks]);
+  // Box selection never takes the origin or axes; a Shift box keeps the ones already selected.
+  const selectGraphBox = useCallback((selections: readonly CadSketchGraphSelection[], additive = false) => selectGraphSet(selections, additive ? graphDatums : NO_SKETCH_DATUMS), [graphDatums, selectGraphSet]);
   const cancelDimensionPick = useCallback(() => {
     const request = dimensionPickOwner.current; dimensionPickOwner.current = null; setDimensionPickRequest(null);
     if (!request || request.document !== interactionState.current.document || request.version !== interactionState.current.version || request.sketchId !== interactionState.current.sketchId) return;
@@ -456,6 +458,13 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const inspectedRelation = relationOperands.length > 0 && relationInspection && relationInspection.sketchId === sketch?.id ? relationInspection.relation : null;
   const inspectConstraintSubject = useCallback((subject: CadSketchConstraintFeedbackSubject | null) => setDiagnosticInspection(subject && sketchId ? { document, sketchId, subject } : null), [document, sketchId]);
   const inspectedDiagnostic = relationOperands.length > 0 && diagnosticInspection?.document === document && diagnosticInspection.sketchId === sketch?.id ? diagnosticInspection.subject : null;
+  // A diagnostic on a relation that holds a point on the origin or an axis also lights up that reference.
+  const diagnosticHighlight = useMemo(() => {
+    if (inspectedDiagnostic?.source.kind !== 'relation') return inspectedDiagnostic;
+    const relationId = inspectedDiagnostic.source.id, relation = sketch?.graph?.relations.find(item => item.id === relationId);
+    const datum = relation ? cadSketchRelationDatum(relation) : null;
+    return datum ? { ...inspectedDiagnostic, datums: [datum] } : inspectedDiagnostic;
+  }, [inspectedDiagnostic, sketch]);
   // A report equal to the freedom last set for this document, version and sketch queues no update, so the workbench does
   // not render again for it.
   const requestedFreedom = useRef(sketchFreedom);
@@ -506,11 +515,13 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     let operands: readonly CadSketchGraphSelection[];
     if (relation.kind === 'reference-dimension') {
       const measurement = relation.measurement;
-      operands = measurement.kind === 'point-distance' ? points(measurement.pointIds) : entity(measurement.entityId);
+      operands = measurement.kind === 'point-distance' ? points(measurement.pointIds)
+        : measurement.kind === 'point-line-distance' ? [{ kind: 'point', id: measurement.pointId }, { kind: 'entity', id: measurement.lineId }] : entity(measurement.entityId);
     } else if (relation.kind === 'distance') {
       const line = graph.entities.find(item => item.kind === 'line' && relation.pointIds.includes(item.startPointId) && relation.pointIds.includes(item.endPointId));
       operands = line ? entity(line.id) : points(relation.pointIds);
-    } else if (relation.kind === 'axis-distance') operands = points(relation.pointIds);
+    } else if (relation.kind === 'point-line-distance') operands = [{ kind: 'point', id: relation.pointId }, { kind: 'entity', id: relation.lineId }];
+    else if (relation.kind === 'axis-distance') operands = points(relation.pointIds);
     else if (relation.kind === 'line-angle') operands = relation.rays.map(ray => ({ kind: 'entity' as const, id: ray.lineId }));
     else operands = entity(relation.kind === 'radial-size' ? relation.entityId : relation.kind === 'fillet-corner' ? relation.arcId : relation.chamferId);
     editSketchDimension(pick, operands, NO_SKETCH_DATUMS);
@@ -1177,37 +1188,55 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const graphDimensionAvailable = graphLinePair || Boolean(selectedGraphEntity && !circleSourceDriven && !graphEditLock);
   const dimensionPickTargets = useMemo(() => {
     const graph = sketch?.graph;
-    return { entityIds: graph?.entities.filter(entity => !cadSketchLinearPatternLockReason(graph, { kind: 'entity', id: entity.id }) && !cadSketchExternalReferenceLockReason(graph, { kind: 'entity', id: entity.id })
-      && !(entity.kind === 'circle' && typeof entity.radius === 'string' && !graph.relations.some(relation => relation.kind === 'radial-size' && relation.entityId === entity.id))).map(entity => entity.id) ?? [],
+    const entities = graph?.entities.filter(entity => !cadSketchLinearPatternLockReason(graph, { kind: 'entity', id: entity.id }) && !cadSketchExternalReferenceLockReason(graph, { kind: 'entity', id: entity.id })) ?? [];
+    return { entityIds: entities.map(entity => entity.id),
+      // A circle whose radius follows an expression keeps its size there; its center still takes distances.
+      sizedEntityIds: entities.filter(entity => !(entity.kind === 'circle' && typeof entity.radius === 'string' && !graph?.relations.some(relation => relation.kind === 'radial-size' && relation.entityId === entity.id))).map(entity => entity.id),
       // Driven/reference points can anchor a free partner or a passive measurement; a lone point still measures from the origin or an axis.
       pointIds: graph?.points.map(point => point.id) ?? [] };
   }, [sketch]);
   const canPickDimension = Boolean(dimensionPickTargets.entityIds.length || dimensionPickTargets.pointIds.length);
+  /** One arc or circle that can take a distance from its center but whose size is not dimensioned here. */
+  const unsizedCurveSelection = (selections: readonly CadSketchGraphSelection[]) => selections.length === 1 && selections[0].kind === 'entity'
+    && dimensionPickTargets.entityIds.includes(selections[0].id) && !dimensionPickTargets.sizedEntityIds.includes(selections[0].id);
   const openGraphDimension = (selections: readonly CadSketchGraphSelection[]) => {
     const entities = sketch?.graph?.entities.filter(entity => isCadSketchGraphSelected(selections, { kind: 'entity', id: entity.id })) ?? [];
     const entity = selections.length === 1 && selections[0].kind === 'entity' ? entities[0] : undefined;
-    const kind = selections.length === 2 && selections.every(atom => atom.kind === 'point') ? 'point-dimensions'
-      : selections.length === 2 && entities.length === 2 && entities.every(entity => entity.kind === 'line') ? 'line-angle'
+    const lines = entities.filter(entity => entity.kind === 'line').length, curves = entities.length - lines, points = selections.filter(atom => atom.kind === 'point').length;
+    // A point with an arc or circle measures to its center, as a point pair.
+    const curve = selections.length === 2 && points === 1 && curves === 1 ? entities[0] : undefined, point = selections.find(atom => atom.kind === 'point');
+    const centered = curve && curve.kind !== 'line' && point && point.id !== curve.centerPointId ? [point, { kind: 'point' as const, id: curve.centerPointId }] : null;
+    const kind = selections.length === 2 && points === 2 || centered ? 'point-dimensions'
+      : selections.length === 2 && lines === 2 ? 'line-angle'
+      : selections.length === 2 && lines === 1 && points + curves === 1 ? 'point-line-distance'
+      : selections.length === 2 && curves === 2 ? 'center-distance'
       : entity ? entity.kind === 'line' ? 'length' : 'radial-size' : null;
     if (!kind) return false;
-    selectGraphSet(selections); setTool('select'); setGraphRelationCommand({ kind, token: crypto.randomUUID() }); setInspectorCollapsed(false); return true;
+    selectGraphSet(centered ?? selections); setTool('select'); setGraphRelationCommand({ kind, token: crypto.randomUUID() }); setInspectorCollapsed(false); return true;
   };
-  /** The tool waits for enough geometry: a second point, or after a line either a second line for an angle or a confirm for its length. */
+  /**
+   * The tool waits for enough geometry: a second point, a line or a curve after a point; after a line a second line, a point or a curve,
+   * or a confirm for its length; after an arc or circle a point, a line, a second curve, the origin or an axis, or a confirm for its size.
+   */
   const openDimensionPick = (first: CadSketchGraphSelection | null, previousGraphPick = graphPick) => {
     if (!sketch) return;
-    const firstPointId = first?.kind === 'point' ? first.id : null, firstLineId = first?.kind === 'entity' ? first.id : null;
+    const firstEntity = first?.kind === 'entity' ? sketch.graph?.entities.find(entity => entity.id === first.id) : undefined;
+    const firstPointId = first?.kind === 'point' ? first.id : null, firstLineId = firstEntity?.kind === 'line' ? firstEntity.id : null, firstCurveId = firstEntity && firstEntity.kind !== 'line' ? firstEntity.id : null;
     props.onWorkflowChange(true); setTool('select'); setGraphRelationCommand(null); setInspectorCollapsed(false);
     setGraphPick(first ? { sketchId: sketch.id, selections: [first] } : null); setProfileId(null);
     setDimensionPickRequest(Object.freeze({ document, version: props.documentVersion, sketchId: sketch.id, previousTool: tool, previousGraphPick, previousProfileId: profileId,
-      eligibleEntityIds: Object.freeze(dimensionPickTargets.entityIds), eligiblePointIds: Object.freeze(dimensionPickTargets.pointIds), firstPointId, firstLineId, firstDatum: null }));
+      eligibleEntityIds: Object.freeze(dimensionPickTargets.entityIds), sizedEntityIds: Object.freeze(dimensionPickTargets.sizedEntityIds), eligiblePointIds: Object.freeze(dimensionPickTargets.pointIds), firstPointId, firstLineId, firstCurveId, firstDatum: null }));
   };
   const beginSketchDimension = () => {
     if (locked || patternDimensionLocked || !sketch) return;
+    // Any two points, lines, arcs or circles take their dimension at once.
+    if (graphSelections.length === 2 && openGraphDimension(graphSelections)) return;
     if (!graphLinePair && !graphPointPair && !graphDimensionAvailable && !sketchDimensionAvailable) {
       if (!canPickDimension) return;
-      openDimensionPick(graphSelection?.kind === 'point' && dimensionPickTargets.pointIds.includes(graphSelection.id) ? graphSelection : null); return;
+      openDimensionPick(graphSelection?.kind === 'point' && dimensionPickTargets.pointIds.includes(graphSelection.id) || unsizedCurveSelection(graphSelections) ? graphSelection : null); return;
     }
     if (graphSelections.length === 1 && selectedGraphEntity?.kind === 'line' && graphSelection && dimensionPickTargets.entityIds.includes(graphSelection.id)) { openDimensionPick(graphSelection); return; }
+    if (unsizedCurveSelection(graphSelections)) { openDimensionPick(graphSelections[0]); return; }
     if (openGraphDimension(graphSelections)) return;
     if (!selectedGraphEntity) { beginProfileCommand('dimension'); return; }
   };
@@ -1219,7 +1248,10 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const entities = graph.entities.filter(entity => isCadSketchGraphSelected(entityAtoms, { kind: 'entity', id: entity.id }));
     const dimensionAllowed = selections.length === 1 ? selections[0].kind === 'point' ? dimensionPickTargets.pointIds.includes(selections[0].id)
       : dimensionPickTargets.entityIds.includes(selections[0].id) : selections.length === 2 && (selections.every(atom => atom.kind === 'point')
-        || entities.length === 2 && entities.every(entity => entity.kind === 'line' && !cadSketchLinearPatternLockReason(graph, { kind: 'entity', id: entity.id })));
+        || entities.length === 2 && entities.every(entity => entity.kind === 'line' && !cadSketchLinearPatternLockReason(graph, { kind: 'entity', id: entity.id }))
+        // A point, arc or circle with a line, or a point with an arc or circle or two of them, take a distance; a curve's own center does not.
+        || entities.length + selections.filter(atom => atom.kind === 'point').length === 2 && entities.every(entity => dimensionPickTargets.entityIds.includes(entity.id))
+          && (entities.filter(entity => entity.kind === 'line').length === 1 || entities.every(entity => entity.kind !== 'line' && !selections.some(atom => atom.kind === 'point' && atom.id === entity.centerPointId))));
     const moveLock = selections.map(atom => cadSketchLinearPatternLockReason(graph, atom) ?? cadSketchExternalReferenceLockReason(graph, atom)).find(Boolean);
     const act = (action: () => void) => {
       const current = interactionState.current;
@@ -1228,9 +1260,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     };
     const scopeHelp = selections.length === 1 ? `Use this ${selections[0].kind === 'point' ? 'point' : 'edge'}.` : `Use the ${selections.length} selected points and edges.`;
     return [
-      { label: 'Dimension', disabled: !dimensionAllowed, help: dimensionAllowed ? scopeHelp : 'Choose one eligible edge, two points or two lines. Linked and generated edges retain their owners.', onSelect: () => act(() => {
+      { label: 'Dimension', disabled: !dimensionAllowed, help: dimensionAllowed ? scopeHelp : 'Choose one eligible edge, or two points, lines, arcs or circles. Linked and generated edges retain their owners.', onSelect: () => act(() => {
         if (!dimensionAllowed) return;
-        if (selections.length === 1 && selections[0].kind === 'point') {
+        if (selections.length === 1 && (selections[0].kind === 'point' || unsizedCurveSelection(selections))) {
           selectGraphSet(selections); openDimensionPick(selections[0], { sketchId: sourceSketchId, selections });
         } else openGraphDimension(selections);
       }) },
@@ -1252,27 +1284,39 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       dimensionPickOwner.current = null; setDimensionPickRequest(null); selectGraphSet(selections);
       setGraphRelationCommand({ ...command, token: crypto.randomUUID() }); setInspectorCollapsed(false);
     };
-    const { firstPointId, firstLineId, firstDatum } = request;
-    // A point pairs with the sketch origin or an axis in either order; lines and curves take sketch geometry only.
+    const { firstPointId, firstLineId, firstCurveId, firstDatum } = request;
+    const firstLine = entities.find(entity => entity.id === firstLineId);
+    const lineEnds = firstLine?.kind === 'line' ? [firstLine.startPointId, firstLine.endPointId] : [];
+    const endsAt = (id: string, pointId: string) => entities.some(entity => entity.id === id && entity.kind === 'line' && (entity.startPointId === pointId || entity.endPointId === pointId));
+    const centerOf = (id: string) => { const curve = entities.find(entity => entity.id === id); return curve && curve.kind !== 'line' ? curve.centerPointId : null; };
+    const firstCenter = firstCurveId !== null ? centerOf(firstCurveId) : null, firstSized = firstCurveId !== null && request.sizedEntityIds.includes(firstCurveId);
+    // A point or an arc or circle center pairs with the sketch origin or an axis in either order; lines take sketch geometry only.
+    // A point or curve with a line takes the distance between them; a point and a curve, or two curves, take a distance to the center.
     return {
-      eligibleEntityIds: firstPointId !== null || firstDatum !== null ? [] : firstLineId !== null ? request.eligibleEntityIds.filter(isLine) : request.eligibleEntityIds,
-      eligiblePointIds: firstLineId !== null ? [] : request.eligiblePointIds.filter(id => id !== firstPointId),
+      eligibleEntityIds: firstDatum !== null ? request.eligibleEntityIds.filter(id => centerOf(id) !== null) : firstPointId !== null ? request.eligibleEntityIds.filter(id => isLine(id) ? !endsAt(id, firstPointId) : centerOf(id) !== firstPointId) : request.eligibleEntityIds,
+      eligiblePointIds: request.eligiblePointIds.filter(id => id !== firstPointId && id !== firstCenter && !lineEnds.includes(id)),
       eligibleDatums: firstLineId !== null || firstDatum !== null ? [] : CAD_SKETCH_DATUMS,
       pickedDatums: firstDatum ? [firstDatum] : [],
-      label: firstLineId !== null ? 'Choose a second line for an angle, or empty space for the length' : firstDatum !== null ? `Choose a point to dimension from the ${cadSketchDatumLabels[firstDatum].toLowerCase()}`
-        : firstPointId !== null ? 'Choose the second point, the origin or an axis' : 'Choose a line, curve, point, the origin or an axis',
+      label: firstLineId !== null ? 'Choose a second line for an angle or distance, a point or curve for a distance, or empty space for the length'
+        : firstCurveId !== null ? `Choose a point, a line, another curve, the origin or an axis for a distance${firstSized ? ', or empty space for the size' : ' from its center'}`
+          : firstDatum !== null ? `Choose a point, arc or circle to dimension from the ${cadSketchDatumLabels[firstDatum].toLowerCase()}`
+            : firstPointId !== null ? 'Choose the second point, a line, a curve, the origin or an axis' : 'Choose a line, curve, point, the origin or an axis',
       onPickDatum: datum => {
         if (!owns() || firstLineId !== null || firstDatum !== null) return;
-        if (firstPointId !== null) { finish([{ kind: 'point', id: firstPointId }], { kind: 'datum-distance', datum }); return; }
+        const point = firstPointId ?? firstCenter;
+        if (point !== null) { finish([{ kind: 'point', id: point }], { kind: 'datum-distance', datum }); return; }
         const next = Object.freeze({ ...request, firstDatum: datum });
         dimensionPickOwner.current = next; setDimensionPickRequest(next);
       },
       onCancel: () => { if (dimensionPickOwner.current === request) cancelDimensionPick(); },
-      onConfirm: firstLineId === null ? undefined : () => { if (owns()) finish([{ kind: 'entity', id: firstLineId }], { kind: 'length' }); },
+      onConfirm: firstLineId !== null ? () => { if (owns()) finish([{ kind: 'entity', id: firstLineId }], { kind: 'length' }); }
+        : firstSized && firstCurveId !== null ? () => { if (owns()) finish([{ kind: 'entity', id: firstCurveId }], { kind: 'radial-size' }); } : undefined,
       onPick: selection => {
         if (!owns()) return;
         if (selection.kind === 'point') {
-          if (firstLineId !== null || !request.eligiblePointIds.includes(selection.id) || selection.id === firstPointId) return;
+          if (!request.eligiblePointIds.includes(selection.id) || selection.id === firstPointId || selection.id === firstCenter || lineEnds.includes(selection.id)) return;
+          if (firstCenter !== null) { finish([{ kind: 'point', id: firstCenter }, selection], { kind: 'point-dimensions' }); return; }
+          if (firstLineId !== null) { finish([{ kind: 'entity', id: firstLineId }, selection], { kind: 'point-line-distance' }); return; }
           if (firstDatum !== null) { finish([selection], { kind: 'datum-distance', datum: firstDatum }); return; }
           if (firstPointId === null) {
             const next = Object.freeze({ ...request, firstPointId: selection.id });
@@ -1280,18 +1324,27 @@ export function CadWorkbench(props: CadWorkbenchProps) {
           }
           finish([{ kind: 'point', id: firstPointId }, selection], { kind: 'point-dimensions' }); return;
         }
-        if (firstPointId !== null || firstDatum !== null || !request.eligibleEntityIds.includes(selection.id)) return;
-        if (firstLineId !== null) {
-          if (selection.id === firstLineId) finish([selection], { kind: 'length' });
-          else if (isLine(selection.id)) finish([{ kind: 'entity', id: firstLineId }, selection], { kind: 'line-angle' });
+        if (!request.eligibleEntityIds.includes(selection.id) || !entities.some(entity => entity.id === selection.id)) return;
+        if (firstDatum !== null) { const center = centerOf(selection.id); if (center !== null) finish([{ kind: 'point', id: center }], { kind: 'datum-distance', datum: firstDatum }); return; }
+        if (firstPointId !== null) {
+          const center = centerOf(selection.id);
+          if (isLine(selection.id) && !endsAt(selection.id, firstPointId)) finish([{ kind: 'point', id: firstPointId }, selection], { kind: 'point-line-distance' });
+          else if (center !== null && center !== firstPointId) finish([{ kind: 'point', id: firstPointId }, { kind: 'point', id: center }], { kind: 'point-dimensions' });
           return;
         }
-        if (!entities.some(entity => entity.id === selection.id)) return;
-        if (isLine(selection.id)) {
-          const next = Object.freeze({ ...request, firstLineId: selection.id });
-          dimensionPickOwner.current = next; setDimensionPickRequest(next); selectGraph(selection); return;
+        if (firstLineId !== null) {
+          if (selection.id === firstLineId) finish([selection], { kind: 'length' });
+          else finish([{ kind: 'entity', id: firstLineId }, selection], { kind: isLine(selection.id) ? 'line-angle' : 'point-line-distance' });
+          return;
         }
-        finish([selection], { kind: 'radial-size' });
+        if (firstCurveId !== null) {
+          if (selection.id === firstCurveId) { if (firstSized) finish([selection], { kind: 'radial-size' }); }
+          else finish([{ kind: 'entity', id: firstCurveId }, selection], { kind: isLine(selection.id) ? 'point-line-distance' : 'center-distance' });
+          return;
+        }
+        // A curve waits for a point, a line, a second curve or a datum; picking it again or empty space dimensions its size.
+        const next = Object.freeze({ ...request, [isLine(selection.id) ? 'firstLineId' : 'firstCurveId']: selection.id });
+        dimensionPickOwner.current = next; setDimensionPickRequest(next); selectGraph(selection);
       }
     };
   }, [currentDimensionPick, cancelDimensionPick, selectGraph, selectGraphSet]);
@@ -1464,7 +1517,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
           placementLabel={cadPlacementLabel(copiedPreview.plane, profileCopyPreview.features)} tool="select" selectedProfileId={null}
           onSelectProfile={selectProfile} onAddProfile={addProfile} onPendingChange={setDrawingPending} onError={setError}
           cancelSignal={cancelSignal} interactionLocked onControlsReady={publishRenderedControls} getFitArea={getFitArea} navigationMode={preferences.navigationMode}
-          graphControls={{ document: profileCopyPreview, selection: [], onSelect: selectGraph, onEditMany: props.onEditMany }} /> : canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} graphContextMenu={graphContextMenu} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: Boolean(currentDimensionPick) || commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, patternInteraction: currentPattern ? patternInteraction ?? undefined : undefined, onEditPattern: editSketchPattern, geometryPick: currentPlacement ? placementInteraction?.geometryPick : mirrorAxisPick ?? dimensionGeometryPick ?? constraintGeometryPick, positionPick: placementPositionPick, placement: currentPlacement ? placementInteraction?.placement : undefined, relation: inspectedRelation, inspection: currentMirror && mirrorInteraction?.kind === 'preview' ? { pointIds: [], entityIds: [mirrorInteraction.axisLineId] } : currentOffset?.source.kind === 'graph-cycle' ? { pointIds: [], entityIds: currentOffset.source.sourceRefs.map(ref => ref.entityId) } : inspectedDiagnostic, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onSelectSet: selectGraphSet, datumSelection: graphDatums, onSelectDatum: selectDatum, onDelete: (selection, focused) => focused ? deleteFromFocus({ geometry: selection }, 'Delete') : deleteSketchGeometry(selection), onConfigureRelation: configureGraphRelation, dimensionSelection: graphDimensions, onSelectDimension: selectGraphDimension, onDeleteDimension: (dimension, key) => dimension ? deleteFromFocus({ dimension }, key ?? 'Delete') : deleteSketchDimensions(), onDimensionMenu: openDimensionMenu, highlight: sketchHighlight, onEditMany: applyCanvasEdits, onPrepareEdits: props.onPrepareEdits, onPreviewDocument: publishSketchPreview } : undefined} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={preparedSketchDocument?.parameters ?? previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features)} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? () => undefined : selectProfile} onAddProfile={addProfile} onAddFreshSketch={addFreshSketch} onAddPath={addPath} onTranslateProfile={(id, translation, signal) => { if (!sketch) return; return applyCanvasEdits([{ kind: 'translate-sketch-profiles', sketchId: sketch.id, profileIds: [id], translation }], signal); }} onMoveHandle={(id, handle, translation, signal) => { if (!sketch) return; return applyCanvasEdits([{ kind: 'move-sketch-handle', sketchId: sketch.id, profileId: id, handle, translation }], signal); }} onAddCurve={addCurve} onCancelCurve={cancel} curveCreation={Boolean(curveCreation)} onPendingChange={setDrawingPending} onError={setError} cancelSignal={cancelSignal} interactionLocked={curveCreation ? commandSubmission.applying || editorPending || parameterPending || namePending || storageBusy || deleteFeature !== null || resolvingTopology !== null : pendingOtherCommands || editorPending && !mirrorAxisPick && !placementPositionPick || storageBusy || externalWorkflowOpen} viewLocked={navigationLocked} onControlsReady={publishRenderedControls} /> : null}<CadViewport hidden={sketchSurface} key={document.id} depthControl={currentDepthControl} busyInputLocked={storageBusy} regionSelection={currentRegionPick} sourceReferencePickIds={currentRegionPick ? regionReferenceIds : currentReferencePick?.eligibleIds} getFitArea={getFitArea} onContextMenu={currentOwnedPick || currentSketchPlaneRequest ? undefined : openSolidMenu} navigationMode={preferences.navigationMode} navigationLocked={navigationLocked} meshes={currentAreaRepair && currentRegionPick ? NO_MESHES : displayedMeshes} references={references} referenceVersion={currentTopologyPick ? inputPicker.source?.inputToken ?? null : candidatePreview?.candidateId ?? props.documentVersion} selectedId={currentTopologyPick ? currentTopologyPick.request.bodyId : newFeature?.id ?? selectedId} selectedReferencePlane={selectedReferencePlane} hoveredReferencePlane={hoveredReferencePlane} onHoverPlane={hoverReferencePlane} onSelect={choose} onSelectPlane={selectReferencePlane} planePickingOnly={Boolean(currentSketchPlaneRequest)} interactionLocked={currentTopologyPick ? inputPicker.busy : locked && !currentOwnedPick && !currentSketchPlaneRequest} onControlsReady={publishRenderedControls} pickMode={currentTopologyPick ? inputPicker.mode : currentOwnedPick || currentSketchPlaneRequest ? 'body' : pickMode} topologySelection={currentTopologyPick ? inputPicker.selection : candidatePreview || currentOwnedPick ? null : topologySelection} pickingEnabled={currentTopologyPick ? Boolean(inputPicker.source) && !inputPicker.busy : Boolean(currentOwnedPick) || topologyReady && !candidatePreview} onTopologyPick={currentTopologyPick ? inputPicker.pick : currentOwnedPick || currentSketchPlaneRequest ? undefined : pickTopology} />
+          graphControls={{ document: profileCopyPreview, selection: [], onSelect: selectGraph, onEditMany: props.onEditMany }} /> : canvasReference && !currentRegionPick ? <CadSketchCanvas getFitArea={getFitArea} graphContextMenu={graphContextMenu} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: Boolean(currentDimensionPick) || commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, patternInteraction: currentPattern ? patternInteraction ?? undefined : undefined, onEditPattern: editSketchPattern, geometryPick: currentPlacement ? placementInteraction?.geometryPick : mirrorAxisPick ?? dimensionGeometryPick ?? constraintGeometryPick, positionPick: placementPositionPick, placement: currentPlacement ? placementInteraction?.placement : undefined, relation: inspectedRelation, inspection: currentMirror && mirrorInteraction?.kind === 'preview' ? { pointIds: [], entityIds: [mirrorInteraction.axisLineId] } : currentOffset?.source.kind === 'graph-cycle' ? { pointIds: [], entityIds: currentOffset.source.sourceRefs.map(ref => ref.entityId) } : diagnosticHighlight, degreesOfFreedom: graphFreedom, showDimensions: preferences.showOnPartDimensions, onSelect: selectGraph, onSelectSet: selectGraphBox, datumSelection: graphDatums, onSelectDatum: selectDatum, onDelete: (selection, focused) => focused ? deleteFromFocus({ geometry: selection }, 'Delete') : deleteSketchGeometry(selection), onConfigureRelation: configureGraphRelation, dimensionSelection: graphDimensions, onSelectDimension: selectGraphDimension, onDeleteDimension: (dimension, key) => dimension ? deleteFromFocus({ dimension }, key ?? 'Delete') : deleteSketchDimensions(), onDimensionMenu: openDimensionMenu, highlight: sketchHighlight, onEditMany: applyCanvasEdits, onPrepareEdits: props.onPrepareEdits, onPreviewDocument: publishSketchPreview } : undefined} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={preparedSketchDocument?.parameters ?? previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features)} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? () => undefined : selectProfile} onAddProfile={addProfile} onAddFreshSketch={addFreshSketch} onAddPath={addPath} onTranslateProfile={(id, translation, signal) => { if (!sketch) return; return applyCanvasEdits([{ kind: 'translate-sketch-profiles', sketchId: sketch.id, profileIds: [id], translation }], signal); }} onMoveHandle={(id, handle, translation, signal) => { if (!sketch) return; return applyCanvasEdits([{ kind: 'move-sketch-handle', sketchId: sketch.id, profileId: id, handle, translation }], signal); }} onAddCurve={addCurve} onCancelCurve={cancel} curveCreation={Boolean(curveCreation)} onPendingChange={setDrawingPending} onError={setError} cancelSignal={cancelSignal} interactionLocked={curveCreation ? commandSubmission.applying || editorPending || parameterPending || namePending || storageBusy || deleteFeature !== null || resolvingTopology !== null : pendingOtherCommands || editorPending && !mirrorAxisPick && !placementPositionPick || storageBusy || externalWorkflowOpen} viewLocked={navigationLocked} onControlsReady={publishRenderedControls} /> : null}<CadViewport hidden={sketchSurface} key={document.id} depthControl={currentDepthControl} busyInputLocked={storageBusy} regionSelection={currentRegionPick} sourceReferencePickIds={currentRegionPick ? regionReferenceIds : currentReferencePick?.eligibleIds} getFitArea={getFitArea} onContextMenu={currentOwnedPick || currentSketchPlaneRequest ? undefined : openSolidMenu} navigationMode={preferences.navigationMode} navigationLocked={navigationLocked} meshes={currentAreaRepair && currentRegionPick ? NO_MESHES : displayedMeshes} references={references} referenceVersion={currentTopologyPick ? inputPicker.source?.inputToken ?? null : candidatePreview?.candidateId ?? props.documentVersion} selectedId={currentTopologyPick ? currentTopologyPick.request.bodyId : newFeature?.id ?? selectedId} selectedReferencePlane={selectedReferencePlane} hoveredReferencePlane={hoveredReferencePlane} onHoverPlane={hoverReferencePlane} onSelect={choose} onSelectPlane={selectReferencePlane} planePickingOnly={Boolean(currentSketchPlaneRequest)} interactionLocked={currentTopologyPick ? inputPicker.busy : locked && !currentOwnedPick && !currentSketchPlaneRequest} onControlsReady={publishRenderedControls} pickMode={currentTopologyPick ? inputPicker.mode : currentOwnedPick || currentSketchPlaneRequest ? 'body' : pickMode} topologySelection={currentTopologyPick ? inputPicker.selection : candidatePreview || currentOwnedPick ? null : topologySelection} pickingEnabled={currentTopologyPick ? Boolean(inputPicker.source) && !inputPicker.busy : Boolean(currentOwnedPick) || topologyReady && !candidatePreview} onTopologyPick={currentTopologyPick ? inputPicker.pick : currentOwnedPick || currentSketchPlaneRequest ? undefined : pickTopology} />
         {currentSketchPlaneRequest && <div className="cad-plane-request" role="status"><PencilRuler size={14} /><span>{currentSketchPlaneRequest.replaceSketchId ? `Click the new plane for ${document.features.find(feature => feature.id === currentSketchPlaneRequest.replaceSketchId)?.name ?? 'the sketch'}` : 'Select a plane in the design area'}</span><Button aria-label="Cancel plane selection" onClick={cancel}>Cancel</Button></div>}
         {buildState === 'building' && <div className="cad-build-overlay" role="status"><Loader2 size={13} className="cad-spin" /> Building solid geometry…</div>}
         <div className="cad-tree-overlay" data-cad-model-tree aria-label="Feature tree and parameters">{specificationTree}</div>

@@ -47,7 +47,8 @@ test('resizes a free circle directly, cancels cleanly and preserves explicit siz
   await page.mouse.click(dimensionCanvas.x + dimensionCanvas.width / 2, dimensionCanvas.y + 20);
   await expect(grip).toHaveCount(0);
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
-  await page.locator('[data-cad-sketch-entity="rim"]').press('Enter');
+  // A picked circle waits for a line or a second curve; picking it again asks for its size.
+  await page.locator('[data-cad-sketch-entity="rim"]').press('Enter'); await page.locator('[data-cad-sketch-entity="rim"]').press('Enter');
   await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('16');
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);

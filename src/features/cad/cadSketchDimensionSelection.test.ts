@@ -168,8 +168,8 @@ describe('sketch dimension conversions', () => {
     expect(cadSketchDimensionToReference(graph, relation('size')).relation).toEqual({ id: 'size', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'hole', quantity: 'diameter' } });
   });
   it('explains why other dimensions cannot become references', () => {
-    expect(cadSketchDimensionToReference(graph, relation('angle'))).toEqual({ relation: null, reason: 'Reference dimensions measure lengths, point distances, radii and diameters.' });
-    expect(cadSketchDimensionToReference(graph, relation('rise')).reason).toBe('Reference dimensions measure lengths, point distances, radii and diameters.');
+    expect(cadSketchDimensionToReference(graph, relation('angle'))).toEqual({ relation: null, reason: 'Reference dimensions measure lengths, point distances, point to line distances, radii and diameters.' });
+    expect(cadSketchDimensionToReference(graph, relation('rise')).reason).toBe('Reference dimensions measure lengths, point distances, point to line distances, radii and diameters.');
     const measured = { ...graph, relations: [...graph.relations, { id: 'measured', kind: 'reference-dimension' as const, measurement: { kind: 'line-length' as const, entityId: 'base' } }] };
     expect(cadSketchDimensionToReference(measured, relation('length')).reason).toBe('A reference dimension already measures this. Delete this dimension instead.');
   });

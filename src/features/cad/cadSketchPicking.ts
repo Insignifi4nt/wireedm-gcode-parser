@@ -1,8 +1,10 @@
 import type { CadSketchProfile } from '@/domain/cad/cadDocument';
 import { cadProfileToEntities, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import { closedPathContainsPoint } from '@/domain/path-intel/pathContainment';
+import { spatialCellSizeForSegments } from '@/domain/path-intel/intersections';
+import { SpatialHash } from '@/domain/path-intel/spatialIndex';
 import { createArcSegment, createCircleSegment, createLineSegment, signedAreaOfPath } from '@/domain/path-intel/segments';
-import type { PathSegment, Point2 } from '@/domain/path-intel/types';
+import type { Bounds2, PathSegment, Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
 import { inspectCadSketchHandles, type CadSketchHandleDescriptor } from '@/domain/cad/cadSketchHandles';
 
@@ -70,6 +72,8 @@ export function createCadSketchProfilePicker(profiles: readonly CadSketchProfile
         contains: (point: Point2) => closedPathContainsPoint(refs, point, byId) }];
     } catch { return []; } // Invalid geometry keeps its existing property/build diagnostic.
   });
+  // Built on the first edge query, so pickers that never answer one never pay for it. Geometry the index cannot hold is measured directly.
+  let edges: ((bounds: Bounds2) => readonly PathSegment[]) | null = null;
   return {
     hasProfile(id: string): boolean { return prepared.some(profile => profile.id === id); },
     pick(point: SketchPoint, millimetersPerPixel: number): string | null {
@@ -84,6 +88,24 @@ export function createCadSketchProfilePicker(profiles: readonly CadSketchProfile
         if (!profile.construction && profile.area > 0 && (!interior || profile.area < interior.area) && profile.contains(location)) interior = { id: profile.id, area: profile.area };
       }
       return boundary?.id ?? interior?.id ?? null;
+    },
+    /**
+     * Whether a profile edge passes within pick reach of the point, ignoring profiles that only enclose it. Only edges whose
+     * bounds come within reach are measured, so a pointer moving along empty space stays cheap in a large sketch.
+     */
+    edgeNear(point: SketchPoint, millimetersPerPixel: number): boolean {
+      if (!prepared.length || !Number.isFinite(point[0]) || !Number.isFinite(point[1]) || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return false;
+      const tolerance = CAD_SKETCH_PICK_RADIUS_PX * millimetersPerPixel, location = { x: point[0], y: point[1] };
+      if (!edges) {
+        const segments = prepared.flatMap(profile => profile.segments);
+        try {
+          const index = new SpatialHash<PathSegment>({ cellSize: spatialCellSizeForSegments(segments, Number.EPSILON) });
+          for (const segment of segments) index.insertBounds(segment.bounds, segment);
+          edges = bounds => index.queryBounds(bounds);
+        } catch { edges = () => segments; }
+      }
+      return edges({ minX: point[0] - tolerance, minY: point[1] - tolerance, maxX: point[0] + tolerance, maxY: point[1] + tolerance })
+        .some(segment => cadSketchBoundaryDistance(location, segment) <= tolerance);
     }
   };
 }

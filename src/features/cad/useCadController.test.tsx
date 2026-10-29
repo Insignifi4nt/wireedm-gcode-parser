@@ -134,7 +134,8 @@ function inspectedSketchDocument() {
 }
 function inspectedSolve(input: CadSketchSolveInput): CadSketchSolveResult {
   return { kind: 'solved', graph: input.graph, diagnostics: { status: 'success', degreesOfFreedom: 0,
-    conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } };
+    conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [], ...input.analyseDefinition ? { definition: {
+      definedPointIds: input.graph.points.map(point => point.id), underDefinedPointIds: [], definedEntityIds: input.graph.entities.map(entity => entity.id), underDefinedEntityIds: [] } } : {} } };
 }
 
 describe('accepted sketch constraint inspection guards', () => {
@@ -147,13 +148,17 @@ describe('accepted sketch constraint inspection guards', () => {
     if (!tool) throw new Error('Missing constraint inspection tool');
     expect(await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', offset: 0, limit: 1 })).toMatchObject({ ok: true,
       data: { version: before.version, persisted: false, pointCount: 2, entityCount: 1, relationCount: 2, total: 2, nextOffset: 1,
-        analysis: { kind: 'solved', status: 'success', degreesOfFreedom: 0 }, items: [{ source: { id: 'horizontal' } }] } });
+        analysis: { kind: 'solved', status: 'success', degreesOfFreedom: 0, definition: { points: { defined: 2, underDefined: 0, unknown: 0 },
+          entities: { defined: 1, underDefined: 0, unknown: 0 } } }, items: [{ source: { id: 'horizontal' }, points: [{ id: 'a', definition: 'defined' }, { id: 'b', definition: 'defined' }] }] } });
+    expect(sketchSolver.solve.mock.calls[0][0]).toMatchObject({ analyseDefinition: true });
     const last = await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', offset: 1, limit: 1 });
     expect(last).toMatchObject({ ok: true, data: { nextOffset: null, items: [{ source: { id: 'length', value: ' span ' },
       value: { scalar: ' span ', valueMm: 20, role: 'expression-driver' } }] } });
     expect(last).not.toHaveProperty('data.graph'); expect(last).not.toHaveProperty('data.parameters');
     expect(await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', section: 'points', offset: 1 })).toMatchObject({ ok: true,
-      data: { section: 'points', total: 2, items: [{ id: 'b', entityIds: ['edge'] }] } });
+      data: { section: 'points', total: 2, items: [{ id: 'b', definition: 'defined', entityIds: ['edge'] }] } });
+    expect(await tool.execute({ expectedVersion: before.version, sketchId: 'sketch', section: 'entities' })).toMatchObject({ ok: true,
+      data: { section: 'entities', total: 1, items: [{ source: { id: 'edge' }, definition: 'defined' }] } });
     expect(sketchSolver.solve).toHaveBeenCalledOnce(); expect(createSketchClient).toHaveBeenCalledOnce();
     expect(h.session.getSnapshot()).toBe(before); expect(JSON.stringify(before.document)).toBe(exact);
     expect((await loadCadDocument(h.workbench().adapter, before.document.id)).document).toEqual(before.document);

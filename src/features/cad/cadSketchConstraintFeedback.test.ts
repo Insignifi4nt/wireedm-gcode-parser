@@ -114,7 +114,10 @@ describe('candidate-owned sketch constraint feedback', () => {
     const candidate = parseCadSketchGraph({ points: [{ id: 'center', position: [0, 0] }, { id: 'start', position: [10, 0] }, { id: 'end', position: [0, 10] }],
       entities: [{ id: 'arc', kind: 'arc', construction: false, centerPointId: 'center', startPointId: 'start', endPointId: 'end', direction: 'ccw' }],
       relations: [{ id: 'fixed-y', kind: 'fixed-axis', pointId: 'start', axis: 'y', value: 0 }] });
-    expect(describeCadSketchConstraintSource(candidate, { kind: 'relation', id: 'fixed-y' }).label).toBe('Fix Y relation 1 · Point 2');
+    // A zero coordinate names the plane reference it keeps the point on; any other value names the coordinate.
+    expect(describeCadSketchConstraintSource(candidate, { kind: 'relation', id: 'fixed-y' }).label).toBe('On the X axis relation 1 · Point 2');
+    const placed = { ...candidate, relations: [{ id: 'fixed-x', kind: 'fixed-axis' as const, pointId: 'end', axis: 'x' as const, value: 4 }, { id: 'pin', kind: 'fixed-point' as const, pointId: 'center', position: [0, 0] as const }] };
+    expect(['fixed-x', 'pin'].map(id => describeCadSketchConstraintSource(placed, { kind: 'relation', id }).label)).toEqual(['Fix X relation 1 · Point 3', 'Fixed at the origin relation 2 · Point 1']);
     const error = new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Arc', graph: candidate, dragPointId: 'start', rejection: {
       kind: 'rejected', reason: 'invalid-solution', message: 'Native returned a candidate.', diagnostics: { status: 'converged', degreesOfFreedom: 2,
         conflictingIds: ['arc', 'start'], redundantIds: ['fixed-y'], partiallyRedundantIds: ['fixed-y'],

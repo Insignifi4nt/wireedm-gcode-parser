@@ -39,7 +39,7 @@ import { cadArcSvgPath } from './cadSketchSvg';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
 import { cadSketchDimensionPick, cadSketchDimensionSelectionStatus, type CadSketchDimensionPick } from './cadSketchDimensionSelection';
-import { CAD_SKETCH_AXIS_PIXELS, CAD_SKETCH_DATUMS, cadSketchDatumLabels, cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, pickCadSketchDatum, type CadSketchDatum, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
+import { CAD_SKETCH_AXIS_PIXELS, CAD_SKETCH_DATUMS, cadSketchDatumLabels, cadSketchRelationDatum, cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, pickCadSketchDatum, type CadSketchDatum, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { cadFreshSketchDatumAxes, type CadFreshSketchDrawing, type CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
@@ -54,6 +54,8 @@ const SNAP_PLACEMENTS: ReadonlySet<CadSketchSnapCandidate['target']['kind']> = n
 const ACQUIRED_POINTS = 4;
 /** A drawing press that travels farther than this is a drag, and a press this close to the last placed point grabs it. */
 const DRAWING_DRAG_PIXELS = 8;
+/** The plane references each selection filter reaches: the origin counts as a point and the axes as edges. */
+const CAD_SKETCH_FILTER_DATUMS: Readonly<Record<CadSketchGraphPickFilter, readonly CadSketchDatum[]>> = { auto: CAD_SKETCH_DATUMS, points: ['origin'], edges: ['x-axis', 'y-axis'] };
 /** Picks whose relations name source geometry, so the source must not change while they are pending. */
 const referencesSource = (pick: CadFreshSketchPick) => pick.kind === 'coincident' || pick.kind === 'on-line' || pick.kind === 'on-curve';
 type DrawingPick = { readonly point: SketchPoint } & (
@@ -113,17 +115,34 @@ interface CadSketchOverlapPick {
   readonly action?: 'split' | 'trim' | 'extend';
 }
 
-/** CATIA-style H and V arrows from the sketch origin, a fixed screen size at any zoom. */
-/** The view box spans `[-width / 2, width / 2]` across and `[-height / 2, height / 2]` down, in SVG units. */
+/**
+ * The stretches of `[from, to]` more than `half` from `at`. The grid fills these, leaving out its zero lines, which the axes
+ * draw over; half a grid step clears the zero line and keeps both neighbours.
+ */
+function gridBands(from: number, to: number, at: number, half: number): readonly (readonly [number, number])[] {
+  return ([[from, Math.min(to, at - half)], [Math.max(from, at + half), to]] as const).filter(([start, end]) => end > start);
+}
+
+/**
+ * CATIA-style H and V axes: thin lines through the sketch origin across the whole view, with fixed-size arrows naming each
+ * direction. The view box spans `[-width / 2, width / 2]` across and `[-height / 2, height / 2]` down, in SVG units.
+ */
 function CadSketchAxes({ origin: [x, y], pixel, view: [width, height], datumProps }: { readonly origin: SketchPoint; readonly pixel: number; readonly view: SketchPoint;
   readonly datumProps: (datum: CadSketchDatum, className: string, onScreen: boolean) => Record<string, unknown> }) {
   const length = CAD_SKETCH_AXIS_PIXELS * pixel, head = 6 * pixel, text = 10 * pixel, ring = 4 * pixel;
+  const left = -width / 2, right = width / 2, top = -height / 2, bottom = height / 2;
   // Datums panned out of view stay drawn but leave the keyboard order, so Tab and Enter never reach unseen operands.
-  const shows = (left: number, right: number, top: number, bottom: number) => right >= -width / 2 && left <= width / 2 && bottom >= -height / 2 && top <= height / 2;
+  const originShown = x + ring >= left && x - ring <= right && y + ring >= top && y - ring <= bottom;
   return <g className="cad-sketch-axes">
-    <path d={`M ${x} ${y} h ${length} m ${-head} ${-head / 2} l ${head} ${head / 2} l ${-head} ${head / 2}`} strokeWidth={pixel * 1.5} {...datumProps('x-axis', 'cad-axis-x', shows(x, x + length, y - head / 2, y + head / 2))} />
-    <path d={`M ${x} ${y} v ${-length} m ${-head / 2} ${head} l ${head / 2} ${-head} l ${head / 2} ${head}`} strokeWidth={pixel * 1.5} {...datumProps('y-axis', 'cad-axis-y', shows(x - head / 2, x + head / 2, y - length, y))} />
-    <circle cx={x} cy={y} r={ring} strokeWidth={pixel * 1.5} {...datumProps('origin', 'cad-sketch-origin', shows(x - ring, x + ring, y - ring, y + ring))} />
+    <g {...datumProps('x-axis', 'cad-axis-x', y >= top && y <= bottom)}>
+      <line className="cad-sketch-axis-line" x1={left} y1={y} x2={right} y2={y} strokeWidth={pixel} />
+      <path d={`M ${x} ${y} h ${length} m ${-head} ${-head / 2} l ${head} ${head / 2} l ${-head} ${head / 2}`} strokeWidth={pixel * 1.5} />
+    </g>
+    <g {...datumProps('y-axis', 'cad-axis-y', x >= left && x <= right)}>
+      <line className="cad-sketch-axis-line" x1={x} y1={top} x2={x} y2={bottom} strokeWidth={pixel} />
+      <path d={`M ${x} ${y} v ${-length} m ${-head / 2} ${head} l ${head / 2} ${-head} l ${head / 2} ${head}`} strokeWidth={pixel * 1.5} />
+    </g>
+    <circle cx={x} cy={y} r={ring} strokeWidth={pixel * 1.5} {...datumProps('origin', 'cad-sketch-origin', originShown)} />
     <text className="cad-sketch-axis-label" x={x + length + 3 * pixel} y={y + text / 3} fontSize={text} aria-hidden>H</text>
     <text className="cad-sketch-axis-label" x={x - text / 3} y={y - length - 3 * pixel} fontSize={text} aria-hidden>V</text>
   </g>;
@@ -222,6 +241,15 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; changes: number;
     readonly held: { readonly last: SketchPoint; readonly raw: SketchPoint; readonly scale: SketchPoint } | null; dragged: boolean } | null>(null);
   /**
+   * A plain-selection press on the origin or an axis. It selects the reference on release, so a press that travels past the
+   * drag slop first still boxes or moves a profile exactly as it would away from the axes.
+   */
+  const datumPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; readonly datum: CadSketchDatum; readonly additive: boolean; readonly documentVersion: string | undefined; readonly sketchId: string; readonly cancelSignal: number; readonly frame: string } | null>(null);
+  // An abandoned press still ends in the browser's click, which must not select or clear what lies under it. Its pointer is kept
+  // until it lifts and only then arms the suppression, so a click another pointer finishes first cannot consume it.
+  const abandonedPresses = useRef(new Set<number>());
+  const dropDatumPress = useCallback(() => { if (!datumPress.current) return; abandonedPresses.current.add(datumPress.current.pointerId); datumPress.current = null; }, []);
+  /**
    * Counts drawing draft changes and whether the latest one added a point. A press keeps its release only while its own
    * change is the latest, so a finished, rejected or ambiguous pick, or a cancel or keyboard pick during the press, ends it.
    */
@@ -251,10 +279,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     return active;
   }, []);
   useEffect(() => {
-    const blurred = () => finishProfileDrag();
+    // Losing the window ends a press on the origin or an axis without selecting it, as it ends a profile drag.
+    const blurred = () => { dropDatumPress(); finishProfileDrag(); };
     window.addEventListener('blur', blurred);
-    return () => { window.removeEventListener('blur', blurred); finishProfileDrag(); };
-  }, [finishProfileDrag]);
+    return () => { window.removeEventListener('blur', blurred); dropDatumPress(); finishProfileDrag(); };
+  }, [dropDatumPress, finishProfileDrag]);
   const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; button: number; buttonMask: number; moved: boolean; element: SVGSVGElement; dimension: CadSketchDimensionPick | null } | null>(null);
   const finishPan = useCallback((pointerId?: number) => {
     const active = pan.current;
@@ -296,8 +325,17 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const datumPick = geometryPick?.onPickDatum && geometryPick.eligibleDatums?.length ? geometryPick : undefined;
   // In plain selection the origin and axes are selected like sketch geometry, as CATIA selects its H and V axes.
   const datumSelect = !geometryPick && !positionPick && tool === 'select' && graphControls?.onSelectDatum ? graphControls : undefined;
-  const datumEligible = datumPick?.eligibleDatums ?? (datumSelect ? CAD_SKETCH_DATUMS : undefined);
+  const datumEligible = datumPick?.eligibleDatums ?? (datumSelect ? CAD_SKETCH_FILTER_DATUMS[pickFilter] : undefined);
   const datumAt = (point: SketchPoint, millimetersPerPixel: number) => datumEligible ? pickCadSketchDatum(point, millimetersPerPixel, datumEligible) : null;
+  /**
+   * Sketch geometry, profile grips and profile edges keep their picks where an axis crosses them; the axes take the rest of
+   * their length. `covered` is what the caller already found under the pointer, so the reference test runs only when that
+   * hit test found nothing, and only a pointer within reach of a reference measures the profile edges near it.
+   */
+  const datumUnder = (point: SketchPoint, millimetersPerPixel: number, covered: boolean) => {
+    const datum = covered ? null : datumAt(point, millimetersPerPixel);
+    return datum && datumSelect && pickFilter === 'auto' && profilePicker.edgeNear(point, millimetersPerPixel) ? null : datum;
+  };
   const chooseDatum = (datum: CadSketchDatum, additive: boolean) => { if (datumPick) datumPick.onPickDatum?.(datum); else datumSelect?.onSelectDatum?.(datum, additive); };
   const selectGraphHit = (hit: CadSketchGraphSelection, additive = false) => {
     if (geometryPick) { if (cadSketchGeometryPickAllows(geometryPick, hit)) geometryPick.onPick(hit); }
@@ -322,7 +360,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const visibleHandles = previewHandlePicker.handles.filter(handle => handle.profileId === handleProfile?.id);
   const displayHandles = hoverHandle && hoverHandle.profileId !== handleProfile?.id ? [...visibleHandles, hoverHandle] : visibleHandles;
   useLayoutEffect(() => { finishPan(); }, [documentVersion, interactionLocked, cancelSignal, sketch.id, profilePicker, finishPan]);
-  useLayoutEffect(() => { finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridSnap, gridStep, navigationMode, finishProfileDrag]);
+  useLayoutEffect(() => { dropDatumPress(); finishProfileDrag(); }, [documentVersion, sketch, parameters, tool, interactionLocked, cancelSignal, previewProfile, center, span, aspect, snap, gridSnap, gridStep, navigationMode, dropDatumPress, finishProfileDrag]);
   useLayoutEffect(() => {
     if (profileDrag.current && profileDrag.current.profile.id !== selectedProfileId) finishProfileDrag();
     setDetailSelection(current => current.kind === 'handle' && current.target.profileId === selectedProfileId ? current : { kind: 'profile' });
@@ -652,7 +690,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (projectSelection(owned)?.frame === owned.frame) {
             if (edit.trim.kind === 'end') graphControls.onSelect({ kind: 'point', id: edit.trim.cutPointId });
             else if ('cutPointIds' in edit.trim) graphControls.onSelect({ kind: 'point', id: edit.trim.cutPointIds[0] });
-            else graphControls.onSelectSet?.(graphControls.selection.filter(atom => atom.kind !== 'entity' || atom.id !== edit.trim.entityId));
+            else graphControls.onSelectSet?.(graphControls.selection.filter(atom => atom.kind !== 'entity' || atom.id !== edit.trim.entityId), true);
           }
         }, 'Unable to trim this edge.');
       } }]),
@@ -810,9 +848,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const pathNeedsClosingLine = pathDraft.kind === 'ready' && pathDraft.segments.length > 0 && pathEnd !== null
     && (pathEnd[0] !== pathDraft.start[0] || pathEnd[1] !== pathDraft.start[1]);
   const currentTrim = tool === 'trim' && trimHover?.prepared === sourceGraph && !interactionLocked ? trimHover.preview : null;
+  // An inspected relation or diagnostic that holds a point on the origin or an axis lights that reference up with its geometry.
+  const relationDatum = graphControls?.relation ? cadSketchRelationDatum(graphControls.relation) : null;
+  const relatedDatums: readonly CadSketchDatum[] = graphControls?.inspection ? graphControls.inspection.datums ?? [] : relationDatum ? [relationDatum] : [];
   const datumProps = (datum: CadSketchDatum, className: string, onScreen: boolean) => {
     const eligible = onScreen && Boolean(datumEligible?.includes(datum)) && !interactionLocked, picked = Boolean((geometryPick ? geometryPick.pickedDatums : graphControls?.datumSelection)?.includes(datum));
-    const state = `${className}${eligible ? ' is-pick-eligible' : ''}${eligible && datumHover === datum ? ' is-pick-highlighted' : ''}${picked ? ' is-selected' : ''}`;
+    const state = `${className}${eligible ? ' is-pick-eligible' : ''}${eligible && datumHover === datum ? ' is-pick-highlighted' : ''}${picked ? ' is-selected' : ''}${relatedDatums.includes(datum) ? ' is-relation-highlighted' : ''}`;
     return eligible ? { className: state, role: 'button', tabIndex: 0, 'aria-label': `${datumPick ? 'Use' : 'Select'} ${cadSketchDatumLabels[datum].toLowerCase()}`, 'aria-pressed': datumPick ? undefined : picked, 'data-cad-sketch-datum': datum,
       onKeyDown: (event: ReactKeyboardEvent<SVGElement>) => {
         if (event.key === 'Escape' && !datumPick && graphControls && (graphControls.selection.length || graphControls.datumSelection?.length)) { event.preventDefault(); event.stopPropagation(); graphControls.onSelect(null); return; }
@@ -931,10 +972,18 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     <svg ref={svg} className={`cad-sketch-canvas ${drawing ? 'is-drawing' : tool === 'trim' ? 'is-trimming' : ''}`} role="application" tabIndex={interactionLocked ? -1 : 0} aria-label={sketch.kind === 'curve' ? 'Curve drawing canvas' : 'Sketch drawing canvas'} aria-describedby={instructionsId} viewBox={`${-width / 2} ${-span / 2} ${width} ${span}`} preserveAspectRatio="none"
       onContextMenu={(event) => event.preventDefault()}
       onPointerDownCapture={event => {
+        // Another contact while an axis is held abandons the press and its trailing click; the same pointer pressing again replaces it.
+        // This runs while capturing, since sketch geometry stops the press from reaching the canvas.
+        abandonedPresses.current.delete(event.pointerId);
+        if (datumPress.current && datumPress.current.pointerId !== event.pointerId) dropDatumPress(); else datumPress.current = null;
         if (positionPick && event.button === 0) {
           event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true;
           if (event.isPrimary === false || interactionLocked || viewLocked || isPreview || pan.current || profileDrag.current) return;
           event.currentTarget.focus({ preventScroll: true });
+          // A position pick that also takes the origin uses it exactly, unless an eligible sketch point lies under the pointer.
+          const point = datumPick && getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
+          const datum = point && rect.height ? datumUnder(point, span / rect.height, graphPicks(point, span / rect.height).length > 0) : null;
+          if (datum) { chooseDatum(datum, false); return; }
           acceptDrawingPick(getDrawingPick(event), event); return;
         }
         // A cancelled graph drag can release over empty canvas; its trailing click still belongs to the handle.
@@ -985,10 +1034,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
             const graphHit = point && rect.height ? graphPicks(point, span / rect.height)[0] : null;
             if (graphHit) { selectGraphHit(graphHit, event.shiftKey); suppressProfileClick.current = true; return; }
-            const datum = point && rect.height ? datumAt(point, span / rect.height) : null;
-            if (datum) { chooseDatum(datum, event.shiftKey); suppressProfileClick.current = true; return; }
-            if (geometryPick) { geometryPick.onConfirm?.(); return; }
+            if (geometryPick) {
+              // A pick takes the origin or an axis at once, since a press in a pick never drags.
+              const datum = datumPick && point && rect.height ? datumUnder(point, span / rect.height, false) : null;
+              if (datum) { chooseDatum(datum, false); suppressProfileClick.current = true; } else geometryPick.onConfirm?.();
+              return;
+            }
             const grip = pickFilter === 'auto' && onMoveHandle && point && rect.height ? pickGrip(event, point, span / rect.height) : null;
+            const datum = datumSelect && point && rect.height ? datumUnder(point, span / rect.height, Boolean(grip)) : null;
+            const frame = datum ? projectSelection(event)?.frame : undefined;
+            if (datum && frame) datumPress.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, datum, additive: event.shiftKey, documentVersion, sketchId: sketch.id, cancelSignal, frame };
             if (grip) {
               setActiveHandle(grip);
               if (selectedProfileId !== grip.profileId) onSelectProfile(grip.profileId);
@@ -1007,6 +1062,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           }
         }
       }}
+      onPointerUpCapture={event => { if (abandonedPresses.current.delete(event.pointerId)) suppressProfileClick.current = true; }}
       onPointerUp={(event) => {
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
@@ -1021,6 +1077,20 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             if (pick.point[0] !== press.held.last[0] || pick.point[1] !== press.held.last[1]) acceptDrawingPick(pick, { clientX: press.clientX, clientY: press.clientY });
           }
           return;
+        }
+        const reference = datumPress.current;
+        if (reference && event.pointerId === reference.pointerId) {
+          datumPress.current = null;
+          // A press that stayed within the drag slop is a click on the reference; the box or profile drag it started ends unapplied.
+          if (event.button === 0 && Math.hypot(event.clientX - reference.clientX, event.clientY - reference.clientY) <= 4) {
+            if (boxSelection.active()) boxSelection.cancel(false);
+            finishProfileDrag(event.pointerId); suppressProfileClick.current = true;
+            // It selects only in the document, sketch, cancellation and canvas frame it began in.
+            const current = reference.documentVersion === documentVersion && reference.sketchId === sketch.id && reference.cancelSignal === cancelSignal
+              && projectSelection(event)?.frame === reference.frame;
+            if (current && datumSelect && !interactionLocked) chooseDatum(reference.datum, reference.additive);
+            return;
+          }
         }
         if (boxSelection.active()) { if (boxSelection.end(event)) suppressProfileClick.current = true; return; }
         if (profileDrag.current) {
@@ -1045,14 +1115,18 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
         if (!geometryPick && !positionPick && pickFilter === 'auto' && point && rect.height) onContextMenu?.({ clientX: event.clientX, clientY: event.clientY, trigger: 'pointer', profileId: profilePicker.pick(point, span / rect.height), pointMm: point });
       }}
-      onPointerCancel={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
-      onLostPointerCapture={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
+      onPointerCancel={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress();
+        // A cancelled pointer ends in no click.
+        abandonedPresses.current.delete(event.pointerId); boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
+      onLostPointerCapture={(event) => { if (drawingPress.current?.pointerId === event.pointerId) drawingPress.current = null; if (datumPress.current?.pointerId === event.pointerId) dropDatumPress(); boxSelection.cancelPointer(event); finishProfileDrag(event.pointerId); finishPan(event.pointerId); }}
       onPointerMove={(event) => {
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
           if (!(event.buttons & 1)) drawingPress.current = null;
           else if (!press.dragged && Math.hypot(event.clientX - press.clientX, event.clientY - press.clientY) > DRAWING_DRAG_PIXELS) press.dragged = true;
         }
+        const reference = datumPress.current;
+        if (reference && event.pointerId === reference.pointerId && (!(event.buttons & 1) || Math.hypot(event.clientX - reference.clientX, event.clientY - reference.clientY) > 4)) datumPress.current = null;
         if (boxSelection.active()) { boxSelection.move(event); return; }
         if (profileDrag.current) {
           if (event.pointerId !== profileDrag.current.pointerId) return;
@@ -1079,22 +1153,25 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             const preview = interactionLocked || viewLocked ? null : trimAt(event);
             setTrimHover(preview && sourceGraph ? { prepared: sourceGraph, preview } : null);
           }
-          if (datumEligible && !interactionLocked && !viewLocked) {
-            const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
-            const graphHit = event.target instanceof Element && event.target.closest('[data-cad-sketch-point], [data-cad-sketch-entity], [data-cad-sketch-dimension]');
-            const next = !graphHit && point && rect.height ? datumAt(point, span / rect.height) : null;
-            if (next !== datumHover) setDatumHover(next);
-          }
-          if (tool === 'select' && !geometryPick && !positionPick && onMoveHandle && !interactionLocked && !viewLocked) {
-            const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
-            const graphHit = event.target instanceof Element && event.target.closest('[data-cad-sketch-point], [data-cad-sketch-entity], [data-cad-sketch-dimension]');
-            setHoverHandle(!graphHit && point && rect.height ? pickGrip(event, point, span / rect.height) : null);
+          const gripHover = tool === 'select' && !geometryPick && !positionPick && Boolean(onMoveHandle);
+          if ((datumEligible || gripHover) && !interactionLocked && !viewLocked) {
+            const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect(), millimetersPerPixel = rect.height ? span / rect.height : 0;
+            // The graph layer's hit areas already say which sketch point, edge or dimension is under the pointer, so hover never searches the graph.
+            const graphTarget = event.target instanceof Element ? event.target.closest('[data-cad-sketch-point], [data-cad-sketch-entity], [data-cad-sketch-dimension]') : null;
+            const grip = gripHover && !graphTarget && point && millimetersPerPixel ? pickGrip(event, point, millimetersPerPixel) : null;
+            if (gripHover) setHoverHandle(grip);
+            if (datumEligible) {
+              const covered = Boolean(graphTarget && graphTarget.getAttribute('aria-disabled') !== 'true' || grip && pickFilter === 'auto');
+              const next = point && millimetersPerPixel ? datumUnder(point, millimetersPerPixel, covered) : null;
+              if (next !== datumHover) setDatumHover(next);
+            }
           }
         }
       }}
       onPointerLeave={() => { setHoverHandle(null); setDatumHover(null); setTrimHover(null); setCursorInput(current => ({ ...current, point: cursor, mode: 'position' })); }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;
+        if (event.key === 'Escape') dropDatumPress();
         if (positionPick && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); positionPick.onCancel(); return; }
         if (geometryPick && !interactionLocked && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); geometryPick.onCancel(); return; }
         if (event.key === 'Escape' && boxSelection.active()) { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; boxSelection.cancel(); return; }
@@ -1163,7 +1240,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         } else if (drawing) acceptDrawingPick(getDrawingPick(event), event);
       }}>
       <defs><pattern id="cad-sketch-grid" x={-center[0] % gridStep} y={center[1] % gridStep} width={gridStep} height={gridStep} patternUnits="userSpaceOnUse"><path d={`M ${gridStep} 0 H 0 V ${gridStep}`} fill="none" className="cad-sketch-grid-line" strokeWidth={span / 1000} /></pattern></defs>
-      {grid && span / gridStep < 2000 && <rect x={-width / 2} y={-span / 2} width={width} height={span} fill="url(#cad-sketch-grid)" />}
+      {grid && span / gridStep < 2000 && gridBands(-width / 2, width / 2, -center[0], gridStep / 2).flatMap(([left, right]) => gridBands(-span / 2, span / 2, center[1], gridStep / 2)
+        .map(([top, bottom]) => <rect key={`${left} ${top}`} x={left} y={top} width={right - left} height={bottom - top} fill="url(#cad-sketch-grid)" />))}
       <CadSketchAxes origin={[-center[0], center[1]]} pixel={span / (viewportSize.height || 600)} view={[width, span]} datumProps={datumProps} />
       <g transform="scale(1,-1)" strokeWidth={span / 450}>
         {savedCurve && <g className="cad-profile is-selected"><CadPathDraftGeometry segments={savedCurve.segments} preview={false} viewCenter={center} /></g>}

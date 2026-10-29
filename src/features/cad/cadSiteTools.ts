@@ -392,12 +392,12 @@ export function cadSiteTools(getController: () => CadController) {
       if (inputToken === undefined) return cad.resolveTopologyPicks(request, expectedVersion, signal);
       return { ...await cad.resolveTopologyPicks(request, expectedVersion, signal, undefined, inputToken), inputToken };
     }),
-    tool('cad_inspect_sketch_constraints', 'Read graph freedom/status and paged source relations, points or entities with exact drivers and analytic local measurements. Saved reference-dimension rows report computed measurement separately from driving values; they add no native equation. Does not apply a solve or change history. Requires a current version and closed workflows.', CadToolSketchConstraintsQuerySchema, async (cad, input, signal) => {
+    tool('cad_inspect_sketch_constraints', 'Read graph freedom/status, point/entity definition and paged source relations, points or entities with exact drivers and analytic local measurements. Saved reference-dimension rows report computed measurement separately from driving values; they add no native equation. Does not apply a solve or change history. Requires a current version and closed workflows.', CadToolSketchConstraintsQuerySchema, async (cad, input, signal) => {
       const inspection = await cad.inspectSketchConstraints(input.sketchId, input.expectedVersion, signal);
       return { version: input.expectedVersion, persisted: false, sketchId: inspection.sketchId, section: input.section ?? 'relations',
         pointCount: inspection.pointCount, entityCount: inspection.entityCount, relationCount: inspection.relationCount,
         legacyProfileCount: inspection.legacyProfileCount, legacyDimensionCount: inspection.legacyDimensionCount,
-        degreesOfFreedomScope: inspection.degreesOfFreedomScope, analysis: summarizeCadSketchConstraintAnalysis(inspection.analysis),
+        degreesOfFreedomScope: inspection.degreesOfFreedomScope, analysis: summarizeCadSketchConstraintAnalysis(inspection.analysis, inspection),
         ...pageCadSketchConstraints(inspection, input) };
     }),
     tool('cad_inspect_sketch_handles', 'Inspect revision-scoped sketch grips: exact local-mm point, handle, label and draggable state. Follow pages at one version; use the returned handle with move-sketch-handle in cad_edit_document. Grips preserve dimensions/expressions; indices are never persistent relation IDs. No edits.', object({ ...version, sketchId: id, profileId: id, ...pageFields }), async (cad, input, signal) => {

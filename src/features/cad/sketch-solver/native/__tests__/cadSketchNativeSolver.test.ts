@@ -172,17 +172,21 @@ describe('native sketch solver module', () => {
     }
   });
 
-  it('answers counts larger than the buffer with invalid input instead of trapping', async () => {
+  it('answers counts larger than the buffer, and unknown options, with invalid input instead of trapping', async () => {
     const { instance } = await WebAssembly.instantiate(wasm, {});
     const exports = instance.exports as { memory: WebAssembly.Memory; buffer_alloc(length: number): number; buffer_free(pointer: number, length: number): void; solve(pointer: number, length: number): number };
     const version = CAD_SKETCH_NATIVE_PROTOCOL_VERSION;
-    for (const buffer of [[version, 2 ** 31, 0], [version, 0, 2 ** 32 - 1], [version, 2 ** 32 - 1, 2 ** 32 - 1, 0, 0]]) {
+    const reply = (buffer: readonly number[]) => {
       const pointer = exports.buffer_alloc(buffer.length);
       new Float64Array(exports.memory.buffer, pointer, buffer.length).set(buffer);
-      const output = exports.solve(pointer, buffer.length), reply = new Float64Array(exports.memory.buffer, output, 9).slice();
-      expect([...reply.subarray(0, 4)]).toEqual([9, version, 2, 0]);
-      exports.buffer_free(pointer, buffer.length); exports.buffer_free(output, 9);
-    }
+      const output = exports.solve(pointer, buffer.length), length = new Float64Array(exports.memory.buffer, output, 1)[0];
+      const words = [...new Float64Array(exports.memory.buffer, output, length)];
+      exports.buffer_free(pointer, buffer.length); exports.buffer_free(output, length);
+      return words;
+    };
+    for (const buffer of [[version, 2 ** 31, 0, 0], [version, 0, 2 ** 32 - 1, 0], [version, 2 ** 32 - 1, 2 ** 32 - 1, 0, 0, 0], [version, 0, 0, 2], [version, 0, 0, 3], [version, 0, 0, 0.5], [version, 0, 0]])
+      expect(reply(buffer).slice(0, 4)).toEqual([9, version, 2, 0]);
+    expect(reply([version, 0, 0, 1]).slice(0, 3)).toEqual([9, version, 0]);
   });
 
   it('rejects a module without the solver exports', async () => {

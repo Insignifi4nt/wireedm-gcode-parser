@@ -84,6 +84,21 @@ describe('values-only solved replies', () => {
     expect(parseCadSketchSolverReply(withFreedom(null), input)).toMatchObject({ result: { kind: 'solved', diagnostics: { degreesOfFreedom: null } } });
     expect(() => parseCadSketchSolverReply(withFreedom(-1), input)).toThrow('constraints');
   });
+  it('carries definition only on a solved reply to input that asked, naming each request point and entity once', () => {
+    const defining = parseCadSketchSolveInput({ graph, parameters: { span: 10 }, analyseDefinition: true });
+    const definition = { definedPointIds: ['a'], underDefinedPointIds: ['b'], definedEntityIds: [], underDefinedEntityIds: ['line'] };
+    const solved = (value: unknown) => { const reply = replyWith(graph); return { ...reply, result: { ...reply.result, diagnostics: { ...reply.result.diagnostics, definition: value } } }; };
+    expect(parseCadSketchSolverReply(solved(definition), defining)).toMatchObject({ result: { kind: 'solved', diagnostics: { definition } } });
+    expect(() => parseCadSketchSolverReply(replyWith(graph), defining)).toThrow('constraints');
+    expect(() => parseCadSketchSolverReply(solved(definition), input)).toThrow('constraints');
+    for (const wrong of [{ ...definition, definedPointIds: ['a', 'a'] }, { ...definition, definedPointIds: ['a', 'b'] }, { ...definition, definedPointIds: ['line'] },
+      { ...definition, underDefinedEntityIds: ['a'] }, { ...definition, definedEntityIds: ['length'] }, { ...definition, definedPointIds: ['missing'] }])
+      expect(() => parseCadSketchSolverReply(solved(wrong), defining)).toThrow('constraints');
+    for (const malformed of [{ ...definition, extra: [] }, { definedPointIds: ['a'], underDefinedPointIds: ['b'], definedEntityIds: [] }, { ...definition, definedPointIds: 'a' }])
+      expect(() => parseCadSketchSolverReply(solved(malformed), defining)).toThrow('Invalid sketch worker response.');
+    const rejected = { id: 1, kind: 'result', result: { kind: 'rejected', reason: 'failed', message: 'No.', diagnostics: { ...replyWith(graph).result.diagnostics, status: 'failed', definition } } };
+    expect(() => parseCadSketchSolverReply(rejected, defining)).toThrow('Invalid sketch worker response.');
+  });
   it('keeps negative zero and survives a structured clone with expressions, references, radii and no slots', () => {
     expect(Object.is(solvedGraph(parseCadSketchSolverReply(replyWith(graph, [10, -0]), input)).points[1].position[1], -0)).toBe(true);
     const document = circleReferencePart(true), target = document.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
@@ -131,6 +146,14 @@ describe('sketch solver input boundary', () => {
     expect(() => parseCadSketchSolveInput({ graph: { ...graph, points: 'none' }, parameters: { span: 10 } })).toThrow('Invalid sketch solver input.');
     expect(() => parseCadSketchSolveInput({ graph: { ...graph, relations: [...graph.relations, graph.relations[0]] }, parameters: { span: 10 } }))
       .toThrowError(expect.objectContaining({ code: 'duplicate-sketch-id' }));
+  });
+  it('asks for definition only with true, and never with a drag', () => {
+    const graph = source();
+    expect(parseCadSketchSolveInput({ graph, parameters: { span: 10 }, analyseDefinition: true })).toEqual({ graph, parameters: { span: 10 }, analyseDefinition: true });
+    expect(parseCadSketchSolveInput({ graph, parameters: { span: 10 }, analyseDefinition: false })).toEqual({ graph, parameters: { span: 10 } });
+    expect(() => parseCadSketchSolveInput({ graph, parameters: { span: 10 }, analyseDefinition: 1 })).toThrow('Invalid sketch solver input.');
+    expect(() => parseCadSketchSolveInput({ graph, parameters: { span: 10 }, drag: { pointId: 'b', position: [10, 1] }, analyseDefinition: true }))
+      .toThrow('A sketch drag cannot ask which geometry is defined.');
   });
   it('keeps the accepted sketch graphs of an accepted document', () => {
     const sketch = parseCadDocument(documentWith(source())).features[0];

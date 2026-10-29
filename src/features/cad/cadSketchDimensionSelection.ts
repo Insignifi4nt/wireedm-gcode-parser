@@ -3,7 +3,7 @@ import { cadSketchRelationEntityIds } from '@/domain/cad/cadSketchGraphReference
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import type { CadSketchDatum } from './cadSketchGraphSelection';
 
-const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['distance', 'axis-distance', 'radial-size', 'fillet-corner', 'chamfer-corner', 'line-angle', 'reference-dimension']);
+const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['distance', 'point-line-distance', 'axis-distance', 'radial-size', 'fillet-corner', 'chamfer-corner', 'line-angle', 'reference-dimension']);
 /** Relations drawn as a dimension annotation on the sketch canvas. */
 export const isCadSketchDimensionRelation = (relation: CadSketchGraphRelation): relation is CadSketchDimensionRelation => DIMENSION_KINDS.has(relation.kind);
 
@@ -45,17 +45,20 @@ const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.m
 /**
  * The pick for a dimension relation, without its value. Editing the value keeps the selection, and so do Make reference and
  * Make driving, which keep the measured length, distance, radius or diameter. A relation that measures something else does not.
+ * A point to line distance names its point and line, not its side, which an edit that turns the line around flips to keep the point where it is.
  */
 export function cadSketchDimensionPickOf(graph: CadSketchGraph, relation: CadSketchDimensionRelation): CadSketchDimensionPick {
   const pair = (pointIds: readonly string[]) => [...pointIds].sort();
   const pick = (form: string, identity: unknown, measures: unknown = identity) => ({ id: relation.id, form, identity: canonical(identity), measures: canonical(measures) });
   switch (relation.kind) {
     case 'distance': return pick('distance', pair(relation.pointIds), ['point-distance', pair(relation.pointIds)]);
+    case 'point-line-distance': return pick('point-line-distance', [relation.pointId, relation.lineId], ['point-line-distance', relation.pointId, relation.lineId]);
     case 'radial-size': return pick('radial-size', [relation.entityId, relation.quantity], ['radial-size', relation.entityId, relation.quantity]);
     case 'reference-dimension': {
       const measurement = relation.measurement, form = `reference/${measurement.kind}`;
       if (measurement.kind === 'radial-size') return pick(form, [measurement.entityId, measurement.quantity], ['radial-size', measurement.entityId, measurement.quantity]);
       if (measurement.kind === 'point-distance') return pick(form, pair(measurement.pointIds), ['point-distance', pair(measurement.pointIds)]);
+      if (measurement.kind === 'point-line-distance') return pick(form, [measurement.pointId, measurement.lineId], ['point-line-distance', measurement.pointId, measurement.lineId]);
       // A line reference names its line; only its match with a driving distance goes through the line's current endpoints.
       const line = graph.entities.find(entity => entity.id === measurement.entityId);
       return pick(form, measurement.entityId, line?.kind === 'line' ? ['point-distance', pair([line.startPointId, line.endPointId])] : [form, measurement.entityId]);
@@ -112,6 +115,7 @@ export function createCadSketchDimensionKeys() {
 export function cadSketchDimensionName(graph: CadSketchGraph, relation: CadSketchDimensionRelation): string {
   switch (relation.kind) {
     case 'distance': return graph.entities.some(entity => entity.kind === 'line' && relation.pointIds.includes(entity.startPointId) && relation.pointIds.includes(entity.endPointId)) ? 'Length' : 'Distance';
+    case 'point-line-distance': return 'Point to line distance';
     case 'axis-distance': return relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance';
     case 'radial-size': return relation.quantity === 'radius' ? 'Radius' : 'Diameter';
     case 'fillet-corner': return 'Fillet';
@@ -132,7 +136,8 @@ export function cadSketchDimensionSelectionStatus(graph: CadSketchGraph | undefi
 export interface CadSketchHighlight { readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly datums: readonly CadSketchDatum[] }
 export const NO_SKETCH_HIGHLIGHT: CadSketchHighlight = Object.freeze({ pointIds: [], entityIds: [], datums: [] });
 export function cadSketchRelationHighlight(graph: CadSketchGraph, relation: CadSketchGraphRelation): CadSketchHighlight {
-  const named = relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds : []
+  const named = relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds
+    : relation.measurement.kind === 'point-line-distance' ? [relation.measurement.pointId] : []
     : relation.kind === 'tangent-joint' ? relation.endpoints.map(endpoint => endpoint.pointId)
       : 'pointIds' in relation ? relation.pointIds : 'pointId' in relation ? [relation.pointId] : [];
   // A dimension or relation between a line's own endpoints is about that line.
