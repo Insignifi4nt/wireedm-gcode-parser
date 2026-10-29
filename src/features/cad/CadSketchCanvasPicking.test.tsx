@@ -324,10 +324,12 @@ describe('sketch canvas profile picking', () => {
     if (finisher === 'a tool switch') expect(after).toHaveBeenCalledOnce();
   });
 
-  it.each([['an idle Line', false], ['a pending chain', true]] as const)('reopens the snap chooser on a quick press after Escape on %s, without reading a double-click', async (_label, segment) => {
+  it.each(['an idle Line', 'a pending chain', 'a chain end beside the targets'] as const)('reopens the snap chooser on a quick press after Escape on %s, without reading a double-click', async setup => {
     const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
     await relations(true);
-    if (segment) { await h.click(12, 30); await h.click(12, 20); }
+    if (setup !== 'an idle Line') { await h.click(12, 30); await h.click(12, 20); }
+    // Ctrl places the end 4 px from the coincident targets, so a press on them is held and opens the chooser on its release.
+    if (setup === 'a chain end beside the targets') await h.click(22.1 + 4 * Number(h.svg.getAttribute('viewBox')!.split(' ')[2]) / 800, 3.2, h.svg, { ctrlKey: true });
     const chooser = () => document.querySelector('[aria-label="Choose snap target actions"]');
     const press = async () => {
       for (const type of ['pointerdown', 'pointerup']) await h.pointer(type, { ...h.position(22.2, 3.3), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
@@ -338,6 +340,24 @@ describe('sketch canvas profile picking', () => {
     expect(chooser()).toBeNull();
     await press();
     expect(chooser()).not.toBeNull(); expect(onAddPath).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it('does not pair a press with a click made before Space opened the snap chooser', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+    await relations(true);
+    const tap = async (x: number, y: number) => {
+      for (const type of ['pointerdown', 'pointerup']) await h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+      await h.click(x, y);
+    };
+    await tap(12, 30); await tap(12, 20);
+    await h.pointer('pointermove', { ...h.position(22.2, 3.3), button: 0, buttons: 0 });
+    await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })));
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull();
+    await act(async () => snapChoice(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    // A press back on the last point soon after is a plain click there, which adds nothing, not the end of a double-click.
+    await tap(12, 20);
+    expect(onAddPath).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.disabled).toBe(false);
   });
 
   it('drops an ambiguous choice after source replacement or actual SVG-frame movement without placing or outside-click fallback', async () => {

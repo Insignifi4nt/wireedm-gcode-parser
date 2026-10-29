@@ -103,18 +103,36 @@ describe('line chains', () => {
     expect(onAddPath.mock.calls[0][0].segments.map((segment: { end: readonly number[] }) => segment.end.map(Math.round))).toEqual([[30, 10], [30, 30]]);
   });
 
-  it.each(['Enter', 'Finish', 'double-click', 'Escape'] as const)('saves the completed segments and drops a pending arc endpoint on %s', async finisher => {
+  it.each(['Enter', 'Finish', 'a double-click on that endpoint', 'Escape'] as const)('saves the completed segments and drops a pending arc endpoint on %s', async finisher => {
     const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
     await h.tap(10, 10); await h.tap(30, 10); await h.click('3-point Arc'); await h.tap(40, 20);
     // The arc waits for its through-point; nothing is saved yet.
     expect(onAddPath).not.toHaveBeenCalled(); expect(h.button('Finish chain').disabled).toBe(false);
-    if (finisher === 'double-click') { await act(() => new Promise(resolve => setTimeout(resolve, 600))); await h.tap(40, 20); await h.tap(40, 20, 2); }
+    if (finisher === 'a double-click on that endpoint') { await act(() => new Promise(resolve => setTimeout(resolve, 600))); await h.tap(40, 20); await h.tap(40, 20, 2); }
     else if (finisher === 'Finish') await h.click('Finish chain'); else await h.key(finisher);
     expect(onAddPath).toHaveBeenCalledTimes(1); expect(h.error).not.toHaveBeenCalled();
     const [draft, closed] = onAddPath.mock.calls[0];
     expect(closed).toBe(false); expect(draft.kind).toBe('ready');
     expect(draft.segments.map((segment: { kind: string; end: readonly number[] }) => [segment.kind, segment.end.map(Math.round)])).toEqual([['line', [30, 10]]]);
   });
+
+  it.each([
+    ['through a valid point', [42, 10], [['line', [30, 10], undefined], ['arc', [40, 20], [42, 10]]], null],
+    // The arc's own start as its point on the arc: the first press reports why, and the chain saves without the arc.
+    ['where the arc would be invalid', [30, 10], [['line', [30, 10], undefined]], 'Three-point arcs require three distinct points.'],
+  ] as const)('places a double-click\'s point on a pending arc %s first, then saves the chain once', async (_label, [x, y], segments, error) => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10); await h.click('3-point Arc'); await h.tap(40, 20);
+    await act(() => new Promise(resolve => setTimeout(resolve, 600)));
+    // As a single click would, the first press places the point on the arc; the second finishes the chain.
+    await h.tap(x, y); await h.tap(x, y, 2);
+    expect(onAddPath).toHaveBeenCalledTimes(1); expect(h.error.mock.calls).toEqual(error ? [[error]] : []);
+    const [draft, closed] = onAddPath.mock.calls[0];
+    expect(closed).toBe(false);
+    expect(draft.segments.map((segment: { kind: string; end: readonly number[]; through?: readonly number[] }) => [segment.kind, segment.end.map(Math.round), segment.through?.map(Math.round)]))
+      .toEqual(segments);
+  });
+
 
   it('draws and finishes a chain from the keyboard alone', async () => {
     const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });

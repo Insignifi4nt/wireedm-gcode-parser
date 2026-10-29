@@ -849,8 +849,13 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     return Boolean(previous && previous.changes === draftChanges.current.count && press.time - previous.time <= DOUBLE_CLICK_MS
       && Math.hypot(press.clientX - previous.clientX, press.clientY - previous.clientY) <= DRAWING_DRAG_PIXELS);
   };
-  /** Records a press that stayed a click, after whatever it placed, so the next press can complete a double-click. */
-  const noteClick = (at: DrawingPlacement) => { lastClick.current = { time: at.time, clientX: at.clientX, clientY: at.clientY, changes: draftChanges.current.count }; };
+  /**
+   * Records a press that stayed a click, after whatever it placed, so the next press can complete a double-click. A press whose
+   * `pick` opens the snap chooser is no click: the chooser takes the next press, and a press outside that dismisses it is one.
+   */
+  const noteClick = (at: DrawingPlacement, pick?: DrawingPick) => {
+    lastClick.current = pick?.candidates ? null : { time: at.time, clientX: at.clientX, clientY: at.clientY, changes: draftChanges.current.count };
+  };
   /** A double-click finishes a chain that can stay open without a zero-length segment, and does nothing more when none is complete. */
   const finishDoubleClick = () => { lastClick.current = null; finishOpenChain(); };
   /**
@@ -1030,7 +1035,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     const at = anchor ?? { clientX: bounds.left + bounds.width / 2 + (pick.point[0] - center[0]) / width * bounds.width,
       clientY: bounds.top + bounds.height / 2 - (pick.point[1] - center[1]) / span * bounds.height };
     const projected = projectSelection(at); if (!projected) return;
-    pendingChange.current(true);
+    // Opening the chooser on any path, a key included, ends the click history, so no later press pairs with an earlier click.
+    pendingChange.current(true); lastClick.current = null;
     setSnapChoice({ owner: drawingOwner, candidates: pick.candidates, clientX: at.clientX, clientY: at.clientY, frame: projected.frame, ...(saveLine ? { saveLine } : {}) });
   };
   const dimensionProfile = dragPreview?.profile ?? (sketch.kind === 'sketch' ? sketch.profiles.find(profile => profile.id === selectedProfileId) : undefined);
@@ -1119,9 +1125,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
             if (beside) return;
             acceptDrawingPick(pick, event);
-            // A press that opens the snap chooser is no click: the chooser takes the next press, and dismissing it with a press
-            // outside starts a double-click instead.
-            if (pick.candidates) lastClick.current = null; else noteClick(press);
+            noteClick(press, pick);
             // Only a press that added a point draws on release; a finished, rejected or ambiguous pick ends the gesture.
             const change = draftChanges.current;
             if (change.count !== press.changes && change.added) press.changes = change.count; else drawingPress.current = null;
@@ -1177,7 +1181,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             if (chainOpen && secondPress(press)) { finishDoubleClick(); return; }
             const pick = resolveDrawingPick(press.held.raw, event.ctrlKey || event.metaKey, 'pointer', press.held.scale);
             if (pick.point[0] !== press.held.last[0] || pick.point[1] !== press.held.last[1]) acceptDrawingPick(pick, { clientX: press.clientX, clientY: press.clientY });
-            noteClick(press);
+            noteClick(press, pick);
           }
           return;
         }
