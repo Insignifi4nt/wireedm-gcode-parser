@@ -228,18 +228,24 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       }
     } while (changed);
     const marked = new Set(snapshots.filter(at => at >= 0).map(find));
-    // A point on, or at the middle of, a line whose two ends a linked reference keeps at 0 follows that snapshot too,
-    // repeated until nothing more is marked so the order of the relations never matters.
-    for (let grew = true; grew;) {
-      grew = false;
-      for (const relation of dependent) {
-        if (relation.kind !== 'point-on-line' && relation.kind !== 'midpoint') continue;
-        const line = byId.get(relation.lineId);
-        if (line) for (const axis of ['x', 'y'] as const) {
-          const [start, end, point] = [line.startPointId, line.endPointId, relation.pointId].map(id => node(id, axis));
-          if (start < 0 || end < 0 || point < 0 || marked.has(find(point)) || !marked.has(find(start)) || !marked.has(find(end))) continue;
-          marked.add(find(point)); grew = true;
-        }
+    // A point on, or at the middle of, a line whose two ends a linked reference keeps at 0 follows that snapshot too.
+    // Each such point waits on its line's end classes and is checked again only when one of them is newly marked, so
+    // the order of the relations never matters and each is visited at most twice.
+    const waiting = new Map<number, (readonly [number, number, number])[]>();
+    for (const relation of dependent) {
+      if (relation.kind !== 'point-on-line' && relation.kind !== 'midpoint') continue;
+      const line = byId.get(relation.lineId);
+      if (line) for (const axis of ['x', 'y'] as const) {
+        const nodes = [line.startPointId, line.endPointId, relation.pointId].map(id => node(id, axis));
+        if (nodes.some(at => at < 0)) continue;
+        const roots = [find(nodes[0]), find(nodes[1]), find(nodes[2])] as const;
+        for (const root of new Set([roots[0], roots[1]])) { const list = waiting.get(root); if (list) list.push(roots); else waiting.set(root, [roots]); }
+      }
+    }
+    for (const queue = [...marked]; queue.length;) {
+      for (const [start, end, point] of waiting.get(queue.pop()!) ?? []) {
+        if (marked.has(point) || !marked.has(start) || !marked.has(end)) continue;
+        marked.add(point); queue.push(point);
       }
     }
     const linked = (pointId: string, axis: 'x' | 'y') => { const at = node(pointId, axis); return at >= 0 && !zero(pointId, axis) && marked.has(find(at)); };

@@ -214,6 +214,14 @@ describe('cadSketchConstraintStep', () => {
       const sketch = reference(...relations);
       expect(stepIn({ ...sketch, points: [...sketch.points, { id: 'q', position: [0, 0] }] }, 'coincident', 'q', 'x-axis')).toEqual(moved('This point', 'the X axis'));
     }
+    // A long chain of lines, each with both ends on the one before and listed last first, is marked in one sweep.
+    const count = 3000, chain = reference(...Array.from({ length: count }, (_, index) => count - 1 - index).flatMap(index => (['s', 'e'] as const).map(end =>
+      ({ id: `on${end}${index}`, kind: 'point-on-line' as const, pointId: `${end}${index}`, lineId: index ? `chain${index - 1}` : 'refLine' }))));
+    chain.points.push(...Array.from({ length: count }, (_, index) => [{ id: `s${index}`, position: [-1, 0] as [number, number] }, { id: `e${index}`, position: [1, 0] as [number, number] }]).flat());
+    chain.entities.push(...Array.from({ length: count }, (_, index) => ({ id: `chain${index}`, kind: 'line' as const, construction: true, startPointId: `s${index}`, endPointId: `e${index}` })));
+    const started = performance.now();
+    expect(stepIn(chain, 'coincident', `s${count - 1}`, 'x-axis')).toEqual(moved('This point', 'the X axis'));
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 
   it('places a fixed point on the reference it already sits on, and explains one fixed elsewhere', () => {
