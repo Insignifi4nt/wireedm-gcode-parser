@@ -73,8 +73,12 @@ const DIAGNOSES = ['diagnosed', 'unavailable', 'no-unknowns', 'suspected', 'unce
 const DRAG_OUTCOMES = ['reached', 'projected', 'stalled', 'limited'] as const;
 const HEADER = 9;
 
-/** Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). */
-export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssembly.Module | string | URL, observeMemory?: (memory: WebAssembly.Memory) => void): Promise<CadSketchNativeSolver> {
+/**
+ * Loads the Rust solver from bytes, or from a URL (by default the bundled module asset). `protocol` asks a module
+ * an earlier release shipped in the buffer version it speaks, as the native baseline comparison does.
+ */
+export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssembly.Module | string | URL, observeMemory?: (memory: WebAssembly.Memory) => void,
+  protocol = CAD_SKETCH_NATIVE_PROTOCOL_VERSION): Promise<CadSketchNativeSolver> {
   // Explicit byte callers, including the Node benchmark, do not need a bundler asset loader.
   source ??= (await import('../../../../../packages/sketch-solver/wasm/sketch_solver.wasm?url')).default;
   const bytes = typeof source === 'string' || source instanceof URL ? await (await fetch(source)).arrayBuffer() : source;
@@ -85,7 +89,7 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
   let stopped = false;
   return { memoryBytes: () => exports.memory.buffer.byteLength, solve(model) {
     if (stopped) throw new Error('The native sketch solver instance stopped after a failure.');
-    const input = encodeCadSketchEquationModel(model);
+    const input = encodeCadSketchEquationModel(model, protocol);
     try {
       const pointer = exports.buffer_alloc(input.length);
       new Float64Array(exports.memory.buffer, pointer, input.length).set(input);
@@ -94,7 +98,7 @@ export async function loadCadSketchNativeSolver(source?: BufferSource | WebAssem
       const length = new Float64Array(exports.memory.buffer, output, 1)[0];
       const result = new Float64Array(exports.memory.buffer, output, length).slice();
       const [, version, status, iterations, residual, diagnosed, degreesOfFreedom, dragged, targetDistance] = result;
-      if (version !== CAD_SKETCH_NATIVE_PROTOCOL_VERSION) throw new CadSketchNativeProtocolError('The native sketch solver replied with another protocol version.');
+      if (version !== protocol) throw new CadSketchNativeProtocolError('The native sketch solver replied with another protocol version.');
       if (status === 2) throw new Error('The native sketch solver rejected its input.');
       const values = Array.from(result.subarray(HEADER, HEADER + model.values.length)), labels = Array.from(result.subarray(HEADER + model.values.length));
       const kind = STATUSES[status], diagnosis = DIAGNOSES[diagnosed], drag = DRAG_OUTCOMES[dragged];

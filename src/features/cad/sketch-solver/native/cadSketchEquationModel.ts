@@ -55,10 +55,14 @@ export interface CadSketchEquationModel {
 
 export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 6;
 
-export function encodeCadSketchEquationModel(model: CadSketchEquationModel): Float64Array {
+/**
+ * The model as the solver's input buffer. An earlier `protocol` writes the same buffer under that version:
+ * version 6 only appended the point-line-distance kind, which a version 5 module rejects as invalid input.
+ */
+export function encodeCadSketchEquationModel(model: CadSketchEquationModel, protocol = CAD_SKETCH_NATIVE_PROTOCOL_VERSION): Float64Array {
   const length = 3 + 2 * model.values.length + model.equations.reduce((total, equation) => total + 4 + equation.operands.length, 0);
   const buffer = new Float64Array(length);
-  buffer.set([CAD_SKETCH_NATIVE_PROTOCOL_VERSION, model.values.length, model.equations.length]);
+  buffer.set([protocol, model.values.length, model.equations.length]);
   buffer.set(model.values, 3);
   buffer.set(model.fixed.map(Number), 3 + model.values.length);
   let cursor = 3 + 2 * model.values.length;

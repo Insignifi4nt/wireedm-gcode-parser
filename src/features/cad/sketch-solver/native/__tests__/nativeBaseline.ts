@@ -11,6 +11,8 @@ export interface NativeBaselineManifest {
   readonly bytes: number;
   readonly sha256: string;
   readonly toolchain: string;
+  /** The buffer protocol version the module speaks. */
+  readonly protocol: number;
 }
 
 const directory = new URL('../../../../../../packages/sketch-solver/baseline/', import.meta.url);
@@ -24,7 +26,7 @@ export function nativeBaselineBytes(manifest = nativeBaselineManifest) {
 }
 
 let compiled: Promise<WebAssembly.Module> | undefined;
-export const loadNativeBaselineSolver = async () => loadCadSketchNativeSolver(await (compiled ??= WebAssembly.compile(nativeBaselineBytes())));
+export const loadNativeBaselineSolver = async () => loadCadSketchNativeSolver(await (compiled ??= WebAssembly.compile(nativeBaselineBytes())), undefined, nativeBaselineManifest.protocol);
 
 /** One answer of a module: its solution, or what it failed with, a protocol error named apart as the runtime treats it apart. */
 export type NativeAnswer = { readonly solution: CadSketchNativeSolution } | { readonly error: string };

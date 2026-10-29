@@ -58,7 +58,7 @@ const median = (values: readonly number[]) => { const sorted = [...values].sort(
 const results = [];
 for (const [name, recorded] of selected) {
   const models = [...recorded.values()];
-  const fresh = async () => Object.fromEntries(await Promise.all((Object.keys(modules) as ModuleId[]).map(async id => [id, await loadCadSketchNativeSolver(modules[id])] as const))) as Record<ModuleId, CadSketchNativeSolver>;
+  const fresh = async () => Object.fromEntries(await Promise.all((Object.keys(modules) as ModuleId[]).map(async id => [id, await loadCadSketchNativeSolver(modules[id], undefined, id === 'baseline' ? nativeBaselineManifest.protocol : undefined)] as const))) as Record<ModuleId, CadSketchNativeSolver>;
   let instances = await fresh(), differingCalls = 0;
   // The untimed pass warms both instances and compares their answers. A call either fails is not
   // timed, and as a failed instance never runs again, both are replaced after it, as the runtime does.
