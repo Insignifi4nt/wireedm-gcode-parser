@@ -270,7 +270,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   /**
    * The latest click while drawing, whether or not it placed a point, so a press there soon after reads as the second click
    * of a double-click. A press is a click only once it completes, so one that is cancelled, loses its capture before its
-   * release or drags clears it.
+   * release or drags clears it, as does a press while drawing is paused, a tool change or a cancellation.
    */
   const lastClick = useRef<DrawingClick | null>(null);
   /** The open chain save in flight, and what runs once it is accepted: the workbench's next tool, or leaving the tool. */
@@ -555,7 +555,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     onControlsReady?.(controls);
     return () => onControlsReady?.(null, controls);
   }, [onControlsReady]);
-  useEffect(() => { setPicks([]); setPathDraft(createCadPathDraft(tool === 'arc' ? 'arc' : 'line')); setTrimHover(null); }, [sketch.id, tool, cancelSignal]);
+  useEffect(() => {
+    setPicks([]); setPathDraft(createCadPathDraft(tool === 'arc' ? 'arc' : 'line')); setTrimHover(null);
+    // The press and click history, including a click spent by a chain save, belong to their tool and cancellation. A chain
+    // save changes neither, so its spent click outlives the save's acceptance.
+    drawingPress.current = null; lastClick.current = null; noteDraftChange(false);
+  }, [sketch.id, tool, cancelSignal]);
   useLayoutEffect(() => { setCursorInput(current => ({ ...current, mode: 'position' })); }, [sourceSketch, graphSourceParameters, tool, cancelSignal, center, span, aspect]);
   // Acquired points are positions, so a revision or a parameter change can move what they came from, also
   // where the sketch keeps its object.
@@ -1218,6 +1223,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
               try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishProfileDrag(); }
             }
           }
+        } else if (event.button === 0 && drawing && !geometryPick && !positionPick) {
+          // A press while drawing is paused, such as during a chain's save, places nothing. It keeps its trailing click even when
+          // the pause ends before its release, so it never starts a chain, and it ends any double-click the last click began.
+          suppressProfileClick.current = true; lastClick.current = null;
         }
       }}
       onPointerUpCapture={event => {

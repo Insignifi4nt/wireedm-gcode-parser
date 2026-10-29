@@ -178,6 +178,55 @@ describe('line chains', () => {
     expect(onAddPath).toHaveBeenCalledOnce(); expect(ends(onAddPath)).toEqual([[30, 10], [30, 30]]);
   });
 
+  it.each([
+    ['a closure on the start', 'accepted'], ['a closure on the start', 'rejected'], ['an open finish', 'accepted'], ['an open finish', 'rejected'],
+  ] as const)('keeps the trailing click of a press begun while %s saves, when the save is %s before the release', async (finish, outcome) => {
+    const saves: { resolve(): void; reject(error: Error): void }[] = [];
+    const onAddPath = vi.fn((_draft: unknown, _closed: boolean, _signal?: AbortSignal) => new Promise<void>((resolve, reject) => { saves.push({ resolve, reject }); }));
+    const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30);
+    const [x, y, detail] = finish === 'a closure on the start' ? [10, 10, 2] : [30, 30, 3];
+    if (finish === 'a closure on the start') await h.tap(x, y); else await h.tap(x, y, 2);
+    expect(onAddPath).toHaveBeenCalledOnce();
+    // The next click of the double-click is pressed while the save is pending and released after it settles.
+    await h.pointer('pointerdown', x, y);
+    await act(async () => { if (outcome === 'accepted') saves[0].resolve(); else saves[0].reject(new Error('The chain crosses a locked edge.')); });
+    await h.pointer('pointerup', x, y); await h.point(x, y, 'click', detail);
+    expect(onAddPath).toHaveBeenCalledOnce();
+    if (outcome === 'accepted') {
+      expect(h.instruction()).toBe(idleLine); expect(h.pending).toHaveBeenLastCalledWith(false); expect(container.querySelector('[aria-label="Finish chain"]')).toBeNull();
+      // That press spent the double-click, so the next click is an ordinary one and starts a chain.
+      await h.tap(x, y); expect(h.instruction()).toBe('Click the line end.');
+    } else {
+      // A rejected chain keeps the segments it had before the save, ready to finish again.
+      expect(h.error).toHaveBeenLastCalledWith('The chain crosses a locked edge.'); expect(h.pending).toHaveBeenLastCalledWith(true);
+      await h.click('Finish chain');
+      expect(onAddPath).toHaveBeenCalledTimes(2); expect(onAddPath.mock.calls[1][1]).toBe(false);
+      expect((onAddPath.mock.calls[1][0] as { segments: { end: readonly number[] }[] }).segments.map(segment => segment.end.map(Math.round))).toEqual([[30, 10], [30, 30]]);
+    }
+  });
+
+  it.each(['a tool change', 'a cancellation'] as const)('forgets the click a chain save spent after %s, so a quick click on the former start begins a chain', async change => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30); await h.tap(10, 10);
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(onAddPath.mock.calls[0][1]).toBe(true);
+    if (change === 'a tool change') { await h.render({ tool: 'select' }); await h.render({ tool: 'line' }); } else await h.render({ cancelSignal: 1 });
+    await h.tap(10, 10); expect(h.instruction()).toBe('Click the line end.');
+    await h.tap(30, 10); await h.key('Enter');
+    expect(onAddPath).toHaveBeenCalledTimes(2); expect(onAddPath.mock.calls[1][0].segments.map((segment: { end: readonly number[] }) => segment.end.map(Math.round))).toEqual([[30, 10]]);
+  });
+
+  it.each(['a tool change', 'a cancellation'] as const)('ends a press held through %s, so its drag draws nothing', async change => {
+    const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
+    await h.tap(10, 10); await h.tap(30, 10); await h.tap(30, 30); await h.tap(10, 10);
+    // A quick press on the closed start is judged on its release, so it is still held when the tool or cancellation changes.
+    await h.pointer('pointerdown', 10, 10);
+    if (change === 'a tool change') await h.render({ tool: 'arc' }); else await h.render({ cancelSignal: 1 });
+    const idle = h.instruction();
+    await h.pointer('pointermove', 30, 30); await h.pointer('pointerup', 30, 30); await h.point(30, 30);
+    expect(h.instruction()).toBe(idle); expect(h.pending).toHaveBeenLastCalledWith(false); expect(onAddPath).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled();
+  });
+
   it('draws and finishes a chain from the keyboard alone', async () => {
     const onAddPath = vi.fn(); const h = await fixture({ sketch: graphSketch, tool: 'line', onAddPath });
     await h.key(' '); for (let step = 0; step < 4; step++) await h.key('ArrowRight');

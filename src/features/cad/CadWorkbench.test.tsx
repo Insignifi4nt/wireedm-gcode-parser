@@ -1990,6 +1990,22 @@ describe('CAD sketch interaction', () => {
       expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
     });
 
+    it('gives Escape to a pending line chain before the tool, and to the selection only back in Select', async () => {
+      await open(); await pick('length'); expect(selectedDimensions()).toEqual(['length']);
+      await click('Line'); await canvasClick(100, 300); await canvasClick(200, 300); await canvasClick(200, 200);
+      // The first Escape saves the chain open and keeps Line; dimension labels and their keys belong to Select.
+      await canvasKey('Escape');
+      expect(entities()).toHaveLength(5); expect(toolButton('Line').getAttribute('aria-pressed')).toBe('true');
+      expect(container.querySelector('button[aria-label="Finish chain"]')).toBeNull(); expect(container.querySelector('[data-cad-sketch-dimension]')).toBeNull();
+      // The saved chain took the selection from the dimension, and the Escape that leaves the tool clears it.
+      expect(geometry()).toHaveLength(1);
+      await canvasKey('Escape'); expect(toolButton('Select').getAttribute('aria-pressed')).toBe('true'); expect(geometry()).toEqual([]);
+      // Back in Select, a selected dimension takes the next Escape.
+      await pick('length'); expect(selectedDimensions()).toEqual(['length']);
+      await canvasKey('Escape'); expect(selectedDimensions()).toEqual([]); expect(toolButton('Select').getAttribute('aria-pressed')).toBe('true');
+      expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    });
+
     it('still applies a selection-first constraint after a dimension was selected', async () => {
       await open(); await pick('size');
       await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'side' } }));
