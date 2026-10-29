@@ -63,10 +63,10 @@ function changeDimension(geometry: CadProfile, name: Dimension['name'], value: n
   throw new Error('This dimension is no longer available on the selected profile.');
 }
 const valueText = formatCadQuantity;
-/** A chip's field and the constraint behind it: a replacement constraint on the same field is a different chip and is never selected. */
+/** A chip's field and the constraint behind it: a replacement constraint on the same field is a different chip and is never selected. Chips have one form, so they compare without a graph. */
 const chipPick = (dimension: Dimension): CadSketchDimensionPick => {
   const identity = `${dimension.quantity ?? ''}/${dimension.constraintId ?? ''}`;
-  return { id: dimension.name, form: 'profile', identity, measures: identity };
+  return { id: dimension.name, form: 'profile', identity, measures: { kind: 'own', key: identity } };
 };
 const PROFILE_REFERENCE_REASON = 'Profile dimensions always drive their profile. Copy the outline to an editable sketch to measure it with a reference dimension.';
 export function CadSketchDimensionControls({ document: cadDocument, sketch, profile, parameters, anchor, project, onEditMany, onPendingChange, interactionLocked, cancelSignal, onInspectInput, onConfigure, onError }: CadSketchDimensionControlsProps) {
@@ -136,21 +136,21 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
     return () => window.removeEventListener('resize', place);
   }, [anchor.x, anchor.y, project, annotated, editor?.name, editor?.value, editor?.error, candidate.issue]);
   // A selected chip that disappears, or whose constraint is replaced, leaves the selection for good.
-  const selected = keepCadSketchDimensionPicks(selection, pick => dimensions.some(dimension => sameCadSketchDimensionPick(chipPick(dimension), pick)));
+  const selected = keepCadSketchDimensionPicks(selection, pick => dimensions.some(dimension => sameCadSketchDimensionPick(chipPick(dimension), pick, null)));
   useLayoutEffect(() => { if (selected !== selection) setSelection(selected); }, [selected, selection]);
   useLayoutEffect(() => { if (hovered && !dimensions.some(dimension => dimension.name === hovered)) setHovered(null); }, [hovered, dimensions]);
-  const isSelected = (dimension: Dimension) => selected.some(pick => sameCadSketchDimensionPick(chipPick(dimension), pick));
+  const isSelected = (dimension: Dimension) => selected.some(pick => sameCadSketchDimensionPick(chipPick(dimension), pick, null));
   // The edited chip becomes the whole selection, so after Apply or Cancel Delete removes the chip drawn selected and nothing else.
   const openEditor = (dimension: Dimension) => {
     if (interactionLocked || editor || submission.applying) return;
     let resolved: number; try { resolved = evaluateCadScalar(dimension.scalar, parameters) * dimension.scale; } catch { return; }
     editorDocument.current = cadDocument; previous.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSelection(selectCadSketchDimension(NO_SKETCH_DIMENSIONS, chipPick(dimension)));
+    setSelection(selectCadSketchDimension(NO_SKETCH_DIMENSIONS, chipPick(dimension), null));
     setMenu(null); setEditor({ name: dimension.name, value: String(resolved), error: '' }); onInspectInput?.(dimension.name);
   };
   // Delete and Backspace on a focused chip remove the selected driving dimensions, since focus never selects; the focused chip goes only
   // while no chip is selected. A menu acts on the chip it opened on, with the rest of the selection when that chip is part of it.
-  const removalTargets = (dimension: Dimension, focused: boolean) => ((focused ? selected.length > 0 : isSelected(dimension)) ? selected.flatMap(pick => dimensions.filter(item => sameCadSketchDimensionPick(chipPick(item), pick))) : [dimension])
+  const removalTargets = (dimension: Dimension, focused: boolean) => ((focused ? selected.length > 0 : isSelected(dimension)) ? selected.flatMap(pick => dimensions.filter(item => sameCadSketchDimensionPick(chipPick(item), pick, null))) : [dimension])
     .flatMap(item => item.constraintId ? [item.constraintId] : []);
   const remove = (dimension: Dimension, focused: boolean) => {
     const targets = removalTargets(dimension, focused);
@@ -162,10 +162,10 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
   const openMenu = (dimension: Dimension, x: number, y: number) => {
     if (interactionLocked || editor || submission.applying) return;
     const pick = chipPick(dimension);
-    if (!isSelected(dimension)) setSelection(selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick));
+    if (!isSelected(dimension)) setSelection(selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick, null));
     setMenu({ pick, document: cadDocument, cancel: cancelSignal, x, y });
   };
-  const menuDimension = menu && menu.document === cadDocument && menu.cancel === cancelSignal ? dimensions.find(dimension => sameCadSketchDimensionPick(chipPick(dimension), menu.pick)) : undefined;
+  const menuDimension = menu && menu.document === cadDocument && menu.cancel === cancelSignal ? dimensions.find(dimension => sameCadSketchDimensionPick(chipPick(dimension), menu.pick, null)) : undefined;
   useLayoutEffect(() => { if (menu && !menuDimension) setMenu(null); }, [menu, menuDimension]);
   const menuItems: CadContextMenuItem[] = [];
   if (menu && menuDimension) {
@@ -195,7 +195,7 @@ export function CadSketchDimensionControls({ document: cadDocument, sketch, prof
         aria-label={`Dimension ${dimension.label.toLowerCase()} ${valueText(resolved)}${dimension.unit ? ` ${dimension.unit}` : ''}, press Enter to edit`} aria-pressed={chipSelected} aria-expanded={editor?.name === dimension.name}
         disabled={interactionLocked || Boolean(editor && editor.name !== dimension.name)} title={`${dimension.label}: ${valueText(resolved)} ${dimension.unit}${dimensionBinding.kind === 'parameter' ? ` · linked to ${dimensionBinding.name}` : dimensionBinding.kind === 'expression' ? ` · ${dimensionBinding.expression} (linked expression)` : ''}`}
         onPointerEnter={() => setHovered(dimension.name)} onPointerLeave={() => setHovered(current => current === dimension.name ? null : current)}
-        onClick={event => { if (!interactionLocked && !editor && event.detail <= 1) setSelection(current => selectCadSketchDimension(current, chipPick(dimension), event.shiftKey)); }}
+        onClick={event => { if (!interactionLocked && !editor && event.detail <= 1) setSelection(current => selectCadSketchDimension(current, chipPick(dimension), null, event.shiftKey)); }}
         onDoubleClick={() => openEditor(dimension)} onContextMenu={event => { event.preventDefault(); openMenu(dimension, event.clientX, event.clientY); }}
         onKeyDown={event => {
           if (event.nativeEvent.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;

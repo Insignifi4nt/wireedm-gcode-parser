@@ -401,7 +401,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   // or an agent edit removes its dimension or replaces it under the same ID.
   const dimensionEditor = graphRelationCommand?.dimension;
   const dimensionEditorCurrent = Boolean(dimensionEditor && dimensionEditor.documentId === document.id && dimensionEditor.sketchId === sketch?.id && !profileId
-    && !graphSelections.length && !graphDatums.length && graphDimensionPicks.length === 1 && sameCadSketchDimensionPick(graphDimensionPicks[0], dimensionEditor.pick)
+    && !graphSelections.length && !graphDatums.length && graphDimensionPicks.length === 1 && sameCadSketchDimensionPick(graphDimensionPicks[0], dimensionEditor.pick, sketch.graph)
     && isCadSketchDimensionPickCurrent(sketch.graph, dimensionEditor.pick));
   useLayoutEffect(() => { if (dimensionEditor && !dimensionEditorCurrent) setGraphRelationCommand(current => current?.dimension === dimensionEditor ? null : current); }, [dimensionEditor, dimensionEditorCurrent]);
   /** The geometry the relations panel works on: a dimension editor's measured geometry, otherwise the geometry selection. */
@@ -441,8 +441,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const selectGraphDimension = useCallback((dimension: CadSketchDimensionPick | null, additive = false) => {
     if (!sketchId) return;
     const pick = dimension && sketch?.id === sketchId && sketch.graph ? cadSketchDimensionPick(sketch.graph, dimension.id) : null;
-    if (dimension && (!pick || !sameCadSketchDimensionPick(pick, dimension))) return;
-    const dimensions = pick ? selectCadSketchDimension(graphDimensionPicks, pick, additive) : NO_SKETCH_DIMENSIONS;
+    if (dimension && (!pick || !sameCadSketchDimensionPick(pick, dimension, sketch?.graph))) return;
+    const dimensions = pick ? selectCadSketchDimension(graphDimensionPicks, pick, sketch?.graph, additive) : NO_SKETCH_DIMENSIONS;
     setGraphPick(dimensions.length ? { sketchId, selections: NO_SKETCH_SELECTIONS, datums: NO_SKETCH_DATUMS, dimensions } : null);
     setGraphRelationCommand(null);
     if (dimensions.length) { setProfileId(null); setProfileCommand(null); }
@@ -484,7 +484,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const editSketchDimension = useCallback((pick: CadSketchDimensionPick, operands: readonly CadSketchGraphSelection[], datums: readonly CadSketchDatum[], token?: string) => {
     if (!sketchId || token !== undefined && graphRelationCommand?.token !== token) return;
     const dimension: DimensionEditor = { documentId: document.id, sketchId, pick, operands, datums };
-    setGraphPick({ sketchId, selections: NO_SKETCH_SELECTIONS, datums: NO_SKETCH_DATUMS, dimensions: selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick) }); setProfileId(null); setProfileCommand(null);
+    setGraphPick({ sketchId, selections: NO_SKETCH_SELECTIONS, datums: NO_SKETCH_DATUMS, dimensions: selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick, null) }); setProfileId(null); setProfileCommand(null);
     if (token !== undefined) { setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, pick.id, dimension) : current); return; }
     setGraphRelationCommand({ kind: 'inspect', relationId: pick.id, token: crypto.randomUUID(), dimension }); setInspectorCollapsed(false);
   }, [document.id, sketchId, graphRelationCommand?.token]);
@@ -499,7 +499,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     if (!relationId) { if (command.kind === 'inspect') setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, null, current.dimension) : current); return; }
     const pick = cadSketchDimensionPick(graph, relationId);
     if (pick) {
-      if (!editor || !sameCadSketchDimensionPick(editor.pick, pick)) editSketchDimension(pick, relationOperands, editor?.datums ?? graphDatums, token);
+      if (!editor || !sameCadSketchDimensionPick(editor.pick, pick, graph)) editSketchDimension(pick, relationOperands, editor?.datums ?? graphDatums, token);
       else if (command.kind === 'relations') setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, pick.id, editor) : current);
       return;
     }
@@ -510,7 +510,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   /** Double-click, Enter or Edit value… opens the editor of the dimension shown, never a replacement under the same ID, on the geometry it measures. */
   const configureGraphRelation = useCallback((relation: CadSketchDimensionRelation) => {
     const graph = sketch?.graph, pick = graph ? cadSketchDimensionPick(graph, relation.id) : null;
-    if (interactionState.current.locked || !sketchId || !graph || !pick || !sameCadSketchDimensionPick(pick, cadSketchDimensionPickOf(graph, relation))) return;
+    if (interactionState.current.locked || !sketchId || !graph || !pick || !sameCadSketchDimensionPick(pick, cadSketchDimensionPickOf(relation), graph)) return;
     const points = (ids: readonly string[]) => ids.map(id => ({ kind: 'point' as const, id })), entity = (id: string) => [{ kind: 'entity' as const, id }];
     let operands: readonly CadSketchGraphSelection[];
     if (relation.kind === 'reference-dimension') {
@@ -911,8 +911,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
    */
   const openDimensionMenu = (dimension: CadSketchDimensionPick, request: { readonly clientX: number; readonly clientY: number }) => {
     const pick = sketch?.graph ? cadSketchDimensionPick(sketch.graph, dimension.id) : null;
-    if (interactionState.current.locked || !sketch || !pick || !sameCadSketchDimensionPick(pick, dimension)) return;
-    if (!graphDimensionPicks.some(item => sameCadSketchDimensionPick(item, pick))) selectGraphDimension(pick);
+    if (interactionState.current.locked || !sketch || !pick || !sameCadSketchDimensionPick(pick, dimension, sketch.graph)) return;
+    if (!graphDimensionPicks.some(item => sameCadSketchDimensionPick(item, pick, sketch.graph))) selectGraphDimension(pick);
     setCanvasMenu({ kind: 'dimension', document, version: props.documentVersion, buildId: build?.buildId ?? null, sketchId: sketch.id, relationId: pick.id, pick, cancel: cancelSignal, request });
   };
   const canvasMenuItems: CadContextMenuItem[] = [];
@@ -1077,7 +1077,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const deleteSketchDimensions = (dimension?: CadSketchDimensionPick) => {
     const graph = sketch?.graph;
     if (!sketch || !graph || interactionState.current.locked || dimension && !isCadSketchDimensionPickCurrent(graph, dimension)) return;
-    const selected = !dimension || graphDimensionPicks.some(pick => sameCadSketchDimensionPick(pick, dimension));
+    const selected = !dimension || graphDimensionPicks.some(pick => sameCadSketchDimensionPick(pick, dimension, graph));
     const ids = (selected ? graphDimensions : [dimension.id]).filter(id => graph.relations.some(relation => relation.id === id && isCadSketchDimensionRelation(relation)));
     if (!ids.length) return;
     submitEdit(signal => props.onEditMany(ids.map(id => ({ kind: 'remove-sketch-relation' as const, sketchId: sketch.id, relationId: id })), signal),

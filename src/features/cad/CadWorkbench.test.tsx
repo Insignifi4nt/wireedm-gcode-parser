@@ -2213,6 +2213,45 @@ describe('CAD sketch interaction', () => {
       expect(label('clearance').getAttribute('aria-label')).toMatch(/^Dimension /); expect(selectedDimensions()).toEqual([]);
     });
 
+    describe('across one edit that converts the selected dimensions and removes or adds their Coincident joins', () => {
+      // The length runs from q and the clearance from r. Joined, q sits on a, the base line's start, and r on the center o; apart, both have moved.
+      const variant = (joined: boolean, driving: boolean) => { const source = bracket(), feature = source.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
+        return parseCadDocument({ ...source, features: [{ ...feature, graph: { ...feature.graph,
+          points: [...feature.graph.points, { id: 'q', position: joined ? [0, 0] : [-20, 0] }, { id: 'r', position: joined ? [10, 10] : [30, 25] }],
+          relations: [...joined ? [{ id: 'joint', kind: 'coincident', pointIds: ['q', 'a'] }, { id: 'center', kind: 'coincident', pointIds: ['r', 'o'] }] : [],
+            ...feature.graph.relations.filter(relation => relation.id !== 'length'),
+            ...driving ? [{ id: 'length', kind: 'distance', pointIds: ['q', 'b'], value: joined ? 40 : 60 }, { id: 'clearance', kind: 'point-line-distance', pointId: 'r', lineId: 'base', side: 'left', value: joined ? 10 : 25 }]
+              : [{ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' } }, { id: 'clearance', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'o', lineId: 'base' } }]] } }] }); };
+      /** One undoable edit that replaces the sketch with another variant. */
+      const convert = (next: ReturnType<typeof variant>) => act(async () => { await currentSession.editPrepared(currentSession.getSnapshot().version, async source => ({ ...source, features: next.features })); });
+      const both = async () => { await pick('length'); await pick('clearance', true); expect(selectedDimensions()).toEqual(['length', 'clearance']); };
+      const measured = () => relations().filter(relation => relation.id === 'length' || relation.id === 'clearance');
+      const form = () => relations().find(relation => relation.id === 'length')?.kind;
+      const undo = () => act(async () => currentSession.undo()), redo = () => act(async () => currentSession.redo());
+
+      it('drops the selection when the edit removes the joins, so Delete leaves the replacements alone', async () => {
+        // The review's repro: the edit moves q and r away and makes each dimension a reference on the line and on o, other measurements now.
+        await open(undefined, variant(true, true)); await both();
+        await convert(variant(false, false)); expect(form()).toBe('reference-dimension'); expect(selectedDimensions()).toEqual([]);
+        const references = measured(); await canvasKey('Delete'); expect(measured()).toEqual(references);
+      });
+      it('keeps the selection when the edit adds the joins, so Delete removes both', async () => {
+        await open(undefined, variant(false, true)); await both();
+        await convert(variant(true, false)); expect(form()).toBe('reference-dimension'); expect(selectedDimensions()).toEqual(['length', 'clearance']);
+        await canvasKey('Delete'); expect(measured()).toEqual([]);
+      });
+      it('keeps the selection on undo to the joined sketch and drops it on redo of the edit that removes the joins', async () => {
+        await open(undefined, variant(true, true)); await convert(variant(false, false)); await both();
+        await undo(); expect(form()).toBe('distance'); expect(selectedDimensions()).toEqual(['length', 'clearance']);
+        await redo(); expect(form()).toBe('reference-dimension'); expect(selectedDimensions()).toEqual([]);
+      });
+      it('drops the selection on undo to the loose sketch and keeps it on redo of the edit that adds the joins', async () => {
+        await open(undefined, variant(false, true)); await convert(variant(true, false)); await both();
+        await undo(); expect(form()).toBe('distance'); expect(selectedDimensions()).toEqual([]);
+        await both(); await redo(); expect(form()).toBe('reference-dimension'); expect(selectedDimensions()).toEqual(['length', 'clearance']);
+      });
+    });
+
     it('lets a datum selection and a dimension selection replace each other, and a focused label never deletes past a datum selection', async () => {
       await open();
       const datum = (name: string) => { const found = container.querySelector<SVGElement>(`[data-cad-sketch-datum="${name}"][role="button"]`); if (!found) throw new Error(`${name} missing.`); return found; };

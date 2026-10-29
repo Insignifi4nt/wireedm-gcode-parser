@@ -28,20 +28,20 @@ describe('sketch dimension selection', () => {
   const withRelation = (relation: (typeof graph.relations)[number]) => ({ ...graph, relations: graph.relations.map(item => item.id === relation.id ? relation : item) });
 
   it('selects one dimension, toggles with Shift and keeps identity when nothing changes', () => {
-    const one = selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick('length'));
+    const one = selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick('length'), graph);
     expect(cadSketchDimensionIds(one)).toEqual(['length']);
-    expect(selectCadSketchDimension(one, pick('length'))).toBe(one);
-    const two = selectCadSketchDimension(one, pick('size'), true);
+    expect(selectCadSketchDimension(one, pick('length'), graph)).toBe(one);
+    const two = selectCadSketchDimension(one, pick('size'), graph, true);
     expect(cadSketchDimensionIds(two)).toEqual(['length', 'size']);
-    expect(cadSketchDimensionIds(selectCadSketchDimension(two, pick('rise')))).toEqual(['rise']);
-    expect(cadSketchDimensionIds(selectCadSketchDimension(two, pick('length'), true))).toEqual(['size']);
-    expect(selectCadSketchDimension([pick('size')], pick('size'), true)).toBe(NO_SKETCH_DIMENSIONS);
+    expect(cadSketchDimensionIds(selectCadSketchDimension(two, pick('rise'), graph))).toEqual(['rise']);
+    expect(cadSketchDimensionIds(selectCadSketchDimension(two, pick('length'), graph, true))).toEqual(['size']);
+    expect(selectCadSketchDimension([pick('size')], pick('size'), graph, true)).toBe(NO_SKETCH_DIMENSIONS);
     expect(Object.isFrozen(two)).toBe(true); expect(cadSketchDimensionIds(NO_SKETCH_DIMENSIONS)).toBe(NO_SKETCH_DIMENSION_IDS);
   });
 
   it('caps an additive selection', () => {
     let current: readonly CadSketchDimensionPick[] = NO_SKETCH_DIMENSIONS;
-    for (let index = 0; index < 70; index++) current = selectCadSketchDimension(current, { id: `d${index}`, form: 'distance', identity: 'pair', measures: 'pair' }, true);
+    for (let index = 0; index < 70; index++) current = selectCadSketchDimension(current, { id: `d${index}`, form: 'distance', identity: 'pair', measures: { kind: 'own', key: 'pair' } }, graph, true);
     expect(current).toHaveLength(64);
   });
 
@@ -142,6 +142,41 @@ describe('sketch dimension selection', () => {
     expect(cadSketchDimensionIds(trimmedKept)).toEqual(['length']);
     expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(change(trimmed, { length: { id: 'length', kind: 'distance', pointIds: ['q', 'm'], value: 25 } }), trimmedKept))).toEqual(['length']);
     expect(reconcileCadSketchDimensionSelection(change(trimmed, { length: { id: 'length', kind: 'distance', pointIds: ['q', 'b'], value: 40 } }), trimmedKept)).toBe(NO_SKETCH_DIMENSIONS);
+  });
+
+  describe('across one edit that converts a dimension and removes or adds its Coincident joins', () => {
+    const sketch = (points: Readonly<Record<string, readonly [number, number]>>, relations: readonly object[]) => parseCadSketchGraph({
+      points: Object.entries(points).map(([id, position]) => ({ id, position })),
+      entities: [{ id: 'base', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }, { id: 'side', kind: 'line', startPointId: 'b', endPointId: 'c', construction: false }],
+      relations
+    });
+    // A length on q and a point to line distance on r. Together, q sits on a and r on the center o; apart, both have moved.
+    const together = { a: [0, 0], b: [40, 0], c: [40, 30], q: [0, 0], o: [10, 10], r: [10, 10] } as const, apart = { ...together, q: [-20, 5], r: [30, 25] } as const;
+    const joints = [{ id: 'joint', kind: 'coincident', pointIds: ['q', 'a'] }, { id: 'center', kind: 'coincident', pointIds: ['r', 'o'] }];
+    const drivers = [{ id: 'length', kind: 'distance', pointIds: ['q', 'b'], value: 40 }, { id: 'clearance', kind: 'point-line-distance', pointId: 'r', lineId: 'base', side: 'left', value: 10 }];
+    const references = [{ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' } },
+      { id: 'clearance', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'o', lineId: 'base' } }];
+    const joined = sketch(together, [...joints, ...drivers]), detached = sketch(apart, references), loose = sketch(apart, drivers), attached = sketch(together, [...joints, ...references]);
+
+    // The review's repro: the edit removes the joins, moves q and r away and makes each dimension, under its ID, a reference on the line and on o.
+    it.each(['length', 'clearance'])('drops the %s, renews its key and selects its successor afresh when the edit removes its join', id => {
+      const picked = Object.freeze([cadSketchDimensionPick(joined, id)!]), successor = cadSketchDimensionPick(detached, id)!;
+      expect(reconcileCadSketchDimensionSelection(detached, picked)).toBe(NO_SKETCH_DIMENSIONS);
+      expect(isCadSketchDimensionPickCurrent(detached, picked[0])).toBe(false);
+      expect(selectCadSketchDimension(picked, successor, detached, true)).toEqual([picked[0], successor]);
+      const keys = createCadSketchDimensionKeys(), before = keys(joined).get(id);
+      expect(keys(detached).get(id)).not.toBe(before);
+    });
+    it.each(['length', 'clearance'])('keeps the %s and its key when the edit adds the join it is measured through', id => {
+      const picked = Object.freeze([cadSketchDimensionPick(loose, id)!]);
+      expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(attached, picked))).toEqual([id]);
+      expect(isCadSketchDimensionPickCurrent(attached, picked[0])).toBe(true);
+      expect(selectCadSketchDimension(picked, cadSketchDimensionPick(attached, id)!, attached, true)).toBe(NO_SKETCH_DIMENSIONS);
+      const keys = createCadSketchDimensionKeys(), before = keys(loose).get(id);
+      expect(keys(attached).get(id)).toBe(before);
+      // A pick keeps the operands it was authored on, so the graph it was picked in has no say.
+      expect(cadSketchDimensionPick(joined, id)).toEqual(picked[0]);
+    });
   });
 
   it('keeps a mount key while the ID names the same dimension and renews it when a replacement takes the ID', () => {

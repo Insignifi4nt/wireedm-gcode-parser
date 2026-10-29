@@ -58,7 +58,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
       const roles = relation.kind === 'axis-distance'
         ? `, From Point ${pointNumbers.get(relation.pointIds[0])} → To Point ${pointNumbers.get(relation.pointIds[1])}` : '';
       const selected = selectedIds.includes(relation.id), inspected = selectedRelationId === relation.id;
-      const mountKey = keys.get(relation.id) ?? relation.id, owner = `dimension:${mountKey}`, pick = cadSketchDimensionPickOf(graph, relation);
+      const mountKey = keys.get(relation.id) ?? relation.id, owner = `dimension:${mountKey}`, pick = cadSketchDimensionPickOf(relation);
       const enter = () => { if (!interactive || !highlight) return; hovered.current = owner; highlight.show(owner, { kind: 'relation', relationId: relation.id }); };
       const leave = () => { if (hovered.current === owner) hide(); };
       const down = (event: PointerEvent<SVGGElement>) => {
