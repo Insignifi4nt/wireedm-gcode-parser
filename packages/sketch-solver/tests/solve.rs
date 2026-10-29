@@ -219,8 +219,8 @@ fn rejects_malformed_buffers() {
     assert!(!invalid(&valid));
     assert!(invalid(&valid[..valid.len() - 1]));
     assert!(invalid(&[valid.clone(), vec![0.0]].concat()));
-    // Version, counts, value, fixed flag, kind, value, tag, flags and operand.
-    for (index, bad) in [(0, 1.0), (1, 2.5), (3, f64::NAN), (5, 0.5), (7, 12.0), (8, f64::INFINITY), (9, 0.5), (9, -1.0), (10, 2.0), (11, 2.0)] {
+    // Version, counts, options, value, fixed flag, kind, value, tag, flags and operand.
+    for (index, bad) in [(0, 1.0), (0, 5.0), (1, 2.5), (3, 2.0), (3, 3.0), (3, 0.5), (3, -1.0), (4, f64::NAN), (6, 0.5), (8, 12.0), (9, f64::INFINITY), (10, 0.5), (10, -1.0), (11, 2.0), (12, 2.0)] {
         let mut buffer = valid.clone();
         buffer[index] = bad;
         assert!(invalid(&buffer), "index {index}");
@@ -235,7 +235,7 @@ fn rejects_malformed_buffers() {
     let second = buffer.len() - 3;
     buffer[second] = 0.0;
     assert!(!invalid(&buffer));
-    buffer[9] = 2.0;
+    buffer[10] = 2.0;
     assert!(invalid(&buffer));
 }
 
@@ -532,4 +532,19 @@ fn reports_the_residual_of_the_values_it_returns_after_moving_nearer() {
         assert_eq!((again.iterations, &kept[..2]), (0, &values[..2]));
         assert_eq!(first.residual, again.residual, "{degrees} degrees");
     }
+}
+
+#[test]
+fn holds_a_parallel_line_at_a_signed_distance_from_another() {
+    // A free line kept parallel to a fixed one, its start 4 to the right of the fixed line's direction.
+    let mut builder = Builder::new();
+    let a = builder.point(0.0, 0.0, true);
+    let b = builder.point(10.0, 0.0, true);
+    let c = builder.point(1.0, -1.5, false);
+    let d = builder.point(8.0, -2.5, false);
+    builder.equation(Kind::PointLineDistance, -4.0, &[c[0], c[1], a[0], a[1], b[0], b[1]]);
+    builder.equation(Kind::Parallel, 0.0, &[a[0], a[1], b[0], b[1], c[0], c[1], d[0], d[1]]);
+    let (status, _, values) = builder.solve();
+    assert_eq!(status, 0.0);
+    assert!(close(values[c[1]], -4.0) && close(values[d[1]], -4.0), "{values:?}");
 }

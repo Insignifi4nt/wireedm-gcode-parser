@@ -1,4 +1,5 @@
 import { cadSketchGraphWithSolvedValues, cadSketchSolvedSlots, type CadSketchGraph } from '../../../../domain/cad/cadSketchGraph';
+import type { CadSketchDefinition } from '../cadSketchSolverTypes';
 
 /**
  * Scalar equation kinds of the native solver, in wire-code order (the Rust `Kind::ALL`).
@@ -14,14 +15,18 @@ import { cadSketchGraphWithSolvedValues, cadSketchSolvedSlots, type CadSketchGra
  * - `angle` (same operands): signed angle from a1 -> a2 to b1 -> b2 = value radians
  * - `symmetric-midpoint`, `symmetric-perpendicular` [px, py, qx, qy, ax, ay, bx, by]: the midpoint of p and q
  *   lies on the line through a and b, and q - p is perpendicular to it
+ * - `point-line-distance` [px, py, ax, ay, bx, by]: signed distance from p to the line through a and b = value,
+ *   positive to the left of a -> b
  */
 export const cadSketchEquationKinds = ['difference', 'value', 'midpoint', 'distance', 'distance-to-parameter', 'point-on-line',
-  'parallel', 'perpendicular', 'angle', 'equal-length', 'symmetric-midpoint', 'symmetric-perpendicular'] as const;
+  'parallel', 'perpendicular', 'angle', 'equal-length', 'symmetric-midpoint', 'symmetric-perpendicular',
+  'point-line-distance'] as const;
 export type CadSketchEquationKind = typeof cadSketchEquationKinds[number];
 
 export const cadSketchEquationArity: Readonly<Record<CadSketchEquationKind, number>> = {
   difference: 2, value: 1, midpoint: 3, distance: 4, 'distance-to-parameter': 5, 'point-on-line': 6,
-  parallel: 8, perpendicular: 8, angle: 8, 'equal-length': 8, 'symmetric-midpoint': 8, 'symmetric-perpendicular': 8
+  parallel: 8, perpendicular: 8, angle: 8, 'equal-length': 8, 'symmetric-midpoint': 8, 'symmetric-perpendicular': 8,
+  'point-line-distance': 6
 };
 
 export interface CadSketchEquation {
@@ -49,15 +54,22 @@ export interface CadSketchEquationModel {
   readonly equations: readonly CadSketchEquation[];
 }
 
-export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 5;
+export const CAD_SKETCH_NATIVE_PROTOCOL_VERSION = 7;
+/** Option bit of the Rust `problem::DEFINE`: also analyse each parameter's definition. */
+export const CAD_SKETCH_NATIVE_DEFINE = 1;
 
-export function encodeCadSketchEquationModel(model: CadSketchEquationModel): Float64Array {
-  const length = 3 + 2 * model.values.length + model.equations.reduce((total, equation) => total + 4 + equation.operands.length, 0);
+export interface CadSketchNativeOptions {
+  /** Report each parameter's definition code; a model with drag targets cannot ask. */
+  readonly analyseDefinition?: boolean;
+}
+
+export function encodeCadSketchEquationModel(model: CadSketchEquationModel, options: CadSketchNativeOptions = {}): Float64Array {
+  const length = 4 + 2 * model.values.length + model.equations.reduce((total, equation) => total + 4 + equation.operands.length, 0);
   const buffer = new Float64Array(length);
-  buffer.set([CAD_SKETCH_NATIVE_PROTOCOL_VERSION, model.values.length, model.equations.length]);
-  buffer.set(model.values, 3);
-  buffer.set(model.fixed.map(Number), 3 + model.values.length);
-  let cursor = 3 + 2 * model.values.length;
+  buffer.set([CAD_SKETCH_NATIVE_PROTOCOL_VERSION, model.values.length, model.equations.length, options.analyseDefinition ? CAD_SKETCH_NATIVE_DEFINE : 0]);
+  buffer.set(model.values, 4);
+  buffer.set(model.fixed.map(Number), 4 + model.values.length);
+  let cursor = 4 + 2 * model.values.length;
   for (const equation of model.equations) {
     if (equation.operands.length !== cadSketchEquationArity[equation.kind]) throw new Error(`A ${equation.kind} equation needs ${cadSketchEquationArity[equation.kind]} operands.`);
     buffer.set([cadSketchEquationKinds.indexOf(equation.kind), equation.value, equation.tag, Number(equation.temporary ?? false), ...equation.operands], cursor);
@@ -90,9 +102,9 @@ export function cadSketchEquationResidual(equation: CadSketchEquation, values: r
     case 'midpoint': return (o[0] + o[1]) * 0.5 - o[2];
     case 'distance': return Math.hypot(o[2] - o[0], o[3] - o[1]) - value;
     case 'distance-to-parameter': return Math.hypot(o[2] - o[0], o[3] - o[1]) - o[4];
-    case 'point-on-line': {
-      const dx = o[4] - o[2], dy = o[5] - o[3];
-      return cross(dx, dy, o[0] - o[2], o[1] - o[3]) / Math.hypot(dx, dy);
+    case 'point-on-line': case 'point-line-distance': {
+      const dx = o[4] - o[2], dy = o[5] - o[3], signed = cross(dx, dy, o[0] - o[2], o[1] - o[3]) / Math.hypot(dx, dy);
+      return equation.kind === 'point-on-line' ? signed : signed - value;
     }
     case 'parallel': case 'perpendicular': case 'angle': case 'equal-length': {
       const ax = o[2] - o[0], ay = o[3] - o[1], bx = o[6] - o[4], by = o[7] - o[5];
@@ -133,4 +145,30 @@ export function cadSketchEquationDiagnostics(model: CadSketchEquationModel, labe
   }
   const settled = (ids: Set<string>) => [...ids].filter(id => !conflicting.has(id));
   return { conflictingIds: [...conflicting], redundantIds: settled(redundant), partiallyRedundantIds: settled(partiallyRedundant) };
+}
+
+/** Definition codes of one parameter, as the Rust `diagnose` module sets them. */
+export const CAD_SKETCH_PARAMETER_NOT_ANALYSED = 0, CAD_SKETCH_PARAMETER_FREE = 1, CAD_SKETCH_PARAMETER_DETERMINED = 2;
+
+type Definition = 'defined' | 'under-defined' | 'unknown';
+/** Defined when every part is, under-defined when any part is, unknown otherwise. */
+const combined = (parts: readonly Definition[]): Definition =>
+  parts.includes('under-defined') ? 'under-defined' : parts.every(part => part === 'defined') ? 'defined' : 'unknown';
+
+/**
+ * The points and entities that parameter definition `codes` fully define, and those they leave
+ * free to move, in graph order (see `CadSketchDefinition`). An arc needs its center and both ends,
+ * a circle its center and radius, a line both ends.
+ */
+export function cadSketchEquationDefinition(graph: CadSketchGraph, model: CadSketchEquationModel, codes: readonly number[]): CadSketchDefinition {
+  const parameter = (index: number | undefined): Definition => index === undefined ? 'unknown'
+    : codes[index] === CAD_SKETCH_PARAMETER_DETERMINED ? 'defined' : codes[index] === CAD_SKETCH_PARAMETER_FREE ? 'under-defined' : 'unknown';
+  const point = (id: string) => { const x = model.pointParameters.get(id); return combined([parameter(x), parameter(x === undefined ? undefined : x + 1)]); };
+  const points = graph.points.map(source => [source.id, point(source.id)] as const);
+  const entities = graph.entities.map(entity => [entity.id, combined(entity.kind === 'line' ? [point(entity.startPointId), point(entity.endPointId)]
+    : entity.kind === 'arc' ? [point(entity.centerPointId), point(entity.startPointId), point(entity.endPointId)]
+    : [point(entity.centerPointId), parameter(model.radiusParameters.get(entity.id))])] as const);
+  const ids = (rows: readonly (readonly [string, Definition])[], state: Definition) => rows.filter(row => row[1] === state).map(row => row[0]);
+  return { definedPointIds: ids(points, 'defined'), underDefinedPointIds: ids(points, 'under-defined'),
+    definedEntityIds: ids(entities, 'defined'), underDefinedEntityIds: ids(entities, 'under-defined') };
 }

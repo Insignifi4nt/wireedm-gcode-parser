@@ -2,7 +2,7 @@ import { act, useSyncExternalStore } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadDocument } from '@/domain/cad/cadDocument';
-import { applyCadEdits } from '@/domain/cad/cadOperations';
+import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { CadSession } from './cadSession';
@@ -15,7 +15,7 @@ beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = 
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
 const selectionSet = (selection: CadSketchGraphSelection | readonly CadSketchGraphSelection[]) => 'kind' in selection ? [selection] : selection;
-async function mount(document: CadDocument, initial: CadSketchGraphSelection | readonly CadSketchGraphSelection[], overrides: Partial<Pick<CadSketchRelationsPanelProps, 'onEditMany' | 'onPrepareEdits' | 'initialCommand'>> = {}) {
+async function mount(document: CadDocument, initial: CadSketchGraphSelection | readonly CadSketchGraphSelection[], overrides: Partial<Pick<CadSketchRelationsPanelProps, 'onEditMany' | 'onPrepareEdits' | 'initialCommand' | 'dimensionOnly'>> = {}) {
   const session = new CadSession(document), preview = vi.fn(), inspect = vi.fn(), inspectSubject = vi.fn(), pending = vi.fn((open: boolean) => session.setWorkflowOpen(open));
   let selection = selectionSet(initial);
   const edit = vi.fn<NonNullable<CadSketchRelationsPanelProps['onEditMany']>>((edits, signal) => { signal?.throwIfAborted(); return session.edit(edits); });
@@ -899,5 +899,222 @@ describe('declared smooth line–arc joints',()=>{
     const detached=parseCadDocument({...source,features:[{...first,graph:{...first.graph,points:[...first.graph.points,{id:'separate',position:[0,0]}],
       entities:first.graph.entities.map(entity=>entity.kind==='arc'?{...entity,startPointId:'separate'}:entity)}}]});
     const h=await mount(detached,[{kind:'entity',id:'arc'},{kind:'entity',id:'line'}]);expect(field('Tangent').disabled).toBe(true);expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.edit).not.toHaveBeenCalled();
+  });
+});
+
+describe('point to line distance dimensions', () => {
+  // The native solver's moves and redundancy verdicts are covered in cadSketchPointLineDistancePreparation.test.ts;
+  // here the relations stay at their measured values, or the edit is only recorded, and the verdict is the solver's report.
+  const part = (name: string, graph: object) => parseCadDocument({ ...createCadDocument(name, name.toLowerCase().replaceAll(' ', '-')), schemaVersion: 2, features: [{
+    id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph }] });
+  /** A driven base line, a free line 10 above it, a free point 4 above it, a ring 6 below it and a second ring. */
+  const parallelDocument = () => part('Parallel lines', {
+    points: [{ id: 'a', position: ['0', '0'] }, { id: 'b', position: ['20', '0'] }, { id: 'c', position: [0, 10] }, { id: 'd', position: [20, 10] },
+      { id: 'p', position: [5, 4] }, { id: 'o', position: [10, -6] }, { id: 'q', position: [40, -6] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+      { id: 'ring', kind: 'circle', construction: false, centerPointId: 'o', radius: 2 }, { id: 'other', kind: 'circle', construction: false, centerPointId: 'q', radius: 3 }], relations: [] });
+  /** Two lines 10 apart that Vertical already keeps parallel. */
+  const verticalDocument = () => part('Vertical lines', {
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [0, 10] }, { id: 'c', position: [10, 0] }, { id: 'd', position: [10, 10] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+    relations: [{ id: 'up', kind: 'vertical', pointIds: ['a', 'b'] }, { id: 'up-too', kind: 'vertical', pointIds: ['c', 'd'] }] });
+  const set = (relation: object) => ({ kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining(relation) });
+  // Each wait is its own act, so React renders a finished preview before the next one starts.
+  const settle = async () => { for (let turn = 0; turn < 3; turn++) await act(async () => new Promise(resolve => setTimeout(resolve, 125))); };
+  /** The solver's report that a Parallel adds nothing to two lines already held vertical, as cadSketchPointLineDistancePreparation.test.ts finds. */
+  function redundantParallel(document: CadDocument, edits: readonly CadEdit[]) {
+    const sketch = document.features[0], parallel = edits.find(edit => edit.kind === 'set-sketch-relation' && edit.relation.kind === 'parallel');
+    if (sketch.kind !== 'sketch' || !sketch.graph || parallel?.kind !== 'set-sketch-relation') return null;
+    return new CadSketchPreparationError({ sketchId: sketch.id, sketchName: sketch.name, graph: { ...sketch.graph, relations: [...sketch.graph.relations,
+      ...edits.flatMap(edit => edit.kind === 'set-sketch-relation' ? [edit.relation] : [])] }, rejection: { kind: 'rejected', reason: 'redundant', message: 'Redundant',
+      diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: [], redundantIds: [parallel.relation.id], partiallyRedundantIds: [], issues: [] } } });
+  }
+
+  it('dimensions two parallel lines with a distance, keeps them parallel and accepts one undoable edit', async () => {
+    const source = parallelDocument();
+    const h = await mount(source, [{ kind: 'entity', id: 'top' }, { kind: 'entity', id: 'base' }], { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    expect(container.querySelector('.cad-property-title')?.textContent).toContain('Dimension');
+    expect(field('Point to line distance mm').value).toBe('10');
+    expect(container.querySelector('[data-cad-angle-sector]')).toBeNull();
+    expect([...container.querySelectorAll('button')].some(control => control.textContent?.trim() === 'Add angle')).toBe(false);
+    await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'point-line-distance', pointId: 'a', lineId: 'top', side: 'right', value: 10 }),
+      set({ kind: 'parallel', lineIds: ['top', 'base'] })], expect.any(AbortSignal));
+    await act(async () => h.session.undo()); expect(h.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
+  it.each(['after its preview', 'at once'] as const)('leaves out a Parallel the solver finds redundant when applied %s, keeping the distance as one edit', async timing => {
+    const source = verticalDocument(), session = new CadSession(source);
+    const prepare = vi.fn<NonNullable<CadSketchRelationsPanelProps['onPrepareEdits']>>(async edits => {
+      const failure = redundantParallel(source, edits); if (failure) throw failure;
+      return applyCadEdits(source, edits);
+    });
+    const edit = vi.fn<NonNullable<CadSketchRelationsPanelProps['onEditMany']>>((edits, signal) => {
+      signal?.throwIfAborted(); const failure = redundantParallel(source, edits);
+      return failure ? Promise.reject(failure) : session.edit(edits);
+    });
+    const sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Sketch fixture missing.');
+    await act(async () => root.render(<CadSketchRelationsPanel document={source} sketch={sketch} selection={[{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }]}
+      initialCommand={{ kind: 'line-angle' }} dimensionOnly onEditMany={edit} onPrepareEdits={timing === 'at once' ? undefined : prepare}
+      onPendingChange={() => undefined} interactionLocked={false} cancelSignal={0} />));
+    expect(field('Point to line distance mm').value).toBe('10');
+    if (timing === 'after its preview') {
+      await settle();
+      expect(prepare).toHaveBeenCalledTimes(2);
+      expect(prepare).toHaveBeenLastCalledWith([set({ kind: 'point-line-distance', pointId: 'c', lineId: 'base', value: 10 })], expect.any(AbortSignal));
+    }
+    await click('Apply'); await settle();
+    expect(edit).toHaveBeenCalledTimes(timing === 'at once' ? 2 : 1);
+    expect(edit).toHaveBeenLastCalledWith([set({ kind: 'point-line-distance', pointId: 'c', lineId: 'base', value: 10 })], expect.any(AbortSignal));
+    expect(container.textContent).not.toContain('Redundant');
+    expect(session.getSnapshot().document.features[0]).toMatchObject({ graph: { relations: [...sketch.graph!.relations, expect.objectContaining({ kind: 'point-line-distance' })] } });
+    await act(async () => session.undo()); expect(session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+  });
+
+  it('reuses a distance the lines already have and still holds them parallel, unless a relation between them already does', async () => {
+    const rise = { id: 'rise', kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 10 } as const;
+    const withRelations = (relations: readonly object[]) => part('Parallel lines', { ...(() => { const sketch = parallelDocument().features[0]; if (sketch.kind !== 'sketch') throw new Error('Sketch fixture missing.'); return sketch.graph; })(), relations });
+    const h = await mount(withRelations([rise]), [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }], { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    expect(field('Point to line distance mm').value).toBe('10');
+    await input('Point to line distance mm', ' 15 '); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([set({ ...rise, value: 15 }), set({ kind: 'parallel', lineIds: ['base', 'top'] })]), expect.any(AbortSignal));
+    expect(h.edit.mock.calls[0][0]).toHaveLength(2);
+    await act(async () => root.unmount()); root = createRoot(container);
+    const kept = await mount(withRelations([rise, { id: 'kept', kind: 'parallel', lineIds: ['top', 'base'] }]), [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }],
+      { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    await input('Point to line distance mm', ' 15 '); await click('Apply');
+    expect(kept.edit).toHaveBeenCalledExactlyOnceWith([set({ ...rise, value: 15 })], expect.any(AbortSignal));
+  });
+
+  it('completes without an edit when the only change, a Parallel applied before its preview, is redundant', async () => {
+    const gap = { id: 'gap', kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'right', value: 10 } as const;
+    const vertical = verticalDocument().features[0]; if (vertical.kind !== 'sketch' || !vertical.graph) throw new Error('Sketch fixture missing.');
+    const source = part('Vertical lines', { ...vertical.graph, relations: [...vertical.graph.relations, gap] }), session = new CadSession(source);
+    const edit = vi.fn<NonNullable<CadSketchRelationsPanelProps['onEditMany']>>((edits, signal) => {
+      signal?.throwIfAborted(); const failure = redundantParallel(source, edits);
+      return failure ? Promise.reject(failure) : session.edit(edits);
+    });
+    const sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Sketch fixture missing.');
+    await act(async () => root.render(<CadSketchRelationsPanel document={source} sketch={sketch} selection={[{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }]}
+      initialCommand={{ kind: 'line-angle' }} dimensionOnly onEditMany={edit} onPendingChange={() => undefined} interactionLocked={false} cancelSignal={0} />));
+    expect(field('Point to line distance mm').value).toBe('10');
+    await click('Apply'); await settle();
+    expect(edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'parallel', lineIds: ['base', 'top'] })], expect.any(AbortSignal));
+    expect(container.textContent).not.toContain('Redundant');
+    expect(session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+    // The form settles as after an accepted edit, with nothing left pending.
+    expect([...container.querySelectorAll('button')].some(control => control.textContent?.trim() === 'Apply')).toBe(false);
+  });
+
+  it('measures lines a hair off parallel with a distance alone, instead of an angle it cannot place', async () => {
+    const sketch = parallelDocument().features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
+    const source = part('Nearly parallel lines', { ...sketch.graph, points: sketch.graph.points.map(point => point.id === 'd' ? { ...point, position: [20, 10 + 1e-10] } : point) });
+    const h = await mount(source, [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }], { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    expect(container.textContent).not.toMatch(/parallel to measure|corner cannot be placed/);
+    expect(field('Point to line distance mm').value).toBe('10'); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 10 })], expect.any(AbortSignal));
+  });
+
+  it('measures parallel lines as a reference without holding them parallel', async () => {
+    const source = parallelDocument();
+    const h = await mount(source, [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }], { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    await click('Reference distance'); await click('Apply');
+    expect(h.edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'c', lineId: 'base' } })], expect.any(AbortSignal));
+  });
+
+  it('dimensions a point or a circle center from a line, and two circle centers, through the value field', async () => {
+    const source = parallelDocument(), recorded = vi.fn<NonNullable<CadSketchRelationsPanelProps['onEditMany']>>(async () => undefined);
+    await mount(source, [{ kind: 'point', id: 'p' }, { kind: 'entity', id: 'base' }], { initialCommand: { kind: 'point-line-distance' }, dimensionOnly: true, onEditMany: recorded });
+    expect(field('Point to line distance mm').value).toBe('4');
+    await input('Point to line distance mm', ' 7 '); await click('Apply');
+    expect(recorded).toHaveBeenCalledExactlyOnceWith([set({ kind: 'point-line-distance', pointId: 'p', lineId: 'base', value: 7 })], expect.any(AbortSignal));
+    await act(async () => root.unmount()); root = createRoot(container);
+    const circle = await mount(source, [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'ring' }], { initialCommand: { kind: 'point-line-distance' }, dimensionOnly: true });
+    expect(field('Point to line distance mm').value).toBe('6'); await click('Apply');
+    expect(circle.edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'point-line-distance', pointId: 'o', lineId: 'base', value: 6 })], expect.any(AbortSignal));
+    await act(async () => circle.session.undo()); expect(circle.session.getSnapshot()).toMatchObject({ document: source, canUndo: false });
+    await act(async () => root.unmount()); root = createRoot(container);
+    const centers = await mount(source, [{ kind: 'entity', id: 'ring' }, { kind: 'entity', id: 'other' }], { initialCommand: { kind: 'center-distance' }, dimensionOnly: true });
+    expect(field('Center distance mm').value).toBe('30'); await click('Apply');
+    expect(centers.edit).toHaveBeenCalledExactlyOnceWith([set({ kind: 'distance', pointIds: ['o', 'q'], value: 30 })], expect.any(AbortSignal));
+    await act(async () => root.unmount()); root = createRoot(container);
+    await mount(source, [{ kind: 'point', id: 'a' }, { kind: 'entity', id: 'base' }], { initialCommand: { kind: 'point-line-distance' }, dimensionOnly: true });
+    expect(container.textContent).toContain('Choose a point, arc or circle and a line that does not end at it.');
+  });
+
+  /** The parallel lines with `e` coincident with the top line's start, carrying the given dimensions. */
+  const aliasDocument = (relations: readonly object[]) => {
+    const sketch = parallelDocument().features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
+    return part('Aliased points', { ...sketch.graph, points: [...sketch.graph.points, { id: 'e', position: [0, 10] }],
+      relations: [{ id: 'joint', kind: 'coincident', pointIds: ['e', 'c'] }, ...relations] });
+  };
+  const remount = async () => { await act(async () => root.unmount()); root = createRoot(container); };
+
+  it('edits a distance to a line that a coincident alias already carries, from the line pair or the point and line', async () => {
+    const rise = { id: 'rise', kind: 'point-line-distance', pointId: 'e', lineId: 'base', side: 'left', value: 10 } as const;
+    const lines = await mount(aliasDocument([rise]), [{ kind: 'entity', id: 'base' }, { kind: 'entity', id: 'top' }], { initialCommand: { kind: 'line-angle' }, dimensionOnly: true });
+    await input('Point to line distance mm', ' 15 '); await click('Apply');
+    expect(lines.edit).toHaveBeenCalledExactlyOnceWith(expect.arrayContaining([set({ ...rise, value: 15 }), set({ kind: 'parallel', lineIds: ['base', 'top'] })]), expect.any(AbortSignal));
+    expect(lines.edit.mock.calls[0][0]).toHaveLength(2);
+    await remount();
+    const pointLine = await mount(aliasDocument([rise]), [{ kind: 'point', id: 'c' }, { kind: 'entity', id: 'base' }], { initialCommand: { kind: 'point-line-distance' }, dimensionOnly: true });
+    expect(field('Point to line distance mm').value).toBe('10');
+    await input('Point to line distance mm', ' 12 '); await click('Apply');
+    expect(pointLine.edit).toHaveBeenCalledExactlyOnceWith([set({ ...rise, value: 12 })], expect.any(AbortSignal));
+  });
+
+  it('edits a point pair or datum dimension that a coincident alias already carries', async () => {
+    const apart = { id: 'apart', kind: 'distance', pointIds: ['e', 'd'], value: 20 } as const, across = { id: 'across', kind: 'axis-distance', pointIds: ['e', 'd'], axis: 'x', value: 20 } as const;
+    const aligned = await mount(aliasDocument([apart, across]), [{ kind: 'point', id: 'c' }, { kind: 'point', id: 'd' }], { initialCommand: { kind: 'distance' }, dimensionOnly: true });
+    expect(field('Distance mm').value).toBe('20');
+    await input('Distance mm', ' 25 '); await click('Apply');
+    expect(aligned.edit).toHaveBeenCalledExactlyOnceWith([set({ ...apart, value: 25 })], expect.any(AbortSignal));
+    await remount();
+    const horizontal = await mount(aliasDocument([apart, across]), [{ kind: 'point', id: 'c' }, { kind: 'point', id: 'd' }], { initialCommand: { kind: 'point-dimensions' }, dimensionOnly: true });
+    await click('Horizontal distance');
+    expect(field('Horizontal distance mm').value).toBe('20');
+    // A horizontal distance has no reference form to become.
+    expect([...container.querySelectorAll('button')].some(control => control.textContent?.trim() === 'Reference distance')).toBe(false);
+    await input('Horizontal distance mm', ' 22 '); await click('Apply');
+    expect(horizontal.edit).toHaveBeenCalledExactlyOnceWith([set({ ...across, value: 22 })], expect.any(AbortSignal));
+    await remount();
+    const fix = { id: 'fix', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 0 } as const;
+    const datum = await mount(aliasDocument([fix]), { kind: 'point', id: 'c' }, { initialCommand: { kind: 'datum-distance', datum: 'y-axis' }, dimensionOnly: true });
+    expect(field('X from Y axis mm').value).toBe('0');
+    await input('X from Y axis mm', ' 3 '); await click('Apply');
+    expect(datum.edit).toHaveBeenCalledExactlyOnceWith([set({ ...fix, value: 3 })], expect.any(AbortSignal));
+    await remount();
+    await mount(aliasDocument([{ id: 'pin', kind: 'fixed-point', pointId: 'e', position: [0, 10] }]), { kind: 'point', id: 'c' }, { initialCommand: { kind: 'datum-distance', datum: 'origin' }, dimensionOnly: true });
+    expect(container.textContent).toContain('already has its position from a fixed point or an expression');
+    await remount();
+    // Fix X shows the alias's coordinate as already fixed instead of offering a second, redundant one.
+    await mount(aliasDocument([fix]), { kind: 'point', id: 'c' });
+    expect(field('Fix X')).toMatchObject({ checked: true, disabled: true }); expect(field('Fix Y')).toMatchObject({ checked: false, disabled: false });
+  });
+
+  it.each([
+    { name: 'point to line distance', driver: { id: 'gap', kind: 'point-line-distance', pointId: 'p', lineId: 'base', side: 'left', value: 4 },
+      selection: [{ kind: 'point', id: 'p' }, { kind: 'entity', id: 'base' }], command: 'point-line-distance', label: 'Reference distance', measurement: { kind: 'point-line-distance', pointId: 'p', lineId: 'base' } },
+    { name: 'length', driver: { id: 'span', kind: 'distance', pointIds: ['c', 'd'], value: 20 },
+      selection: [{ kind: 'entity', id: 'top' }], command: 'length', label: 'Reference length', measurement: { kind: 'line-length', entityId: 'top' } },
+    { name: 'distance', driver: { id: 'apart', kind: 'distance', pointIds: ['o', 'q'], value: 30 },
+      selection: [{ kind: 'point', id: 'o' }, { kind: 'point', id: 'q' }], command: 'distance', label: 'Reference distance', measurement: { kind: 'point-distance', pointIds: ['o', 'q'] } },
+    { name: 'radius', driver: { id: 'size', kind: 'radial-size', entityId: 'ring', quantity: 'radius', value: 2 },
+      selection: [{ kind: 'entity', id: 'ring' }], command: 'radial-size', label: 'Reference radius', measurement: { kind: 'radial-size', entityId: 'ring', quantity: 'radius' } }
+  ] as const)('turns a saved $name dimension into its reference under the same identity, and back', async ({ driver, selection, command, label, measurement }) => {
+    const sketch = parallelDocument().features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
+    const source = part('Saved dimension', { ...sketch.graph, relations: [driver] }), relations = (document: CadDocument) => document.features[0].kind === 'sketch' ? document.features[0].graph?.relations : null;
+    const measured = await mount(source, selection, { initialCommand: { kind: command }, dimensionOnly: true });
+    await click(label); await click('Apply');
+    const reference = { id: driver.id, kind: 'reference-dimension', measurement };
+    expect(measured.edit).toHaveBeenCalledExactlyOnceWith([set(reference)], expect.any(AbortSignal));
+    const passive = measured.session.getSnapshot().document;
+    expect(relations(passive)).toEqual([reference]);
+    await remount();
+    const driven = await mount(passive, selection, { initialCommand: { kind: 'inspect', relationId: driver.id } });
+    expect(button('Make driving').disabled).toBe(false);
+    await click('Make driving'); await click('Apply');
+    expect(driven.edit).toHaveBeenCalledExactlyOnceWith([set(driver)], expect.any(AbortSignal));
+    expect(relations(driven.session.getSnapshot().document)).toEqual([driver]);
   });
 });

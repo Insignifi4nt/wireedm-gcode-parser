@@ -12,7 +12,7 @@ fn equation(kind: Kind, value: f64, tag: usize, operands: &[usize]) -> Equation 
 fn offset_points() -> Problem {
     Problem { values: vec![3.2, 3.9, 6.1, -0.05, 0.0, 0.0], fixed: vec![false, false, false, false, true, true], equations: vec![
         equation(Kind::Difference, 3.0, 0, &[0, 2]), equation(Kind::Difference, -4.0, 1, &[1, 3]),
-        equation(Kind::Distance, 5.0, 2, &[4, 5, 0, 1]), equation(Kind::Distance, 6.0, 3, &[4, 5, 2, 3])] }
+        equation(Kind::Distance, 5.0, 2, &[4, 5, 0, 1]), equation(Kind::Distance, 6.0, 3, &[4, 5, 2, 3])], definition: false }
 }
 
 fn columns(problem: &Problem, unknowns: &[usize]) -> Vec<usize> {

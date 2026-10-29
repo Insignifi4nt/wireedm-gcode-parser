@@ -11,7 +11,7 @@ export type CadPropertyTarget = { readonly kind: 'body' } | { readonly kind: 'fe
 
 const length = (value: number) => `${formatCadLocalizedQuantity(value, 3)} mm`;
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
-const DIMENSIONS = new Set<CadSketchGraphRelation['kind']>(['distance', 'axis-distance', 'radial-size', 'line-angle', 'fixed-axis', 'fillet-corner', 'chamfer-corner']);
+const DIMENSIONS = new Set<CadSketchGraphRelation['kind']>(['distance', 'point-line-distance', 'axis-distance', 'radial-size', 'line-angle', 'fixed-axis', 'fillet-corner', 'chamfer-corner']);
 
 function sizeOf(meshes: readonly CadMesh[]): string | null {
   if (!meshes.length) return null;

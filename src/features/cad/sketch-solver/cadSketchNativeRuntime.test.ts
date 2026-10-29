@@ -466,9 +466,9 @@ function nativeModule({ alloc, free, solve, data }: { readonly alloc: number[]; 
 
 describe('native solver instances', () => {
   const unreachable = [0, 11], at8 = [65, 8, 11], at1024 = [65, 128, 8, 11], none = [11];
-  // An empty model's reply: length, protocol 5, converged, no iterations or residual, nothing to
+  // An empty model's reply: length, protocol 7, converged, no iterations or residual, nothing to
   // diagnose, no freedom count, no drag outcome or target distance.
-  const reply = new Float64Array([9, 5, 0, 0, 0, 2, NaN, NaN, NaN]);
+  const reply = new Float64Array([9, 7, 0, 0, 0, 2, NaN, NaN, NaN]);
   const empty: CadSketchEquationModel = { values: [], fixed: [], pointParameters: new Map(), radiusParameters: new Map(), equations: [] };
 
   it('reads a reply and frees both buffers', async () => {
@@ -484,12 +484,12 @@ describe('native solver instances', () => {
     // One free value held at 0 and dragged toward 5: projected, 5 mm short, one degree of freedom.
     const dragged: CadSketchEquationModel = { ...empty, values: [0], fixed: [false],
       equations: [{ kind: 'value', operands: [0], value: 5, tag: 0, sourceId: 'drag', temporary: true }] };
-    const drag = (outcome: number, distance: number) => new Float64Array([11, 5, 0, 1, 0, 0, 1, outcome, distance, 0, 0]);
+    const drag = (outcome: number, distance: number) => new Float64Array([12, 7, 0, 1, 0, 0, 1, outcome, distance, 0, 0, 0]);
     const solve = (model: CadSketchEquationModel, data: Float64Array) => loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data })).then(solver => solver.solve(model));
     expect(await solve(dragged, drag(1, 5))).toMatchObject({ values: [0], drag: { outcome: 'projected', targetDistance: 5 } });
     expect(await solve(dragged, drag(3, 5))).toMatchObject({ drag: { outcome: 'limited', targetDistance: 5 } });
     // An uncertain rank keeps its labels and leaves freedom unknown; a count with it is invalid.
-    const diagnosed = (status: number, diagnosis: number, freedom = NaN) => new Float64Array([11, 5, status, 1, 0, diagnosis, freedom, 1, 5, 0, 0]);
+    const diagnosed = (status: number, diagnosis: number, freedom = NaN) => new Float64Array([12, 7, status, 1, 0, diagnosis, freedom, 1, 5, 0, 0, 0]);
     expect(await solve(dragged, diagnosed(0, 4))).toMatchObject({ diagnosis: { kind: 'uncertain', labels: [0] } });
     await expect(solve(dragged, diagnosed(0, 4, 1))).rejects.toThrow('invalid result');
     // Blame from the start comes only with a group that did not converge; a group not diagnosed
@@ -502,6 +502,39 @@ describe('native solver instances', () => {
       await expect(solve(dragged, drag(outcome, distance))).rejects.toThrow('invalid result');
     const undragged = { ...dragged, equations: [{ ...dragged.equations[0], temporary: false }] };
     await expect(solve(undragged, drag(1, 5))).rejects.toThrow('invalid result');
+  });
+
+  it('reads definition codes only when asked, and only the codes the solver can give', async () => {
+    // A fixed value, a value held at 5 and one no equation reads, then their definition codes.
+    const model: CadSketchEquationModel = { ...empty, values: [1, 0, 7], fixed: [true, false, false],
+      equations: [{ kind: 'value', operands: [1], value: 5, tag: 0, sourceId: 'held' }] };
+    const answer = (codes: readonly number[], { length = 9 + 3 + 1 + codes.length, version = 7, diagnosis = 0 } = {}) =>
+      new Float64Array([length, version, 0, 1, 0, diagnosis, diagnosis === 0 ? 1 : NaN, NaN, NaN, 1, 5, 7, 0, ...codes]);
+    const solve = (data: Float64Array, analyseDefinition?: boolean) => loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data }))
+      .then(solver => solver.solve(model, analyseDefinition === undefined ? undefined : { analyseDefinition }));
+    expect(await solve(answer([2, 2, 1]), true)).toMatchObject({ values: [1, 5, 7], definition: [2, 2, 1] });
+    expect(await solve(answer([2, 1, 1]), true)).toMatchObject({ definition: [2, 1, 1] });
+    expect(await solve(answer([2, 0, 1]), true)).toMatchObject({ definition: [2, 0, 1] });
+    expect(await solve(answer([0, 0, 0]))).not.toHaveProperty('definition');
+    expect(await solve(answer([0, 0, 0]), false)).not.toHaveProperty('definition');
+    // Nothing is analysed unless asked; a fixed value is determined, one no equation reads is free;
+    // a diagnosis that is unavailable analyses nothing else; codes are whole and count each value.
+    for (const codes of [[2, 2, 1], [0, 0, 1]]) await expect(solve(answer(codes))).rejects.toThrow('invalid result');
+    for (const codes of [[1, 2, 1], [0, 2, 1], [2, 2, 2], [2, 2, 0], [2, 3, 1], [2, 0.5, 1], [2, NaN, 1], [2, -1, 1], [2, 2], [2, 2, 1, 0]])
+      await expect(solve(answer(codes), true)).rejects.toThrow('invalid result');
+    await expect(solve(answer([2, 2, 1], { diagnosis: 1 }), true)).rejects.toThrow('invalid result');
+    expect(await solve(answer([2, 0, 1], { diagnosis: 1 }), true)).toMatchObject({ diagnosis: { kind: 'unavailable' }, definition: [2, 0, 1] });
+    await expect(solve(answer([2, 2, 1], { length: 15 }), true)).rejects.toThrow('invalid result');
+    await expect(solve(answer([2, 2, 1], { version: 5 }), true)).rejects.toBeInstanceOf(CadSketchNativeProtocolError);
+  });
+
+  it('refuses to ask a drag which values are defined before native code, and keeps the instance', async () => {
+    const solver = await loadCadSketchNativeSolver(nativeModule({ alloc: at8, free: none, solve: at1024, data: reply }));
+    const dragged: CadSketchEquationModel = { ...empty, values: [0], fixed: [false],
+      equations: [{ kind: 'value', operands: [0], value: 5, tag: 0, sourceId: 'drag', temporary: true }] };
+    expect(() => solver.solve(dragged, { analyseDefinition: true })).toThrow('A drag cannot ask which parameters are defined.');
+    expect(solver.solve(empty, { analyseDefinition: true })).toEqual({ status: 'converged', iterations: 0, residual: 0, values: [],
+      diagnosis: { kind: 'no-unknowns', labels: [] }, definition: [] });
   });
 
   it.each([

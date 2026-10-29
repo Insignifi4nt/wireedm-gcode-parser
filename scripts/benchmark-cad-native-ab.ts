@@ -9,7 +9,7 @@ import { cadSolverCalibrationDrifted, measureCadSolverDrag, measureCadSolverDrag
 import { createCadSolverWorkloadCases } from '../src/features/cad/benchmark/cadSolverWorkloadCases';
 import { encodeCadSketchEquationModel, type CadSketchEquationModel } from '../src/features/cad/sketch-solver/native/cadSketchEquationModel';
 import { loadCadSketchNativeSolver, type CadSketchNativeSolver } from '../src/features/cad/sketch-solver/native/cadSketchNativeSolver';
-import { answerNatively, nativeAnswerDifferences, nativeBaselineBytes, nativeBaselineManifest, recordNativeCalls } from '../src/features/cad/sketch-solver/native/__tests__/nativeBaseline';
+import { answerNatively, loadNativeBaselineInstance, nativeAnswerDifferences, nativeBaselineBytes, nativeBaselineManifest, recordNativeCalls } from '../src/features/cad/sketch-solver/native/__tests__/nativeBaseline';
 
 // The baseline module the manifest in packages/sketch-solver/baseline names, against the committed
 // module, on the models the app's runtime sends them in the solver benchmarks: workload first solves
@@ -58,7 +58,7 @@ const median = (values: readonly number[]) => { const sorted = [...values].sort(
 const results = [];
 for (const [name, recorded] of selected) {
   const models = [...recorded.values()];
-  const fresh = async () => Object.fromEntries(await Promise.all((Object.keys(modules) as ModuleId[]).map(async id => [id, await loadCadSketchNativeSolver(modules[id])] as const))) as Record<ModuleId, CadSketchNativeSolver>;
+  const fresh = async () => Object.fromEntries(await Promise.all((Object.keys(modules) as ModuleId[]).map(async id => [id, await (id === 'baseline' ? loadNativeBaselineInstance(modules[id]) : loadCadSketchNativeSolver(modules[id]))] as const))) as Record<ModuleId, CadSketchNativeSolver>;
   let instances = await fresh(), differingCalls = 0;
   // The untimed pass warms both instances and compares their answers. A call either fails is not
   // timed, and as a failed instance never runs again, both are replaced after it, as the runtime does.

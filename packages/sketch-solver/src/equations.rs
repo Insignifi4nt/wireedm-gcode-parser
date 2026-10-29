@@ -30,15 +30,20 @@ pub enum Kind {
     SymmetricMidpoint,
     /// `q - p` is perpendicular to the line through `a` and `b`, in length units.
     SymmetricPerpendicular,
+    /// Signed distance from `p` to the line through `a` and `b` minus `value`, positive to the
+    /// left of `a` to `b`.
+    PointLineDistance,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 12] = [Kind::Difference, Kind::Value, Kind::Midpoint, Kind::Distance, Kind::DistanceToParameter,
+    pub const ALL: [Kind; 13] = [Kind::Difference, Kind::Value, Kind::Midpoint, Kind::Distance, Kind::DistanceToParameter,
         Kind::PointOnLine, Kind::Parallel, Kind::Perpendicular, Kind::Angle, Kind::EqualLength, Kind::SymmetricMidpoint,
-        Kind::SymmetricPerpendicular];
+        Kind::SymmetricPerpendicular, Kind::PointLineDistance];
 
     /// Whether the residual reads the equation's `value`; the other kinds hold at zero whatever it is.
-    pub fn reads_value(self) -> bool { matches!(self, Kind::Difference | Kind::Value | Kind::Distance | Kind::Angle) }
+    pub fn reads_value(self) -> bool {
+        matches!(self, Kind::Difference | Kind::Value | Kind::Distance | Kind::Angle | Kind::PointLineDistance)
+    }
 
     /// Wire code; the order of `ALL` is the protocol.
     pub fn from_code(code: f64) -> Option<Kind> {
@@ -53,7 +58,7 @@ impl Kind {
             Kind::Midpoint => 3,
             Kind::Distance => 4,
             Kind::DistanceToParameter => 5,
-            Kind::PointOnLine => 6,
+            Kind::PointOnLine | Kind::PointLineDistance => 6,
             Kind::Parallel | Kind::Perpendicular | Kind::Angle | Kind::EqualLength | Kind::SymmetricMidpoint
             | Kind::SymmetricPerpendicular => 8,
         }
@@ -83,9 +88,10 @@ pub fn residual(kind: Kind, o: &[Dual], value: f64) -> Dual {
         Kind::Midpoint => (o[0] + o[1]) * 0.5 - o[2],
         Kind::Distance => length(o[2] - o[0], o[3] - o[1]) - value,
         Kind::DistanceToParameter => length(o[2] - o[0], o[3] - o[1]) - o[4],
-        Kind::PointOnLine => {
+        Kind::PointOnLine | Kind::PointLineDistance => {
             let (dx, dy) = (o[4] - o[2], o[5] - o[3]);
-            cross(dx, dy, o[0] - o[2], o[1] - o[3]) / length(dx, dy)
+            let signed = cross(dx, dy, o[0] - o[2], o[1] - o[3]) / length(dx, dy);
+            if kind == Kind::PointOnLine { signed } else { signed - value }
         }
         Kind::Parallel | Kind::Perpendicular | Kind::Angle | Kind::EqualLength => {
             let (ax, ay, bx, by) = (o[2] - o[0], o[3] - o[1], o[6] - o[4], o[7] - o[5]);

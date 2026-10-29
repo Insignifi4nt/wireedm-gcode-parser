@@ -11,16 +11,23 @@ import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResu
 
 // The graph is not part of this schema: its own parser validates it, once.
 const envelopeSchema = Type.Object({ parameters: Type.Record(Type.String(), CadNumberSchema),
-  drag: Type.Optional(Type.Object({ pointId: CadIdentifierSchema, position: Type.Tuple([CadNumberSchema, CadNumberSchema]) }, { additionalProperties: false }))
+  drag: Type.Optional(Type.Object({ pointId: CadIdentifierSchema, position: Type.Tuple([CadNumberSchema, CadNumberSchema]) }, { additionalProperties: false })),
+  analyseDefinition: Type.Optional(Type.Boolean())
 }, { additionalProperties: false });
-const diagnosticsSchema = Type.Object({
+const diagnosticsFields = {
   status: Type.Union([Type.Literal('success'), Type.Literal('converged'), Type.Literal('failed'), Type.Literal('invalid'), Type.Null()]),
   degreesOfFreedom: Type.Union([Type.Integer(), Type.Null()]),
   conflictingIds: Type.Array(CadIdentifierSchema), redundantIds: Type.Array(CadIdentifierSchema), partiallyRedundantIds: Type.Array(CadIdentifierSchema),
   issues: Type.Array(CadSketchGraphIssueSchema)
-}, { additionalProperties: false });
+};
+const diagnosticsSchema = Type.Object(diagnosticsFields, { additionalProperties: false });
+// Only a solved result says which geometry is defined.
+const solvedDiagnosticsSchema = Type.Object({ ...diagnosticsFields, definition: Type.Optional(Type.Object({
+  definedPointIds: Type.Array(CadIdentifierSchema), underDefinedPointIds: Type.Array(CadIdentifierSchema),
+  definedEntityIds: Type.Array(CadIdentifierSchema), underDefinedEntityIds: Type.Array(CadIdentifierSchema)
+}, { additionalProperties: false })) }, { additionalProperties: false });
 const resultSchema = Type.Union([
-  Type.Object({ kind: Type.Literal('solved'), layout: Type.Literal(CAD_SKETCH_SOLVED_LAYOUT_VERSION), values: Type.Array(Type.Number()), diagnostics: diagnosticsSchema },
+  Type.Object({ kind: Type.Literal('solved'), layout: Type.Literal(CAD_SKETCH_SOLVED_LAYOUT_VERSION), values: Type.Array(Type.Number()), diagnostics: solvedDiagnosticsSchema },
     { additionalProperties: false }),
   Type.Object({ kind: Type.Literal('rejected'), reason: Type.Union([Type.Literal('invalid-input'), Type.Literal('too-large'), Type.Literal('conflicting'), Type.Literal('redundant'), Type.Literal('failed'), Type.Literal('invalid-solution')]),
     message: Type.String({ maxLength: 8192 }), diagnostics: diagnosticsSchema }, { additionalProperties: false })
@@ -49,12 +56,28 @@ export function parseCadSketchSolveInput(value: unknown): CadSketchSolveInput {
   let graph: CadSketchGraph;
   try { graph = parseCadSketchGraph(source); }
   catch (error) { throw error instanceof CadError && error.code === 'invalid-sketch-graph' ? new Error('Invalid sketch solver input.') : error; }
-  const { parameters, drag } = envelope;
+  const { parameters, drag, analyseDefinition } = envelope;
+  if (drag && analyseDefinition) throw new Error('A sketch drag cannot ask which geometry is defined.');
   if (drag && !graph.points.some(point => point.id === drag.pointId)) throw new Error('The sketch drag point does not exist.');
   if (drag && cadSketchExternalReferenceComponents(graph).pointIds.has(drag.pointId)) throw new Error('Detach the sketch reference before dragging its geometry.');
   if (drag && cadSketchLinearPatternLockReason(graph, { kind: 'point', id: drag.pointId })) throw new Error('Edit the seed or detach the linear pattern before dragging generated geometry.');
   return Object.freeze({ graph, parameters: Object.freeze({ ...parameters }), ...(drag ? { drag: Object.freeze({ pointId: drag.pointId,
-    position: Object.freeze([drag.position[0], drag.position[1]] satisfies [number, number]) }) } : {}) });
+    position: Object.freeze([drag.position[0], drag.position[1]] satisfies [number, number]) }) } : {}), ...(analyseDefinition ? { analyseDefinition: true } : {}) });
+}
+
+/**
+ * Whether a solved reply's definition is one `input` can have: present exactly when asked for,
+ * naming only its points and entities, each once.
+ */
+function definitionMatchesInput(input: CadSketchSolveInput, definition: CadSketchSolveDiagnostics['definition']) {
+  if (!definition) return input.analyseDefinition !== true;
+  if (input.analyseDefinition !== true) return false;
+  const distinct = (known: readonly { readonly id: string }[], ...lists: readonly (readonly string[])[]) => {
+    const ids = new Set(known.map(item => item.id)), seen = new Set<string>();
+    return lists.every(list => list.every(id => ids.has(id) && !seen.has(id) && seen.add(id)));
+  };
+  return distinct(input.graph.points, definition.definedPointIds, definition.underDefinedPointIds)
+    && distinct(input.graph.entities, definition.definedEntityIds, definition.underDefinedEntityIds);
 }
 
 export function isCadSketchSolverEnvelope(value: unknown): value is { id: number; kind: string } {
@@ -88,6 +111,7 @@ export function parseCadSketchSolverReply(value: unknown, input: CadSketchSolveI
   // Freedom is unknown (null) when the solver could not decide rank near a singular configuration.
   if (!graph || (diagnostics.status !== 'success' && diagnostics.status !== 'converged') || diagnostics.degreesOfFreedom !== null && diagnostics.degreesOfFreedom < 0
     || diagnostics.conflictingIds.length || diagnostics.redundantIds.length || diagnostics.partiallyRedundantIds.length || diagnostics.issues.length
+    || !definitionMatchesInput(input, diagnostics.definition)
     || checkCadSketchGraph(graph, input.parameters).length) throw new Error('Sketch worker solution does not match its request or constraints.');
   return { id: value.id, kind: 'result', result: { kind: 'solved', graph, diagnostics } };
 }

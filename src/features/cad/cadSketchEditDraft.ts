@@ -3,6 +3,7 @@ import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
 import { validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadError } from '@/domain/cad/cadError';
+import { keepCadSketchPointLineSides } from '@/domain/cad/cadSketchPointLineDistanceRelations';
 import { cadSketchCellModeForAreas, prepareCadSketchCells, type CadPreparedSketchCatalog } from '@/domain/cad/cadSketchRegionInspection';
 import { resolveCadSketchRegions } from '@/domain/cad/cadSketchGeometry';
 import type { CadSketchRegionSelection } from '@/domain/cad/cadSketchRegionSelection';
@@ -180,6 +181,14 @@ export class CadSketchEditDraft {
         // the ownership boundary before publishing later independent member edits.
         if (retained?.kind !== 'linear-pattern' || retained.idPrefix !== relation.idPrefix || !same(retained.seed, relation.seed))
           edits.push({ kind: 'remove-sketch-relation', sketchId: feature.id, relationId: relation.id });
+      }
+      // The draft's own edits already kept each distance's side. Publishing its final state as one edit would turn a side the
+      // draft deliberately restated after reversing its line, so release each such distance first: the final state then states
+      // it exactly, before any solve that edit needs.
+      if (original.kind === 'sketch' && feature.kind === 'sketch' && original.graph && feature.graph) {
+        const graph = feature.graph, republished = keepCadSketchPointLineSides(original.graph, graph);
+        if (republished !== graph) for (const [index, relation] of graph.relations.entries())
+          if (republished.relations[index] !== relation) edits.push({ kind: 'remove-sketch-relation', sketchId: feature.id, relationId: relation.id });
       }
       edits.push({ kind: 'update-feature', feature });
     }

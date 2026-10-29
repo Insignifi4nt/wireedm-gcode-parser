@@ -20,10 +20,10 @@ pub fn solve_buffer(input: &[f64]) -> Vec<f64> {
             let outcome = newton::solve(&problem, &mut values);
             encode_output(&Output { status: outcome.status, iterations: outcome.iterations, residual: outcome.residual,
                 diagnosis: outcome.diagnosis, degrees_of_freedom: outcome.degrees_of_freedom, drag: outcome.drag,
-                target_distance: outcome.target_distance, values: &values, labels: &outcome.labels })
+                target_distance: outcome.target_distance, values: &values, labels: &outcome.labels, definition: &outcome.definition })
         }
         None => encode_output(&Output { status: Status::InvalidInput, iterations: 0, residual: f64::NAN,
-            diagnosis: Diagnosis::Unavailable, degrees_of_freedom: None, drag: None, target_distance: f64::NAN, values: &[], labels: &[] }),
+            diagnosis: Diagnosis::Unavailable, degrees_of_freedom: None, drag: None, target_distance: f64::NAN, values: &[], labels: &[], definition: &[] }),
     }
 }
 

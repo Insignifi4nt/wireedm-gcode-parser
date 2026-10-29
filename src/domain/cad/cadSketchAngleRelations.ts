@@ -72,7 +72,8 @@ export function checkCadSketchAngleRelation(graph: CadSketchGraph, relation: Cad
   }
 }
 
-function supportIntersection(a: Direction, b: Direction): Readonly<Point2> {
+/** The corner where two line supports meet, or a `sketch-angle-precision` error when it cannot be placed reliably. */
+export function cadSketchLineSupportIntersection(a: Direction, b: Direction): Readonly<Point2> {
   const determinant = cross(a, b);
   if (Math.abs(determinant) <= 32 * Number.EPSILON) throw new CadError('sketch-angle-precision', 'These lines are too close to parallel to measure an angle between them.');
   const delta = { x: b.start.x - a.start.x, y: b.start.y - a.start.y }, distance = cross(delta, b) / determinant;
@@ -96,7 +97,7 @@ export function cadSketchLineAngleGeometry(graph: CadSketchGraph, relation: CadS
   points: ReadonlyMap<string, Point2>): CadSketchLineAngleGeometry {
   const rays = rayDirections(graph, relation.rays, points);
   if (!rays) throw new CadError('missing-sketch-point', 'The angle needs numeric source endpoints.');
-  return geometry(supportIntersection(rays[0], rays[1]), rays[0], rays[1], relation.sense);
+  return geometry(cadSketchLineSupportIntersection(rays[0], rays[1]), rays[0], rays[1], relation.sense);
 }
 
 interface CreationInput {
@@ -110,7 +111,7 @@ function prepare(input: CreationInput) {
   const lines = resolveCadSketchLinePair(input.graph, input.lineIds);
   const a = cadSketchLineDirection(lines[0], points), b = cadSketchLineDirection(lines[1], points);
   if (!a || !b) throw new CadError('missing-sketch-point', 'The angle needs numeric source endpoints.');
-  return { points, lines, a, b, vertex: supportIntersection(a, b) };
+  return { points, lines, a, b, vertex: cadSketchLineSupportIntersection(a, b) };
 }
 function sectors(input: CreationInput, prepared: ReturnType<typeof prepare>): Sectors {
   const { lines, vertex } = prepared;

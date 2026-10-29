@@ -25,7 +25,7 @@ interface PreparationFailureInput {
 }
 
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
-  'tangent-joint': 'Tangent', 'point-on-line': 'Point on line', 'point-on-curve': 'Point on curve', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'axis-distance': 'Axis distance',
+  'tangent-joint': 'Tangent', 'point-on-line': 'Point on line', 'point-on-curve': 'Point on curve', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'point-line-distance': 'Point to line distance', 'axis-distance': 'Axis distance',
   'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'external-reference': 'Linked reference',
   'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
 };
@@ -52,7 +52,7 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
     if (relation) {
       pointIds = cadSketchRelationPointIds(graph, relation); entityIds = cadSketchRelationEntityIds(relation);
       const operands = relation.kind === 'tangent-joint' ? relation.endpoints.map(endpoint => `${describeCadSketchConstraintSource(graph,{kind:'entity',id:endpoint.entityId}).label} at ${pointLabel(endpoint.pointId)}`)
-        : relation.kind === 'midpoint' || relation.kind === 'point-on-line' ? [pointLabel(relation.pointId), describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.lineId }).label]
+        : relation.kind === 'midpoint' || relation.kind === 'point-on-line' || relation.kind === 'point-line-distance' ? [pointLabel(relation.pointId), describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.lineId }).label]
         : relation.kind === 'point-on-curve' ? [pointLabel(relation.pointId), describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.curveId }).label]
         : relation.kind === 'line-angle' ? relation.rays.map(ray => describeCadSketchConstraintSource(graph, { kind: 'entity', id: ray.lineId }).label)
         : relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear' || relation.kind === 'equal-length'
@@ -62,6 +62,7 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
         : relation.kind === 'symmetric' ? [...relation.pointIds.map(pointLabel), describeCadSketchConstraintSource(graph,{kind:'entity',id:relation.lineId}).label]
         : relation.kind === 'linear-pattern' ? [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.seed.entityId }).label]
         : relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds.map(pointLabel)
+          : relation.measurement.kind === 'point-line-distance' ? [pointLabel(relation.measurement.pointId), describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.measurement.lineId }).label]
           : [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.measurement.entityId }).label]
         : ('pointIds' in relation ? relation.pointIds : [relation.pointId]).map(pointLabel);
       const name = cadSketchDatumRelationLabel(relation) ?? (relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`

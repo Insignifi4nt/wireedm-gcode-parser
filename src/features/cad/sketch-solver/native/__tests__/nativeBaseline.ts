@@ -2,8 +2,8 @@
 // call by call, with the solver it replaces. `packages/sketch-solver/baseline/manifest.json` names it.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import type { CadSketchEquationModel } from '../cadSketchEquationModel';
-import { CadSketchNativeProtocolError, loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketchNativeSolver } from '../cadSketchNativeSolver';
+import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, encodeCadSketchEquationModel, type CadSketchEquationModel } from '../cadSketchEquationModel';
+import { CadSketchNativeProtocolError, decodeCadSketchNativeOutput, type CadSketchNativeSolution, type CadSketchNativeSolver } from '../cadSketchNativeSolver';
 
 export interface NativeBaselineManifest {
   readonly appVersion: string;
@@ -23,8 +23,48 @@ export function nativeBaselineBytes(manifest = nativeBaselineManifest) {
   return bytes;
 }
 
+/** The buffer protocol the baseline module speaks: the current one without its options word, definition block and point to line distance. */
+export const NATIVE_BASELINE_PROTOCOL_VERSION = 5;
+
+/**
+ * An instance of the baseline `module`, asked and answering as a current instance is, through its
+ * own protocol: each model is encoded as now less the options word, and each reply read as now with
+ * nothing analysed. It cannot ask which parameters are defined. As a current instance, it stops
+ * after a trap or an invalid result. Each call copies its input and reply once more than a current
+ * instance does.
+ */
+export async function loadNativeBaselineInstance(module: WebAssembly.Module): Promise<CadSketchNativeSolver> {
+  const exports = (await WebAssembly.instantiate(module, {})).exports as unknown as { readonly memory: WebAssembly.Memory;
+    buffer_alloc(length: number): number; buffer_free(pointer: number, length: number): void; solve(pointer: number, length: number): number };
+  let stopped = false;
+  return { memoryBytes: () => exports.memory.buffer.byteLength, solve(model, options = {}) {
+    if (stopped) throw new Error('The native sketch solver instance stopped after a failure.');
+    if (options.analyseDefinition) throw new Error('The baseline module cannot ask which parameters are defined.');
+    const current = encodeCadSketchEquationModel(model), input = new Float64Array(current.length - 1);
+    input.set([NATIVE_BASELINE_PROTOCOL_VERSION, current[1], current[2]]);
+    input.set(current.subarray(4), 3);
+    try {
+      const pointer = exports.buffer_alloc(input.length);
+      new Float64Array(exports.memory.buffer, pointer, input.length).set(input);
+      const output = exports.solve(pointer, input.length);
+      const length = new Float64Array(exports.memory.buffer, output, 1)[0];
+      const reply = new Float64Array(exports.memory.buffer, output, length), read = new Float64Array(reply.length + model.values.length);
+      read.set(reply);
+      read[0] = read.length;
+      read[1] = reply[1] === NATIVE_BASELINE_PROTOCOL_VERSION ? CAD_SKETCH_NATIVE_PROTOCOL_VERSION : Number.NaN;
+      const solution = decodeCadSketchNativeOutput(model, {}, read);
+      exports.buffer_free(pointer, input.length);
+      exports.buffer_free(output, length);
+      return solution;
+    } catch (error) {
+      stopped = true;
+      throw error;
+    }
+  } };
+}
+
 let compiled: Promise<WebAssembly.Module> | undefined;
-export const loadNativeBaselineSolver = async () => loadCadSketchNativeSolver(await (compiled ??= WebAssembly.compile(nativeBaselineBytes())));
+export const loadNativeBaselineSolver = async () => loadNativeBaselineInstance(await (compiled ??= WebAssembly.compile(nativeBaselineBytes())));
 
 /** One answer of a module: its solution, or what it failed with, a protocol error named apart as the runtime treats it apart. */
 export type NativeAnswer = { readonly solution: CadSketchNativeSolution } | { readonly error: string };
@@ -37,9 +77,9 @@ export function answerNatively(solver: CadSketchNativeSolver, model: CadSketchEq
 
 /** A solver that passes each model it is asked, with its answer, to `onCall`, then answers or throws as `solver` did. */
 export function recordNativeCalls(solver: CadSketchNativeSolver, onCall: (model: CadSketchEquationModel, answer: NativeAnswer) => void): CadSketchNativeSolver {
-  return { memoryBytes: () => solver.memoryBytes(), solve(model) {
+  return { memoryBytes: () => solver.memoryBytes(), solve(model, options) {
     let solution: CadSketchNativeSolution;
-    try { solution = solver.solve(model); } catch (error) { onCall(model, failure(error)); throw error; }
+    try { solution = solver.solve(model, options); } catch (error) { onCall(model, failure(error)); throw error; }
     onCall(model, { solution });
     return solution;
   } };
@@ -48,7 +88,8 @@ export function recordNativeCalls(solver: CadSketchNativeSolver, onCall: (model:
 /**
  * A loader for a runtime that pairs each current instance with a fresh baseline instance, so both
  * are asked the same models in the same order, even when the runtime replaces an instance, and
- * passes each call's two answers to `compare`.
+ * passes each call's two answers to `compare`. The baseline is never asked for definition, which
+ * leaves the rest of an answer as it was.
  */
 export function loadPairedWithBaseline(loadCurrent: () => Promise<CadSketchNativeSolver>,
   compare: (model: CadSketchEquationModel, baseline: NativeAnswer, current: NativeAnswer) => void) {
@@ -66,6 +107,7 @@ const freedomOf = (solution: CadSketchNativeSolution) => solution.diagnosis.kind
 /**
  * Every part in which two answers to one model differ, bit for bit: NaN equals NaN, and -0 differs
  * from 0. Values, iterations and residual are numbers the solver computed; the rest is its verdict.
+ * Definition, which the baseline cannot analyse, is not compared.
  */
 export function nativeAnswerDifferences(baseline: NativeAnswer, current: NativeAnswer): string[] {
   if ('error' in baseline || 'error' in current) return 'error' in baseline && 'error' in current && baseline.error === current.error ? [] : ['error'];

@@ -185,8 +185,9 @@ function assertEndpointRange(point: Point2, operation: 'trim' | 'extend'): void 
 function sameEndpointPair(edge: Pick<SourceLine, 'startPointId' | 'endPointId'>, pair: readonly string[]): boolean {
   return pair.length === 2 && (edge.startPointId === pair[0] && edge.endPointId === pair[1] || edge.startPointId === pair[1] && edge.endPointId === pair[0]);
 }
+/** Relations that keep their meaning while the line keeps its support: its direction, and a point's distance from the support. */
 function retainedLineDirection(graph: CadSketchGraph, line: SourceLine, relation: CadSketchGraphRelation): boolean {
-  if (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') return true;
+  if (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear' || relation.kind === 'point-line-distance') return true;
   if (relation.kind !== 'horizontal' && relation.kind !== 'vertical') return false;
   return !sameEndpointPair(line, relation.pointIds) || !graph.entities.some(other => other.id !== line.id
     && other.kind !== 'circle' && sameEndpointPair(other, relation.pointIds));
@@ -212,8 +213,9 @@ type TrimShape = { readonly kind: 'delete' } | { readonly kind: 'end'; readonly 
 function relationPointOperands(relation: CadSketchGraphRelation): readonly string[] {
   switch (relation.kind) {
     case 'coincident': case 'horizontal': case 'vertical': case 'distance': case 'axis-distance': case 'symmetric': return relation.pointIds;
-    case 'fixed-point': case 'fixed-axis': case 'midpoint': case 'point-on-line': case 'point-on-curve': case 'fillet-corner': case 'chamfer-corner': return [relation.pointId];
-    case 'reference-dimension': return relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds : [];
+    case 'fixed-point': case 'fixed-axis': case 'midpoint': case 'point-on-line': case 'point-on-curve': case 'point-line-distance': case 'fillet-corner': case 'chamfer-corner': return [relation.pointId];
+    case 'reference-dimension': return relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds
+      : relation.measurement.kind === 'point-line-distance' ? [relation.measurement.pointId] : [];
     case 'tangent-joint': return relation.endpoints.map(endpoint => endpoint.pointId);
     case 'line-angle': return relation.rays.map(ray => ray.towardPointId);
     default: return [];
@@ -248,7 +250,7 @@ function trimRemovals(graph: CadSketchGraph, entity: SourceEntity, shape: TrimSh
   const cutKeys = new Set(cuts.flatMap(witness => witness.endpointPointId === undefined ? [] : [identity(witness.endpointPointId)]));
   const removed = graph.relations.filter(relation => {
     const named = namesEntity(relation, entity.id);
-    if (named && (relation.kind === 'point-on-line' || relation.kind === 'point-on-curve') && cutKeys.has(identity(relation.pointId))) return true;
+    if (named && (relation.kind === 'point-on-line' || relation.kind === 'point-on-curve' || relation.kind === 'point-line-distance') && cutKeys.has(identity(relation.pointId))) return true;
     if (shape.kind === 'delete') {
       if (named) return true;
       if (ownAxis(relation) && 'pointIds' in relation && !graph.entities.some(other => other.id !== entity.id && other.kind !== 'circle' && sameEndpointPair(other, relation.pointIds))) return true;
