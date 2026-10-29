@@ -71,6 +71,20 @@ describe('native sketch definition', () => {
       definedEntityIds: ['hole'], underDefinedEntityIds: ['edge'] });
   });
 
+  it('never defines geometry that a coefficient within the dependence distance lets move', () => {
+    // `p` sits 5e-11 right of `a`, so the factor drops the tiny lead of `p.x` in their distance.
+    // The one free direction then moves `r.x` by about 5e-6 per unit, which only the dropped lead
+    // shows: `r` and the line through it are unknown, never defined.
+    const graph = parseCadSketchGraph({
+      points: [{ id: 'p', position: [5e-11, 0] }, { id: 'q', position: ['0', 0] }, { id: 'r', position: [1e-5, '-1'] }, { id: 'a', position: ['0', '-1'] }],
+      entities: [{ id: 'qr', kind: 'line', construction: false, startPointId: 'q', endPointId: 'r' }],
+      relations: [{ id: 'pa', kind: 'distance', pointIds: ['p', 'a'], value: 1 }, { id: 'level', kind: 'horizontal', pointIds: ['p', 'q'] },
+        { id: 'arm', kind: 'distance', pointIds: ['q', 'r'], value: 1.00000000005 }]
+    });
+    expect(definitionOf({ graph, parameters: {}, analyseDefinition: true })).toEqual({ definedPointIds: ['a'], underDefinedPointIds: ['p'],
+      definedEntityIds: [], underDefinedEntityIds: [] });
+  });
+
   it('maps a parameter not analysed to unknown unless another part is free', () => {
     const graph = widthOnly([0, 0]), model = compileCadSketchEquations({ graph, parameters: {} });
     const codes = model.values.map(() => 2), at = (id: string, axis: 0 | 1) => model.pointParameters.get(id)! + axis;

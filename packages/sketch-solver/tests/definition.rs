@@ -243,6 +243,100 @@ fn a_column_one_free_direction_barely_moves_is_free_by_the_next() {
     assert_eq!(diagnosis.unwrap().definition, Some(vec![F, F, F]));
 }
 
+/// Points `P` free, `Q` on a fixed x and `R` on a fixed y, with `P` and `Q` level and each a
+/// distance from a fixed point: `P` 1 from `A` at `(0, -1)` and `R` about 1 from `Q`. `P` sits
+/// `5e-11` right of `A`, and `R` `1e-5` right of `Q`.
+fn leaning() -> Builder {
+    let mut builder = Builder::new();
+    let p = builder.point(5e-11, 0.0, false);
+    let q = [builder.parameter(0.0, true), builder.parameter(0.0, false)];
+    let r = [builder.parameter(1e-5, false), builder.parameter(-1.0, true)];
+    let a = builder.point(0.0, -1.0, true);
+    builder.equation(Kind::Distance, 1.0, &[p[0], p[1], a[0], a[1]]);
+    builder.equation(Kind::Distance, 1.00000000005, &[q[0], q[1], r[0], r[1]]);
+    builder.equation(Kind::Difference, 0.0, &[p[1], q[1]]);
+    builder
+}
+
+#[test]
+fn leads_the_factor_dropped_are_allowed_for_before_a_column_is_determined() {
+    // Over `P.x`, `P.y`, `Q.y` and `R.x`, the free direction is about `(1, -5e-11, -5e-11, 5e-6)`:
+    // `R.x` moves by more than `1e3 TAU`. The first row's lead in `P.x` is within `TAU`, so the
+    // factor drops it and leaves `P.x` out of every row, and through the factor alone `R.x` and the
+    // others look determined. Allowing for the lead dropped, `P.x` is still free and the others are
+    // unknown: the allowance hides whether `R.x` moves, and also that `P.y` and `Q.y` barely do.
+    let unit = |entries: Vec<(usize, f64)>| {
+        let norm = entries.iter().map(|e| e.1 * e.1).sum::<f64>().sqrt();
+        Row { entries: entries.into_iter().map(|(k, x)| (k, x / norm)).collect(), residual: 0.0, tolerance: 1e-10 }
+    };
+    let rows = [unit(vec![(0, 5e-11), (1, 1.0)]), unit(vec![(2, 1.0), (3, 1e-5)]), unit(vec![(1, -1.0), (2, 1.0)])];
+    let mut left = usize::MAX;
+    let diagnosis = diagnose_defining(4, &rows, TAU, usize::MAX, usize::MAX, Some(&mut left)).0.unwrap();
+    assert!(diagnosis.certain);
+    assert_eq!(diagnosis.rank, 3);
+    assert_eq!(diagnosis.definition, Some(vec![F, U, U, U]));
+    // Through the wire, over `P`, `Q`, `R` and `A`.
+    assert_eq!(definition(&leaning()), vec![F, U, D, U, U, D, D, D]);
+}
+
+/// The most a unit direction that `rows` leave free moves column `j`: the distance of its unit row
+/// from their span, by Gram-Schmidt twice over.
+fn reach(rows: &[Vec<f64>], j: usize) -> f64 {
+    let n = rows[0].len();
+    let dot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f64>();
+    let mut basis: Vec<Vec<f64>> = Vec::new();
+    let orthogonalize = |basis: &[Vec<f64>], v: &mut Vec<f64>| for _ in 0..2 {
+        for q in basis { let d = dot(q, v); for k in 0..n { v[k] -= d * q[k]; } }
+    };
+    for row in rows {
+        let mut v = row.clone();
+        orthogonalize(&basis, &mut v);
+        let norm = dot(&v, &v).sqrt();
+        basis.push(v.into_iter().map(|x| x / norm).collect());
+    }
+    let mut e = vec![0.0; n];
+    e[j] = 1.0;
+    orthogonalize(&basis, &mut e);
+    dot(&e, &e).sqrt()
+}
+
+#[test]
+fn random_rows_with_entries_near_tau_are_classified_by_how_their_free_directions_move_each_column() {
+    // Unit rows over two to six columns, of independent rank, with entries of very different
+    // sizes, many within `TAU`, so the factor drops leads. A seeded generator keeps the cases the
+    // same on every run. Each analysed code is checked against the rows' own free directions,
+    // allowing for the rounding of the reference.
+    let mut seed = 0x5eed_u64;
+    let mut next = move || {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (seed >> 11) as f64 / (1u64 << 53) as f64
+    };
+    let sizes = [0.0, 0.0, 1.0, 1e-3, 1e-5, 1e-7, 3e-11, 9e-11, 2e-10, 1e-12];
+    let (mut free, mut determined) = (0, 0);
+    for _ in 0..20_000 {
+        let n = 2 + (next() * 5.0) as usize;
+        let m = 1 + (next() * (n - 1) as f64) as usize;
+        let dense: Vec<Vec<f64>> = (0..m).map(|_| {
+            let mut row: Vec<f64> = (0..n).map(|_| sizes[(next() * 10.0) as usize] * (2.0 * next() - 1.0)).collect();
+            if row.iter().all(|&x| x == 0.0) { row[(next() * n as f64) as usize] = 1.0; }
+            let norm = row.iter().map(|x| x * x).sum::<f64>().sqrt();
+            row.into_iter().map(|x| x / norm).collect()
+        }).collect();
+        let rows: Vec<Row> = dense.iter().map(|row| Row {
+            entries: row.iter().copied().enumerate().filter(|e| e.1 != 0.0).collect(), residual: 0.0, tolerance: 1e-10 }).collect();
+        let mut left = usize::MAX;
+        let diagnosis = diagnose_defining(n, &rows, TAU, usize::MAX, usize::MAX, Some(&mut left)).0.unwrap();
+        // Rows within `TAU` of the span of earlier ones are left to the convention of rank.
+        if !diagnosis.certain || diagnosis.rank < m { continue; }
+        for (j, &code) in diagnosis.definition.unwrap().iter().enumerate() {
+            let moved = reach(&dense, j);
+            if code == D { determined += 1; assert!(moved <= 2.0 * TAU, "determined, moved {moved:e} by rows {dense:?}"); }
+            if code == F { free += 1; assert!(moved > 0.5e3 * TAU, "free, moved {moved:e} by rows {dense:?}"); }
+        }
+    }
+    assert!(determined > 1000 && free > 10_000, "determined {determined}, free {free}");
+}
+
 #[test]
 fn definition_takes_only_its_own_allowance() {
     let (codes, spent) = tilted(1e-3, false, usize::MAX);

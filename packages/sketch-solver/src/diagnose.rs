@@ -35,10 +35,12 @@
 //! alone, so a repeated relation is still labelled beside an undecided one.
 //!
 //! Where rank is certain at `TAU`, each column's definition can be asked for (see `define`): it is
-//! determined when its unit row lies within `TAU` of the span of the independent rows, so no
-//! direction they leave free moves it by more than `TAU` per unit of that direction, and free when
-//! one of those directions is shown to move it by more than `CERTAIN`. Between the two, or once the
-//! probes' own allowance runs out, it is not analysed.
+//! determined when no direction the independent rows leave free is shown to move it by more than
+//! `TAU` per unit of that direction, and free when one of those directions is shown to move it by
+//! more than `CERTAIN`. Both are shown through the factor, allowing for the leads it dropped within
+//! `TAU`. Between the two, or once the probes' own allowance runs out, it is not analysed. Rounding
+//! in the factor is not bounded, as it is not for rank; it moves what is measured by about
+//! `epsilon / CERTAIN` at most, well below `CERTAIN`.
 
 use crate::sparse::SparseRow;
 
@@ -118,12 +120,14 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work, allow
     let (mut independent, mut certain) = (Vec::new(), true);
     // Rows left out, each with its unit row, and the entries matching them may still read.
     let (mut left_out, mut reads): (Vec<(usize, SparseRow)>, usize) = (Vec::new(), rows.iter().map(|row| row.entries.len() + 1).sum());
+    // How far the rows `r` factors may differ from the independent rows, by the leads they dropped.
+    let mut truncated = 0.0;
     for (index, row) in rows.iter().enumerate() {
         if !row.residual.is_finite() || !norms[index].is_finite() { return None; }
         if norms[index] == 0.0 { witnesses.push((index, Vec::new())); continue; }
         let unit = unit(row, norms[index]);
         let decided = match insert(&mut r, unit.clone(), distance, work) {
-            Some(Insertion::Independent) => { rank += 1; independent.push(index); true }
+            Some(Insertion::Independent(dropped)) => { rank += 1; independent.push(index); truncated += dropped.sqrt(); true }
             Some(Insertion::Dependent) => witness(&r, &unit, rows, &norms, &independent, distance, work)
                 .map(|support| witnesses.push((index, support))).is_some(),
             None => false,
@@ -139,7 +143,7 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work, allow
         }
     }
     if rank > 0 && !clear_of_dependence(&r, work)? { certain = false; }
-    let definition = allowance.filter(|_| certain && distance == TAU).map(|allowance| define(&mut r, rank, allowance));
+    let definition = allowance.filter(|_| certain && distance == TAU).map(|allowance| define(&mut r, rank, truncated, allowance));
     // A unit row's residual, or the residual itself for a row without unknowns.
     let scaled = |i: usize, value: f64| if norms[i] > 0.0 { value / norms[i] } else { value };
     let witnesses = witnesses.into_iter().map(|(j, support)| {
@@ -150,18 +154,33 @@ fn diagnose_within(n: usize, rows: &[Row], distance: f64, work: &mut Work, allow
     Some(Diagnosis { rank, witnesses, certain, definition })
 }
 
-/// Each column's definition by the independent unit rows that `r` factors, `rank` of them, whose
-/// rank is certain at `TAU`: `DETERMINED`, `FREE` or `NOT_ANALYSED` as `probe` finds, all
-/// `DETERMINED` when no direction is left free, and `NOT_ANALYSED` for the columns left once the
-/// probes would take more than `allowance`, which they take from. `r` is left as it was.
-fn define(r: &mut [SparseRow], rank: usize, allowance: &mut usize) -> Vec<u8> {
+/// Each column's definition by the independent unit rows, `rank` of them, whose rank is certain at
+/// `TAU`. `r` factors them less the leads their insertions dropped, so for any unit direction the
+/// norm of its rows times that direction is within `truncated` of the norm of theirs, `truncated`
+/// being the sum of each insertion's dropped length: rotations keep such norms, and the leads one
+/// insertion drops lie in distinct columns. With `least` a bound from below on the smallest
+/// singular value of the rows of `r`, a unit direction either set leaves free lies within
+/// `truncated / (least - truncated)` of one the other leaves free, so `probe` allows that much
+/// each way. `least` is `CERTAIN`, as rank is certain, or the comparison floor of `r` where that
+/// is higher and the rows dropped enough leads for it to matter.
+/// `DETERMINED`, `FREE` or `NOT_ANALYSED` as `probe` finds; all `DETERMINED` when no direction is
+/// left free, and all `NOT_ANALYSED` when `truncated` is not below half of `least`; `NOT_ANALYSED`
+/// for the columns left once the probes would take more than `allowance`, which they take from.
+/// `r` is left as it was.
+fn define(r: &mut [SparseRow], rank: usize, truncated: f64, allowance: &mut usize) -> Vec<u8> {
     let n = r.len();
-    if rank == n { return vec![DETERMINED; n]; }
     let mut work = Work { done: 0, budget: *allowance, fill: usize::MAX, out: false };
-    let (mut freedom, mut codes) = (Freedom::new(n), vec![NOT_ANALYSED; n]);
-    for j in 0..n {
-        if let Some(code) = probe(r, j, &mut freedom, &mut work) { codes[j] = code; }
-        if work.run_out() { break; }
+    let least = if truncated == 0.0 || (rank == n && truncated < CERTAIN / 2.0) { Some(CERTAIN) }
+        else { comparison_floor(r, &mut work).map(|floor| floor.max(CERTAIN)) };
+    let mut codes = vec![NOT_ANALYSED; n];
+    if let Some(least) = least.filter(|&least| truncated < least / 2.0) {
+        if rank == n { codes.fill(DETERMINED); } else {
+            let (slack, mut freedom) = (truncated / (least - truncated), Freedom::new(n));
+            for j in 0..n {
+                if let Some(code) = probe(r, j, slack, &mut freedom, &mut work) { codes[j] = code; }
+                if work.run_out() { break; }
+            }
+        }
     }
     *allowance = allowance.saturating_sub(work.done);
     codes
@@ -170,15 +189,17 @@ fn define(r: &mut [SparseRow], rank: usize, allowance: &mut usize) -> Vec<u8> {
 /// Column `j`'s unit row rotated into `r` as `insert` does, leaving `r` as it was. A rotation leaves
 /// its cosine times what it would leave with the row subtracted outright, so each lead is measured
 /// against the product of the cosines so far: what is left is that product times `e_j` less a
-/// combination of the rows and of the leads dropped. Dropped leads within `TAU`, so measured, whose
-/// sum of squares stays within `TAU` squared put `e_j` within `TAU` of the rows' span:
-/// `DETERMINED`. A lead above `TAU` that reaches an empty pivot `k` is, so measured, how far the
-/// free direction of `k` moves column `j` per unit it moves `k`; it moves `j` by more than
-/// `CERTAIN` per unit of its own length when that is above `CERTAIN` times the direction's norm,
-/// and the lead itself above `CERTAIN`, as an insertion claims a pivot: `FREE`. Where that is not
-/// shown the lead is dropped and the probe goes on to the next empty pivot, whose direction is
-/// zero at `k`. `None` when none shows it, and when the work runs out.
-fn probe(r: &mut [SparseRow], j: usize, freedom: &mut Freedom, work: &mut Work) -> Option<u8> {
+/// combination of the rows and of the leads dropped. Dropped leads within `TAU`, so measured, put
+/// `e_j` within the root of their sum of squares of the rows' span, and so no unit direction the
+/// rows leave free moves column `j` by more; with `slack` for the independent rows' own directions,
+/// within `TAU` is `DETERMINED`. A lead above `TAU` that reaches an empty pivot `k` is, so
+/// measured, how far the free direction of `k` moves column `j` per unit it moves `k`; it moves
+/// `j` by more than `CERTAIN` and `slack` per unit of its own length when that is above their sum
+/// times the direction's norm, and the lead itself above `CERTAIN`, as an insertion claims a
+/// pivot: `FREE`. Where that is not shown the lead is dropped and the probe goes on to the next
+/// empty pivot, whose direction is zero at `k`. `None` when none shows it, and when the work runs
+/// out.
+fn probe(r: &mut [SparseRow], j: usize, slack: f64, freedom: &mut Freedom, work: &mut Work) -> Option<u8> {
     let (mut v, mut shrink, mut dropped, mut undecided): (SparseRow, f64, f64, bool) = (vec![(j, 1.0)], 1.0, 0.0, false);
     loop {
         // `None` when the work ran out; then the empty pivot reached, with its lead, or `None`
@@ -199,9 +220,9 @@ fn probe(r: &mut [SparseRow], j: usize, freedom: &mut Freedom, work: &mut Work) 
             v = rest;
         };
         for (k, row) in undo.into_iter().rev() { r[k] = row; }
-        let Some((k, lead)) = reached? else { return (!undecided && dropped.sqrt() <= TAU).then_some(DETERMINED) };
+        let Some((k, lead)) = reached? else { return (!undecided && dropped.sqrt() + slack <= TAU).then_some(DETERMINED) };
         let norm = freedom.norm(r, k, work)?;
-        if lead > CERTAIN && lead > CERTAIN * shrink * norm { return Some(FREE); }
+        if lead > CERTAIN && lead > (CERTAIN + slack) * shrink * norm { return Some(FREE); }
         undecided = true;
         v.remove(0);
     }
@@ -292,7 +313,7 @@ pub fn dependent(n: usize, rows: &[SparseRow], budget: usize, fill: usize) -> (O
             if !norm.is_finite() { return None; }
             if norm == 0.0 { continue; }
             match insert(&mut r, row.iter().map(|&(k, x)| (k, x / norm)).collect(), TAU, &mut work)? {
-                Insertion::Independent => {}
+                Insertion::Independent(_) => {}
                 Insertion::Dependent => dependent.push(index),
             }
         }
@@ -342,19 +363,21 @@ impl Work {
     fn spent(&self) -> usize { if self.out { self.done.max(self.budget.saturating_add(1)) } else { self.done } }
 }
 
-enum Insertion { Independent, Dependent }
+/// An independent row carries the sum of squares of the leads it dropped before claiming a pivot.
+enum Insertion { Independent(f64), Dependent }
 
 /// Rotates `v` into `r`. A remainder reaching an empty pivot claims it when its lead exceeds
 /// `distance`, and otherwise drops that lead and goes on. A row whose dropped leads stay within
 /// `distance` is dependent and leaves `r` as it was; `None` when they do not, since rank is then
-/// unclear.
+/// unclear. The leads an independent row drops stay out of `r`, which then factors rows that each
+/// differ from the row given by them.
 fn insert(r: &mut [SparseRow], mut v: SparseRow, distance: f64, work: &mut Work) -> Option<Insertion> {
     let (mut undo, mut dropped) = (Vec::new(), 0.0);
     while let Some(&(k, lead)) = v.first() {
         if r[k].is_empty() {
             if lead.abs() > distance {
                 r[k] = v;
-                return Some(Insertion::Independent);
+                return Some(Insertion::Independent(dropped));
             }
             dropped += lead * lead;
             v.remove(0);
@@ -467,7 +490,7 @@ fn nearest(n: usize, v: &SparseRow, rows: &[Row], norms: &[f64], subset: &[usize
     let mut factored = true;
     for &i in subset {
         match insert(&mut r, unit(&rows[i], norms[i]), distance, work) {
-            Some(Insertion::Independent) => {}
+            Some(Insertion::Independent(_)) => {}
             _ if work.run_out() => return None,
             _ => { factored = false; break; }
         }
