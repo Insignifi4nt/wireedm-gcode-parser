@@ -8,7 +8,7 @@ import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
 import type { CadSketchOffsetSource } from '@/domain/cad/cadSketchOffset';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
 import { ScalarField } from './CadFields';
-import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { CadSketchCommandForm, useCadSketchCommandSession, type CadSketchCommandSessionProps } from './useCadSketchCommandSession';
 
 /** A selected edge identifies its exact whole compiler cycle; points and multiple loops do not guess a source. */
@@ -41,7 +41,7 @@ export function CadSketchOffsetEditor(props: Props) {
   const edits = useMemo<readonly CadEdit[] | null>(() => quantity === 0 ? null : [{ kind: 'offset-sketch-loop', sketchId: owner.sketch.id,
     source: owner.source, distance, idPrefix: owner.idPrefix }], [owner, distance, quantity]);
   const prepared = useCadPreparedPreview(owner.document, edits, props.onPrepareEdits, session.previewEnabled);
-  useLayoutEffect(() => { props.onPreviewDocument(prepared.kind === 'ready' ? prepared.document : null); }, [prepared, props.onPreviewDocument]);
+  useLayoutEffect(() => { props.onPreviewDocument(prepared.kind === 'ready' ? prepared.document : null, cadPreviewMarks(prepared)); }, [prepared, props.onPreviewDocument]);
   const flip = (inside: boolean) => {
     if (quantity !== null && quantity !== 0 && (quantity < 0) !== inside) {
       setDistance(inspectCadScalarValue(distance, owner.document.parameters).kind === 'literal' ? -quantity : `-(${distance})`);

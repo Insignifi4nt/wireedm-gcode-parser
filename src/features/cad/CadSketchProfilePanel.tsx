@@ -12,7 +12,8 @@ import { addCadSketchDimension, cadSketchDimensionQuantities, cadSketchDimension
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadContextHelp } from './CadContextHelp';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
-import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import type { CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
 import './cad-sketch-profile.css';
 
 export type CadSketchProfileCommand = { readonly token: number; readonly documentId: string; readonly profileId: string; readonly kind: 'dimension' | 'move' | 'fillet' };
@@ -27,7 +28,7 @@ export function CadSketchProfilePanel({ document: cadDocument, sketch, profile, 
   document: CadDocument; sketch: CadSketchFeature; profile: CadSketchProfile;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion; onPendingChange(pending: boolean): void;
   onPreviewProfile?(profile: CadSketchProfile | null): void; onPreviewParameters?(parameters: CadDocument['parameters'] | null): void;
-  onPrepareEdits?: CadPrepareEdits; onPreviewDocument?(document: CadDocument | null): void;
+  onPrepareEdits?: CadPrepareEdits; onPreviewDocument?(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
   interactionLocked: boolean; otherEditorPending?: boolean; cancelSignal: number; command?: CadSketchProfileCommand | null; onCommandConsumed?(token: number): void; exactGeometryEditor?: ReactNode;
 }) {
   const [editor, setEditor] = useState<Editor | null>(null), [error, setError] = useState<string | null>(null);
@@ -109,7 +110,7 @@ export function CadSketchProfilePanel({ document: cadDocument, sketch, profile, 
     const document = preparedPreview.kind === 'ready' ? preparedPreview.document : null;
     const nextSketch = document?.features.find(entry => entry.id === sketch.id), nextProfile = nextSketch?.kind === 'sketch' ? nextSketch.profiles.find(entry => entry.id === profile.id) : null;
     const preview = Boolean(editor && candidate.edits?.length && nextProfile);
-    onPreviewDocument?.(preview ? document : null);
+    onPreviewDocument?.(preview ? document : null, editor ? cadPreviewMarks(preparedPreview) : null);
     const legacy = preview && !onPreviewDocument && !candidate.requiresSolve;
     onPreviewProfile?.(legacy ? nextProfile ?? null : null); onPreviewParameters?.(legacy ? document?.parameters ?? null : null);
     return () => { onPreviewDocument?.(null); onPreviewProfile?.(null); onPreviewParameters?.(null); };

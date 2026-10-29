@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import type { CadSketchGraphControls } from './CadSketchGraphLayer';
-import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
+import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { CadSketchCommandForm, useCadSketchCommandSession, type CadSketchCommandSessionProps } from './useCadSketchCommandSession';
 
 export type CadSketchMirrorInteraction = { readonly kind: 'choose-line'; readonly pick: NonNullable<CadSketchGraphControls['geometryPick']> }
@@ -38,7 +38,7 @@ export function CadSketchMirrorEditor(props: Props) {
   const edits = useMemo<readonly CadEdit[] | null>(() => axis === null ? null : [{ kind: 'mirror-sketch-geometry', sketchId: owner.sketch.id,
     entityIds: owner.entityIds, axisLineId: axis, idPrefix: owner.idPrefix }], [axis, owner]);
   const prepared = useCadPreparedPreview(owner.document, edits, props.onPrepareEdits, session.previewEnabled);
-  useLayoutEffect(() => { props.onPreviewDocument(axis !== null && prepared.kind === 'ready' ? prepared.document : null); }, [axis, prepared, props.onPreviewDocument]);
+  useLayoutEffect(() => { props.onPreviewDocument(axis !== null && prepared.kind === 'ready' ? prepared.document : null, axis !== null ? cadPreviewMarks(prepared) : null); }, [axis, prepared, props.onPreviewDocument]);
   return <CadSketchCommandForm label="Mirror copy" session={session} canApply={Boolean(edits) && prepared.kind === 'ready'}
     issue={session.error ?? (prepared.kind === 'error' ? prepared.message : null)}
     help="Independent geometry. Original dimensions and formulas stay on the source. Shared points and declared Coincident joints remain connected inside the copy."

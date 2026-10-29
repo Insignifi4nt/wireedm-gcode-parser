@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import { createCadDocument } from '@/domain/cad/cadSchema';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
+import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { CadSketchCanvas } from './CadSketchCanvas';
+import { cadSketchDefinitionMarks } from './cadSketchDefinitionMarks';
 import type { CadRenderedViewControls } from './cadViewportControls';
 
 // Every graph point row asks for its pattern lock reason once per render, so the call count tracks row renders.
@@ -13,6 +15,12 @@ vi.mock('@/domain/cad/cadSketchLinearPattern', async importOriginal => {
   return { ...original, cadSketchLinearPatternLockReason: vi.fn(original.cadSketchLinearPatternLockReason) };
 });
 const rowRenders = vi.mocked(cadSketchLinearPatternLockReason);
+// Each graph edge row draws its boundary once per render; presses and drawing previews that also ask stay out of these tests.
+vi.mock('@/domain/cad/compileCadSketchGeometry', async importOriginal => {
+  const original = await importOriginal<typeof import('@/domain/cad/compileCadSketchGeometry')>();
+  return { ...original, cadSketchGraphBoundary: vi.fn(original.cadSketchGraphBoundary) };
+});
+const edgeRenders = vi.mocked(cadSketchGraphBoundary);
 // Each picker the canvas prepares counts its queries, so a test can bound the work one pointer move does.
 const picks = vi.hoisted(() => ({ graph: 0, profile: 0, edge: 0, grip: 0 }));
 vi.mock('./cadSketchGraphInteraction', async importOriginal => {
@@ -36,6 +44,8 @@ vi.mock('./cadSketchPicking', async importOriginal => {
     } };
 });
 const renderedPoints = () => rowRenders.mock.calls.map(([, target]) => target.id);
+const renderedEdges = () => edgeRenders.mock.calls.map(([segment]) => segment.id);
+const clearRenders = () => { rowRenders.mockClear(); edgeRenders.mockClear(); };
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root; let container: HTMLDivElement;
@@ -79,20 +89,41 @@ describe('sketch canvas cursor rendering', () => {
     expect(renderedPoints()).toEqual(expect.arrayContaining(['a', 'b', 'c']));
     const readout = () => container.querySelector('[data-cad-drawing-readout] text')?.textContent ?? null;
 
-    rowRenders.mockClear(); await move(5, 5); await move(8, 6); await move(12, 4);
-    expect(renderedPoints()).toEqual([]);
+    clearRenders(); await move(5, 5); await move(8, 6); await move(12, 4);
+    expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]);
     // Hovering a point re-renders only that row for its highlight, and leaving it does the same.
     await move(20, 0); expect(renderedPoints()).toEqual(['b']);
     rowRenders.mockClear(); await move(10, 5); expect(renderedPoints()).toEqual(['b']);
 
     // With a first corner down, the size readout follows every move while the rows keep their earlier render.
     await pointer('pointerdown', -10, 15); await pointer('pointerup', -10, 15);
-    rowRenders.mockClear(); await move(5, 5); const first = readout(); await move(8, 6); await move(12, 4);
+    clearRenders(); await move(5, 5); const first = readout(); await move(8, 6); await move(12, 4);
     expect(first).not.toBeNull(); expect(readout()).not.toBe(first);
-    expect(renderedPoints()).toEqual([]);
+    expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]);
 
     rowRenders.mockClear(); await show({ graphControls: { ...props().graphControls!, selection: [{ kind: 'point', id: 'c' }] } });
     expect(renderedPoints()).toEqual(['c']);
+  });
+
+  it('renders only the rows whose definition changed, and none for hover away from them', async () => {
+    const { props, show, move } = await mountCanvas({
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+        { id: 'cd', kind: 'line', construction: true, startPointId: 'c', endPointId: 'd' }],
+      relations: [] }, { tool: 'select' });
+    const definition = (pointIds: string[], entityIds: string[]) => cadSketchDefinitionMarks({ definedPointIds: pointIds, underDefinedPointIds: [], definedEntityIds: entityIds, underDefinedEntityIds: [] });
+    const first = definition(['a', 'b'], ['ab']);
+    await show({ graphControls: { ...props().graphControls!, definition: first, definitionLocked: true } });
+    const marked = (kind: 'point' | 'entity', mark: string) => [...container.querySelectorAll(`[data-cad-sketch-${kind}].is-${mark}`)].map(item => item.getAttribute(`data-cad-sketch-${kind}`));
+    expect(marked('entity', 'defined')).toEqual(['ab']); expect(marked('point', 'defined')).toEqual(['a', 'b']);
+    clearRenders(); await move(10, 30); await move(12, 32); await move(-15, 25);
+    expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]);
+    // An equal definition from a newer analysis renders nothing; a changed one renders exactly the rows that changed state.
+    clearRenders(); await show({ graphControls: { ...props().graphControls!, definition: cadSketchDefinitionMarks({ definedPointIds: ['a', 'b'], underDefinedPointIds: [], definedEntityIds: ['ab'], underDefinedEntityIds: [] }, first) } });
+    expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]);
+    clearRenders(); await show({ graphControls: { ...props().graphControls!, definition: definition(['a', 'b', 'c', 'd'], ['ab', 'cd']) } });
+    expect(renderedPoints().sort()).toEqual(['c', 'd']); expect(renderedEdges()).toEqual(['cd']);
+    expect(marked('entity', 'defined')).toEqual(['ab', 'cd']);
   });
 
   it('highlights the axis under the pointer anywhere along it without rendering graph rows again', async () => {
@@ -101,11 +132,11 @@ describe('sketch canvas cursor rendering', () => {
     const { props, show, move } = await mountCanvas(graph, { tool: 'select' });
     await show({ graphControls: { ...props().graphControls!, onSelectDatum: vi.fn() } });
     const highlighted = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
-    rowRenders.mockClear();
+    clearRenders();
     await move(15, 0.02); expect(highlighted()).toEqual(['x-axis']);
     await move(0.02, 8); expect(highlighted()).toEqual(['y-axis']);
     await move(12, 8); expect(highlighted()).toEqual([]);
-    expect(renderedPoints()).toEqual([]);
+    expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]);
   });
 
   it('answers axis hover from the hit tests the move already makes, querying each picker at most once and never the graph', async () => {

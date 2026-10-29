@@ -1284,7 +1284,7 @@ test('draws and constrains fresh geometry through the UI, then extrudes, exports
   // Create relations starts on, so the corner drawn on the origin stays fixed there.
   expect(sketch.graph.relations.map((relation: { kind: string }) => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'fixed-axis', 'fixed-axis']);
   await page.getByRole('button', { name: 'Select', exact: true }).click();
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('2 DOF');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Under defined · 2 DOF');
   // Dimension starts with the selected line; picking it again asks for its length.
   await page.getByRole('button', { name: 'Dimension', exact: true }).click(); await page.locator('[data-cad-sketch-entity].is-selected').press('Enter');
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('30');
@@ -1298,7 +1298,7 @@ test('draws and constrains fresh geometry through the UI, then extrudes, exports
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   current = await context(page);
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('1 DOF');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Under defined · 1 DOF');
   const resized = (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature;
   expect(resized.graph.points.map((point: { id: string }) => point.id)).toEqual(sketch.graph.points.map((point: { id: string }) => point.id));
   expect(resized.graph.relations.at(-1)).toMatchObject({ kind: 'distance', value: 30 });
@@ -1430,7 +1430,7 @@ test('keeps an authored polyline open, moves one joint and closes a separate ana
   await page.getByRole('button', { name: `Point 2 in ${sketch.name}`, exact: true }).press('ArrowRight');
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('4 DOF');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Under defined · 4 DOF');
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature.graph.points.map((point: { position: number[] }) => point.position))
     .toEqual([[0, 0], [25, 0], [20, 20]]);
   await page.keyboard.press('Control+z');
@@ -1472,7 +1472,7 @@ test('edits graph relations and linked circle radius through the shared inspecto
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
     .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: 'outline' } });
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('2 DOF');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Under defined · 2 DOF');
   await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'ring' } } });
   const ring = page.locator('[data-cad-sketch-entity="ring"] > circle');
   const interior = await ring.evaluate(element => {
@@ -1493,14 +1493,14 @@ test('edits graph relations and linked circle radius through the shared inspecto
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   current = await context(page);
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('1 DOF');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Under defined · 1 DOF');
   expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometry).toEqual({ kind: 'entity', id: 'ab' });
   await page.getByRole('button', { name: 'Add length', exact: true }).click();
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('15'); await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   current = await context(page);
-  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Fully constrained');
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Fully defined');
   await expect(page.getByRole('button', { name: 'Point 3 in Outline', exact: true })).toHaveClass(/is-locked/);
   const inspection = await call(page, 'cad_inspect_sketch_constraints', { expectedVersion: current.version, sketchId: 'outline' });
   expect(inspection.analysis).toMatchObject({ kind: 'solved', degreesOfFreedom: 0 });
@@ -1520,6 +1520,67 @@ test('edits graph relations and linked circle radius through the shared inspecto
   current = await context(page);
   expect((await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'outline' })).feature.graph.entities[0].radius).toBe(' radius ');
   expect((await call(page, 'cad_inspect_parameters', { expectedVersion: current.version })).items).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'radius', value: 12.5 })]));
+});
+
+test('turns a line green once its dimensions and relations fully define it, under selection and hover, and back when its length is removed', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  // Expressions fix the start point; the second line stays free throughout.
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [
+    { kind: 'add-feature', feature: { id: 'outline', kind: 'sketch', name: 'Outline', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: ['30', '0'] }, { id: 'b', position: [40, 5] }, { id: 'c', position: [0, 20] }, { id: 'd', position: [10, 30] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'cd', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+      relations: []
+    } } }
+  ] });
+  let current = await context(page);
+  await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: current.version }))
+    .toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: current.version } } });
+  await call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'edit-sketch', sketchId: 'outline' } });
+  const status = page.getByLabel('Sketch constraint status'), stroke = (id: string) => page.locator(`[data-cad-sketch-entity="${id}"]`).evaluate(element => getComputedStyle(element).stroke);
+  const select = (id: string | null) => call(page, 'cad_set_viewport', { expectedVersion: current.version, command: { kind: 'select-sketch-geometry', selection: id ? { kind: 'entity', id } : null } });
+  const green = 'rgb(94, 216, 138)', blueGrey = 'rgb(159, 194, 211)';
+  await expect(status).toHaveText('Under defined · 6 DOF');
+  await expect(page.getByRole('button', { name: 'Sketch colours', exact: true })).toBeVisible();
+  expect([await stroke('ab'), await stroke('cd')]).toEqual([blueGrey, blueGrey]);
+  await select('ab');
+  await (await relationControl(page, 'checkbox', 'Horizontal')).check(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  await expect(status).toHaveText('Under defined · 5 DOF');
+  await page.getByRole('button', { name: 'Add length', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('15'); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  await expect(status).toHaveText('Under defined · 4 DOF');
+  // Selection and hover draw over the definition colour exactly as over an under-defined line.
+  const selected = await stroke('ab'); expect(selected).not.toBe(green);
+  await select('cd'); expect(await stroke('cd')).toBe(selected);
+  await select(null);
+  await expect.poll(() => stroke('ab')).toBe(green); expect(await stroke('cd')).toBe(blueGrey);
+  await expect(page.locator('[data-cad-sketch-point="b"]')).toHaveClass(/is-locked/);
+  const middle = (id: string) => page.locator(`[data-cad-sketch-entity="${id}"] > line`).evaluate(element => {
+    const line = element as SVGLineElement, matrix = line.getScreenCTM();
+    if (!matrix) throw new Error('Line projection is unavailable.');
+    const point = new DOMPoint((line.x1.baseVal.value + line.x2.baseVal.value) / 2, (line.y1.baseVal.value + line.y2.baseVal.value) / 2).matrixTransform(matrix);
+    return { x: point.x, y: point.y };
+  });
+  const hovered = await middle('cd'); await page.mouse.move(hovered.x, hovered.y);
+  const hover = await stroke('cd'); expect(hover).not.toBe(blueGrey);
+  const defined = await middle('ab'); await page.mouse.move(defined.x, defined.y);
+  await expect.poll(() => stroke('ab')).toBe(hover);
+  await page.mouse.move(5, 5); await expect.poll(() => stroke('ab')).toBe(green);
+  // Removing the length frees the line again.
+  await select('ab'); await openSketchRelations(page);
+  await page.getByRole('button', { name: /^Remove (Length|Distance)/ }).click(); await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  current = await context(page);
+  await expect(status).toHaveText('Under defined · 5 DOF');
+  await select(null);
+  await expect.poll(() => stroke('ab')).toBe(blueGrey);
+  await expect(page.locator('[data-cad-sketch-point="b"]')).not.toHaveClass(/is-locked/);
 });
 
 test('previews and applies a linked size across legacy and solved sketch geometry, with cancel and undo', async ({ page }) => {

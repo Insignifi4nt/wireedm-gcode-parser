@@ -40,12 +40,12 @@ it('clears preview before re-picking, ignores the old result, and accepts its ow
   const h = await harness((edits, signal) => { const result = deferred<CadDocument>(); requests.push({ edits, signal, result }); return result.promise; });
   await h.pick(); expect(requests).toHaveLength(1); expect(button('Apply').disabled).toBe(true);
   await act(async () => button('Change line').click());
-  expect(requests[0].signal.aborted).toBe(true); expect(h.preview).toHaveBeenLastCalledWith(null); expect(h.interaction.mock.calls.at(-1)?.[0]?.kind).toBe('choose-line');
+  expect(requests[0].signal.aborted).toBe(true); expect(h.preview).toHaveBeenLastCalledWith(null, null); expect(h.interaction.mock.calls.at(-1)?.[0]?.kind).toBe('choose-line');
   await act(async () => requests[0].result.resolve(applyCadEdits(h.document, requests[0].edits)));
-  expect(h.preview).toHaveBeenLastCalledWith(null); expect(h.edit).not.toHaveBeenCalled();
+  expect(h.preview).toHaveBeenLastCalledWith(null, null); expect(h.edit).not.toHaveBeenCalled();
   await h.pick(); const candidate = applyCadEdits(h.document, requests[1].edits);
   await act(async () => requests[1].result.resolve(candidate)); expect(button('Apply').disabled).toBe(false);
-  expect(h.preview).toHaveBeenLastCalledWith(candidate);
+  expect(h.preview).toHaveBeenLastCalledWith(candidate, null);
   await act(async () => button('Apply').click()); expect(h.edit).toHaveBeenCalledExactlyOnceWith(requests[1].edits, expect.any(AbortSignal));
   const sketch = candidate.features[0]; if (sketch.kind !== 'sketch') throw new Error('Prepared sketch missing.');
   await h.render({ document: candidate, documentVersion: 'two', sketch }); expect(h.cancelled).not.toHaveBeenCalled();

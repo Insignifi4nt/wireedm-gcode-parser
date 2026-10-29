@@ -19,6 +19,7 @@ import { cadSketchGeometryPickAllows, type CadSketchDatum, type CadSketchGeometr
 import { cadSketchSnapTargetLabel, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
+import { cadSketchGeometryMark, type CadSketchDefinitionMarks, type CadSketchDiagnosisMarks, type CadSketchGeometryMark } from './cadSketchDefinitionMarks';
 
 type Prepared = ReturnType<typeof prepareCadSketchGraphInteraction>;
 export interface CadSketchGraphControls {
@@ -27,6 +28,12 @@ export interface CadSketchGraphControls {
   readonly relation?: CadSketchGraphRelation | null;
   readonly inspection?: { readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly datums?: readonly CadSketchDatum[] } | null;
   readonly degreesOfFreedom?: number | null;
+  /** What the latest accepted analysis proved fully defined; its colours may trail the shown version until the next result. */
+  readonly definition?: CadSketchDefinitionMarks | null;
+  /** True only while `definition` belongs to the shown accepted version: its defined points and circles then refuse moves. */
+  readonly definitionLocked?: boolean;
+  /** Operands of a rejected preview, Apply or accepted analysis; a failed drag in this layer marks its own above them. */
+  readonly diagnosis?: CadSketchDiagnosisMarks | null;
   readonly showDimensions?: boolean;
   readonly geometryPick?: CadSketchGeometryPick;
   readonly positionPick?: { readonly label: string; onPick(point: SketchPoint): void; onCancel(): void };
@@ -43,7 +50,7 @@ export interface CadSketchGraphControls {
   onConfigureRelation?(relation: CadSketchDimensionRelation): void;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   readonly onPrepareEdits?: CadPrepareEdits;
-  onPreviewDocument?(document: CadDocument | null): void;
+  onPreviewDocument?(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
 }
 type CircleControl = ReturnType<typeof cadSketchGraphCircleControl>;
 type Intent = { readonly kind: 'point'; readonly point: CadSketchGraphPointControl; readonly translation: SketchPoint; readonly snap: CadSketchSnapCandidate | null }
@@ -93,12 +100,14 @@ interface GraphItemActions {
 }
 type Actions = { readonly current: GraphItemActions };
 
-const GraphEntityRow = memo(function GraphEntityRow({ segment, index, sketchName, selected, related, highlighted, construction, interactive, active, center, scaleY, actions }: {
-  segment: GraphSegment; index: number; sketchName: string; selected: boolean; related: boolean; highlighted: boolean; construction: boolean; interactive: boolean; active: boolean;
-  center: SketchPoint; scaleY: number; actions: Actions;
+const FULLY_DEFINED_HINT = 'Fully defined by dimensions and relations';
+
+const GraphEntityRow = memo(function GraphEntityRow({ segment, index, sketchName, selected, related, highlighted, construction, mark, interactive, active, center, scaleY, actions }: {
+  segment: GraphSegment; index: number; sketchName: string; selected: boolean; related: boolean; highlighted: boolean; construction: boolean; mark: CadSketchGeometryMark;
+  interactive: boolean; active: boolean; center: SketchPoint; scaleY: number; actions: Actions;
 }) {
   const boundary = cadSketchGraphBoundary(segment);
-  return <g data-cad-sketch-entity={segment.id} className={`cad-profile cad-sketch-entity${selected ? ' is-selected' : ''}${related ? ' is-relation-highlighted' : ''}${highlighted ? ' is-pick-highlighted' : ''}${construction ? ' is-construction' : ''}`}
+  return <g data-cad-sketch-entity={segment.id} className={`cad-profile cad-sketch-entity${selected ? ' is-selected' : ''}${related ? ' is-relation-highlighted' : ''}${highlighted ? ' is-pick-highlighted' : ''}${construction ? ' is-construction' : ''}${mark ? ` is-${mark}` : ''}`}
     role="button" aria-label={`${segment.kind[0].toUpperCase()}${segment.kind.slice(1)} ${index + 1} in ${sketchName}`} aria-pressed={selected} aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1}
     strokeDasharray={construction ? `${scaleY * 6} ${scaleY * 4}` : undefined}
     onPointerDown={event => actions.current.entityDown(event, segment)} onPointerMove={event => actions.current.move(event)} onPointerUp={event => actions.current.endDrag(event)}
@@ -109,18 +118,19 @@ const GraphEntityRow = memo(function GraphEntityRow({ segment, index, sketchName
   </g>;
 });
 
-const GraphPointRow = memo(function GraphPointRow({ point, original, graph, degreesOfFreedom, index, sketchName, referenceCorner, revealed, selected, related, highlighted, interactive, active, center, scaleX, scaleY, actions }: {
-  point: GraphPoint; original: GraphPoint; graph: CadSketchGraph; degreesOfFreedom: number | null | undefined; index: number; sketchName: string;
+const GraphPointRow = memo(function GraphPointRow({ point, original, graph, degreesOfFreedom, fixed, mark, index, sketchName, referenceCorner, revealed, selected, related, highlighted, interactive, active, center, scaleX, scaleY, actions }: {
+  point: GraphPoint; original: GraphPoint; graph: CadSketchGraph; degreesOfFreedom: number | null | undefined; fixed: boolean; mark: CadSketchGeometryMark; index: number; sketchName: string;
   referenceCorner: boolean; revealed: boolean; selected: boolean; related: boolean; highlighted: boolean; interactive: boolean; active: boolean;
   center: SketchPoint; scaleX: number; scaleY: number; actions: Actions;
 }) {
-  // Numeric coordinates allow a move request; they do not establish this point's freedom.
-  const coordinateDriven = !original.freeAxes.some(Boolean), canRequestMove = degreesOfFreedom !== 0 && !coordinateDriven;
-  const movementHint = cadSketchLinearPatternLockReason(graph, { kind: 'point', id: point.id }) ?? (coordinateDriven ? 'Coordinates follow dimensions or expressions' : degreesOfFreedom === 0
-    ? 'Fully constrained by dimensions and relations' : `Movement follows dimensions and relations${original.freeAxes.every(Boolean) ? '' : ` · ${original.freeAxes[0] ? 'Y' : 'X'} coordinate is driven`}`);
+  // Numeric coordinates allow a move request; they do not establish this point's freedom. `fixed` does: the shown
+  // version's analysis proved both coordinates determined.
+  const coordinateDriven = !original.freeAxes.some(Boolean), canRequestMove = degreesOfFreedom !== 0 && !coordinateDriven && !fixed;
+  const movementHint = cadSketchLinearPatternLockReason(graph, { kind: 'point', id: point.id }) ?? (coordinateDriven ? 'Coordinates follow dimensions or expressions' : degreesOfFreedom === 0 || fixed
+    ? FULLY_DEFINED_HINT : `Movement follows dimensions and relations${original.freeAxes.every(Boolean) ? '' : ` · ${original.freeAxes[0] ? 'Y' : 'X'} coordinate is driven`}`);
   const x = point.position[0] - center[0], y = point.position[1] - center[1];
   return <g data-cad-sketch-point={point.id} data-cad-reference-corner={referenceCorner || undefined} role="button" aria-label={`${referenceCorner ? 'Reference corner' : 'Point'} ${index + 1} in ${sketchName}`} aria-pressed={selected} aria-disabled={!interactive || undefined} pointerEvents={active ? undefined : 'none'}
-    tabIndex={interactive ? 0 : -1} className={`cad-sketch-graph-point${revealed ? ' is-revealed' : ''}${selected ? ' is-active' : ''}${related ? ' is-relation-highlighted' : ''}${highlighted ? ' is-pick-highlighted' : ''}${canRequestMove ? '' : ' is-locked'}`}
+    tabIndex={interactive ? 0 : -1} className={`cad-sketch-graph-point${revealed ? ' is-revealed' : ''}${selected ? ' is-active' : ''}${related ? ' is-relation-highlighted' : ''}${highlighted ? ' is-pick-highlighted' : ''}${canRequestMove ? '' : ' is-locked'}${mark ? ` is-${mark}` : ''}`}
     onPointerDown={event => actions.current.pointDown(event, point)} onPointerMove={event => actions.current.move(event)} onPointerUp={event => actions.current.endDrag(event)}
     onPointerCancel={event => actions.current.cancelPointer(event)} onLostPointerCapture={event => actions.current.lostCapture(event)}
     onClick={event => actions.current.pointClick(event, point.id)} onKeyDown={event => actions.current.pointKey(event, point)}>
@@ -305,7 +315,19 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     ? cadSketchGraphCircleControl(displayed.graph, displayed.parameters, circle.entityId) : null;
   const radiusGripOffset = shownCircle ? Math.max(shownCircle.radius, 16 * Math.max(scaleX, scaleY)) : 0;
   const radiusGripX = shownCircle ? shownCircle.center[0] + radiusGripOffset - center[0] : 0;
-  const radiusInteractive = edgesInteractive && !controls.geometryPick && circle?.lockedReason === null && controls.degreesOfFreedom !== 0;
+  // Only a definition of the shown version locks; an older one may still colour the geometry but never refuses a move.
+  const fixedPoint = (id: string) => Boolean(controls.definitionLocked && controls.definition?.pointIds.has(id));
+  const movesDefined = (selections: readonly CadSketchGraphSelection[]) => controls.definitionLocked === true && selections.some(selection => {
+    const entity = selection.kind === 'entity' ? entities.get(selection.id) : undefined;
+    return selection.kind === 'point' ? fixedPoint(selection.id) : entity ? cadSketchEntityPointIds(entity).some(fixedPoint) : false;
+  });
+  const circleDefined = Boolean(circle && controls.definitionLocked && controls.definition?.entityIds.has(circle.entityId));
+  const radiusInteractive = edgesInteractive && !controls.geometryPick && circle?.lockedReason === null && controls.degreesOfFreedom !== 0 && !circleDefined;
+  // A stale rejection belongs to an earlier target, so it marks nothing while the next solve runs.
+  const dragMarks = preview.kind === 'error' && !preview.stale && preview.marks?.sketchId === sketch.id ? preview.marks : null;
+  // The same holds for the target marker: a stale rejection was for another target.
+  const rejection = preview.kind === 'error' && !preview.stale ? preview.message : null;
+  const diagnosis = dragMarks ?? (controls.diagnosis?.sketchId === sketch.id ? controls.diagnosis : null);
   const selected = (kind: CadSketchGraphSelection['kind'], id: string) => controls.selection.some(selection => selection.kind === kind && selection.id === id);
   const focusTarget = (element: SVGGElement, target: CadSketchGraphSelection) => element.closest('.cad-sketch-graph')?.querySelector<SVGGElement>(`[data-cad-sketch-${target.kind === 'point' ? 'point' : 'entity'}="${target.id}"]`)?.focus({ preventScroll: true });
   /** Pressing an item of the current multi-selection drags the whole set; a click without movement narrows to the item. */
@@ -332,7 +354,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   };
   const edgeAllowed = (id: string) => edgesInteractive && (!controls.geometryPick || controls.geometryPick.eligibleEntityIds.includes(id));
   const pointAllowed = (id: string) => pointsInteractive && (!controls.geometryPick || controls.geometryPick.eligiblePointIds.includes(id));
-  const movable = (original: GraphPoint) => controls.degreesOfFreedom !== 0 && original.freeAxes.some(Boolean);
+  const movable = (original: GraphPoint) => controls.degreesOfFreedom !== 0 && original.freeAxes.some(Boolean) && !fixedPoint(original.id);
   const actions = useRef<GraphItemActions>(null!);
   actions.current = {
     move: event => move(event), endDrag,
@@ -342,8 +364,9 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       if (event.button !== 0 || !edgeAllowed(segment.id)) return; const target = pickAt ? pickAt(event) : { kind: 'entity' as const, id: segment.id }; if (!target) return;
       event.stopPropagation(); if (event.isPrimary === false || drag.current) return; event.preventDefault(); focusTarget(event.currentTarget, target);
       const own = target.kind === 'entity' && target.id === segment.id, grouped = own && grabsSelection(target, event.shiftKey);
-      if (!grouped) choose(target, event.shiftKey);
-      if (!own || !interactive || controls.geometryPick || event.shiftKey || controls.degreesOfFreedom === 0) return;
+      // A set that would carry a defined point stays put, and the press narrows to the pressed edge as a click would.
+      if (!grouped || interactive && controls.degreesOfFreedom !== 0 && movesDefined(controls.selection)) choose(target, event.shiftKey);
+      if (!own || !interactive || controls.geometryPick || event.shiftKey || controls.degreesOfFreedom === 0 || movesDefined(grouped ? controls.selection : [target])) return;
       const boundary = cadSketchGraphBoundary(segment), entity = entities.get(segment.id);
       const anchor = pressedPoint(event, boundary.type === 'line' ? [(boundary.start.x + boundary.end.x) / 2, (boundary.start.y + boundary.end.y) / 2] : [boundary.center.x, boundary.center.y]);
       if (grouped) { startTranslate(event, controls.selection, anchor, null, target); return; }
@@ -365,7 +388,11 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return;
       event.preventDefault(); focusTarget(event.currentTarget, target);
       const original = sourcePoints.get(point.id) ?? point, own = target.kind === 'point' && target.id === point.id;
-      if (own && grabsSelection(target, event.shiftKey) && controls.degreesOfFreedom !== 0) { startTranslate(event, controls.selection, original.position, null, target); return; }
+      if (own && grabsSelection(target, event.shiftKey) && controls.degreesOfFreedom !== 0) {
+        // A set that would carry a defined point stays put; the press only narrows to the pressed point, as a click would.
+        if (movesDefined(controls.selection)) choose(target, false); else startTranslate(event, controls.selection, original.position, null, target);
+        return;
+      }
       choose(target, event.shiftKey);
       if (controls.geometryPick || !own) return;
       if (event.shiftKey || !movable(original)) return; // A plain pick above replaces the old set with this point.
@@ -395,13 +422,17 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       return <GraphEntityRow key={segment.id} segment={segment} index={index} sketchName={sketch.name} selected={selected('entity', segment.id)}
         related={relatedEntities.has(segment.id) || entity?.kind === 'line' && relatedPoints.has(entity.startPointId) && relatedPoints.has(entity.endPointId)}
         highlighted={Boolean(snapCandidate?.entityIds.includes(segment.id)) || highlighted?.kind === 'entity' && highlighted.id === segment.id}
-        construction={construction.has(segment.id)} interactive={edgeAllowed(segment.id)} active={active} center={center} scaleY={scaleY} actions={actions} />;
+        construction={construction.has(segment.id)} mark={cadSketchGeometryMark('entity', segment.id, controls.definition, diagnosis)}
+        interactive={edgeAllowed(segment.id)} active={active} center={center} scaleY={scaleY} actions={actions} />;
     })}
     {displayed.points.map((point, index) => {
       const snapTarget = snapCandidate?.target, isSelected = selected('point', point.id);
       const isHighlighted = Boolean(snapTarget && 'pointId' in snapTarget && snapTarget.pointId === point.id) || highlighted?.kind === 'point' && highlighted.id === point.id;
-      const revealed = filter === 'points' || !supportedPoints.has(point.id) || selectionPoints.has(point.id) || isSelected || relatedPoints.has(point.id) || isHighlighted;
-      return <GraphPointRow key={point.id} point={point} original={sourcePoints.get(point.id) ?? point} graph={prepared.graph} degreesOfFreedom={controls.degreesOfFreedom} index={index} sketchName={sketch.name}
+      const mark = cadSketchGeometryMark('point', point.id, controls.definition, diagnosis);
+      const revealed = filter === 'points' || !supportedPoints.has(point.id) || selectionPoints.has(point.id) || isSelected || relatedPoints.has(point.id) || isHighlighted
+        || mark === 'conflicting' || mark === 'redundant';
+      return <GraphPointRow key={point.id} point={point} original={sourcePoints.get(point.id) ?? point} graph={prepared.graph} degreesOfFreedom={controls.degreesOfFreedom}
+        fixed={fixedPoint(point.id)} mark={mark} index={index} sketchName={sketch.name}
         referenceCorner={referenceCorners.has(point.id)} revealed={revealed} selected={isSelected} related={relatedPoints.has(point.id)} highlighted={isHighlighted}
         interactive={pointAllowed(point.id)} active={active} center={center} scaleX={scaleX} scaleY={scaleY} actions={actions} />;
     })}
@@ -431,14 +462,14 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
         x2={radiusGripX} y2={shownCircle.center[1] - center[1]} stroke="var(--muted-foreground)" strokeWidth={scaleY} pointerEvents="none" />}
       <circle cx={radiusGripX} cy={shownCircle.center[1] - center[1]} r={7 * scaleY} className="cad-sketch-point-hit" />
       <path d={`M ${radiusGripX} ${shownCircle.center[1] - center[1] + 4 * scaleY} l ${4 * scaleX} ${-4 * scaleY} l ${-4 * scaleX} ${-4 * scaleY} l ${-4 * scaleX} ${4 * scaleY} Z`} className="cad-sketch-point-mark" />
-      <title>{circle.lockedReason ?? (controls.degreesOfFreedom === 0 ? 'Fully constrained by dimensions and relations' : `Radius ${formatCadQuantity(shownCircle.radius)} mm · Drag to resize, or use arrow keys`)}</title>
+      <title>{circle.lockedReason ?? (controls.degreesOfFreedom === 0 || circleDefined ? FULLY_DEFINED_HINT : `Radius ${formatCadQuantity(shownCircle.radius)} mm · Drag to resize, or use arrow keys`)}</title>
     </g>}
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
       selectedRelationId={controls.relation?.id} interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)} />}
-    {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${preview.kind === 'error' || candidate.issue ? ' is-invalid' : ''}`}
+    {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${rejection !== null || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.kind === 'translate' ? intent.anchor[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}
       cy={(intent.kind === 'point' ? intent.point.position[1] + intent.translation[1] : intent.kind === 'translate' ? intent.anchor[1] + intent.translation[1] : intent.circle.center[1]) - center[1]} r={5 * scaleY}>
-      <title>{candidate.issue ?? (preview.kind === 'error' ? preview.message : 'Drag target')}</title></circle>}
+      <title>{candidate.issue ?? rejection ?? 'Drag target'}</title></circle>}
     {snapCandidate && <CadSketchSnapHint candidate={snapCandidate} center={center} scaleX={scaleX} scaleY={scaleY} label={snapLabel} attained={attained} />}
   </g>;
 });
