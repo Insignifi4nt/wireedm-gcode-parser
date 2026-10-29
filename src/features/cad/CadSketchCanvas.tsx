@@ -214,10 +214,14 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const [trimHover, setTrimHover] = useState<{ readonly prepared: CadSketchOverlapPick['prepared']; readonly preview: TrimPreview } | null>(null);
   const suppressProfileClick = useRef(false);
   /**
-   * A primary press while drawing. The press places its pick at once, or only grabs the last placed point when it lands
-   * on it; a drag past the slop then places the next pick on release, so press-drag-release draws like two clicks.
+   * A primary press while drawing. The press places its pick at once; a drag past the slop then places the next pick on
+   * release, so press-drag-release draws like two clicks. A press beside the last placed point is held until release:
+   * a drag draws from that point, and a plain click places it then. `attempts` counts shape completions before the press.
    */
-  const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; dragged: boolean } | null>(null);
+  const drawingPress = useRef<{ readonly pointerId: number; readonly clientX: number; readonly clientY: number; readonly attempts: number;
+    readonly held: { readonly pick: DrawingPick; readonly last: SketchPoint } | null; dragged: boolean } | null>(null);
+  /** Every attempt to save a drawn shape, so a press that tried to finish one never draws again on release. */
+  const completionAttempts = useRef(0);
   const pendingChange = useRef(onPendingChange);
   pendingChange.current = onPendingChange;
   const edgeSubmission = useRef<CadSketchOverlapPick | null>(null);
@@ -718,6 +722,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   const finishPath = (closed: boolean, draft: CadPathDraft = pathDraft) => {
     if (interactionLocked) return;
+    completionAttempts.current++;
     const reset = () => setPathDraft(idlePathDraft());
     try {
       if (sketch.kind === 'curve') {
@@ -738,6 +743,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     svg.current?.focus();
   };
   const add = (geometry: CadProfile, drawing?: CadFreshSketchDrawing) => {
+    completionAttempts.current++;
     try {
       if (!attachedSourceCurrent()) return;
       if (drawing && !onAddFreshSketch && picks.some(pick => pick.kind !== 'position')) throw new Error('The attached drawing cannot be saved by this editor. Cancel or release its pending relations.');
@@ -910,7 +916,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       onPointerDown={(event) => {
         if (boxSelection.active()) { boxSelection.begin(event); return; }
         if (profileDrag.current) return;
-        if (event.button === 0) suppressProfileClick.current = false;
+        // Only the primary pointer owns the trailing click; a second contact must not release its suppression.
+        if (event.button === 0 && event.isPrimary !== false) suppressProfileClick.current = false;
         if (pan.current) { if (event.pointerId !== pan.current.pointerId) pan.current.moved = true; return; }
         if (event.isPrimary === false) return;
         if (event.button === 1 || event.button === 2) {
@@ -927,13 +934,15 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (drawing && !geometryPick && !positionPick) {
             // The press places the pick, so its trailing click must not place another.
             suppressProfileClick.current = true;
-            drawingPress.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, dragged: false };
-            try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
             const last = pathTool ? pathDraft.kind === 'arc-through' ? pathDraft.end : pathDraft.kind === 'ready' ? cadPathDraftEndpoint(pathDraft) : null : points.at(-1);
             const bounds = event.currentTarget.getBoundingClientRect(), pick = getDrawingPick(event);
-            // A tap followed by a tap-drag can arrive as a second press on the point the tap placed: it only grabs that point.
-            if (last && bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
-              event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS) return;
+            // A tap followed by a tap-drag can arrive as a second press on the point the tap placed, so wait for the release.
+            const beside = last && bounds.width && bounds.height && Math.hypot(event.clientX - (bounds.left + bounds.width / 2 + (last[0] - center[0]) / width * bounds.width),
+              event.clientY - (bounds.top + bounds.height / 2 - (last[1] - center[1]) / span * bounds.height)) <= DRAWING_DRAG_PIXELS;
+            drawingPress.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, attempts: completionAttempts.current,
+              held: beside && last ? { pick, last } : null, dragged: false };
+            try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* The release still ends the press over the canvas. */ }
+            if (beside) return;
             if (pick.candidates) drawingPress.current = null;
             acceptDrawingPick(pick, event); return;
           }
@@ -967,8 +976,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         const press = drawingPress.current;
         if (press && event.pointerId === press.pointerId) {
           drawingPress.current = null;
-          // A drag ends with the next pick, unless its press finished the shape or the drawing was cancelled meanwhile.
-          if (press.dragged && event.button === 0 && !interactionLocked && (points.length > 0 || pathPending)) acceptDrawingPick(getDrawingPick(event), event);
+          // Nothing more once the press tried to finish the shape, even if saving it failed, or the drawing was cancelled.
+          if (event.button !== 0 || interactionLocked || completionAttempts.current !== press.attempts || !(points.length > 0 || pathPending)) return;
+          if (press.dragged) acceptDrawingPick(getDrawingPick(event), event);
+          // A held press that did not drag is a deliberate short pick, unless it repeats the last point exactly.
+          else if (press.held && (press.held.pick.point[0] !== press.held.last[0] || press.held.pick.point[1] !== press.held.last[1]))
+            acceptDrawingPick(press.held.pick, { clientX: press.clientX, clientY: press.clientY });
           return;
         }
         if (boxSelection.active()) { if (boxSelection.end(event)) suppressProfileClick.current = true; return; }
