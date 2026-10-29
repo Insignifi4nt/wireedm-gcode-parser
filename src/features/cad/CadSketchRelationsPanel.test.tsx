@@ -611,6 +611,23 @@ describe('selected sketch entity relations', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('names relations that hold a point on the origin or an axis after that reference, and keeps the coordinate name for editing', async () => {
+    const source = parseCadDocument({ ...createCadDocument('Point', 'point'), schemaVersion: 2, features: [{
+      id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 4] }, { id: 'c', position: [0, 0] }],
+        entities: [{ id: 'line', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }],
+        relations: [{ id: 'onX', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { id: 'onY', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 },
+          { id: 'fixB', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 4 }, { id: 'pin', kind: 'fixed-point', pointId: 'c', position: [0, 0] }]
+      }
+    }] });
+    const h = await mount(source, [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }, { kind: 'point', id: 'c' }]);
+    const rows = () => [...container.querySelectorAll('[aria-label="Sketch relations"] li button[aria-pressed]')].map(row => row.textContent?.trim());
+    expect(rows()).toEqual(['On the X axis', 'On the Y axis', 'Fix Y4 mm', 'Fixed at the origin']);
+    await clickRelation('Inspect', 'On the X axis', 1);
+    expect(h.inspect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'onX' }));
+    expect(field('Fix Y mm').value).toBe('0');
+  });
+
   it('releases and restores an owned numeric axis fix without adding a driver over an exact coordinate expression', async () => {
     const source = parseCadDocument({ ...createCadDocument('Point', 'point'), schemaVersion: 2, parameters: { origin: 2, height: 4 }, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {

@@ -1912,6 +1912,83 @@ describe('CAD sketch interaction', () => {
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
+  it('takes the origin and axes in every constraint pick that expresses them exactly, from the tool or the selection', async () => {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Datums', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [5, 0] }, { id: 'b', position: [25, 0] }, { id: 'c', position: [-6, 10] }, { id: 'd', position: [-6, 22] }, { id: 'o', position: [0, 0] },
+        { id: 'p', position: [-30, 10] }, { id: 'r', position: [-30, 22] }, { id: 'm', position: [-50, 10] }, { id: 'n', position: [-50, 22] },
+        { id: 'g', position: [-70, 10] }, { id: 'h', position: [-70, 22] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'side', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
+        { id: 'ring', kind: 'circle', construction: false, centerPointId: 'o', radius: 4 }, { id: 'post', kind: 'line', construction: false, startPointId: 'p', endPointId: 'r' },
+        { id: 'mast', kind: 'line', construction: false, startPointId: 'm', endPointId: 'n' }, { id: 'guide', kind: 'line', construction: false, startPointId: 'g', endPointId: 'h' }],
+      relations: [] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const pick = async (selector: string) => {
+      const target = container.querySelector(selector); if (!target) throw new Error(`${selector} missing.`);
+      await act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    };
+    const selectionChoices = async () => { await click('Constrain'); return [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]; };
+    const choose = async (label: string) => {
+      await click('Constrain');
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent?.trim() === label);
+      if (!item) throw new Error(`${label} missing.`); await act(async () => item.click());
+    };
+    const sketch = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph; };
+    // Tool first: a line laid on the H axis keeps both endpoints on it, and the origin centers a circle. The test session applies
+    // relations without solving, so the geometry already agrees.
+    await choose('Coincident'); await pick('[data-cad-sketch-entity="base"]');
+    expect(container.textContent).toContain('Coincident · Choose a point to keep on this line, or an axis to lay it on');
+    await pick('[data-cad-sketch-datum="x-axis"]');
+    expect(sketch().relations).toMatchObject([{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }]);
+    await choose('Concentric'); await pick('[data-cad-sketch-datum="origin"]'); await pick('[data-cad-sketch-entity="ring"]');
+    expect(sketch().relations.slice(2)).toMatchObject([{ kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 0 }, { kind: 'fixed-axis', pointId: 'o', axis: 'y', value: 0 }]);
+    await canvasKey('Escape');
+
+    // Selection first: the V axis clicked far above its arrow joins a Shift-selected line in the Constrain list.
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    let captured: number | null = null;
+    Object.assign(canvas, { setPointerCapture: (id: number) => { captured = id; }, hasPointerCapture: (id: number) => captured === id, releasePointerCapture: () => { captured = null; } });
+    const view = viewport().getState().view; if (!view || view.mode === 'solid') throw new Error('Sketch frame missing.');
+    const viewWidth = Number(canvas.getAttribute('viewBox')?.split(' ')[2]);
+    const pointer = async (type: string, x: number, y: number, shiftKey = false) => {
+      const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true, shiftKey,
+        clientX: 300 + (x - view.centerMm[0]) / viewWidth * 600, clientY: 200 - (y - view.centerMm[1]) / view.heightSpanMm * 400 });
+      Object.defineProperties(event, { pointerId: { value: 12 }, isPrimary: { value: true } });
+      await act(async () => canvas.dispatchEvent(event));
+    };
+    const tap = async (x: number, y: number, shiftKey = false) => { await pointer('pointerdown', x, y, shiftKey); await pointer('pointerup', x, y, shiftKey); };
+    const pressed = (datum: string) => container.querySelector(`[data-cad-sketch-datum="${datum}"]`)?.getAttribute('aria-pressed');
+    const top = view.centerMm[1] + view.heightSpanMm * 0.45;
+    await tap(0, top); expect(pressed('y-axis')).toBe('true');
+    await tap(-6, 16, true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'side' }]); expect(pressed('y-axis')).toBe('true');
+    const offered = await selectionChoices();
+    expect(offered.map(item => item.textContent?.trim())).toEqual(['Coincident', 'Parallel', 'Perpendicular']);
+    await act(async () => offered[1].click());
+    expect(sketch().relations.at(-1)).toMatchObject({ kind: 'vertical', pointIds: ['c', 'd'] });
+
+    // A Shift box adds geometry and keeps the selected axis; a plain box replaces both.
+    await canvasKey('Escape'); await tap(0, top); expect(pressed('y-axis')).toBe('true');
+    await pointer('pointerdown', -10, 17, true); await pointer('pointermove', -3, 23, true); await pointer('pointerup', -3, 23, true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'd' }]); expect(pressed('y-axis')).toBe('true');
+    await pointer('pointerdown', -10, 17); await pointer('pointermove', -3, 23); await pointer('pointerup', -3, 23);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'd' }]); expect(pressed('y-axis')).toBe('false');
+
+    // Lines upright only through Parallel with a vertical line take one endpoint on the V axis, from the tool or the selection.
+    await canvasKey('Escape'); await choose('Vertical'); await pick('[data-cad-sketch-entity="guide"]');
+    for (const [line, upright] of [['post', 'side'], ['mast', 'guide']]) { await choose('Parallel'); await pick(`[data-cad-sketch-entity="${line}"]`); await pick(`[data-cad-sketch-entity="${upright}"]`); }
+    await choose('Coincident'); await pick('[data-cad-sketch-entity="post"]');
+    let count = sketch().relations.length;
+    await pick('[data-cad-sketch-datum="y-axis"]');
+    expect(sketch().relations.slice(count)).toMatchObject([{ kind: 'fixed-axis', pointId: 'p', axis: 'x', value: 0 }]);
+    await canvasKey('Escape'); await tap(0, top); await tap(-50, 16, true);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'mast' }]);
+    count = sketch().relations.length;
+    const coincident = (await selectionChoices()).find(item => item.textContent?.trim() === 'Coincident'); if (!coincident) throw new Error('Coincident missing.');
+    await act(async () => coincident.click());
+    expect(sketch().relations.slice(count)).toMatchObject([{ kind: 'fixed-axis', pointId: 'm', axis: 'x', value: 0 }]);
+  });
+
   it('keeps a point on an arc or circle with Coincident, picked after the tool or from the selection, and removes it from the selection menu', async () => {
     const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Curves', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
       points: [{ id: 'o', position: [0, 0] }, { id: 's', position: [10, 0] }, { id: 'e', position: [0, 10] }, { id: 'c', position: [30, 0] }, { id: 'p', position: [6, 8] }, { id: 'q', position: [34, 3] }],

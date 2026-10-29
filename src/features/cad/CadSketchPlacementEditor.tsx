@@ -7,6 +7,7 @@ import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
 import type { CadSketchGraphControls } from './CadSketchGraphLayer';
+import type { CadSketchDatum } from './cadSketchGraphSelection';
 import type { SketchPoint } from './cadSketchInteraction';
 import { useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { CadSketchCommandForm, useCadSketchCommandSession, type CadSketchCommandSessionProps } from './useCadSketchCommandSession';
@@ -27,6 +28,7 @@ interface Props extends CadSketchCommandSessionProps {
 
 type Pair = readonly [string, string];
 type Slot = 'anchor' | 'target';
+const PLACEMENT_DATUMS: readonly CadSketchDatum[] = ['origin'];
 const finite = (value: number) => Number.isFinite(value) && Math.abs(value) <= 1e9;
 const position = (values: Pair): SketchPoint | null =>
   values.every(value => value.trim() !== '' && finite(Number(value))) ? [Number(values[0]), Number(values[1])] : null;
@@ -58,6 +60,8 @@ export function CadSketchPlacementEditor(props: Props) {
   pickOwner.current = pick?.token ?? null;
   const geometryPick = useMemo(() => pick && {
     label: pick.label, eligibleEntityIds: [], eligiblePointIds: owner.sketch.graph?.points.map(point => point.id) ?? [], onCancel: cancel,
+    // The plane origin is an exact anchor or target, like a sketch point.
+    eligibleDatums: PLACEMENT_DATUMS, onPickDatum: () => pick.onPick([0, 0]),
     onPick: (selection: CadSketchGraphSelection) => {
       const point = selection.kind === 'point' ? owner.sketch.graph?.points.find(candidate => candidate.id === selection.id) : undefined;
       if (point) pick.onPick([evaluateCadScalar(point.position[0], owner.document.parameters), evaluateCadScalar(point.position[1], owner.document.parameters)]);
