@@ -9,7 +9,7 @@ import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSke
 import { createCadFreshSketchDrawing, createCadFreshSketchGraph, type CadFreshSketchDrawing } from '@/domain/cad/cadFreshSketchGraph';
 import { createCadPathDraftGraph } from './cadPathDraftGraph';
 import { inspectCadSketchCornerTarget } from '@/domain/cad/cadSketchCornerTreatment';
-import type { CadPathDraft } from './cadPathDrawing';
+import { cadPathDraftInferences, type CadPathDraft } from './cadPathDrawing';
 import { CadSketchRelationsPanel, type CadSketchRelationCommand } from './CadSketchRelationsPanel';
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { CadSketchAreaRepairPanel } from './CadSketchAreaRepairPanel';
@@ -27,6 +27,7 @@ import type { CadSketchOffsetSource } from '@/domain/cad/cadSketchOffset';
 import type { CadSketchAreaRepairInspection, CadSketchAreaRepairs } from './cadSketchEditDraft';
 import { CadSketchConstraintStatus, type CadInspectSketchConstraints } from './CadSketchConstraintStatus';
 import type { CadSketchConstraintFeedbackSubject } from './cadSketchConstraintFeedback';
+import { appendCadSketchGraphWithInferences, cadSketchInferenceNote } from './cadSketchInferenceFallback';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -866,8 +867,16 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       selectGraph({ kind: 'entity', id: graph.entities[0].id }); setError(null);
     }, signal);
   };
-  const addPath = (draft: CadPathDraft, closed: boolean, signal?: AbortSignal) =>
-    addSketchGraph(createCadPathDraftGraph({ draft, closed, construction, createId: () => crypto.randomUUID(), existingGraph: sketch?.graph, parameters: document.parameters }), signal);
+  const addPath = (draft: CadPathDraft, closed: boolean, signal?: AbortSignal) => {
+    const graph = createCadPathDraftGraph({ draft, closed, construction, createId: () => crypto.randomUUID(), existingGraph: sketch?.graph, parameters: document.parameters });
+    const inferredIds = cadPathDraftInferences(draft).map(inferred => inferred.relationId);
+    if (!inferredIds.length) return addSketchGraph(graph, signal);
+    // A retry without inferred relations must still extend the sketch the drawing started on.
+    const base = interactionState.current;
+    return appendCadSketchGraphWithInferences({ graph, inferredIds, signal, submit: next => addSketchGraph(next, signal),
+      current: () => interactionState.current.version === base.version && interactionState.current.sketchId === base.sketchId,
+      onDropped: (dropped, reason) => props.onStatusMessage?.(cadSketchInferenceNote(dropped, reason), 'info') });
+  };
   const addFreshSketch = (drawing: CadFreshSketchDrawing, signal?: AbortSignal) => {
     if (!sketch) throw new Error('Open a sketch before drawing.');
     const created = createCadFreshSketchDrawing({ drawing, construction, createId: () => crypto.randomUUID(), existingGraph: sketch.graph, parameters: document.parameters });
@@ -1278,7 +1287,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const toolbar = <div className="cad-toolbar" aria-label="CAD tools" data-cad-tool-context={sketch ? 'sketch' : curve || curveCreation ? 'curve' : 'model'} inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}>
       {!canvasReference && <div className="cad-tool-group">{toolButton('Sketch', SketchIcon, startSketch, locked)}{toolButton('Plane', DatumPlaneIcon, () => startFeature('datum-plane'), locked)}{toolButton('Curve', CurveIcon, () => startFeature('curve'), locked)}</div>}
       <div className="cad-tool-group">{toolButton('Plugins', AddIcon, () => setPluginsOpen(true), locked || Boolean(props.sketchEdit))}</div>
-      {sketch ? <><div className="cad-tool-group">{toolButton('Select', SelectIcon, () => setTool('select'), locked, tool === 'select', undefined, 'S')}{drawingToolButton('line', 'Line', LineIcon, 'Draw a line: click its start, then its end', 'L')}{drawingToolButton('arc', 'Arc', ArcIcon, 'Draw a three-point arc: click its start, its end, then a point on the arc', 'A')}{drawingToolButton('path', 'Polyline', PolylineIcon, 'Draw connected lines and three-point arcs. Click the start to close, or press Enter to finish open', 'P')}{drawingToolButton('rectangle', 'Rectangle', RectangleIcon, undefined, 'R')}{drawingToolButton('circle', 'Circle', CircleIcon, undefined, 'C')}{drawingToolButton('slot', 'Slot', SlotIcon, 'Draw a slot: click both arc centers, then a point to set the width', 'O')}{toolButton('Trim', TrimIcon, () => { setTool('trim'); setProfileId(null); setGraphPick(null); }, locked || !sketch.graph, tool === 'trim', sketch.graph ? 'Click edge pieces to remove them up to the nearest crossing edge' : 'Trim needs a sketch drawn with connected edges', 'T')}</div><div className="cad-tool-group">{toolButton('Dimension', MeasureIcon, beginSketchDimension, locked || patternDimensionLocked || !sketchDimensionAvailable && !graphDimensionAvailable && !graphPointPair && !canPickDimension, Boolean(currentDimensionPick), circleSourceDriven && !canPickDimension ? 'Radius already follows an expression. Edit or release it with fx.' : 'Add or edit a driving sketch dimension', 'D')}<CadToolbarMenu label="Constrain" menuLabel="Constraint tools" title="Constrain the selected geometry, or choose a constraint and then pick the geometry it asks for." icon={<ConstraintIcon size={15} strokeWidth={1.5} />} disabled={locked || !sketch.graph} pressed={Boolean(currentConstraintTool)}
+      {sketch ? <><div className="cad-tool-group">{toolButton('Select', SelectIcon, () => setTool('select'), locked, tool === 'select', undefined, 'S')}{drawingToolButton('line', 'Line', LineIcon, 'Draw a line: click its start, then its end. A line along the horizontal or vertical guide from its start stays horizontal or vertical', 'L')}{drawingToolButton('arc', 'Arc', ArcIcon, 'Draw a three-point arc: click its start, its end, then a point on the arc', 'A')}{drawingToolButton('path', 'Polyline', PolylineIcon, 'Draw connected lines and three-point arcs. A line along the horizontal or vertical guide from its start stays horizontal or vertical. Click the start to close, or press Enter to finish open', 'P')}{drawingToolButton('rectangle', 'Rectangle', RectangleIcon, undefined, 'R')}{drawingToolButton('circle', 'Circle', CircleIcon, undefined, 'C')}{drawingToolButton('slot', 'Slot', SlotIcon, 'Draw a slot: click both arc centers, then a point to set the width', 'O')}{toolButton('Trim', TrimIcon, () => { setTool('trim'); setProfileId(null); setGraphPick(null); }, locked || !sketch.graph, tool === 'trim', sketch.graph ? 'Click edge pieces to remove them up to the nearest crossing edge' : 'Trim needs a sketch drawn with connected edges', 'T')}</div><div className="cad-tool-group">{toolButton('Dimension', MeasureIcon, beginSketchDimension, locked || patternDimensionLocked || !sketchDimensionAvailable && !graphDimensionAvailable && !graphPointPair && !canPickDimension, Boolean(currentDimensionPick), circleSourceDriven && !canPickDimension ? 'Radius already follows an expression. Edit or release it with fx.' : 'Add or edit a driving sketch dimension', 'D')}<CadToolbarMenu label="Constrain" menuLabel="Constraint tools" title="Constrain the selected geometry, or choose a constraint and then pick the geometry it asks for." icon={<ConstraintIcon size={15} strokeWidth={1.5} />} disabled={locked || !sketch.graph} pressed={Boolean(currentConstraintTool)}
         items={[...constraintChoices.length && sketch.graph ? [{ kind: 'label' as const, key: 'selection', label: 'For the selection' }, ...constraintChoices.map(choice => ({ key: `selection-${choice.tool}`, label: cadSketchConstraintToolLabels[choice.tool],
           checked: choice.state === 'applied', disabled: choice.state === 'blocked', title: constraintChoiceHelp(choice), onSelect: () => { if (!locked && sketch.graph) toggleConstraint(sketch.graph, sketch.id, choice); } })),
           { kind: 'separator' as const, key: 'tools-separator' }, { kind: 'label' as const, key: 'tools', label: 'Choose, then pick' }] : [],

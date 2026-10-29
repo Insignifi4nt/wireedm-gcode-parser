@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CadError } from '@/domain/cad/cadError';
 import type { CadConstructionPoint } from '@/domain/cad/cadPathConstruction';
-import { cadPathDraftPicks, closeCadPathDraft, closeCadPolylineProfile, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft,
+import { cadPathDraftInferences, cadPathDraftPicks, closeCadPathDraft, closeCadPolylineProfile, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft,
   type CadPathDraft, type CadPathDraftPick } from './cadPathDrawing';
 
 const join = (point: CadConstructionPoint, sourcePointId: string): CadPathDraftPick => ({ kind: 'coincident', point, sourcePointId, relationId: `join-${sourcePointId}` });
@@ -111,6 +111,27 @@ describe('pending mixed path drawing', () => {
     expect(cadPathDraftPicks(released)).toEqual([]); expect(JSON.stringify(released)).not.toContain('Pick');
     expect(released).toMatchObject({ kind: 'arc-through', start: [0, 0], end: [10, 10], segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }] });
     expect(releaseCadPathDraftPicks(released)).toBe(released);
+  });
+  it('keeps the inferred relation of a line until undo or release, and only on a line ending exactly level or plumb', () => {
+    let draft = updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [0, 0], inferred: { kind: 'vertical', relationId: 'ignored' } });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [5, 0], inferred: { kind: 'horizontal', relationId: 'h' }, pick: join([5, 0], 'b') });
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [5, 5], inferred: { kind: 'vertical', relationId: 'v' } });
+    expect(cadPathDraftInferences(draft)).toEqual([{ kind: 'horizontal', relationId: 'h' }, { kind: 'vertical', relationId: 'v' }]);
+    const before = JSON.stringify(draft);
+    expect(() => updateCadPathDraft(draft, { kind: 'point', point: [9, 5.001], inferred: { kind: 'horizontal', relationId: 'off' } })).toThrow('exactly level or plumb');
+    expect(() => updateCadPathDraft(draft, { kind: 'point', point: [9, 9], inferred: { kind: 'vertical', relationId: 'off' } })).toThrow(CadError);
+    expect(JSON.stringify(draft)).toBe(before);
+    // An arc and its through point never keep one.
+    const arc = updateCadPathDraft(updateCadPathDraft(updateCadPathDraft(draft, { kind: 'mode', mode: 'arc' }), { kind: 'point', point: [0, 5], inferred: { kind: 'horizontal', relationId: 'a' } }),
+      { kind: 'point', point: [2.5, 7], inferred: { kind: 'horizontal', relationId: 't' } });
+    expect(cadPathDraftInferences(arc)).toEqual(cadPathDraftInferences(draft));
+    expect(cadPathDraftInferences(updateCadPathDraft(draft, { kind: 'undo-last' }))).toEqual([{ kind: 'horizontal', relationId: 'h' }]);
+    const released = releaseCadPathDraftPicks(draft);
+    expect(cadPathDraftInferences(released)).toEqual([]); expect(cadPathDraftPicks(released)).toEqual([]);
+    expect(released.kind !== 'idle' && released.segments.map(segment => segment.end)).toEqual([[5, 0], [5, 5]]);
+    // A draft with only inferred relations is released too.
+    expect(cadPathDraftInferences(releaseCadPathDraftPicks(updateCadPathDraft(updateCadPathDraft(createCadPathDraft(), { kind: 'point', point: [0, 0] }),
+      { kind: 'point', point: [0, 4], inferred: { kind: 'vertical', relationId: 'only' } })))).toEqual([]);
   });
   it('computes hover previews without traversing or regenerating previous segments', () => {
     // The endpoint lookup is the only allowed read of a large committed chain.

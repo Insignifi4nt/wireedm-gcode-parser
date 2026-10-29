@@ -19,6 +19,7 @@ import type { CadViewportContextMenuRequest } from './CadViewport';
 import type { CadFeatureRegionPickCommand } from './cadFeatureReferencePicking';
 import type { CadExtrudeDepthControl } from './cadExtrudeDepthInteraction';
 import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
+import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { useCadSketchEditing } from './useCadSketchEditing';
 import { pairedBoreMirrorPart } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 import { cadSketchSourceAvailability, cadSketchSourceIssue } from '@/domain/cad/cadSketchSources';
@@ -205,7 +206,7 @@ async function snapToGrid() {
 }
 /** Sets Create relations, which starts on, to the state a flow needs. */
 async function drawingRelations(enabled: boolean) {
-  const toggle = container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]'); if (!toggle) throw new Error('Relation drawing control missing.');
+  const toggle = container.querySelector<HTMLInputElement>('input[aria-label="Create relations"]'); if (!toggle) throw new Error('Relation drawing control missing.');
   if (toggle.checked !== enabled) await act(async () => toggle.click());
   expect(toggle.checked).toBe(enabled);
 }
@@ -1614,7 +1615,7 @@ describe('CAD sketch interaction', () => {
       } }));
     } });
     await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' })); await click('Circle');
-    const infer = container.querySelector<HTMLInputElement>('input[aria-label="Create coincident relations"]');
+    const infer = container.querySelector<HTMLInputElement>('input[aria-label="Create relations"]');
     if (!infer) throw new Error('Coincident drawing control missing.');
     expect(infer.checked).toBe(true);
     await canvasClick(300, 200); await canvasClick(450, 200);
@@ -1650,6 +1651,30 @@ describe('CAD sketch interaction', () => {
     expect(sketch.kind === 'sketch' && sketch.profiles).toEqual([]);
     expect(button('Finish sketch').disabled).toBe(false);
     expect(workflow).toHaveBeenLastCalledWith(false);
+  });
+
+  it('accepts a drawn line once without the horizontal relation the sketch rejects as repeated, and says so', async () => {
+    const appended: Extract<CadEdit, { kind: 'append-sketch-entities' }>['geometry'][] = [];
+    await mount(createCadDocument(), { build: null, buildState: 'idle', onEdit: async edit => {
+      if (edit.kind !== 'append-sketch-entities') { currentSession.edit([edit]); return; }
+      appended.push(edit.geometry);
+      const inferred = edit.geometry.relations.find(relation => relation.kind === 'horizontal');
+      if (inferred) throw new CadSketchPreparationError({ sketchId: edit.sketchId, sketchName: 'Sketch', graph: edit.geometry, rejection: { kind: 'rejected', reason: 'redundant',
+        message: 'Repeated relation.', diagnostics: { status: 'success', degreesOfFreedom: 0, conflictingIds: [], redundantIds: [inferred.id], partiallyRedundantIds: [], issues: [] } } });
+      currentSession.edit([edit]);
+    } });
+    await startSketch(); await click('Line'); const empty = currentSession.getSnapshot(); statusMessage.mockClear();
+    // The end lands one pixel off the start's horizontal guide, which levels it.
+    await canvasClick(330, 260); await canvasClick(420, 261);
+    expect(appended).toHaveLength(2);
+    const [first, second] = appended;
+    expect(first.relations).toEqual([{ id: expect.any(String), kind: 'horizontal', pointIds: first.points.map(point => point.id) }]);
+    expect(second).toEqual({ ...first, relations: [] });
+    expect(statusMessage).toHaveBeenCalledExactlyOnceWith('Horizontal not added: it repeats existing relations.', 'info');
+    const sketch = currentDocument.features[0];
+    expect(sketch.kind === 'sketch' && sketch.graph).toMatchObject({ entities: [{ kind: 'line' }], relations: [] });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => currentSession.undo()); expect(currentSession.getSnapshot().document).toBe(empty.document);
   });
 
   it('closes a free polyline on its start into shared point identities and changes only a selected edge to construction', async () => {

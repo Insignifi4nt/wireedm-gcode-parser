@@ -9,6 +9,9 @@ function idFactory() { let next = 0; return () => `fresh-${++next}`; }
 function polyline([start, ...ends]: readonly CadFreshSketchPick[], closed: boolean): CadFreshSketchDrawing {
   return { kind: 'polyline', start, steps: ends.map(end => ({ kind: 'line', end })), closed };
 }
+function polylineWith(steps: Extract<CadFreshSketchDrawing, { kind: 'polyline' }>['steps'], closed: boolean): CadFreshSketchDrawing {
+  return { kind: 'polyline', start: { kind: 'position', point: [0, 0] }, steps, closed };
+}
 
 describe('fresh authored sketch picks', () => {
   it.each([
@@ -132,6 +135,34 @@ describe('fresh authored sketch picks', () => {
       { kind: 'line', end: { kind: 'coincident', point: [5, 5], sourcePointId: 'other', relationId: 'join-other' } }], closed: true },
     construction: false, createId: () => `unused-${++allocations}`, existingGraph })).toThrowError(expect.objectContaining({ code: 'ambiguous-path-closure' }));
     expect(allocations).toBe(0);
+  });
+
+  it('adds inferred horizontal and vertical relations after every attachment, only on exactly level or plumb drawn lines', () => {
+    const existingGraph = parseCadSketchGraph({ points: [{ id: 'anchor', position: [0, 0] }, { id: 'corner', position: [20, 10] }], entities: [], relations: [] });
+    const start: CadFreshSketchPick = { kind: 'coincident', point: [0, 0], sourcePointId: 'anchor', relationId: 'join-start' };
+    const square = [
+      { kind: 'line', end: { kind: 'position', point: [20, 0] }, inferred: { kind: 'horizontal', relationId: 'level' } },
+      { kind: 'line', end: { kind: 'coincident', point: [20, 10], sourcePointId: 'corner', relationId: 'join-corner' }, inferred: { kind: 'vertical', relationId: 'plumb' } },
+      { kind: 'line', end: { kind: 'position', point: [0, 10] } }
+    ] as const;
+    const created = createCadFreshSketchDrawing({ drawing: { kind: 'polyline', start, steps: square, closed: true }, construction: false, createId: idFactory(), existingGraph });
+    if (created.kind !== 'polyline') throw new Error('Expected polyline roles.');
+    const [first, second, third] = created.pointIds;
+    expect(created.geometry.relations).toEqual([{ id: 'join-start', kind: 'coincident', pointIds: [first, 'anchor'] }, { id: 'join-corner', kind: 'coincident', pointIds: [third, 'corner'] },
+      { id: 'level', kind: 'horizontal', pointIds: [first, second] }, { id: 'plumb', kind: 'vertical', pointIds: [second, third] }]);
+    let allocations = 0;
+    const fails = (steps: Parameters<typeof polylineWith>[0], closed = false) => () =>
+      createCadFreshSketchDrawing({ drawing: polylineWith(steps, closed), construction: false, createId: () => `unused-${++allocations}`, existingGraph });
+    expect(fails([{ kind: 'line', end: { kind: 'position', point: [20, 1e-9] }, inferred: { kind: 'horizontal', relationId: 'off' } }]))
+      .toThrowError(expect.objectContaining({ code: 'invalid-fresh-sketch-inference' }));
+    expect(fails([{ kind: 'line', end: { kind: 'position', point: [20, 0] }, inferred: { kind: 'vertical', relationId: 'off' } }]))
+      .toThrowError(expect.objectContaining({ code: 'invalid-fresh-sketch-inference' }));
+    // A line returning to the start closes the polyline and never keeps one, although the same open return may.
+    const back = [{ kind: 'line', end: { kind: 'position', point: [0, 10] } }, { kind: 'line', end: { kind: 'position', point: [0, 0] }, inferred: { kind: 'vertical', relationId: 'closing' } }] as const;
+    expect(fails(back, true)).toThrowError(expect.objectContaining({ code: 'invalid-fresh-sketch-inference' }));
+    expect(allocations).toBe(0);
+    const open = createCadFreshSketchDrawing({ drawing: polylineWith([{ kind: 'line', end: { kind: 'position', point: [10, 10] } }, ...back], false), construction: false, createId: idFactory(), existingGraph });
+    expect(open.geometry.relations.map(relation => relation.id)).toEqual(['closing']);
   });
 
   it('retains the exact picked rectangle axes through cancellation instead of reconstructing an attached corner from width', () => {

@@ -17,7 +17,7 @@ import { DRAG_GRID_CATCH_PIXELS, magnetSketchPoint, slotSketchProfile, slotSketc
 import { CadSketchProfileGeometry } from './CadSketchProfileGeometry';
 import { createCadSketchHandlePicker, createCadSketchProfilePicker, type CadSketchHandlePick } from './cadSketchPicking';
 import { cadPathDraftEndpoint, cadPathDraftPicks, closeCadPolylineProfile, createCadPathDraft, finishCadCurveDraft, previewCadPathDraft, releaseCadPathDraftPicks, updateCadPathDraft, type CadPathDraft, type CadPathDrawingAction } from './cadPathDrawing';
-import { cadSketchSnapRelation, cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
+import { cadSketchDrawingInference, cadSketchDrawingInferenceLabel, cadSketchSnapRelation, cadSketchSnapTargetLabel, prepareCadSketchGeometrySnaps, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { prepareCadSketchProfilePositionSnaps } from './cadSketchProfilePositionSnaps';
 import { cadSketchProfileSnapLabel } from './cadSketchSnapLabels';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
@@ -378,11 +378,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const inferring = canInfer && inferCoincidence && !(tool === 'circle' && picks.length) && !(tool === 'slot' && picks.length > 1) && !(pathTool && pathDraft.kind === 'arc-through');
   const inferencePoint = inferring && snapHint && 'pointId' in snapHint.target ? snapHint.target.pointId : undefined;
   const inferenceRelation = inferring && snapHint ? cadSketchSnapRelation(snapHint.target) : null;
+  // A line ending on its own start's guide keeps that relation; a return to the chain start closes it instead.
+  const lineInference = (candidate: CadSketchSnapCandidate | undefined, point: SketchPoint) => inferring && pathTool && pathDraft.kind === 'ready' && pathDraft.mode === 'line'
+    && candidate && (point[0] !== pathDraft.start[0] || point[1] !== pathDraft.start[1]) ? cadSketchDrawingInference(candidate.target, cadPathDraftEndpoint(pathDraft), point) : null;
+  const inferredAxis = snapHint ? lineInference(snapHint, snapHint.point) : null;
   const snapLabel = inferencePoint ? `Coincident with Point ${(sourceGraph?.graph.points.findIndex(point => point.id === inferencePoint) ?? -1) + 1}`
     : snapHint ? snapHint.target.kind === 'profile-position' ? `${cadSketchProfileSnapLabel(snapHint.target, sourceProfiles)} · Position only · No relation`
     : snapHint.target.kind === 'draft-start' ? sketch.kind === 'curve' ? 'Curve start'
       : pathDraft.kind === 'ready' && pathDraft.segments.length > (pathDraft.mode === 'line' ? 1 : 0) ? 'Close polyline' : 'Polyline start'
     : 'pointId' in snapHint.target || snapHint.target.kind === 'midpoint' ? `${snapHint.target.kind[0].toUpperCase()}${snapHint.target.kind.slice(1)} position · No relation`
+    : inferredAxis ? cadSketchDrawingInferenceLabel(snapHint.target, inferredAxis)
     : `${cadSketchSnapTargetLabel(snapHint.target)} · ${inferenceRelation ?? 'No relation'}` : '';
   const snapHighlight: CadSketchGraphSelection | null = snapHint && 'pointId' in snapHint.target ? { kind: 'point', id: snapHint.target.pointId }
     : snapHint && 'entityId' in snapHint.target ? { kind: 'entity', id: snapHint.target.entityId } : null;
@@ -862,8 +867,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     };
     if (pathTool) {
       // An arc's through point only shapes the arc.
-      const pick = canInfer && pathDraft.kind !== 'arc-through' ? authoredPick() : undefined;
-      changePath({ kind: 'point', point, ...(pick && pick.kind !== 'position' ? { pick } : {}) }); return;
+      const pick = canInfer && pathDraft.kind !== 'arc-through' ? authoredPick() : undefined, axis = lineInference(candidate, point);
+      changePath({ kind: 'point', point, ...(pick && pick.kind !== 'position' ? { pick } : {}), ...(axis ? { inferred: { kind: axis, relationId: crypto.randomUUID() } } : {}) }); return;
     }
     const appendPick = (pick: CadFreshSketchPick) => {
       if (referencesSource(pick) && !attachedSource.current) attachedSource.current = { sketch: sourceSketch, version: documentVersion, parameters: graphSourceParameters, document: graphControls?.document };
@@ -1251,8 +1256,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       if (!pathTool || !pathPending || interactionLocked || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === 'Backspace' || event.key === 'Escape') { event.preventDefault(); changePath({ kind: event.key === 'Backspace' ? 'undo-last' : 'cancel' }, true); }
     }}><span>{instruction}</span>
-      {canInfer && <label className="cad-check"><Input type="checkbox" aria-label="Create coincident relations" checked={inferCoincidence} disabled={interactionLocked}
-        title="Attach future snapped points with removable relations: coincident with endpoints and centers, on a line, arc or circle, or on the origin and axes. Switching off releases pending attachments; accepted geometry is unchanged."
+      {canInfer && <label className="cad-check"><Input type="checkbox" aria-label="Create relations" checked={inferCoincidence} disabled={interactionLocked}
+        title="Attach future snapped points with removable relations: coincident with endpoints and centers, on a line, arc or circle, or on the origin and axes. A line drawn along its start's horizontal or vertical guide stays horizontal or vertical. Switching off releases pending relations; accepted geometry is unchanged."
         onChange={event => { const enabled = event.target.checked; setInferCoincidence(enabled); if (!enabled) { setPicks(current => current.map(pick => ({ kind: 'position', point: pick.point }))); setPathDraft(releaseCadPathDraftPicks); } }} />Create relations</label>}
       {pendingPicks.length > 0 && <span aria-label="Pending relations">{pendingPicks.length} attached</span>}
       {tool === 'path' && <>

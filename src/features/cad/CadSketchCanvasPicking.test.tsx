@@ -60,7 +60,7 @@ describe('sketch canvas profile picking', () => {
     entities: [{ id: 'line', kind: 'line' as const, startPointId: 'a', endPointId: 'b', construction: false }, { id: 'circle', kind: 'circle' as const, centerPointId: 'c', radius: 3.4, construction: false }], relations: []
   } };
   const inference = () => {
-    const checkbox = container.querySelector<HTMLInputElement>('[aria-label="Create coincident relations"]');
+    const checkbox = container.querySelector<HTMLInputElement>('[aria-label="Create relations"]');
     if (!checkbox) throw new Error('Missing relation inference control'); return checkbox;
   };
   /** Sets Create relations to the state a test needs, through the visible checkbox. */
@@ -126,7 +126,8 @@ describe('sketch canvas profile picking', () => {
     const onAddPath = vi.fn(), h = await fixture([], { tool: 'path', onAddPath });
     const move = (x: number, y: number, init: MouseEventInit = {}) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0, ...init });
     await h.click(30, 30); await move(30.03, 50);
-    expect(container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label')).toBe('Vertical with point · No relation');
+    // The guide comes from the active line's own start, so the line keeps it as a relation.
+    expect(container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label')).toBe('Vertical');
     expect(container.querySelectorAll('.cad-sketch-snap-guide')).toHaveLength(1);
     await move(30.03, 50, { ctrlKey: true }); expect(container.querySelector('.cad-sketch-snap-hint')).toBeNull();
     await h.click(30.03, 50); await h.click(50, 50.04); await h.click(30, 30);
@@ -135,6 +136,42 @@ describe('sketch canvas profile picking', () => {
     const { start: first, segments: [{ end: second }, { end: third }] } = onAddPath.mock.calls[0][0];
     expect(first).toEqual([expect.closeTo(30, 10), expect.closeTo(30, 10)]);
     expect(second).toEqual([first[0], expect.closeTo(50, 10)]); expect(third).toEqual([expect.closeTo(50, 10), second[1]]);
+    // The return to the start closes the polyline and keeps no inferred relation.
+    expect(onAddPath.mock.calls[0][0].segments.map((segment: { inferred?: object }) => segment.inferred)).toEqual([
+      { kind: 'vertical', relationId: expect.any(String) }, { kind: 'horizontal', relationId: expect.any(String) }, undefined]);
+  });
+  it('keeps a line drawn along its own start guide horizontal unless Ctrl or Create relations releases it', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { tool: 'line', onAddPath });
+    const move = (x: number, y: number, init: MouseEventInit = {}) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0, ...init });
+    const hint = () => container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label') ?? null;
+    await h.click(10, 10); await move(30, 10.03); expect(hint()).toBe('Horizontal'); await h.click(30, 10.03);
+    expect(onAddPath).toHaveBeenCalledOnce();
+    const [{ start, segments: [line] }, closed] = onAddPath.mock.calls[0];
+    expect(closed).toBe(false); expect(line.end).toEqual([expect.closeTo(30, 10), start[1]]);
+    expect(line.inferred).toEqual({ kind: 'horizontal', relationId: expect.any(String) });
+    await h.click(10, 40); await h.click(30, 40.03, h.svg, { ctrlKey: true });
+    expect(onAddPath.mock.calls[1][0].segments[0].end).toEqual([expect.closeTo(30, 10), expect.closeTo(40.03, 10)]);
+    expect(onAddPath.mock.calls[1][0].segments[0]).not.toHaveProperty('inferred');
+    await relations(false); await h.click(10, 70); await move(30, 70.03); expect(hint()).toBe('Horizontal with point · No relation'); await h.click(30, 70.03);
+    // The guide still places the end level; only the relation is left out.
+    expect(onAddPath.mock.calls[2][0].segments[0].end).toEqual([expect.closeTo(30, 10), onAddPath.mock.calls[2][0].start[1]]);
+    expect(onAddPath.mock.calls[2][0].segments[0]).not.toHaveProperty('inferred');
+  });
+  it('infers only for polyline line segments and names an attachment before the relation', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
+    const move = (x: number, y: number) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });
+    const hint = () => container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label') ?? null;
+    const mode = (name: string) => act(async () => { [...container.querySelectorAll<HTMLButtonElement>('[aria-label="Segment mode"] button')].find(button => button.textContent === name)!.click(); });
+    // The start's vertical guide crosses the existing line at (8, 3.2).
+    await h.click(8, 30); await move(8.03, 3.23); expect(hint()).toBe('Point on line · Vertical'); await h.click(8.03, 3.23);
+    await mode('3-point Arc'); await move(30, 3.23); expect(hint()).toBe('Horizontal with point · No relation');
+    await h.click(30, 3.23); await h.click(19, 8);
+    await mode('Line'); await h.click(30.03, 30);
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')?.click(); });
+    const [line, arc, last] = onAddPath.mock.calls[0][0].segments;
+    expect(line).toMatchObject({ kind: 'line', end: [8, 3.2], endPick: { kind: 'on-line', lineId: 'line' }, inferred: { kind: 'vertical' } });
+    expect(arc.kind).toBe('arc'); expect(arc).not.toHaveProperty('inferred');
+    expect(last).toMatchObject({ kind: 'line', end: [arc.end[0], expect.closeTo(30, 10)], inferred: { kind: 'vertical' } });
   });
   it('drops a hovered center once a parameter edit moves it, also when the sketch keeps its object', async () => {
     const sketch = { id: 'sketch', name: 'Sketch', suppressed: false, kind: 'sketch' as const, plane: 'XY' as const, offset: 0,
