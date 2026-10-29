@@ -89,6 +89,13 @@ describe('Curve foundation workbench', () => {
     await click('Undo last'); await click('Finish curve'); expect(session.getSnapshot().document.features).toHaveLength(2);
   });
 
+  it('keeps the curve rules: no open finish but Finish curve, and Escape discards completed segments', async () => {
+    await mount(); const before = session.getSnapshot(); await click('Curve');
+    await key(' '); await steps('ArrowRight', 4); await key(' '); await steps('ArrowUp', 4); await key(' ');
+    expect(button('Finish curve').disabled).toBe(false); expect(container.querySelector('button[aria-label="Finish chain"]')).toBeNull();
+    await key('Escape'); expect(session.getSnapshot()).toEqual(before);
+  });
+
   it('cancels metadata and a pending arc together without touching document/version/history', async () => {
     await mount(); const before = session.getSnapshot(); await click('Curve'); await input('Name', 'Discard'); await input('Plane offset', '9');
     await click('3-point Arc'); await key(' '); await steps('ArrowRight', 4); await key(' '); await key('Escape');

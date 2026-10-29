@@ -2,7 +2,7 @@ import { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadSketchProfile } from '@/domain/cad/cadDocument';
-import { CadSketchCanvas } from './CadSketchCanvas';
+import { CadSketchCanvas, type CadSketchDrawingControls } from './CadSketchCanvas';
 import type { CadRenderedViewControls } from './cadViewportControls';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -91,7 +91,7 @@ describe('sketch canvas profile picking', () => {
     expect(await hint(.03, 20)).toEqual(['on-axis', 'On Y axis · Fixed X at 0']); await h.click(.03, 20);
     expect(container.querySelector('[aria-label="Pending relations"]')?.textContent).toBe('3 attached');
     // Clicking the start again closes the polyline on the start itself, which keeps only its own attachment.
-    expect(await hint(.05, .05)).toEqual(['draft-start', 'Close polyline']); await h.click(0, 0);
+    expect(await hint(.05, .05)).toEqual(['draft-start', 'Close chain']); await h.click(0, 0);
     expect(onAddPath).toHaveBeenCalledExactlyOnceWith({ kind: 'ready', mode: 'line', start: [0, 0],
       startPick: { kind: 'datum', point: [0, 0], datum: 'origin', relationIds: [expect.any(String), expect.any(String)] }, segments: [
         expect.objectContaining({ end: [expect.closeTo(8, 10), 3.2], endPick: { kind: 'on-line', point: [expect.closeTo(8, 10), 3.2], lineId: 'line', relationId: expect.any(String) } }),
@@ -109,7 +109,7 @@ describe('sketch canvas profile picking', () => {
     expect(await hint(12.1, 16.63)).toBe('On circle · Point on curve'); await h.click(12.1, 16.63);
     expect(container.querySelector('[data-cad-sketch-attachment="circle"] title')?.textContent).toBe('Pending point on curve');
     await relations(false); expect(await hint(8.67, 13.2)).toBe('On circle · No relation'); await h.click(8.67, 13.2);
-    await h.click(30, 30); await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')?.click(); });
+    await h.click(30, 30); await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')?.click(); });
     expect(onAddPath).toHaveBeenCalledOnce();
     const path = onAddPath.mock.calls[0][0];
     expect(path.start).toEqual([expect.closeTo(12.1, 10), expect.closeTo(16.6, 10)]);
@@ -119,7 +119,7 @@ describe('sketch canvas profile picking', () => {
   it('attaches a point placed along a circle with a point-on-curve pick', async () => {
     const onAddPath = vi.fn(), h = await fixture([], { sketch: graphSketch, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
     await h.click(12.1, 16.63); await h.click(30, 30);
-    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')?.click(); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')?.click(); });
     expect(onAddPath.mock.calls[0][0].startPick).toEqual({ kind: 'on-curve', point: [expect.closeTo(12.1, 10), expect.closeTo(16.6, 10)], curveId: 'circle', relationId: expect.any(String) });
   });
   it('guides new points level with or above the points already placed, and Ctrl releases the guide', async () => {
@@ -144,15 +144,17 @@ describe('sketch canvas profile picking', () => {
     const onAddPath = vi.fn(), h = await fixture([], { tool: 'line', onAddPath });
     const move = (x: number, y: number, init: MouseEventInit = {}) => h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0, ...init });
     const hint = () => container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label') ?? null;
-    await h.click(10, 10); await move(30, 10.03); expect(hint()).toBe('Horizontal'); await h.click(30, 10.03);
+    // Each line is finished with Enter, so it saves open on its own.
+    const finish = () => act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    await h.click(10, 10); await move(30, 10.03); expect(hint()).toBe('Horizontal'); await h.click(30, 10.03); await finish();
     expect(onAddPath).toHaveBeenCalledOnce();
     const [{ start, segments: [line] }, closed] = onAddPath.mock.calls[0];
     expect(closed).toBe(false); expect(line.end).toEqual([expect.closeTo(30, 10), start[1]]);
     expect(line.inferred).toEqual({ kind: 'horizontal', relationId: expect.any(String) });
-    await h.click(10, 40); await h.click(30, 40.03, h.svg, { ctrlKey: true });
+    await h.click(10, 40); await h.click(30, 40.03, h.svg, { ctrlKey: true }); await finish();
     expect(onAddPath.mock.calls[1][0].segments[0].end).toEqual([expect.closeTo(30, 10), expect.closeTo(40.03, 10)]);
     expect(onAddPath.mock.calls[1][0].segments[0]).not.toHaveProperty('inferred');
-    await relations(false); await h.click(10, 70); await move(30, 70.03); expect(hint()).toBe('Horizontal with point · No relation'); await h.click(30, 70.03);
+    await relations(false); await h.click(10, 70); await move(30, 70.03); expect(hint()).toBe('Horizontal with point · No relation'); await h.click(30, 70.03); await finish();
     // The guide still places the end level; only the relation is left out.
     expect(onAddPath.mock.calls[2][0].segments[0].end).toEqual([expect.closeTo(30, 10), onAddPath.mock.calls[2][0].start[1]]);
     expect(onAddPath.mock.calls[2][0].segments[0]).not.toHaveProperty('inferred');
@@ -166,6 +168,7 @@ describe('sketch canvas profile picking', () => {
         expect(container.querySelector('.cad-sketch-snap-hint')?.getAttribute('aria-label')).toBe(hint);
         // Both ends lie within the press-and-hold area, so the line is placed on release.
         await press('pointerdown', ...end); await press('pointerup', ...end, { [modifier]: true }); await h.click(...end, h.svg, { [modifier]: true });
+        await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
         const [line] = onAddPath.mock.calls.at(-1)![0].segments;
         expect(line.end).toEqual([expect.closeTo(end[0], 9), expect.closeTo(end[1], 9)]);
         expect(line).not.toHaveProperty('inferred'); expect(line).not.toHaveProperty('endPick');
@@ -185,7 +188,7 @@ describe('sketch canvas profile picking', () => {
     await mode('3-point Arc'); await move(30, 3.23); expect(hint()).toBe('Horizontal with point · No relation');
     await h.click(30, 3.23); await h.click(19, 8);
     await mode('Line'); await h.click(30.03, 30);
-    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')?.click(); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')?.click(); });
     const [line, arc, last] = onAddPath.mock.calls[0][0].segments;
     expect(line).toMatchObject({ kind: 'line', end: [8, 3.2], endPick: { kind: 'on-line', lineId: 'line' }, inferred: { kind: 'vertical' } });
     expect(arc.kind).toBe('arc'); expect(arc).not.toHaveProperty('inferred');
@@ -223,7 +226,7 @@ describe('sketch canvas profile picking', () => {
     await h.render({ sketch: { id: 'sketch', name: 'Sketch', suppressed: false, kind: 'sketch', plane: 'XY', offset: 0,
       profiles: [{ ...legacySlot, geometry: { ...legacySlot.geometry, x: 42.1 } }] } });
     await h.click(30, 30, h.svg, { ctrlKey: true });
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.click());
     const draft = onAddPath.mock.calls[0]?.[0];
     expect(draft).toMatchObject({ start: [2.1, 3.2], segments: [{ kind: 'line', end: [expect.closeTo(30, 10), expect.closeTo(30, 10)] }] });
     expect(draft).not.toHaveProperty('startPick'); expect(draft.segments[0]).not.toHaveProperty('endPick');
@@ -248,7 +251,7 @@ describe('sketch canvas profile picking', () => {
     expect(container.querySelector('[data-cad-drawing-snap-profile="slot"]')).not.toBeNull();
     expect(container.querySelector('[data-cad-sketch-snap-kind="profile-position"]')?.getAttribute('aria-label')).toMatch(/No relation/);
     expect(h.selected).not.toHaveBeenCalled(); await act(async () => slot.click());
-    await h.click(40, 30, h.svg, { ctrlKey: true }); await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')!.click());
+    await h.click(40, 30, h.svg, { ctrlKey: true }); await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.click());
     expect(onAddPath.mock.calls[0][0]).toMatchObject({ start: [2.1, 3.2] }); expect(onAddPath.mock.calls[0][0]).not.toHaveProperty('startPick');
     expect(h.selected).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
   });
@@ -257,11 +260,11 @@ describe('sketch canvas profile picking', () => {
     const h = await fixture(profiles, { tool: 'path', onAddPath, documentVersion: 'one' });
     await h.click(2.2, 3.3); const stale = profileChoice('Mounting slot');
     await h.render({ documentVersion: 'two' }); await act(async () => stale.click());
-    expect(h.pending).toHaveBeenLastCalledWith(false); expect(container.querySelector('[aria-label="Finish polyline"]')).toBeNull();
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(container.querySelector('[aria-label="Finish chain"]')).toBeNull();
     await h.click(2.2, 3.3); expect(profileChoice('Pilot bore')).toBeDefined();
     await h.pointer('pointerdown', { ...h.position(50, 50), button: 0, buttons: 1 }); await h.click(50, 50);
     expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(false);
-    expect(container.querySelector('[aria-label="Finish polyline"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Finish chain"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
   });
   it('attaches the chosen exact Polyline point and preserves its first point when an ambiguous endpoint is dismissed', async () => {
     const onAddPath = vi.fn(), source = ambiguousSketch(), h = await fixture([], { sketch: source, parameters: { anchor: 2.1 }, tool: 'path', onAddPath });
@@ -271,18 +274,107 @@ describe('sketch canvas profile picking', () => {
     // Workbench locks camera navigation while this canvas owns a pending drawing.
     await h.render({ viewLocked: true });
     expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull();
-    expect(h.frame()).not.toBe(before); expect(container.querySelector('[aria-label="Finish polyline"]')).toBeNull();
+    expect(h.frame()).not.toBe(before); expect(container.querySelector('[aria-label="Finish chain"]')).toBeNull();
     await act(async () => snapChoice(1).focus()); expect(container.querySelector('[data-cad-drawing-snap-owner="line"]')).not.toBeNull();
     await act(async () => snapChoice(4).focus()); expect(container.querySelector('[data-cad-sketch-snap="ghost-a"]')).not.toBeNull();
     await act(async () => snapChoice(4).click()); await h.click(22.2, 3.3);
     await act(async () => snapChoice(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
     expect(document.activeElement).toBe(h.svg); expect(h.pending).toHaveBeenLastCalledWith(true); expect(onAddPath).not.toHaveBeenCalled();
     await h.click(22.2, 3.3); await act(async () => snapChoice(2).click());
-    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.click());
     expect(onAddPath).toHaveBeenCalledWith(expect.objectContaining({ start: [2.1, 3.2],
       startPick: { kind: 'coincident', point: [2.1, 3.2], sourcePointId: 'ghost-a', relationId: expect.any(String) }, segments: [
         expect.objectContaining({ kind: 'line', end: [22.1, 3.2], endPick: { kind: 'coincident', point: [22.1, 3.2], sourcePointId: 'b', relationId: expect.any(String) } })
       ] }), false, expect.any(AbortSignal)); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it('saves a line dragged from idle once its ambiguous end is chosen', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+    await relations(true);
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+    await press('pointerdown', 12, 30); await press('pointermove', 22.2, 3.3); await press('pointerup', 22.2, 3.3); await h.click(22.2, 3.3);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+    await act(async () => snapChoice(2).click());
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(onAddPath).toHaveBeenCalledWith(expect.objectContaining({ start: [expect.closeTo(12, 9), expect.closeTo(30, 9)], segments: [
+      expect.objectContaining({ kind: 'line', end: [22.1, 3.2], endPick: { kind: 'coincident', point: [22.1, 3.2], sourcePointId: 'b', relationId: expect.any(String) } })
+    ] }), false, expect.any(AbortSignal));
+    expect(h.pending).toHaveBeenLastCalledWith(false); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it.each(['Finish', 'a tool switch', 'a double-click'] as const)('finishes a chain whose next point waits for a snap choice on %s, dropping that choice', async finisher => {
+    const onAddPath = vi.fn(), chain: { controls: CadSketchDrawingControls | null; savable: boolean } = { controls: null, savable: false };
+    const h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath,
+      onDrawingControls: (controls, savable) => { chain.controls = controls; chain.savable = savable; } });
+    await relations(true);
+    await h.click(12, 30); await h.click(12, 20); await h.click(22.2, 3.3);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull(); expect(chain.savable).toBe(true);
+    const after = vi.fn();
+    if (finisher === 'Finish') await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.click());
+    else if (finisher === 'a tool switch') await act(async () => { expect(chain.controls?.finishChain(after)).toBe(true); });
+    else {
+      // The first press dismisses the chooser, the second finishes the chain.
+      const press = (type: string) => h.pointer(type, { ...h.position(30, 40), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+      await press('pointerdown'); await press('pointerup'); await h.click(30, 40);
+      await press('pointerdown'); await press('pointerup'); await h.click(30, 40, h.svg, { detail: 2 });
+    }
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull();
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled();
+    const [draft, closed] = onAddPath.mock.calls[0];
+    expect(closed).toBe(false); expect(draft.segments.map((segment: { end: readonly number[] }) => segment.end)).toEqual([[expect.closeTo(12, 9), expect.closeTo(20, 9)]]);
+    if (finisher === 'a tool switch') expect(after).toHaveBeenCalledOnce();
+  });
+
+  it('draws a quick drag after the press that dismissed the snap chooser instead of finishing the chain', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+    await relations(true);
+    await h.click(12, 30); await h.click(12, 20); await h.click(22.2, 3.3);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull();
+    const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+    // The first press dismisses the chooser. The second, on the same spot soon after, drags, so it draws from its press to its release.
+    await press('pointerdown', 30, 40); await press('pointerup', 30, 40); await h.click(30, 40);
+    await press('pointerdown', 30, 40); await press('pointermove', 40, 40); await press('pointerup', 40, 40); await h.click(40, 40);
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.click());
+    expect(onAddPath).toHaveBeenCalledOnce(); expect(h.error).not.toHaveBeenCalled();
+    const [draft, closed] = onAddPath.mock.calls[0];
+    expect(closed).toBe(false);
+    expect(draft.segments.map((segment: { end: readonly number[] }) => segment.end)).toEqual([[expect.closeTo(12, 9), expect.closeTo(20, 9)], [expect.closeTo(30, 9), expect.closeTo(40, 9)], [expect.closeTo(40, 9), expect.closeTo(40, 9)]]);
+  });
+
+  it.each(['an idle Line', 'a pending chain', 'a chain end beside the targets'] as const)('reopens the snap chooser on a quick press after Escape on %s, without reading a double-click', async setup => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+    await relations(true);
+    if (setup !== 'an idle Line') { await h.click(12, 30); await h.click(12, 20); }
+    // Ctrl places the end 4 px from the coincident targets, so a press on them is held and opens the chooser on its release.
+    if (setup === 'a chain end beside the targets') await h.click(22.1 + 4 * Number(h.svg.getAttribute('viewBox')!.split(' ')[2]) / 800, 3.2, h.svg, { ctrlKey: true });
+    const chooser = () => document.querySelector('[aria-label="Choose snap target actions"]');
+    const press = async () => {
+      for (const type of ['pointerdown', 'pointerup']) await h.pointer(type, { ...h.position(22.2, 3.3), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+      await h.click(22.2, 3.3);
+    };
+    await press(); expect(chooser()).not.toBeNull();
+    await act(async () => snapChoice(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(chooser()).toBeNull();
+    await press();
+    expect(chooser()).not.toBeNull(); expect(onAddPath).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it('does not pair a press with a click made before Space opened the snap chooser', async () => {
+    const onAddPath = vi.fn(), h = await fixture([], { sketch: ambiguousSketch(), parameters: { anchor: 2.1 }, tool: 'line', onAddPath });
+    await relations(true);
+    const tap = async (x: number, y: number) => {
+      for (const type of ['pointerdown', 'pointerup']) await h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+      await h.click(x, y);
+    };
+    await tap(12, 30); await tap(12, 20);
+    await h.pointer('pointermove', { ...h.position(22.2, 3.3), button: 0, buttons: 0 });
+    await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })));
+    expect(document.querySelector('[aria-label="Choose snap target actions"]')).not.toBeNull();
+    await act(async () => snapChoice(2).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    // A press back on the last point soon after is a plain click there, which adds nothing, not the end of a double-click.
+    await tap(12, 20);
+    expect(onAddPath).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.disabled).toBe(false);
   });
 
   it('drops an ambiguous choice after source replacement or actual SVG-frame movement without placing or outside-click fallback', async () => {
@@ -292,11 +384,11 @@ describe('sketch canvas profile picking', () => {
     expect(document.querySelector('[aria-label="Choose snap target actions"]')).toBeNull(); expect(h.pending).toHaveBeenLastCalledWith(false);
     await h.click(2.2, 3.3); const held = snapChoice(1);
     Object.assign(h.svg, { getBoundingClientRect: () => ({ left: 30, top: 20, width: 800, height: 600 }) });
-    await act(async () => held.click()); expect(container.querySelector('[aria-label="Finish polyline"]')).toBeNull();
+    await act(async () => held.click()); expect(container.querySelector('[aria-label="Finish chain"]')).toBeNull();
     Object.assign(h.svg, { getBoundingClientRect: () => ({ left: 10, top: 20, width: 800, height: 600 }) });
     await h.click(2.2, 3.3);
     await h.pointer('pointerdown', { ...h.position(50, 50), button: 0, buttons: 1 }); await h.click(50, 50);
-    expect(container.querySelector('[aria-label="Finish polyline"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Finish chain"]')).toBeNull(); expect(onAddPath).not.toHaveBeenCalled();
     expect(h.pending).toHaveBeenLastCalledWith(false);
   });
 
@@ -324,7 +416,7 @@ describe('sketch canvas profile picking', () => {
     await act(async () => next().click()); expect(document.activeElement).toBe(snapChoice(13));
     await act(async () => next().click()); expect(document.activeElement).toBe(snapChoice(25));
     await act(async () => snapChoice(30).click()); expect(document.activeElement).toBe(h.svg);
-    await h.click(30, 30); await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')!.click());
+    await h.click(30, 30); await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')!.click());
     expect(onAddPath.mock.calls[0][0]).toMatchObject({ startPick: { kind: 'coincident', sourcePointId: 'point_30' }, start: [2.1, 3.2] });
   });
   it('retains deliberate first/opposite attachment roles while drawing a rectangle in reverse', async () => {
@@ -360,8 +452,8 @@ describe('sketch canvas profile picking', () => {
     const onAddPath = vi.fn(), h = await fixture([], { tool: 'path', onAddPath });
     const press = (type: string, x: number, y: number) => h.pointer(type, { ...h.position(x, y), button: 0, buttons: type === 'pointerup' ? 0 : 1 });
     await press('pointerdown', 2, 3); await press('pointermove', 2.5, 3.4); await press('pointerup', 2.5, 3.4); await h.click(2.5, 3.4);
-    // The wobble stayed a click: only the start is placed.
-    expect(container.querySelector('.cad-sketch-viewport p')?.textContent).toContain('Click the next point');
+    // The wobble stayed a click: only the start is placed, and the drags that follow continue its chain.
+    expect(container.querySelector('.cad-sketch-viewport p')?.textContent).toContain('Click the line end');
     await press('pointerdown', 2, 3); await press('pointermove', 20, 9); await press('pointerup', 20, 9); await h.click(20, 9);
     await press('pointerdown', 20, 9); await press('pointermove', 33, 27); await press('pointerup', 33, 27); await h.click(33, 27);
     await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
@@ -532,8 +624,8 @@ describe('sketch canvas profile picking', () => {
     await h.render({ parameters: { anchor: 100 } });
     expect(container.querySelector('[data-cad-sketch-snap="a"]')).toBeNull();
     await act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true })));
-    await h.click(30, 30); const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]');
-    if (!finish) throw new Error('Missing Finish polyline'); await act(async () => finish.click());
+    await h.click(30, 30); const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]');
+    if (!finish) throw new Error('Missing Finish chain'); await act(async () => finish.click());
     expect(onAddPath.mock.calls[0][0]).not.toHaveProperty('startPick'); expect(h.error).not.toHaveBeenCalled();
   });
   it('retains an acquired off-grid Path endpoint after placement instead of inventing a grid segment on repeated Space', async () => {
@@ -543,9 +635,9 @@ describe('sketch canvas profile picking', () => {
     const key = async (value: string) => act(async () => h.svg.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })));
     await key(' '); await key(' ');
     expect(h.error).toHaveBeenCalledOnce();
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]')?.disabled).toBe(true);
     await key('ArrowRight'); await key(' ');
-    const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish polyline"]'); if (!finish) throw new Error('Missing Finish polyline.');
+    const finish = container.querySelector<HTMLButtonElement>('[aria-label="Finish chain"]'); if (!finish) throw new Error('Missing Finish chain.');
     await act(async () => finish.click());
     expect(onAddPath).toHaveBeenCalledOnce();
     expect(onAddPath.mock.calls[0][0]).toMatchObject({ start: [2.1, 3.2], startPick: { kind: 'coincident', sourcePointId: 'a' }, segments: [{ kind: 'line', end: [7.1, 3.2] }] });
