@@ -13,6 +13,28 @@ vi.mock('@/domain/cad/cadSketchLinearPattern', async importOriginal => {
   return { ...original, cadSketchLinearPatternLockReason: vi.fn(original.cadSketchLinearPatternLockReason) };
 });
 const rowRenders = vi.mocked(cadSketchLinearPatternLockReason);
+// Each picker the canvas prepares counts its queries, so a test can bound the work one pointer move does.
+const picks = vi.hoisted(() => ({ graph: 0, profile: 0, edge: 0, grip: 0 }));
+vi.mock('./cadSketchGraphInteraction', async importOriginal => {
+  const original = await importOriginal<typeof import('./cadSketchGraphInteraction')>();
+  return { ...original, prepareCadSketchGraphInteraction: (...args: Parameters<typeof original.prepareCadSketchGraphInteraction>) => {
+    const prepared = original.prepareCadSketchGraphInteraction(...args);
+    return { ...prepared, pick: (...query: Parameters<typeof prepared.pick>) => { picks.graph += 1; return prepared.pick(...query); } };
+  } };
+});
+vi.mock('./cadSketchPicking', async importOriginal => {
+  const original = await importOriginal<typeof import('./cadSketchPicking')>();
+  return { ...original,
+    createCadSketchProfilePicker: (...args: Parameters<typeof original.createCadSketchProfilePicker>) => {
+      const picker = original.createCadSketchProfilePicker(...args);
+      return { ...picker, pick: (...query: Parameters<typeof picker.pick>) => { picks.profile += 1; return picker.pick(...query); },
+        edgeNear: (...query: Parameters<typeof picker.edgeNear>) => { picks.edge += 1; return picker.edgeNear(...query); } };
+    },
+    createCadSketchHandlePicker: (...args: Parameters<typeof original.createCadSketchHandlePicker>) => {
+      const picker = original.createCadSketchHandlePicker(...args);
+      return { ...picker, pick: (...query: Parameters<typeof picker.pick>) => { picks.grip += 1; return picker.pick(...query); } };
+    } };
+});
 const renderedPoints = () => rowRenders.mock.calls.map(([, target]) => target.id);
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -38,14 +60,14 @@ async function mountCanvas(graph: NonNullable<CadSketchFeature['graph']>, initia
   let captured: number | null = null;
   Object.assign(svg, { getBoundingClientRect: () => ({ left: 10, top: 20, right: 810, bottom: 620, width: 800, height: 600, x: 10, y: 20, toJSON: () => ({}) }),
     setPointerCapture: (id: number) => { captured = id; }, hasPointerCapture: (id: number) => captured === id, releasePointerCapture: () => { captured = null; } });
-  const pointer = async (type: string, x: number, y: number) => {
+  const pointer = async (type: string, x: number, y: number, target: Element = svg) => {
     const box = svg.getAttribute('viewBox')!.split(' ').map(Number), state = controls?.getState();
     if (!state || state.mode === 'solid') throw new Error('Sketch frame missing');
     const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerdown' ? 1 : 0, clientX: 10 + (x - state.centerMm[0] - box[0]) / box[2] * 800, clientY: 20 + (state.centerMm[1] - y - box[1]) / box[3] * 600, bubbles: true });
     Object.defineProperties(event, { pointerId: { value: 3 }, isPrimary: { value: true } });
-    await act(async () => svg.dispatchEvent(event));
+    await act(async () => target.dispatchEvent(event));
   };
-  return { props: () => props, show, pointer, move: (x: number, y: number) => pointer('pointermove', x, y) };
+  return { props: () => props, show, pointer, move: (x: number, y: number, target?: Element) => pointer('pointermove', x, y, target) };
 }
 
 describe('sketch canvas cursor rendering', () => {
@@ -84,5 +106,26 @@ describe('sketch canvas cursor rendering', () => {
     await move(0.02, 8); expect(highlighted()).toEqual(['y-axis']);
     await move(12, 8); expect(highlighted()).toEqual([]);
     expect(renderedPoints()).toEqual([]);
+  });
+
+  it('answers axis hover from the hit tests the move already makes, querying each picker at most once and never the graph', async () => {
+    const graph: NonNullable<CadSketchFeature['graph']> = { points: [{ id: 'a', position: [10, 0] }, { id: 'b', position: [20, 10] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] };
+    const { props, show, move } = await mountCanvas(graph, { tool: 'select' });
+    const box = (id: string, x: number, y: number, width: number, height: number) => ({ id, name: id, construction: false, geometry: { kind: 'rectangle' as const, x, y, width, height, cornerRadius: 0 } });
+    const sketch = props().sketch; if (sketch.kind !== 'sketch') throw new Error('Sketch missing.');
+    await show({ sketch: { ...sketch, profiles: [box('across', -30, -5, 10, 10), box('above', -4, 20, 12, 4)] }, onMoveHandle: vi.fn(), graphControls: { ...props().graphControls!, onSelectDatum: vi.fn() } });
+    const highlighted = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
+    const hover = async (x: number, y: number, target?: Element) => { Object.assign(picks, { graph: 0, profile: 0, edge: 0, grip: 0 }); await move(x, y, target); return { ...picks }; };
+    // Open axis: the grip test the move already made, then one pruned edge query.
+    expect(await hover(40, 0.02)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(highlighted()).toEqual(['x-axis']);
+    // Inside a rectangle the axis still answers; at a side grip, and on an edge away from its grips, the profile keeps the pointer.
+    expect(await hover(-25, 0.02)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(highlighted()).toEqual(['x-axis']);
+    expect(await hover(-20, 0.02)).toEqual({ graph: 0, profile: 0, edge: 0, grip: 1 }); expect(highlighted()).toEqual([]);
+    expect(await hover(0.02, 20)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(highlighted()).toEqual([]);
+    // Over sketch geometry on the axis, the graph layer's own hit area answers without any picker.
+    expect(await hover(10, 0, container.querySelector('[data-cad-sketch-point="a"]')!)).toEqual({ graph: 0, profile: 0, edge: 0, grip: 0 }); expect(highlighted()).toEqual([]);
+    // Away from both axes nothing beyond the grip test runs.
+    expect(await hover(40, 30)).toEqual({ graph: 0, profile: 0, edge: 0, grip: 1 }); expect(highlighted()).toEqual([]);
   });
 });

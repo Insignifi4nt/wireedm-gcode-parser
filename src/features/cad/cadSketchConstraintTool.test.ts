@@ -29,7 +29,7 @@ describe('cadSketchConstraintStep', () => {
     expect(step('parallel', 'ab')).toMatchObject({ status: 'more', entityIds: ['cd', 'bc'] });
     expect(step('equal', 'c1')).toMatchObject({ status: 'more', prompt: 'Choose the second arc or circle', entityIds: ['arc', 'c2'] });
     expect(step('coincident', 'a')).toMatchObject({ status: 'more', entityIds: ['ab', 'cd', 'bc', 'arc', 'c1', 'c2'], pointIds: expect.not.arrayContaining(['a']) });
-    expect(step('coincident', 'arc')).toMatchObject({ status: 'more', prompt: 'Choose a point to keep on this arc', entityIds: [], datums: [] });
+    expect(step('coincident', 'arc')).toMatchObject({ status: 'more', prompt: 'Choose a point to keep on this arc, or an axis to center it on', entityIds: [], datums: ['x-axis', 'y-axis'] });
     expect(step('symmetric', 'o1', 'a')).toMatchObject({ status: 'more', prompt: 'Choose the line to mirror about' });
   });
 
@@ -86,7 +86,6 @@ describe('cadSketchConstraintStep', () => {
 
   it('lays a line on an axis by keeping both endpoints on it, in either pick order', () => {
     expect(step('coincident', 'ab')).toMatchObject({ status: 'more', prompt: 'Choose a point to keep on this line, or an axis to lay it on', datums: ['x-axis', 'y-axis'] });
-    expect(step('coincident', 'x-axis')).toMatchObject({ status: 'more', prompt: 'Choose a point or a line to keep on this axis', entityIds: ['ab', 'cd', 'bc'] });
     expect(step('coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
     expect(step('coincident', 'y-axis', 'cd')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 0 }, { kind: 'fixed-axis', pointId: 'd', axis: 'x', value: 0 }] });
     // An upright line cannot lie on the X axis, and a line already on the Y axis reports the relations that hold it.
@@ -104,7 +103,55 @@ describe('cadSketchConstraintStep', () => {
     const dimensioned: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 4 }] };
     expect(stepIn(dimensioned, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line already has a fixed Y. Remove that dimension first.' });
     const pinned: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'pin', kind: 'fixed-point', pointId: 'b', position: [40, 2] }] };
-    expect(stepIn(pinned, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line is already fixed. Remove that relation first.' });
+    expect(stepIn(pinned, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line is fixed away from the X axis. Remove that relation first.' });
+  });
+
+  it('counts an endpoint that any relation already holds on the axis, and constrains only the other one', () => {
+    const line = (relations: CadSketchGraph['relations'], points: CadSketchGraph['points'] = graph.points): CadSketchGraph => ({ ...graph, points, relations: [...graph.relations, ...relations] });
+    // An endpoint fixed at the origin, or fixed anywhere on the axis, already lies on it.
+    for (const position of [[0, 0], [7, 0], ['0', '2 - 2']] as const) {
+      expect(stepIn(line([{ id: 'pin', kind: 'fixed-point', pointId: 'a', position: [...position] }]), 'coincident', 'ab', 'x-axis'))
+        .toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
+    }
+    expect(stepIn(line([{ id: 'pin', kind: 'fixed-point', pointId: 'a', position: [0, 0] }]), 'coincident', 'ab', 'x-axis')).toMatchObject({ relations: { length: 1 } });
+    // A point joined to the endpoint holds it there too, through a fixed coordinate or a linked reference.
+    const joined = line([{ id: 'j', kind: 'coincident', pointIds: ['a', 'free'] }, { id: 'fy', kind: 'fixed-axis', pointId: 'free', axis: 'y', value: ' 0 ' }]);
+    expect(stepIn(joined, 'coincident', 'x-axis', 'ab')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
+    const linkedPoints = [...graph.points, { id: 'r0', position: [-5, 0] as [number, number] }, { id: 'r1', position: [-5, 9] as [number, number] }];
+    const linked: CadSketchGraph = { ...line([{ id: 'j', kind: 'coincident', pointIds: ['a', 'r0'] },
+      { id: 'ref', kind: 'external-reference', entityId: 'refLine', sourceSketchId: 'layout', source: { kind: 'line', entityId: 'line', startPointId: 's', endPointId: 'e' } }], linkedPoints),
+      entities: [...graph.entities, { id: 'refLine', kind: 'line', construction: true, startPointId: 'r0', endPointId: 'r1' }] };
+    expect(stepIn(linked, 'coincident', 'ab', 'x-axis')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }] });
+    expect(stepIn(linked, 'coincident', 'ab', 'y-axis')).toEqual({ status: 'invalid', reason: 'An endpoint of this line follows a linked reference away from the Y axis. Detach it first.' });
+    // Both ends held: fixed coordinates can be removed together, a fixed point is never removed for the axis alone.
+    const both = line([{ id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { id: 'by', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: '0' }]);
+    expect(stepIn(both, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'This line is already on the X axis.', applied: ['ay', 'by'] });
+    const fixedEnds = line([{ id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { id: 'pin', kind: 'fixed-point', pointId: 'b', position: [40, 0] }]);
+    expect(stepIn(fixedEnds, 'coincident', 'ab', 'x-axis')).toEqual({ status: 'invalid', reason: 'This line is already on the X axis.' });
+    // A coordinate that follows a parameter is a dimension, even while the parameter is zero.
+    expect(stepIn(line([{ id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 'lift' }]), 'coincident', 'ab', 'x-axis'))
+      .toEqual({ status: 'invalid', reason: 'An endpoint of this line already has a fixed Y. Remove that dimension first.' });
+  });
+
+  it('places a fixed point on the reference it already sits on, and explains one fixed elsewhere', () => {
+    const pinned = (position: [number, number]): CadSketchGraph => ({ ...graph, relations: [...graph.relations, { id: 'pin', kind: 'fixed-point', pointId: 'e', position }] });
+    expect(stepIn(pinned([60, 0]), 'coincident', 'e', 'x-axis')).toEqual({ status: 'invalid', reason: 'This point is already on the X axis.' });
+    expect(stepIn(pinned([0, 0]), 'coincident', 'origin', 'e')).toEqual({ status: 'invalid', reason: 'This point is already at the origin.' });
+    expect(stepIn(pinned([60, 0]), 'coincident', 'e', 'origin')).toEqual({ status: 'invalid', reason: 'This point is fixed away from the origin. Remove that relation first.' });
+    expect(stepIn(pinned([60, 0]), 'vertical', 'e', 'origin')).toEqual({ status: 'invalid', reason: 'This point is fixed away from the Y axis. Remove that relation first.' });
+    expect(stepIn(pinned([60, 0]), 'horizontal', 'e', 'origin')).toEqual({ status: 'invalid', reason: 'This point is already level with the origin.' });
+  });
+
+  it('keeps the center of an arc or circle on an axis, in either pick order', () => {
+    expect(step('coincident', 'x-axis')).toMatchObject({ status: 'more', prompt: 'Choose a point, line, arc or circle to keep on this axis', entityIds: ['ab', 'cd', 'bc', 'arc', 'c1', 'c2'] });
+    expect(step('coincident', 'c1', 'x-axis')).toEqual({ status: 'ready', relations: [{ id: expect.any(String), kind: 'fixed-axis', pointId: 'o1', axis: 'y', value: 0 }] });
+    expect(step('coincident', 'y-axis', 'arc')).toEqual({ status: 'ready', relations: [{ id: expect.any(String), kind: 'fixed-axis', pointId: 'o2', axis: 'x', value: 0 }] });
+    const centered: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'oy', kind: 'fixed-axis', pointId: 'o1', axis: 'y', value: 0 }, { id: 'ox', kind: 'fixed-axis', pointId: 'o2', axis: 'x', value: 30 }] };
+    expect(stepIn(centered, 'coincident', 'c1', 'x-axis')).toEqual({ status: 'invalid', reason: 'This circle is already centered on the X axis.', applied: ['oy'] });
+    expect(stepIn(centered, 'coincident', 'arc', 'y-axis')).toEqual({ status: 'invalid', reason: 'The center of this arc already has a fixed X. Remove that dimension first.' });
+    // Two curves sharing a center: one already on the axis holds the other.
+    const shared: CadSketchGraph = { ...graph, relations: [...graph.relations, { id: 'j', kind: 'coincident', pointIds: ['o1', 'o2'] }, { id: 'oy', kind: 'fixed-axis', pointId: 'o1', axis: 'y', value: 0 }] };
+    expect(stepIn(shared, 'coincident', 'c2', 'x-axis')).toEqual({ status: 'invalid', reason: 'This circle is already centered on the X axis.', applied: ['oy'] });
   });
 
   it('centers an arc or circle at the origin through its center point', () => {
@@ -145,7 +192,11 @@ describe('cadSketchConstraintChoices', () => {
     expect(choices(graph, 'c2', 'origin')).toEqual([{ tool: 'concentric', state: 'available', kinds: ['fixed-axis', 'fixed-axis'] }]);
     // An axis has no length, middle or mirror, and plane references never pair with each other.
     expect(choices(graph, 'x-axis', 'y-axis')).toEqual([]);
-    expect(choices(graph, 'arc', 'x-axis')).toEqual([]);
+    expect(choices(graph, 'arc', 'x-axis')).toEqual([{ tool: 'coincident', state: 'available', kinds: ['fixed-axis'] }]);
+    expect(choices(graph, 'y-axis', 'c1')).toEqual([{ tool: 'coincident', state: 'available', kinds: ['fixed-axis'] }]);
+    // Concentric takes only the origin; the origin on a curve's circumference has no relation of its own.
+    expect(choices(graph, 'c1', 'x-axis').map(choice => choice.tool)).toEqual(['coincident']);
+    expect(choices(graph, 'origin', 'c1').map(choice => choice.tool)).toEqual(['concentric']);
   });
 
   it('marks constraints already in place with the relations that hold them, and explains conflicts', () => {

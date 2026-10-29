@@ -1,7 +1,11 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { CadError } from '@/domain/cad/cadError';
+import type { CadScalar } from '@/domain/cad/cadDocument';
+import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
+
+const NO_PARAMETERS: Readonly<Record<string, number>> = Object.freeze({});
 
 export { CadSketchGraphSelectionSchema, CadSketchGraphSelectionSetSchema, cadSketchGraphSelectionSet } from '@/domain/cad/cadSketchGraphSelection';
 export type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
@@ -45,12 +49,20 @@ export function pickCadSketchDatum(point: readonly [number, number], millimeters
 }
 
 /**
+ * Whether a coordinate is zero whatever the parameters are: 0, or an expression of numbers alone such as `"0"` or `"2 - 2"`.
+ * A value that follows a parameter is a dimension that only happens to be zero now, so it never counts.
+ */
+export function cadSketchZeroScalar(value: CadScalar | undefined): boolean {
+  if (value === undefined) return false;
+  try { return evaluateCadScalar(value, NO_PARAMETERS) === 0; } catch { return false; }
+}
+/**
  * The plane reference a fixed relation holds its point on, or null: a zero Y keeps the point on the X axis, a zero X on the
  * Y axis, and a fixed point at [0, 0] sits at the origin. A point at the origin through both coordinates has one of each.
  */
 export function cadSketchRelationDatum(relation: CadSketchGraphRelation): CadSketchDatum | null {
-  if (relation.kind === 'fixed-point') return relation.position[0] === 0 && relation.position[1] === 0 ? 'origin' : null;
-  return relation.kind !== 'fixed-axis' || relation.value !== 0 ? null : relation.axis === 'y' ? 'x-axis' : 'y-axis';
+  if (relation.kind === 'fixed-point') return relation.position.every(cadSketchZeroScalar) ? 'origin' : null;
+  return relation.kind !== 'fixed-axis' || !cadSketchZeroScalar(relation.value) ? null : relation.axis === 'y' ? 'x-axis' : 'y-axis';
 }
 /** How a relations list or diagnostic names a relation that holds a point on the origin or an axis, or null for any other relation. */
 export function cadSketchDatumRelationLabel(relation: CadSketchGraphRelation): string | null {

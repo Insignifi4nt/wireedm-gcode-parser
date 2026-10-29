@@ -98,6 +98,26 @@ describe('analytic sketch profile picking', () => {
     expect(pick([x + 1.01, y + 0.5], 0.001)).toBeNull();
   });
 
+  it('answers whether an edge is near from the indexed edges exactly as a scan of every edge does', () => {
+    const shapes: CadProfile[] = [circle(5), { kind: 'circle', x: 40, y: -8, radius: 0.3 }, { kind: 'slot', x: -20, y: 15, length: 30, width: 4, angle: 37 },
+      { kind: 'rectangle', x: 5, y: 5, width: 60, height: 2, cornerRadius: 0.5 }, { kind: 'polygon', points: [[-50, -50], [50, -48], [0, -30]] },
+      { kind: 'path', segments: [{ kind: 'line', start: [-10, -15], end: [10, -15] }, { kind: 'line', start: [10, -15], end: [10, 0] },
+        { kind: 'arc', center: [0, 0], radius: 10, startAngle: 0, sweep: -180 }, { kind: 'line', start: [-10, 0], end: [-10, -15] }] }];
+    // Construction profiles have no interior pick, so the full scan in `pick` reports exactly the edges in reach.
+    const picker = createCadSketchProfilePicker(shapes.map((shape, index) => profile(`p${index}`, shape, true)), {});
+    let near = 0;
+    for (const scale of [0.01, 0.1, 1]) for (let x = -60; x <= 70; x += 0.7) for (let y = -55; y <= 25; y += 0.9) {
+      const expected = picker.pick([x, y], scale) !== null;
+      expect(picker.edgeNear([x, y], scale)).toBe(expected); if (expected) near += 1;
+    }
+    expect(near).toBeGreaterThan(100);
+    // An interior alone is not an edge, and no profiles or a bad scale answer nothing.
+    const solid = createCadSketchProfilePicker([profile('solid', circle(5))], {});
+    expect(solid.pick([0, 0], 0.1)).toBe('solid'); expect(solid.edgeNear([0, 0], 0.1)).toBe(false); expect(solid.edgeNear([5.5, 0], 0.1)).toBe(true);
+    expect(createCadSketchProfilePicker([], {}).edgeNear([0, 0], 1)).toBe(false);
+    expect(solid.edgeNear([5, 0], 0)).toBe(false); expect(solid.edgeNear([NaN, 0], 1)).toBe(false);
+  });
+
   it('captures parameter snapshots, leaves source geometry unchanged and rejects invalid view coordinates', () => {
     const geometry: CadProfile = { kind: 'circle', x: 2, y: 2, radius: 'radius' };
     const profiles = Object.freeze([Object.freeze(profile('parametric', Object.freeze(geometry)))]);

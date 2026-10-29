@@ -6,7 +6,9 @@ import { resolveCadSketchPointOnLineOperands } from '@/domain/cad/cadSketchPoint
 import { resolveCadSketchPointOnCurveOperands } from '@/domain/cad/cadSketchPointOnCurveRelations';
 import { resolveCadSketchSymmetryOperands } from '@/domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchTangentJoint } from '@/domain/cad/cadSketchTangentRelations';
-import type { CadSketchDatum, CadSketchGraphSelection } from './cadSketchGraphSelection';
+import { cadSketchEntityPointIds } from '@/domain/cad/cadSketchGraphReferences';
+import type { CadScalar } from '@/domain/cad/cadDocument';
+import { cadSketchZeroScalar, type CadSketchDatum, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 
 /** Positional constraints offered as tools: each one says what to pick next and adds its relation once the picks are complete. */
 export const CAD_SKETCH_CONSTRAINT_TOOLS = ['coincident', 'horizontal', 'vertical', 'parallel', 'perpendicular', 'tangent', 'equal', 'midpoint', 'concentric', 'symmetric', 'fix'] as const;
@@ -16,7 +18,7 @@ export const cadSketchConstraintToolLabels: Readonly<Record<CadSketchConstraintT
   equal: 'Equal', midpoint: 'Midpoint', concentric: 'Concentric', symmetric: 'Symmetric', fix: 'Fix'
 };
 export const cadSketchConstraintToolHelp: Readonly<Record<CadSketchConstraintTool, string>> = {
-  coincident: 'Two points share one position. A point and a line, arc, circle or axis keep the point on it; a point and the origin pin it there. A line and an axis keep the line on the axis.',
+  coincident: 'Two points share one position. A point and a line, arc, circle or axis keep the point on it; a point and the origin pin it there. A line and an axis keep the line on the axis, and an arc or circle and an axis keep its center on the axis.',
   horizontal: 'A line, or two points, stay level. A point and the origin stay level with it.', vertical: 'A line, or two points, stay upright. A point and the origin stay above or below it.',
   parallel: 'Two lines, or a line and an axis, keep the same direction.', perpendicular: 'Two lines, or a line and an axis, meet at a right angle.',
   tangent: 'A line and an arc that share an endpoint join smoothly.', equal: 'Two lines keep the same length, or two arcs or circles the same radius.',
@@ -34,6 +36,12 @@ export type CadSketchConstraintStep =
   | { readonly status: 'invalid'; readonly reason: string; readonly applied?: readonly string[] };
 
 type Entity = CadSketchGraphEntity;
+/**
+ * How a point already holds the coordinate a plane reference sets to zero. `ids` are the relations holding it there; `away`
+ * says what holds it elsewhere. Only fixed coordinates are `removable`: removing a fixed point or a linked reference would
+ * release more than this coordinate.
+ */
+type Hold = { readonly ids: readonly string[]; readonly removable: boolean; readonly away: 'dimension' | 'fixed' | 'linked' | null };
 const isLine = (entity: Entity | undefined): entity is Extract<Entity, { kind: 'line' }> => entity?.kind === 'line';
 const isCurve = (entity: Entity | undefined): entity is Extract<Entity, { kind: 'arc' | 'circle' }> => entity?.kind === 'arc' || entity?.kind === 'circle';
 const samePoints = (ids: readonly string[], pair: readonly [string, string]) => ids.length === 2 && ids.includes(pair[0]) && ids.includes(pair[1]);
@@ -66,29 +74,53 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
     const other = kind === 'horizontal' ? 'vertical' : 'horizontal';
     return exists(relation => relation.kind === other && samePoints(relation.pointIds, pair)) ? invalid(`This is already ${other}.`) : ready({ id: newId(), kind, pointIds: pair });
   };
-  const pinned = (pointId: string) => exists(relation => relation.kind === 'fixed-point' && relation.pointId === pointId);
-  const fixedAxes = (pointId: string) => graph.relations.filter((relation): relation is Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }> => relation.kind === 'fixed-axis' && relation.pointId === pointId);
   const zeroAxis = (pointId: string, axis: 'x' | 'y') => ({ id: newId(), kind: 'fixed-axis' as const, pointId, axis, value: 0 });
-  // A point placed on a plane reference fixes the coordinates that reference sets to zero.
-  const onDatum = (pointId: string, axes: readonly ('x' | 'y')[], already: string): CadSketchConstraintStep => {
-    if (pinned(pointId)) return invalid('This point is already fixed. Remove that relation first.');
-    const fixed = fixedAxes(pointId);
-    const conflict = fixed.find(relation => axes.includes(relation.axis) && relation.value !== 0);
-    if (conflict) return invalid(`This point already has a fixed ${conflict.axis.toUpperCase()}. Remove that dimension first.`);
-    const relations = axes.filter(axis => !fixed.some(relation => relation.axis === axis)).map(axis => zeroAxis(pointId, axis));
-    return relations.length ? { status: 'ready', relations } : invalid(already, fixed.filter(relation => axes.includes(relation.axis)).map(relation => relation.id));
+  // A point shares its position with every point joined to it, so a relation on any of them holds it too.
+  const joint = (pointId: string) => {
+    const identity = resolveCadSketchPointIdentities(graph), root = identity(pointId);
+    return new Set(graph.points.filter(point => identity(point.id) === root).map(point => point.id));
   };
-  // A line on an axis keeps both endpoints on it. A line already level with the axis needs one endpoint, since a second would repeat the first.
+  const holding = (pointId: string, axis: 'x' | 'y'): Hold => {
+    const index = axis === 'x' ? 0 : 1, joined = joint(pointId), ids: string[] = [];
+    let removable = true;
+    for (const relation of graph.relations) {
+      let values: readonly (CadScalar | undefined)[], kind: NonNullable<Hold['away']>;
+      if (relation.kind === 'fixed-axis' && relation.axis === axis && joined.has(relation.pointId)) { values = [relation.value]; kind = 'dimension'; }
+      else if (relation.kind === 'fixed-point' && joined.has(relation.pointId)) { values = [relation.position[index]]; kind = 'fixed'; }
+      else if (relation.kind === 'external-reference') {
+        const owner = entity(relation.entityId), linked = owner ? cadSketchEntityPointIds(owner).filter(id => joined.has(id)) : [];
+        if (!linked.length) continue;
+        values = linked.map(id => graph.points.find(point => point.id === id)?.position[index]); kind = 'linked';
+      } else continue;
+      if (!values.every(cadSketchZeroScalar)) return { ids: [], removable: false, away: kind };
+      ids.push(relation.id); removable &&= kind === 'dimension';
+    }
+    return { ids, removable, away: null };
+  };
+  const heldAway = (subject: string, hold: Hold, axis: 'x' | 'y', target: string) => invalid(hold.away === 'dimension' ? `${subject} already has a fixed ${axis.toUpperCase()}. Remove that dimension first.`
+    : hold.away === 'linked' ? `${subject} follows a linked reference away from ${target}. Detach it first.` : `${subject} is fixed away from ${target}. Remove that relation first.`);
+  // Offer the holding relations for removal only when removing them releases exactly what this constraint holds.
+  const alreadyHeld = (reason: string, holds: readonly Hold[]) => invalid(reason, holds.every(hold => hold.removable) ? [...new Set(holds.flatMap(hold => hold.ids))] : undefined);
+  // A point placed on a plane reference fixes the coordinates that reference sets to zero, unless something already holds them there.
+  const onDatum = (pointId: string, axes: readonly ('x' | 'y')[], subject: string, target: string, already: string): CadSketchConstraintStep => {
+    const holds = axes.map(axis => holding(pointId, axis)), away = holds.findIndex(hold => hold.away);
+    if (away >= 0) return heldAway(subject, holds[away], axes[away], target);
+    const relations = axes.filter((_, index) => !holds[index].ids.length).map(axis => zeroAxis(pointId, axis));
+    return relations.length ? { status: 'ready', relations } : alreadyHeld(already, holds);
+  };
+  const onAxis = (pointId: string, reference: 'x-axis' | 'y-axis', subject: string, already: string) =>
+    onDatum(pointId, [reference === 'x-axis' ? 'y' : 'x'], subject, `the ${reference === 'x-axis' ? 'X' : 'Y'} axis`, already);
+  // A line on an axis keeps both endpoints on it. An endpoint already held there counts, and a line already level with the
+  // axis needs one endpoint, since a second would repeat the first.
   const lineOnAxis = (line: Extract<Entity, { kind: 'line' }>, reference: 'x-axis' | 'y-axis'): CadSketchConstraintStep => {
     const axis = reference === 'x-axis' ? 'y' : 'x', level = reference === 'x-axis' ? 'horizontal' : 'vertical', across = level === 'horizontal' ? 'vertical' : 'horizontal';
     const pair = [line.startPointId, line.endPointId] as const, name = reference === 'x-axis' ? 'X' : 'Y';
     if (exists(relation => relation.kind === across && samePoints(relation.pointIds, pair))) return invalid(`This line is ${across}, so it cannot lie on the ${name} axis. Remove that relation first.`);
-    if (pair.some(pinned)) return invalid('An endpoint of this line is already fixed. Remove that relation first.');
-    const held = pair.map(pointId => fixedAxes(pointId).find(relation => relation.axis === axis));
-    if (held.some(relation => relation && relation.value !== 0)) return invalid(`An endpoint of this line already has a fixed ${axis.toUpperCase()}. Remove that dimension first.`);
-    const onAxis = held.flatMap(relation => relation ? [relation.id] : []), missing = pair.filter((_, index) => !held[index]);
-    const needed = exists(relation => relation.kind === level && samePoints(relation.pointIds, pair)) ? onAxis.length ? [] : missing.slice(0, 1) : missing;
-    return needed.length ? { status: 'ready', relations: needed.map(pointId => zeroAxis(pointId, axis)) } : invalid(`This line is already on the ${name} axis.`, onAxis);
+    const holds = pair.map(pointId => holding(pointId, axis)), away = holds.find(hold => hold.away);
+    if (away) return heldAway('An endpoint of this line', away, axis, `the ${name} axis`);
+    const missing = pair.filter((_, index) => !holds[index].ids.length);
+    const needed = exists(relation => relation.kind === level && samePoints(relation.pointIds, pair)) ? missing.length === 2 ? missing.slice(0, 1) : [] : missing;
+    return needed.length ? { status: 'ready', relations: needed.map(pointId => zeroAxis(pointId, axis)) } : alreadyHeld(`This line is already on the ${name} axis.`, holds);
   };
   // A line follows an axis through horizontal or vertical, the same relations a level or upright line takes.
   const alongAxis = (line: Extract<Entity, { kind: 'line' }>, reference: CadSketchDatum, parallel: boolean) => {
@@ -99,11 +131,13 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
   };
   switch (tool) {
     case 'coincident': {
-      if (datum && points.length === 1) return datum === 'origin' ? onDatum(points[0], ['x', 'y'], 'This point is already at the origin.')
-        : onDatum(points[0], [datum === 'x-axis' ? 'y' : 'x'], `This point is already on the ${datum === 'x-axis' ? 'X' : 'Y'} axis.`);
+      if (datum && points.length === 1) return datum === 'origin' ? onDatum(points[0], ['x', 'y'], 'This point', 'the origin', 'This point is already at the origin.')
+        : onAxis(points[0], datum, 'This point', `This point is already on the ${datum === 'x-axis' ? 'X' : 'Y'} axis.`);
       const line = entities.find(isLine), curve = entities.find(isCurve);
       if (datum && datum !== 'origin' && line) return lineOnAxis(line, datum);
-      if (datum) return datum === 'origin' ? more('Choose a point to place at the origin', [], allPoints) : more('Choose a point or a line to keep on this axis', lines, allPoints);
+      // An arc or circle on an axis keeps its center there; its curve cannot lie along a straight axis.
+      if (datum && datum !== 'origin' && curve) return onAxis(curve.centerPointId, datum, `The center of this ${curve.kind}`, `This ${curve.kind} is already centered on the ${datum === 'x-axis' ? 'X' : 'Y'} axis.`);
+      if (datum) return datum === 'origin' ? more('Choose a point to place at the origin', [], allPoints) : more('Choose a point, line, arc or circle to keep on this axis', [...lines, ...curves], allPoints);
       if (points.length === 2) {
         const identity = resolveCadSketchPointIdentities(graph);
         return identity(points[0]) === identity(points[1]) ? invalid('These points are already joined.', matching(relation => relation.kind === 'coincident' && samePoints(relation.pointIds, [points[0], points[1]])))
@@ -120,14 +154,15 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       }
       if (points.length === 1) return more('Choose a second point, a line, arc, circle or axis to keep the point on, or the origin', [...lines, ...curves], allPoints, ['origin', 'x-axis', 'y-axis']);
       if (line) return more('Choose a point to keep on this line, or an axis to lay it on', [], allPoints, ['x-axis', 'y-axis']);
-      if (curve) return more(`Choose a point to keep on this ${curve.kind}`, [], allPoints);
+      if (curve) return more(`Choose a point to keep on this ${curve.kind}, or an axis to center it on`, [], allPoints, ['x-axis', 'y-axis']);
       return more('Choose a point, line, arc or circle, or the origin or an axis', [...lines, ...curves], allPoints, ['origin', 'x-axis', 'y-axis']);
     }
     case 'horizontal': case 'vertical': {
       const line = entities.find(isLine);
       if (line) return axisRelation(tool, [line.startPointId, line.endPointId]);
       if (points.length === 2) return axisRelation(tool, [points[0], points[1]]);
-      if (datum && points.length === 1) return tool === 'horizontal' ? onDatum(points[0], ['y'], 'This point is already level with the origin.') : onDatum(points[0], ['x'], 'This point is already above or below the origin.');
+      if (datum && points.length === 1) return tool === 'horizontal' ? onAxis(points[0], 'x-axis', 'This point', 'This point is already level with the origin.')
+        : onAxis(points[0], 'y-axis', 'This point', 'This point is already above or below the origin.');
       if (datum) return more('Choose the point to align with the origin', [], allPoints);
       if (points.length === 1) return more('Choose the second point, or the origin', [], allPoints, ['origin']);
       return more('Choose a line, two points, or a point and the origin', lines, allPoints, ['origin']);
@@ -180,7 +215,7 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
     case 'concentric': {
       const chosen = entities.filter(isCurve);
       // The origin is a fixed center, so an arc or circle concentric with it keeps its center there.
-      if (datum && chosen.length === 1) return onDatum(chosen[0].centerPointId, ['x', 'y'], `This ${chosen[0].kind} is already centered at the origin.`);
+      if (datum && chosen.length === 1) return onDatum(chosen[0].centerPointId, ['x', 'y'], `The center of this ${chosen[0].kind}`, 'the origin', `This ${chosen[0].kind} is already centered at the origin.`);
       if (datum) return more('Choose an arc or circle to center at the origin', curves, []);
       if (chosen.length === 2) {
         const identity = resolveCadSketchPointIdentities(graph);
