@@ -1,8 +1,8 @@
 import { userFacingMessage } from '@/lib/userMessage';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type MouseEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type MouseEvent } from 'react';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
-import type { CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import type { CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
@@ -75,8 +75,66 @@ function Boundary({ boundary, center }: { boundary: CadAnalyticBoundary; center:
       : <path d={cadArcSvgPath(boundary, center)} />;
 }
 
-/** Point and size handles share one gesture owner; solved previews never become accepted geometry. */
-export function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, highlighted }: {
+type GraphSegment = Prepared['geometry']['segments'][number];
+type GraphPoint = Prepared['points'][number];
+/** The layer's current handlers; memoized rows call them through one stable ref, so a row renders only when its own state changes. */
+interface GraphItemActions {
+  move(event: PointerEvent<SVGGElement>): void;
+  endDrag(event: PointerEvent<SVGGElement>): void;
+  cancelPointer(event: PointerEvent<SVGGElement>): void;
+  lostCapture(event: PointerEvent<SVGGElement>): void;
+  entityDown(event: PointerEvent<SVGGElement>, segment: GraphSegment): void;
+  entityClick(event: MouseEvent<SVGGElement>, id: string): void;
+  entityKey(event: ReactKeyboardEvent<SVGGElement>, id: string): void;
+  pointDown(event: PointerEvent<SVGGElement>, point: GraphPoint): void;
+  pointClick(event: MouseEvent<SVGGElement>, id: string): void;
+  pointKey(event: ReactKeyboardEvent<SVGGElement>, point: GraphPoint): void;
+}
+type Actions = { readonly current: GraphItemActions };
+
+const GraphEntityRow = memo(function GraphEntityRow({ segment, index, sketchName, selected, related, highlighted, construction, interactive, active, center, scaleY, actions }: {
+  segment: GraphSegment; index: number; sketchName: string; selected: boolean; related: boolean; highlighted: boolean; construction: boolean; interactive: boolean; active: boolean;
+  center: SketchPoint; scaleY: number; actions: Actions;
+}) {
+  const boundary = cadSketchGraphBoundary(segment);
+  return <g data-cad-sketch-entity={segment.id} className={`cad-profile cad-sketch-entity${selected ? ' is-selected' : ''}${related ? ' is-relation-highlighted' : ''}${highlighted ? ' is-pick-highlighted' : ''}${construction ? ' is-construction' : ''}`}
+    role="button" aria-label={`${segment.kind[0].toUpperCase()}${segment.kind.slice(1)} ${index + 1} in ${sketchName}`} aria-pressed={selected} aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1}
+    strokeDasharray={construction ? `${scaleY * 6} ${scaleY * 4}` : undefined}
+    onPointerDown={event => actions.current.entityDown(event, segment)} onPointerMove={event => actions.current.move(event)} onPointerUp={event => actions.current.endDrag(event)}
+    onPointerCancel={event => actions.current.cancelPointer(event)} onLostPointerCapture={event => actions.current.lostCapture(event)}
+    onClick={event => actions.current.entityClick(event, segment.id)} onKeyDown={event => actions.current.entityKey(event, segment.id)}>
+    <Boundary boundary={boundary} center={center} />
+    {active && <g className="cad-sketch-entity-hit" strokeWidth={12 * scaleY}><Boundary boundary={boundary} center={center} /></g>}
+  </g>;
+});
+
+const GraphPointRow = memo(function GraphPointRow({ point, original, graph, degreesOfFreedom, index, sketchName, referenceCorner, revealed, selected, related, highlighted, interactive, active, center, scaleX, scaleY, actions }: {
+  point: GraphPoint; original: GraphPoint; graph: CadSketchGraph; degreesOfFreedom: number | null | undefined; index: number; sketchName: string;
+  referenceCorner: boolean; revealed: boolean; selected: boolean; related: boolean; highlighted: boolean; interactive: boolean; active: boolean;
+  center: SketchPoint; scaleX: number; scaleY: number; actions: Actions;
+}) {
+  // Numeric coordinates allow a move request; they do not establish this point's freedom.
+  const coordinateDriven = !original.freeAxes.some(Boolean), canRequestMove = degreesOfFreedom !== 0 && !coordinateDriven;
+  const movementHint = cadSketchLinearPatternLockReason(graph, { kind: 'point', id: point.id }) ?? (coordinateDriven ? 'Coordinates follow dimensions or expressions' : degreesOfFreedom === 0
+    ? 'Fully constrained by dimensions and relations' : `Movement follows dimensions and relations${original.freeAxes.every(Boolean) ? '' : ` · ${original.freeAxes[0] ? 'Y' : 'X'} coordinate is driven`}`);
+  const x = point.position[0] - center[0], y = point.position[1] - center[1];
+  return <g data-cad-sketch-point={point.id} data-cad-reference-corner={referenceCorner || undefined} role="button" aria-label={`${referenceCorner ? 'Reference corner' : 'Point'} ${index + 1} in ${sketchName}`} aria-pressed={selected} aria-disabled={!interactive || undefined} pointerEvents={active ? undefined : 'none'}
+    tabIndex={interactive ? 0 : -1} className={`cad-sketch-graph-point${revealed ? ' is-revealed' : ''}${selected ? ' is-active' : ''}${related ? ' is-relation-highlighted' : ''}${highlighted ? ' is-pick-highlighted' : ''}${canRequestMove ? '' : ' is-locked'}`}
+    onPointerDown={event => actions.current.pointDown(event, point)} onPointerMove={event => actions.current.move(event)} onPointerUp={event => actions.current.endDrag(event)}
+    onPointerCancel={event => actions.current.cancelPointer(event)} onLostPointerCapture={event => actions.current.lostCapture(event)}
+    onClick={event => actions.current.pointClick(event, point.id)} onKeyDown={event => actions.current.pointKey(event, point)}>
+    <circle cx={x} cy={y} r={7 * scaleY} className="cad-sketch-point-hit" />
+    {referenceCorner ? <path d={`M ${x} ${y + 4 * scaleY} L ${x + 4 * scaleX} ${y} L ${x} ${y - 4 * scaleY} L ${x - 4 * scaleX} ${y} Z`} className="cad-sketch-point-mark" />
+      : <circle cx={x} cy={y} r={3 * scaleY} className="cad-sketch-point-mark" />}
+    <title>{referenceCorner ? 'Original reference corner · ' : ''}{formatCadQuantity(point.position[0])}, {formatCadQuantity(point.position[1])} mm · {movementHint}</title>
+  </g>;
+});
+
+/**
+ * Point and size handles share one gesture owner; solved previews never become accepted geometry. The layer is memoized,
+ * so drawing-cursor moves in the canvas do not render every edge and point again; callers pass stable props.
+ */
+export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, highlighted }: {
   controls: CadSketchGraphControls; sketch: CadSketchFeature; version?: string; prepared: Prepared; visual?: Prepared;
   center: SketchPoint; scaleX: number; scaleY: number; gridStep: number; snap: boolean; gridSnap?: boolean; active: boolean; locked: boolean; cancelSignal: number;
   onPendingChange(pending: boolean): void; onError(message: string): void;
@@ -271,91 +329,80 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
     if (event.detail === 0) { if (eligible) { event.stopPropagation(); choose(target, event.shiftKey); } }
     else if (pickAt ? pickAt(event) : eligible) event.stopPropagation();
   };
+  const edgeAllowed = (id: string) => edgesInteractive && (!controls.geometryPick || controls.geometryPick.eligibleEntityIds.includes(id));
+  const pointAllowed = (id: string) => pointsInteractive && (!controls.geometryPick || controls.geometryPick.eligiblePointIds.includes(id));
+  const movable = (original: GraphPoint) => controls.degreesOfFreedom !== 0 && original.freeAxes.some(Boolean);
+  const actions = useRef<GraphItemActions>(null!);
+  actions.current = {
+    move: event => move(event), endDrag,
+    cancelPointer: event => { if (drag.current?.pointerId === event.pointerId) { event.stopPropagation(); cancel(); } },
+    lostCapture: event => { if (drag.current?.pointerId === event.pointerId) cancel(); },
+    entityDown: (event, segment) => {
+      if (event.button !== 0 || !edgeAllowed(segment.id)) return; const target = pickAt ? pickAt(event) : { kind: 'entity' as const, id: segment.id }; if (!target) return;
+      event.stopPropagation(); if (event.isPrimary === false || drag.current) return; event.preventDefault(); focusTarget(event.currentTarget, target);
+      const own = target.kind === 'entity' && target.id === segment.id, grouped = own && grabsSelection(target, event.shiftKey);
+      if (!grouped) choose(target, event.shiftKey);
+      if (!own || !interactive || controls.geometryPick || event.shiftKey || controls.degreesOfFreedom === 0) return;
+      const boundary = cadSketchGraphBoundary(segment), entity = entities.get(segment.id);
+      const anchor = pressedPoint(event, boundary.type === 'line' ? [(boundary.start.x + boundary.end.x) / 2, (boundary.start.y + boundary.end.y) / 2] : [boundary.center.x, boundary.center.y]);
+      if (grouped) { startTranslate(event, controls.selection, anchor, null, target); return; }
+      // A connected line slides along its normal and stretches its neighbours; free edges, arcs and circles move as they are.
+      const length = boundary.type === 'line' ? Math.hypot(boundary.end.x - boundary.start.x, boundary.end.y - boundary.start.y) : 0;
+      const connected = entity?.kind === 'line' && [entity.startPointId, entity.endPointId].some(id => (pointUses.get(id) ?? 0) > 1);
+      startTranslate(event, [target], anchor, boundary.type === 'line' && connected && length > 0 ? [-(boundary.end.y - boundary.start.y) / length, (boundary.end.x - boundary.start.x) / length] : null);
+    },
+    entityClick: (event, id) => clickTarget(event, { kind: 'entity', id }, edgeAllowed(id)),
+    entityKey: (event, id) => {
+      if (!edgeAllowed(id) || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'entity', id }, event.shiftKey); }
+      else if (event.key === 'Delete' && !controls.geometryPick && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id }); }
+    },
+    pointDown: (event, point) => {
+      if (event.button !== 0 || !pointAllowed(point.id)) return;
+      const target = pickAt ? pickAt(event) : { kind: 'point' as const, id: point.id };
+      if (!target) return;
+      event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return;
+      event.preventDefault(); focusTarget(event.currentTarget, target);
+      const original = sourcePoints.get(point.id) ?? point, own = target.kind === 'point' && target.id === point.id;
+      if (own && grabsSelection(target, event.shiftKey) && controls.degreesOfFreedom !== 0) { startTranslate(event, controls.selection, original.position, null, target); return; }
+      choose(target, event.shiftKey);
+      if (controls.geometryPick || !own) return;
+      if (event.shiftKey || !movable(original)) return; // A plain pick above replaces the old set with this point.
+      callbacks.current.onPendingChange(true);
+      drag.current = { kind: 'point', point: original, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, step: gridStep, snap, gridSnap, scaleX, scaleY,
+        prepared, guides: lineNeighbours(prepared, original.id), cursor: original.position, suppressed: event.ctrlKey || event.metaKey, moved: false, translation: [0, 0], candidate: null };
+      setIntent({ kind: 'point', point: original, translation: [0, 0], snap: null });
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { cancel(); }
+    },
+    pointClick: (event, id) => clickTarget(event, { kind: 'point', id }, pointAllowed(id)),
+    pointKey: (event, point) => {
+      if (!pointAllowed(point.id) || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'point', id: point.id }, event.shiftKey); return; }
+      if (controls.geometryPick) return;
+      if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'point', id: point.id }); return; }
+      const step = gridStep * (event.shiftKey ? 10 : 1);
+      const delta: SketchPoint | null = event.key === 'ArrowLeft' ? [-step, 0] : event.key === 'ArrowRight' ? [step, 0] : event.key === 'ArrowUp' ? [0, step] : event.key === 'ArrowDown' ? [0, -step] : null;
+      if (!delta) return;
+      event.preventDefault(); event.stopPropagation(); if (controls.selection.length > 1) return; choose({ kind: 'point', id: point.id });
+      const original = sourcePoints.get(point.id) ?? point;
+      if (movable(original)) commit({ kind: 'point', point: original, translation: cadSketchGraphPointTranslation(original, [original.position[0] + delta[0], original.position[1] + delta[1]]), snap: null });
+    }
+  };
   return <g className={`cad-sketch-graph${interactive && !controls.geometryPick ? ' is-draggable' : ''}${intent && !submission.applying ? ' is-dragging' : ''}`} onKeyDown={event => { if (event.key === 'Escape' && (drag.current || intent || submission.applying)) { event.preventDefault(); event.stopPropagation(); cancel(); } }}>
     {displayed.geometry.segments.map((segment, index) => {
-      const boundary = cadSketchGraphBoundary(segment), isSelected = selected('entity', segment.id);
       const entity = entities.get(segment.id);
-      const related = relatedEntities.has(segment.id) || entity?.kind === 'line' && relatedPoints.has(entity.startPointId) && relatedPoints.has(entity.endPointId);
-      const snapHighlighted = snapCandidate?.entityIds.includes(segment.id);
-      const edgeInteractive = edgesInteractive && (!controls.geometryPick || controls.geometryPick.eligibleEntityIds.includes(segment.id));
-      return <g key={segment.id} data-cad-sketch-entity={segment.id} className={`cad-profile cad-sketch-entity${isSelected ? ' is-selected' : ''}${related ? ' is-relation-highlighted' : ''}${snapHighlighted || highlighted?.kind === 'entity' && highlighted.id === segment.id ? ' is-pick-highlighted' : ''}${construction.has(segment.id) ? ' is-construction' : ''}`}
-        role="button" aria-label={`${segment.kind[0].toUpperCase()}${segment.kind.slice(1)} ${index + 1} in ${sketch.name}`} aria-pressed={isSelected} aria-disabled={!edgeInteractive || undefined} tabIndex={edgeInteractive ? 0 : -1}
-        strokeDasharray={construction.has(segment.id) ? `${scaleY * 6} ${scaleY * 4}` : undefined}
-        onPointerDown={event => {
-          if (event.button !== 0 || !edgeInteractive) return; const target = pickAt ? pickAt(event) : { kind: 'entity' as const, id: segment.id }; if (!target) return;
-          event.stopPropagation(); if (event.isPrimary === false || drag.current) return; event.preventDefault(); focusTarget(event.currentTarget, target);
-          const own = target.kind === 'entity' && target.id === segment.id, grouped = own && grabsSelection(target, event.shiftKey);
-          if (!grouped) choose(target, event.shiftKey);
-          if (!own || !interactive || controls.geometryPick || event.shiftKey || controls.degreesOfFreedom === 0) return;
-          const anchor = pressedPoint(event, boundary.type === 'line' ? [(boundary.start.x + boundary.end.x) / 2, (boundary.start.y + boundary.end.y) / 2] : [boundary.center.x, boundary.center.y]);
-          if (grouped) { startTranslate(event, controls.selection, anchor, null, target); return; }
-          // A connected line slides along its normal and stretches its neighbours; free edges, arcs and circles move as they are.
-          const length = boundary.type === 'line' ? Math.hypot(boundary.end.x - boundary.start.x, boundary.end.y - boundary.start.y) : 0;
-          const connected = entity?.kind === 'line' && [entity.startPointId, entity.endPointId].some(id => (pointUses.get(id) ?? 0) > 1);
-          startTranslate(event, [target], anchor, boundary.type === 'line' && connected && length > 0 ? [-(boundary.end.y - boundary.start.y) / length, (boundary.end.x - boundary.start.x) / length] : null);
-        }}
-        onPointerMove={move} onPointerUp={endDrag} onPointerCancel={event => { if (drag.current?.pointerId === event.pointerId) { event.stopPropagation(); cancel(); } }}
-        onLostPointerCapture={event => { if (drag.current?.pointerId === event.pointerId) cancel(); }}
-        onClick={event => clickTarget(event, { kind: 'entity', id: segment.id }, edgeInteractive)}
-        onKeyDown={event => {
-          if (!edgeInteractive || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'entity', id: segment.id }, event.shiftKey); }
-          else if (event.key === 'Delete' && !controls.geometryPick && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'entity', id: segment.id }); }
-        }}>
-        <Boundary boundary={boundary} center={center} />
-        {active && <g className="cad-sketch-entity-hit" strokeWidth={12 * scaleY}><Boundary boundary={boundary} center={center} /></g>}
-      </g>;
+      return <GraphEntityRow key={segment.id} segment={segment} index={index} sketchName={sketch.name} selected={selected('entity', segment.id)}
+        related={relatedEntities.has(segment.id) || entity?.kind === 'line' && relatedPoints.has(entity.startPointId) && relatedPoints.has(entity.endPointId)}
+        highlighted={Boolean(snapCandidate?.entityIds.includes(segment.id)) || highlighted?.kind === 'entity' && highlighted.id === segment.id}
+        construction={construction.has(segment.id)} interactive={edgeAllowed(segment.id)} active={active} center={center} scaleY={scaleY} actions={actions} />;
     })}
     {displayed.points.map((point, index) => {
-      const original = sourcePoints.get(point.id) ?? point;
-      // Numeric coordinates allow a move request; they do not establish this point's freedom.
-      const coordinateDriven = !original.freeAxes.some(Boolean), canRequestMove = controls.degreesOfFreedom !== 0 && !coordinateDriven;
-      const movementHint = cadSketchLinearPatternLockReason(prepared.graph, {kind:'point',id:point.id}) ?? (coordinateDriven ? 'Coordinates follow dimensions or expressions' : controls.degreesOfFreedom === 0
-        ? 'Fully constrained by dimensions and relations' : `Movement follows dimensions and relations${original.freeAxes.every(Boolean) ? '' : ` · ${original.freeAxes[0] ? 'Y' : 'X'} coordinate is driven`}`);
-      const pointInteractive = pointsInteractive && (!controls.geometryPick || controls.geometryPick.eligiblePointIds.includes(point.id));
-      const referenceCorner = referenceCorners.has(point.id), x = point.position[0] - center[0], y = point.position[1] - center[1];
-      const snapTarget = snapCandidate?.target;
-      const snapHighlighted = snapTarget && 'pointId' in snapTarget && snapTarget.pointId === point.id;
-      const revealed = filter === 'points' || !supportedPoints.has(point.id) || selectionPoints.has(point.id) || selected('point', point.id) || relatedPoints.has(point.id)
-        || snapHighlighted || highlighted?.kind === 'point' && highlighted.id === point.id;
-      return <g key={point.id} data-cad-sketch-point={point.id} data-cad-reference-corner={referenceCorner || undefined} role="button" aria-label={`${referenceCorner ? 'Reference corner' : 'Point'} ${index + 1} in ${sketch.name}`} aria-pressed={selected('point', point.id)} aria-disabled={!pointInteractive || undefined} pointerEvents={active ? undefined : 'none'}
-        tabIndex={pointInteractive ? 0 : -1} className={`cad-sketch-graph-point${revealed ? ' is-revealed' : ''}${selected('point', point.id) ? ' is-active' : ''}${relatedPoints.has(point.id) ? ' is-relation-highlighted' : ''}${snapHighlighted || highlighted?.kind === 'point' && highlighted.id === point.id ? ' is-pick-highlighted' : ''}${canRequestMove ? '' : ' is-locked'}`}
-        onPointerDown={event => {
-          if (event.button !== 0 || !pointInteractive) return;
-          const target = pickAt ? pickAt(event) : { kind: 'point' as const, id: point.id };
-          if (!target) return;
-          event.stopPropagation(); if (event.isPrimary === false || drag.current || !interactive) return;
-          event.preventDefault(); focusTarget(event.currentTarget, target);
-          const own = target.kind === 'point' && target.id === point.id;
-          if (own && grabsSelection(target, event.shiftKey) && controls.degreesOfFreedom !== 0) { startTranslate(event, controls.selection, original.position, null, target); return; }
-          choose(target, event.shiftKey);
-          if (controls.geometryPick || !own) return;
-          if (event.shiftKey || !canRequestMove) return; // A plain pick above replaces the old set with this point.
-          callbacks.current.onPendingChange(true);
-          drag.current = { kind: 'point', point: original, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, step: gridStep, snap, gridSnap, scaleX, scaleY,
-            prepared, guides: lineNeighbours(prepared, original.id), cursor: original.position, suppressed: event.ctrlKey || event.metaKey, moved: false, translation: [0, 0], candidate: null };
-          setIntent({ kind: 'point', point: original, translation: [0, 0], snap: null });
-          try { event.currentTarget.setPointerCapture(event.pointerId); } catch { cancel(); }
-        }}
-        onPointerMove={move} onPointerUp={endDrag} onPointerCancel={event => { if (drag.current?.pointerId === event.pointerId) { event.stopPropagation(); cancel(); } }}
-        onLostPointerCapture={event => { if (drag.current?.pointerId === event.pointerId) cancel(); }}
-        onClick={event => clickTarget(event, { kind: 'point', id: point.id }, pointInteractive)}
-        onKeyDown={event => {
-          if (!pointInteractive || drag.current || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); choose({ kind: 'point', id: point.id }, event.shiftKey); return; }
-          if (controls.geometryPick) return;
-          if (event.key === 'Delete' && controls.onDelete) { event.preventDefault(); event.stopPropagation(); controls.onDelete({ kind: 'point', id: point.id }); return; }
-          const step = gridStep * (event.shiftKey ? 10 : 1);
-          const delta: SketchPoint | null = event.key === 'ArrowLeft' ? [-step, 0] : event.key === 'ArrowRight' ? [step, 0] : event.key === 'ArrowUp' ? [0, step] : event.key === 'ArrowDown' ? [0, -step] : null;
-          if (!delta) return;
-          event.preventDefault(); event.stopPropagation(); if (controls.selection.length > 1) return; choose({ kind: 'point', id: point.id });
-          if (canRequestMove) commit({ kind: 'point', point: original, translation: cadSketchGraphPointTranslation(original, [original.position[0] + delta[0], original.position[1] + delta[1]]), snap: null });
-        }}>
-        <circle cx={point.position[0] - center[0]} cy={point.position[1] - center[1]} r={7 * scaleY} className="cad-sketch-point-hit" />
-        {referenceCorner ? <path d={`M ${x} ${y + 4 * scaleY} L ${x + 4 * scaleX} ${y} L ${x} ${y - 4 * scaleY} L ${x - 4 * scaleX} ${y} Z`} className="cad-sketch-point-mark" />
-          : <circle cx={x} cy={y} r={3 * scaleY} className="cad-sketch-point-mark" />}
-        <title>{referenceCorner ? 'Original reference corner · ' : ''}{formatCadQuantity(point.position[0])}, {formatCadQuantity(point.position[1])} mm · {movementHint}</title>
-      </g>;
+      const snapTarget = snapCandidate?.target, isSelected = selected('point', point.id);
+      const isHighlighted = Boolean(snapTarget && 'pointId' in snapTarget && snapTarget.pointId === point.id) || highlighted?.kind === 'point' && highlighted.id === point.id;
+      const revealed = filter === 'points' || !supportedPoints.has(point.id) || selectionPoints.has(point.id) || isSelected || relatedPoints.has(point.id) || isHighlighted;
+      return <GraphPointRow key={point.id} point={point} original={sourcePoints.get(point.id) ?? point} graph={prepared.graph} degreesOfFreedom={controls.degreesOfFreedom} index={index} sketchName={sketch.name}
+        referenceCorner={referenceCorners.has(point.id)} revealed={revealed} selected={isSelected} related={relatedPoints.has(point.id)} highlighted={isHighlighted}
+        interactive={pointAllowed(point.id)} active={active} center={center} scaleX={scaleX} scaleY={scaleY} actions={actions} />;
     })}
     {circle && shownCircle && active && !controls.geometryPick && <g data-cad-sketch-circle-radius={circle.entityId} className={`cad-sketch-graph-point${radiusInteractive ? '' : ' is-locked'}`}
       role="button" aria-label={`Resize circle radius in ${sketch.name}`} aria-disabled={!radiusInteractive || undefined} tabIndex={radiusInteractive ? 0 : -1}
@@ -393,4 +440,4 @@ export function CadSketchGraphLayer({ controls, sketch, version, prepared, visua
       <title>{candidate.issue ?? (preview.kind === 'error' ? preview.message : 'Drag target')}</title></circle>}
     {snapCandidate && <CadSketchSnapHint candidate={snapCandidate} center={center} scaleX={scaleX} scaleY={scaleY} label={snapLabel} attained={attained} />}
   </g>;
-}
+});
