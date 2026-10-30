@@ -14,7 +14,7 @@ export function cadSketchCurveCentres(graph: CadSketchGraph): ReadonlyMap<string
   return centres;
 }
 /** A Coincident whose two points are both arc or circle centres reads as Concentric; it is stored as Coincident. */
-export function isCadSketchConcentric(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres = cadSketchCurveCentres(graph)): relation is Extract<CadSketchGraphRelation, { kind: 'coincident' }> {
+export function isCadSketchConcentric(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres = cadSketchCurveCentres(graph)): boolean {
   return relation.kind === 'coincident' && relation.pointIds.every(id => centres.has(id));
 }
 /** Sentence-case name of a relation, as the relations list, the constraint issues, the canvas and its status line show it. */
@@ -41,7 +41,7 @@ export function createCadSketchRelationLabels(graph: CadSketchGraph): CadSketchR
 /** The operands a relation names, in its stored order; a Concentric names its two curves. */
 export function cadSketchRelationOperandLabels(graph: CadSketchGraph, relation: CadSketchGraphRelation, labels = createCadSketchRelationLabels(graph)): readonly string[] {
   const { point, entity } = labels;
-  if (isCadSketchConcentric(graph, relation, labels.centres)) return relation.pointIds.map(id => entity(labels.centres.get(id)![0]));
+  if (relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, labels.centres)) return relation.pointIds.map(id => entity(labels.centres.get(id)![0]));
   switch (relation.kind) {
     case 'tangent-joint': return relation.endpoints.map(endpoint => `${entity(endpoint.entityId)} at ${point(endpoint.pointId)}`);
     case 'midpoint': case 'point-on-line': case 'point-line-distance': return [point(relation.pointId), entity(relation.lineId)];

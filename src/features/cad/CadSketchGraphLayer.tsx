@@ -12,6 +12,7 @@ import { DRAG_GRID_CATCH_PIXELS, magnetSketchPoint, magnetSketchValue, type Sket
 import { cadArcSvgPath } from './cadSketchSvg';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadSketchGraphDimensions } from './CadSketchGraphDimensions';
+import { CadSketchRelationGlyphs, type CadSketchRelationGlyphFocus } from './CadSketchRelationGlyphs';
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadContinuousPreview, type CadPrepareEdits } from './useCadPreparedPreview';
@@ -60,6 +61,18 @@ export interface CadSketchGraphControls {
   onSelectDimension?(dimension: CadSketchDimensionPick | null, additive: boolean): void;
   onDeleteDimension?(dimension?: CadSketchDimensionPick, key?: 'Delete' | 'Backspace'): void;
   onDimensionMenu?(dimension: CadSketchDimensionPick, at: { readonly clientX: number; readonly clientY: number }): void;
+  /** Relation glyphs on the canvas; false draws none. */
+  readonly showRelations?: boolean;
+  /**
+   * Glyph commands name the relations the glyph was drawn for, and share the annotation selection with the dimensions. A click selects
+   * them, Shift toggles them and `null` clears that selection; a focused glyph's Delete or Backspace passes its relations and key, and
+   * the owner removes the selection, and those relations only while nothing is selected.
+   */
+  onSelectRelations?(relations: readonly CadSketchDimensionPick[] | null, additive: boolean): void;
+  /** Double-click or Enter on a glyph: its relation's row in the relations list. */
+  onOpenRelation?(relation: CadSketchDimensionPick): void;
+  onDeleteRelations?(relations: readonly CadSketchDimensionPick[], key: 'Delete' | 'Backspace'): void;
+  onRelationMenu?(relations: readonly CadSketchDimensionPick[], at: { readonly clientX: number; readonly clientY: number }): void;
   /** Hover highlight shared with the dock rows; without one the layer keeps its own. */
   readonly highlight?: CadSketchHighlightStore;
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
@@ -67,6 +80,13 @@ export interface CadSketchGraphControls {
   onPreviewDocument?(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
 }
 type CircleControl = ReturnType<typeof cadSketchGraphCircleControl>;
+/**
+ * Above this many relation glyphs only those on selected or inspected geometry, and the selected ones, are drawn. Every glyph is a focusable
+ * SVG group with its own handlers, and a drag lays all of them out again each frame; 400 keeps a drag over a sketch at that size within a
+ * frame at 4× CPU slowdown, and is more than a sketch of a few hundred edges draws.
+ */
+export const CAD_SKETCH_RELATION_GLYPH_LIMIT = 400;
+type GlyphEvent = { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event };
 type Intent = { readonly kind: 'point'; readonly point: CadSketchGraphPointControl; readonly translation: SketchPoint; readonly snap: CadSketchSnapCandidate | null }
   | { readonly kind: 'radius'; readonly circle: CircleControl; readonly radius: number }
   | { readonly kind: 'translate'; readonly selections: readonly CadSketchGraphSelection[]; readonly anchor: SketchPoint; readonly translation: SketchPoint };
@@ -159,14 +179,16 @@ const GraphPointRow = memo(function GraphPointRow({ point, original, graph, degr
  * Point and size handles share one gesture owner; solved previews never become accepted geometry. The layer is memoized,
  * so drawing-cursor moves in the canvas do not render every edge and point again; callers pass stable props.
  */
-export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, coversDimensionLine, highlighted }: {
+export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, coversDimensionLine, coversRelationGlyph, highlighted }: {
   controls: CadSketchGraphControls; sketch: CadSketchFeature; version?: string; prepared: Prepared; visual?: Prepared;
   center: SketchPoint; scaleX: number; scaleY: number; gridStep: number; snap: boolean; gridSnap?: boolean; active: boolean; locked: boolean; cancelSignal: number;
   onPendingChange(pending: boolean): void; onError(message: string): void;
   filter?: CadSketchGraphPickFilter;
   pickAt?(event: { clientX: number; clientY: number }): CadSketchGraphSelection | null;
   /** Whether a datum, profile grip or profile edge under the pointer keeps the pick from a dimension line or arrow. */
-  coversDimensionLine?(event: { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event }): boolean;
+  coversDimensionLine?(event: GlyphEvent): boolean;
+  /** Whether sketch geometry, a datum, a profile grip or a profile edge under the pointer keeps the pick from a relation glyph. */
+  coversRelationGlyph?(event: GlyphEvent): boolean;
   highlighted?: CadSketchGraphSelection | null;
 }) {
   const submission = useCadEditSubmission();
@@ -176,6 +198,19 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   const drag = useRef<Drag | null>(null);
   const callbacks = useRef({ controls, onPendingChange, onError }); callbacks.current = { controls, onPendingChange, onError };
   const lastPreview = useRef<{ source: CadDocument; document: CadDocument } | null>(null);
+  // The glyph layer is memoized, so its commands keep their identity and read the current controls when they run.
+  const [glyphCommands] = useState(() => ({
+    select: (relations: readonly CadSketchDimensionPick[] | null, additive: boolean) => callbacks.current.controls.onSelectRelations?.(relations, additive),
+    open: (relation: CadSketchDimensionPick) => callbacks.current.controls.onOpenRelation?.(relation),
+    remove: (relations: readonly CadSketchDimensionPick[], key: 'Delete' | 'Backspace') => callbacks.current.controls.onDeleteRelations?.(relations, key),
+    menu: (relations: readonly CadSketchDimensionPick[], at: { readonly clientX: number; readonly clientY: number }) => callbacks.current.controls.onRelationMenu?.(relations, at)
+  }));
+  // Glyphs on the selected or inspected geometry draw as related, and stay drawn on a sketch above the glyph limit.
+  const glyphFocus = useMemo((): CadSketchRelationGlyphFocus | null => {
+    const pointIds = [...controls.selection.filter(item => item.kind === 'point').map(item => item.id), ...controls.inspection?.pointIds ?? []];
+    const entityIds = [...controls.selection.filter(item => item.kind === 'entity').map(item => item.id), ...controls.inspection?.entityIds ?? []];
+    return pointIds.length || entityIds.length ? { pointIds, entityIds } : null;
+  }, [controls.selection, controls.inspection]);
   const release = useCallback(() => {
     const owned = drag.current; drag.current = null;
     try { if (owned?.element.hasPointerCapture?.(owned.pointerId)) owned.element.releasePointerCapture(owned.pointerId); } catch { /* Capture may already be released. */ }
@@ -437,6 +472,11 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   return <g className={`cad-sketch-graph${interactive && !controls.geometryPick ? ' is-draggable' : ''}${intent && !submission.applying ? ' is-dragging' : ''}`} onKeyDown={event => { if (event.key === 'Escape' && (drag.current || intent || submission.applying)) { event.preventDefault(); event.stopPropagation(); cancel(); } }}>
     {/* Dimension lines and arrows take the pointer beneath the points and edges, so the geometry they end on or cross keeps its picks. */}
     <g ref={setDimensionHits} className="cad-sketch-graph-dimension-hits" />
+    {/* Relation glyphs lie beneath the points and edges too, and leave a press over geometry, a datum, a grip or a profile edge to the canvas. */}
+    {controls.showRelations !== false && <CadSketchRelationGlyphs graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
+      selectedIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSION_IDS} inspectedRelationId={controls.relation?.id ?? null} focus={glyphFocus} limit={CAD_SKETCH_RELATION_GLYPH_LIMIT}
+      interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onSelectRelations)} highlight={highlightStore} covered={coversRelationGlyph}
+      onSelect={glyphCommands.select} onOpen={glyphCommands.open} onDelete={glyphCommands.remove} onMenu={glyphCommands.menu} />}
     {displayed.geometry.segments.map((segment, index) => {
       const entity = entities.get(segment.id);
       return <GraphEntityRow key={segment.id} segment={segment} index={index} sketchName={sketch.name} selected={selected('entity', segment.id)}

@@ -2,7 +2,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } fro
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { SketchPoint } from './cadSketchInteraction';
-import { cadSketchRelationDescription, cadSketchRelationName, cadSketchRelationOperandLabels, createCadSketchRelationLabels, isCadSketchConcentric } from './cadSketchRelationNames';
+import { cadSketchCurveCentres, cadSketchRelationDescription, cadSketchRelationName, cadSketchRelationOperandLabels, createCadSketchRelationLabels, isCadSketchConcentric } from './cadSketchRelationNames';
 
 /** The drawing a glyph shows, one per relation kind as the user knows it; a Concentric is stored as a Coincident between two centres. */
 export type CadSketchRelationGlyphKind = 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'collinear' | 'equal-length' | 'equal-radius' | 'tangent'
@@ -28,6 +28,20 @@ export interface CadSketchRelationGlyph {
   readonly label: string;
 }
 
+/** The drawing of a relation's glyph, shared by the relations list and the Constrain menu, or null for a relation drawn otherwise. */
+export function cadSketchRelationGlyphKind(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres = cadSketchCurveCentres(graph)): CadSketchRelationGlyphKind | null {
+  switch (relation.kind) {
+    case 'horizontal': case 'vertical': case 'parallel': case 'perpendicular': case 'collinear': case 'equal-length': case 'equal-radius':
+    case 'midpoint': case 'symmetric': case 'point-on-line': case 'point-on-curve': return relation.kind;
+    case 'coincident': return isCadSketchConcentric(graph, relation, centres) ? 'concentric' : 'coincident';
+    case 'fixed-point': case 'fixed-axis': return 'fix';
+    case 'tangent-joint': return 'tangent';
+    case 'distance': case 'point-line-distance': case 'axis-distance': case 'radial-size': case 'fillet-corner': case 'chamfer-corner': case 'line-angle': case 'reference-dimension':
+    case 'linear-pattern': case 'external-reference': return null;
+    default: { const unreachable: never = relation; return unreachable; }
+  }
+}
+
 /** Screen-pixel placement: glyphs sit 12 px off a line or curve, 10 px diagonally off a point, and stack 15 px apart. */
 export const CAD_SKETCH_RELATION_GLYPH_PIXELS = { size: 12, edge: 12, point: 10, stack: 15 } as const;
 
@@ -40,27 +54,28 @@ const point = (id: string): CadSketchRelationGlyphOperand => `point:${id}`, enti
  * linked reference keep their own controls, whose Detach keeps their geometry, so a glyph Delete must never stand in for it.
  */
 function glyphOperands(graph: CadSketchGraph, relation: CadSketchGraphRelation, lines: ReadonlyMap<string, string>, centres: ReadonlyMap<string, readonly string[]>): { readonly kind: CadSketchRelationGlyphKind; readonly operands: Operands } | null {
+  const kind = cadSketchRelationGlyphKind(graph, relation, centres);
+  if (!kind) return null;
   switch (relation.kind) {
     case 'horizontal': case 'vertical': {
       // Between a line's own endpoints the relation is about that line; otherwise it aligns two points and marks both.
       const [a, b] = cadSketchRelationPointIds(graph, relation), line = lines.get(pairKey(a, b));
-      return { kind: relation.kind, operands: line ? [entity(line)] : [point(a), point(b)] };
+      return { kind, operands: line ? [entity(line)] : [point(a), point(b)] };
     }
     case 'parallel': case 'perpendicular': case 'collinear': case 'equal-length': case 'equal-radius':
-      return { kind: relation.kind, operands: cadSketchRelationEntityIds(relation).map(entity) };
-    case 'coincident': {
-      if (isCadSketchConcentric(graph, relation, centres)) return { kind: 'concentric', operands: cadSketchRelationPointIds(graph, relation).map(id => entity(centres.get(id)![0])) };
-      // The two points share one place, so one glyph marks them.
-      return { kind: 'coincident', operands: [point(cadSketchRelationPointIds(graph, relation)[0])] };
-    }
+      return { kind, operands: cadSketchRelationEntityIds(relation).map(entity) };
+    case 'coincident':
+      // A Concentric marks both curves; the two points of any other Coincident share one place, so one glyph marks them.
+      return kind === 'concentric' ? { kind, operands: cadSketchRelationPointIds(graph, relation).map(id => entity(centres.get(id)![0])) }
+        : { kind, operands: [point(cadSketchRelationPointIds(graph, relation)[0])] };
     case 'midpoint': case 'point-on-line': case 'point-on-curve':
-      return { kind: relation.kind, operands: [point(cadSketchRelationPointIds(graph, relation)[0])] };
-    case 'fixed-point': case 'fixed-axis': return { kind: 'fix', operands: [point(cadSketchRelationPointIds(graph, relation)[0])] };
+    case 'fixed-point': case 'fixed-axis':
+      return { kind, operands: [point(cadSketchRelationPointIds(graph, relation)[0])] };
     case 'symmetric': {
       const [a, b] = cadSketchRelationPointIds(graph, relation);
-      return { kind: 'symmetric', operands: [point(a), point(b), ...cadSketchRelationEntityIds(relation).map(entity)] };
+      return { kind, operands: [point(a), point(b), ...cadSketchRelationEntityIds(relation).map(entity)] };
     }
-    case 'tangent-joint': return { kind: 'tangent', operands: [point(relation.endpoints[0].pointId)] };
+    case 'tangent-joint': return { kind, operands: [point(relation.endpoints[0].pointId)] };
     case 'distance': case 'point-line-distance': case 'axis-distance': case 'radial-size': case 'fillet-corner': case 'chamfer-corner': case 'line-angle': case 'reference-dimension':
     case 'linear-pattern': case 'external-reference':
       return null;
@@ -69,8 +84,17 @@ function glyphOperands(graph: CadSketchGraph, relation: CadSketchGraphRelation, 
 }
 const pairKey = (a: string, b: string) => a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
 
+/** How many glyphs the sketch draws, without placing them, so the canvas can tell when it shows only some. */
+export function countCadSketchRelationGlyphs(graph: CadSketchGraph): number {
+  return glyphEntries(graph).length;
+}
 /** Every relation glyph of a sketch, in a deterministic order: relations in graph order, and on each operand in that order too. */
 export function layoutCadSketchRelationGlyphs(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): readonly CadSketchRelationGlyph[] {
+  const entries = glyphEntries(graph);
+  if (!entries.length) return [];
+  return placeGlyphs(graph, parameters, entries);
+}
+function glyphEntries(graph: CadSketchGraph): readonly Entry[] {
   if (!graph.relations.length) return [];
   const labels = createCadSketchRelationLabels(graph), centres = labels.centres;
   const lines = new Map<string, string>();
@@ -95,7 +119,9 @@ export function layoutCadSketchRelationGlyphs(graph: CadSketchGraph, parameters:
     const name = cadSketchRelationName(graph, relation, centres), label = cadSketchRelationDescription(graph, relation, labels, name);
     for (const operand of new Set(placed.operands)) entries.push({ relationIds: [relation.id], operand, kind: placed.kind, name, label });
   }
-  if (!entries.length) return [];
+  return entries;
+}
+function placeGlyphs(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entries: readonly Entry[]): readonly CadSketchRelationGlyph[] {
   const positions = new Map(graph.points.map(item => [item.id, [evaluateCadScalar(item.position[0], parameters), evaluateCadScalar(item.position[1], parameters)] as const]));
   const entities = new Map(graph.entities.map(item => [item.id, item]));
   const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
@@ -106,11 +132,12 @@ export function layoutCadSketchRelationGlyphs(graph: CadSketchGraph, parameters:
   const stacks = new Map<CadSketchRelationGlyphOperand, number>();
   for (const entry of entries) stacks.set(entry.operand, (stacks.get(entry.operand) ?? 0) + 1);
   const placedOn = new Map<CadSketchRelationGlyphOperand, number>();
-  return Object.freeze(entries.flatMap(entry => {
+  return Object.freeze(entries.flatMap((entry): CadSketchRelationGlyph[] => {
     const index = placedOn.get(entry.operand) ?? 0; placedOn.set(entry.operand, index + 1);
     const at = place(entry.operand, index, stacks.get(entry.operand)!, positions, entities, parameters, middle);
     return at ? [Object.freeze({ key: `${entry.relationIds.join('+')}@${entry.operand}`, relationIds: Object.freeze(entry.relationIds), operand: entry.operand, kind: entry.kind,
-      anchor: at.anchor, offset: at.offset, name: entry.name, label: entry.label })] : [];
+      // Adding zero turns a negative zero into zero, so equal places compare equal.
+      anchor: at.anchor, offset: [at.offset[0] + 0, at.offset[1] + 0] satisfies SketchPoint, name: entry.name, label: entry.label })] : [];
   }));
 }
 
@@ -148,4 +175,12 @@ function place(operand: CadSketchRelationGlyphOperand, index: number, count: num
   const angle = from + (item.direction === 'cw' ? -(2 * Math.PI - ccw) : ccw) / 2, radius = Math.hypot(start[0] - centre[0], start[1] - centre[1]);
   const cx = Math.cos(angle), cy = Math.sin(angle);
   return { anchor: [centre[0] + cx * radius, centre[1] + cy * radius], offset: [cx * edge - cy * spread, -(cy * edge + cx * spread)] };
+}
+
+/**
+ * A glyph's SVG transform: to its anchor, then the dimension labels' screen-pixel scale that undoes the sketch's y flip, then its pixel offset.
+ * Each glyph row asks for it once per render.
+ */
+export function cadSketchRelationGlyphTransform(x: number, y: number, mmPerPixel: number, dx: number, dy: number): string {
+  return `translate(${x} ${y}) scale(${mmPerPixel} ${-mmPerPixel}) translate(${dx} ${dy})`;
 }

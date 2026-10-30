@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 import { createPortal } from 'react-dom';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchGraphDimensionLabel, layoutCadSketchGraphDimensions, type CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
-import { cadSketchDimensionPickOf, createCadSketchDimensionKeys, type CadSketchDimensionPick, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
+import { cadSketchDimensionPickOf, createCadSketchDimensionKeys, isCadSketchDimensionRelation, type CadSketchDimensionPick, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import type { SketchPoint } from './cadSketchInteraction';
 import './cad-sketch-graph-dimensions.css';
 
@@ -44,7 +44,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
   const dimensions = useMemo(() => layoutCadSketchGraphDimensions(graph, parameters, mmPerPixel), [graph, parameters, mmPerPixel]);
   const pointNumbers = useMemo(() => new Map(graph.points.map((point, index) => [point.id, index + 1])), [graph.points]);
   // A label keeps its element while the graph names the same dimension; a replacement mounts afresh, so it never takes over focus.
-  const [dimensionKeys] = useState(createCadSketchDimensionKeys);
+  const [dimensionKeys] = useState(() => createCadSketchDimensionKeys(isCadSketchDimensionRelation));
   const keys = useMemo(() => dimensionKeys(graph), [dimensionKeys, graph]);
   const hovered = useRef<string | null>(null);
   // The drawn dimension whose line or arrow is under the pointer. That target lies outside the dimension, so CSS hover cannot brighten it;

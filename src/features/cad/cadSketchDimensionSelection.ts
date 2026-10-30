@@ -13,6 +13,8 @@ export const isCadSketchDimensionRelation = (relation: CadSketchGraphRelation): 
  * pattern and a linked reference keep their own canvas and list controls, whose Detach keeps their geometry, so they are no annotation.
  */
 export const isCadSketchAnnotationRelation = (relation: CadSketchGraphRelation): boolean => relation.kind !== 'linear-pattern' && relation.kind !== 'external-reference';
+/** Relations drawn as relation glyphs: every annotation that is no dimension. */
+export const isCadSketchGlyphRelation = (relation: CadSketchGraphRelation): boolean => !DIMENSION_KINDS.has(relation.kind) && isCadSketchAnnotationRelation(relation);
 
 /**
  * What a dimension measures, with the operands it was authored on. A driving and a reference form of one quantity share it, and it names
@@ -164,15 +166,15 @@ export function reconcileCadSketchDimensionSelection(graph: CadSketchGraph | und
   return !changed ? current : kept.length ? Object.freeze(kept) : NO_SKETCH_DIMENSIONS;
 }
 /**
- * Mount keys for canvas annotations, dimensions and relation glyphs. A relation keeps its key while each new graph names the same dimension, compared in that new graph,
- * so focus and a menu's focus return stay with it; a replacement under the same ID gets a new key, so it never inherits either.
+ * Mount keys for canvas annotations, dimensions and relation glyphs, for the relations `include` takes. A relation keeps its key while each new graph names the same
+ * dimension, compared in that new graph, so focus and a menu's focus return stay with it; a replacement under the same ID gets a new key, so it never inherits either.
  */
-export function createCadSketchDimensionKeys() {
+export function createCadSketchDimensionKeys(include: (relation: CadSketchGraphRelation) => boolean = isCadSketchAnnotationRelation) {
   let entries = new Map<string, { pick: CadSketchDimensionPick; generation: number }>(), next = 0;
   return (graph: CadSketchGraph): ReadonlyMap<string, string> => {
     const updated = new Map<string, { pick: CadSketchDimensionPick; generation: number }>(), keys = new Map<string, string>();
     for (const relation of graph.relations) {
-      if (!isCadSketchAnnotationRelation(relation)) continue;
+      if (!isCadSketchAnnotationRelation(relation) || !include(relation)) continue;
       const pick = cadSketchDimensionPickOf(relation), previous = entries.get(relation.id);
       const entry = previous && samePick(previous.pick, pick, graph) ? { pick, generation: previous.generation } : { pick, generation: next++ };
       updated.set(relation.id, entry); keys.set(relation.id, `${relation.id}/${entry.generation}`);
@@ -203,14 +205,19 @@ export function cadSketchDimensionSelectionStatus(graph: CadSketchGraph | undefi
   if (!graph || !ids.length) return null;
   const relations = ids.flatMap(id => graph.relations.filter(item => item.id === id && isCadSketchAnnotationRelation(item)));
   if (!relations.length) return null;
-  const dimensions = relations.filter(isCadSketchDimensionRelation), others = relations.length - dimensions.length;
+  const dimensions = relations.filter(isCadSketchDimensionRelation);
   const [first, second] = relations;
   if (relations.length === 2 && first.kind === 'fixed-axis' && second.kind === 'fixed-axis' && first.pointId === second.pointId && first.axis !== second.axis) return 'Fixed selected · Delete removes';
   if (relations.length === 1) return dimensions.length ? `${cadSketchDimensionName(graph, dimensions[0])} selected · Double-click or Enter edits · Delete removes`
     : `${cadSketchRelationName(graph, relations[0])} selected · Delete removes`;
+  return `${cadSketchAnnotationCount(graph, ids)} selected · Delete removes them`;
+}
+/** "2 dimensions and 1 relation": the annotations the IDs name, as the status line and a Delete command count them. */
+export function cadSketchAnnotationCount(graph: CadSketchGraph, ids: readonly string[]): string {
+  const relations = graph.relations.filter(relation => ids.includes(relation.id) && isCadSketchAnnotationRelation(relation));
+  const dimensions = relations.filter(isCadSketchDimensionRelation).length, others = relations.length - dimensions;
   const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
-  const listed = !others ? count(dimensions.length, 'dimension') : !dimensions.length ? count(others, 'relation') : `${count(dimensions.length, 'dimension')} and ${count(others, 'relation')}`;
-  return `${listed} selected · Delete removes them`;
+  return !others ? count(dimensions, 'dimension') : !dimensions ? count(others, 'relation') : `${count(dimensions, 'dimension')} and ${count(others, 'relation')}`;
 }
 
 /** Geometry a relation names directly, plus the sketch datum it measures from. */
@@ -223,7 +230,7 @@ export function cadSketchRelationHighlight(graph: CadSketchGraph, relation: CadS
       : 'pointIds' in relation ? relation.pointIds : 'pointId' in relation ? [relation.pointId] : [];
   // A dimension or relation between a line's own endpoints is about that line, and a Concentric about the curves on its two centres.
   const centres = relation.kind === 'coincident' ? cadSketchCurveCentres(graph) : null;
-  const spanned = centres && isCadSketchConcentric(graph, relation, centres) ? relation.pointIds.flatMap(id => centres.get(id) ?? [])
+  const spanned = centres && relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, centres) ? relation.pointIds.flatMap(id => centres.get(id) ?? [])
     : named.length === 2 ? graph.entities.filter(entity => entity.kind === 'line' && named.includes(entity.startPointId) && named.includes(entity.endPointId)).map(entity => entity.id) : [];
   const entities = new Set(graph.entities.map(entity => entity.id)), points = new Set(graph.points.map(point => point.id));
   // A coordinate is measured from the other axis: X from the Y axis, Y from the X axis.

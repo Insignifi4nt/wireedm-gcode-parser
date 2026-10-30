@@ -33,7 +33,8 @@ import { formatCadLocalizedQuantity, formatCadQuantity } from './cadDisplayQuant
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
 import { cadSketchExternalReferenceForSelection } from '@/domain/cad/cadSketchExternalReferences';
 import { CadSketchLinearPatternPreview } from './CadSketchLinearPatternPreview';
-import { CadSketchGraphLayer, type CadSketchGraphControls } from './CadSketchGraphLayer';
+import { CAD_SKETCH_RELATION_GLYPH_LIMIT, CadSketchGraphLayer, type CadSketchGraphControls } from './CadSketchGraphLayer';
+import { countCadSketchRelationGlyphs } from './cadSketchRelationGlyphLayout';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { cadArcSvgPath } from './cadSketchSvg';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
@@ -82,6 +83,11 @@ interface DrawingClick extends DrawingPlacement { readonly changes: number; read
 type DimensionLineEvent = { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event };
 /** What one event found over a dimension line: the grip and datum the canvas hover shows, and whether either, or a profile edge, keeps the pick. */
 interface LineCover { readonly event: Event; readonly grip: CadSketchHandlePick | null; readonly datum: CadSketchDatum | null; readonly covered: boolean }
+/** The relations a glyph's `data-cad-sketch-relation-glyph` names: one relation ID, or several joined by spaces. */
+function relationGlyphPicks(graph: NonNullable<CadSketchFeature['graph']>, value: string): readonly CadSketchDimensionPick[] {
+  const whole = cadSketchDimensionPick(graph, value);
+  return whole ? [whole] : value.split(' ').flatMap(id => { const pick = id ? cadSketchDimensionPick(graph, id) : null; return pick ? [pick] : []; });
+}
 interface DrawingCursor { readonly point: SketchPoint; readonly mode: 'pointer' | 'position'; readonly suppressed: boolean }
 /** What the workbench needs to finish or leave a drawing while the canvas is not focused. */
 export interface CadSketchDrawingControls {
@@ -321,7 +327,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     window.addEventListener('blur', blurred);
     return () => { window.removeEventListener('blur', blurred); dropDatumPress(); finishProfileDrag(); };
   }, [dropDatumPress, finishProfileDrag]);
-  const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; button: number; buttonMask: number; moved: boolean; element: SVGSVGElement; dimension: CadSketchDimensionPick | null; dimensionLine: boolean } | null>(null);
+  const pan = useRef<{ x: number; y: number; center: SketchPoint; pointerId: number; button: number; buttonMask: number; moved: boolean; element: SVGSVGElement; dimension: CadSketchDimensionPick | null; dimensionLine: boolean; relations: readonly CadSketchDimensionPick[] | null } | null>(null);
   const finishPan = useCallback((pointerId?: number) => {
     const active = pan.current;
     if (!active || pointerId !== undefined && pointerId !== active.pointerId) return;
@@ -636,6 +642,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     project: projectSelection });
   const boxSelections = boxSelection.box?.selections;
   const dimensionStatus = tool === 'select' && sourceSketch.kind === 'sketch' ? cadSketchDimensionSelectionStatus(sourceSketch.graph, graphControls?.dimensionSelection ?? []) : null;
+  const relationsShown = Boolean(graphControls) && graphControls?.showRelations !== false, sourceGraphValue = sourceSketch.kind === 'sketch' ? sourceSketch.graph : undefined;
+  const glyphCount = useMemo(() => relationsShown && sourceGraphValue ? countCadSketchRelationGlyphs(sourceGraphValue) : 0, [relationsShown, sourceGraphValue]);
+  const glyphStatus = tool === 'select' && glyphCount > CAD_SKETCH_RELATION_GLYPH_LIMIT ? `Relations shown on selected geometry only · ${glyphCount} marks in this sketch` : null;
+  const contextStatus = dimensionStatus && glyphStatus ? `${dimensionStatus} · ${glyphStatus}` : dimensionStatus ?? glyphStatus;
   const layerControls = useMemo(() => graphControls && boxSelections ? { ...graphControls, selection: boxSelections } : graphControls, [graphControls, boxSelections]);
   const graphPickAt = useRef<(event: { clientX: number; clientY: number }) => CadSketchGraphSelection | null>(() => null);
   graphPickAt.current = event => { const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect(); return point && rect?.height ? graphPicks(point, span / rect.height)[0] ?? null : null; };
@@ -796,6 +806,16 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   const dimensionLineCover = useRef(measureLineCover); dimensionLineCover.current = measureLineCover;
   const coversDimensionLine = useCallback((event: DimensionLineEvent) => Boolean(dimensionLineCover.current(event)?.covered), []);
+  /** A relation glyph lies beneath the sketch points and edges; one within their pick reach, or over a datum, grip or profile edge, leaves the pick to them. */
+  const glyphCover = useRef<{ readonly event: Event; readonly covered: boolean } | null>(null);
+  const measureGlyphCover = (event: DimensionLineEvent) => {
+    if (glyphCover.current?.event === event.nativeEvent) return glyphCover.current.covered;
+    const covered = Boolean(measureLineCover(event)?.covered) || graphPickAt.current(event) !== null;
+    glyphCover.current = { event: event.nativeEvent, covered };
+    return covered;
+  };
+  const relationGlyphCover = useRef(measureGlyphCover); relationGlyphCover.current = measureGlyphCover;
+  const coversRelationGlyph = useCallback((event: DimensionLineEvent) => relationGlyphCover.current(event), []);
   const submitEdit = (apply: (signal: AbortSignal) => CadEditCompletion, accepted: () => void, fallback: string) => {
     pendingChange.current(true); ownRevision.current = true;
     submission.submit(apply, accepted, error => {
@@ -1174,8 +1194,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const line = label ? null : target?.closest('[data-cad-sketch-dimension-hit]')?.getAttribute('data-cad-sketch-dimension-hit') ?? null;
           const dimensionId = label ?? (line && !dimensionLineCover.current(event)?.covered ? line : null);
           const dimension = dimensionId && sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchDimensionPick(sourceSketch.graph, dimensionId) : null;
+          // A relation glyph takes the press as a label does, only where no geometry, datum, grip or profile edge lies under it.
+          const glyph = label || line ? null : target?.closest('.cad-sketch-relation-glyph.is-interactive')?.getAttribute('data-cad-sketch-relation-glyph') ?? null;
+          const relations = glyph && sourceSketch.kind === 'sketch' && sourceSketch.graph && !relationGlyphCover.current(event) ? relationGlyphPicks(sourceSketch.graph, glyph) : null;
           pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget,
-            dimension, dimensionLine: !label };
+            dimension, dimensionLine: !label, relations: relations?.length ? relations : null };
           try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); }
         } else if (event.button === 0 && !interactionLocked) {
           // SVG's native focus ring is measured in drawing units. Keep pointer
@@ -1305,8 +1328,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         finishPan(event.pointerId);
         if (active.button !== 2 || event.button !== 2 || active.moved || Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4 || interactionLocked || viewLocked) return;
         const dimension = active.dimension && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onDimensionMenu ? active.dimension : null;
-        // A label opens its menu at once; a line or arrow opens its dimension's only where no sketch geometry lies under the release.
+        // A label or a relation glyph opens its menu at once; a line or arrow opens its dimension's only where no sketch geometry lies under the release.
         if (dimension && !active.dimensionLine) { graphControls?.onDimensionMenu?.(dimension, { clientX: event.clientX, clientY: event.clientY }); return; }
+        if (active.relations && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onRelationMenu) {
+          graphControls.onRelationMenu(active.relations, { clientX: event.clientX, clientY: event.clientY }); return;
+        }
         if (openOverlap(event)) return;
         if (dimension) { graphControls?.onDimensionMenu?.(dimension, { clientX: event.clientX, clientY: event.clientY }); return; }
         const point = getRawPoint(event), rect = event.currentTarget.getBoundingClientRect();
@@ -1356,10 +1382,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const rect = event.currentTarget.getBoundingClientRect();
           if (!rect.width || !rect.height) { finishPan(event.pointerId); return; }
           setCenter([active.center[0] - (event.clientX - active.x) / rect.width * width, active.center[1] + (event.clientY - active.y) / rect.height * span]);
-        } else if (event.target instanceof Element && event.target.closest('.cad-sketch-graph-dimension.is-interactive')) {
-          // Hovering a selectable dimension label only lights up its geometry through the highlight overlay. The drawing cursor keeps its
-          // last position and a grip or datum hover ends once, so moving across a label renders nothing else.
-          // Drawing tools hide annotations and position picks make them inert, so there the cursor keeps following the pointer.
+        } else if (event.target instanceof Element && (event.target.closest('.cad-sketch-graph-dimension.is-interactive')
+          || event.target.closest('.cad-sketch-relation-glyph.is-interactive') && !relationGlyphCover.current(event))) {
+          // Hovering a selectable dimension label or relation glyph only lights up its geometry through the highlight overlay. The drawing
+          // cursor keeps its last position and a grip or datum hover ends once, so moving across a label renders nothing else. A glyph over
+          // geometry, a datum or a grip leaves the hover to them. Drawing tools and picks make annotations inert, so there the cursor keeps following the pointer.
           if (hoverHandle) setHoverHandle(null);
           if (datumHover) setDatumHover(null);
         } else {
@@ -1508,7 +1535,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         </g>}
         {graphControls && sourceSketch.kind === 'sketch' && sourceGraph && layerControls && <CadSketchGraphLayer controls={layerControls} sketch={sourceSketch} version={documentVersion} prepared={sourceGraph} visual={visualGraph ?? undefined}
           center={center} scaleX={width / (viewportSize.width || 800)} scaleY={span / (viewportSize.height || 600)} gridStep={gridStep} snap={snap} gridSnap={gridSnap} active={tool === 'select'}
-          filter={graphPickFilter} highlighted={graphHighlight} pickAt={pickGraphAt} coversDimensionLine={coversDimensionLine}
+          filter={graphPickFilter} highlighted={graphHighlight} pickAt={pickGraphAt} coversDimensionLine={coversDimensionLine} coversRelationGlyph={coversRelationGlyph}
           locked={externalInteractionLocked || Boolean(positionPick && !geometryPick) || submission.applying || points.length > 0 || pathPending || dragPreview !== null || boxPending || overlapPending || choicePending} cancelSignal={cancelSignal} onPendingChange={publishGraphPending} onError={onError} />}
         {graphControls?.patternInteraction && sourceSketch.kind === 'sketch' && (previewSketch ?? sourceSketch).graph && <CadSketchLinearPatternPreview graph={(previewSketch ?? sourceSketch).graph!} parameters={parameters} interaction={graphControls.patternInteraction} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
@@ -1573,7 +1600,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !isPreview && <CadSketchDimensionControls {...dimensionControls} onError={onError} interactionLocked={dimensionControls.interactionLocked || submission.applying || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}
     {!isPreview && inspection && inspection.profileIds.length > 0 ? <div className="cad-sketch-context" role="status">Highlighted geometry · {inspection.profileIds.length} {inspection.profileIds.length === 1 ? 'profile' : 'profiles'}</div>
-      : !isPreview && dimensionStatus && <div className="cad-sketch-context" role="status" data-cad-dimension-status="">{dimensionStatus}</div>}
+      : !isPreview && contextStatus && <div className="cad-sketch-context" role="status" data-cad-dimension-status="">{contextStatus}</div>}
     <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : currentTrim?.kind === 'ready' ? `${instruction}. ${currentTrim.help}` : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter adds a point or finishes a line chain, Backspace undoes the last point or segment, Escape finishes a line chain or cancels drawing and, with nothing pending, returns to Select, F fits the sketch.</p>
     {viewTools}
     {/* A chain that can stay open keeps the toolbar in view, since a tool switch saves it; its tools wait for a completed segment. */}

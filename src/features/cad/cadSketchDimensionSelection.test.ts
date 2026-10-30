@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import {
   cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionSelectionStatus, cadSketchRelationHighlight, createCadSketchDimensionKeys, createCadSketchHighlightStore,
-  isCadSketchDimensionPickCurrent, NO_SKETCH_DIMENSION_IDS, NO_SKETCH_DIMENSIONS, reconcileCadSketchDimensionSelection, selectCadSketchDimension, type CadSketchDimensionPick
+  isCadSketchDimensionPickCurrent, isCadSketchDimensionRelation, isCadSketchGlyphRelation, keepCadSketchDimensionPicks, NO_SKETCH_DIMENSION_IDS, NO_SKETCH_DIMENSIONS,
+  reconcileCadSketchDimensionSelection, selectCadSketchAnnotations, selectCadSketchDimension, type CadSketchDimensionPick
 } from './cadSketchDimensionSelection';
 import { cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
 
@@ -50,8 +51,11 @@ describe('sketch dimension selection', () => {
     expect(reconcileCadSketchDimensionSelection(graph, current)).toBe(current);
     const withoutSize = { ...graph, relations: graph.relations.filter(relation => relation.id !== 'size') };
     expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withoutSize, current))).toEqual(['length']);
-    // Positional relations and datum coordinates are not canvas dimensions.
-    expect(cadSketchDimensionPick(graph, 'parallel-free')).toBeNull(); expect(cadSketchDimensionPick(graph, 'x')).toBeNull();
+    // Positional relations and fixed coordinates select as relation glyphs, by their own operands; a pick under another form drops out.
+    expect(cadSketchDimensionPick(graph, 'parallel-free')?.form).toBe('horizontal'); expect(cadSketchDimensionPick(graph, 'x')?.form).toBe('fixed-axis');
+    const glyph = Object.freeze([pick('length'), pick('parallel-free')]);
+    expect(reconcileCadSketchDimensionSelection(graph, glyph)).toBe(glyph);
+    expect(reconcileCadSketchDimensionSelection(withRelation({ id: 'parallel-free', kind: 'horizontal', pointIds: ['b', 'c'] }), glyph)).toEqual([pick('length')]);
     expect(reconcileCadSketchDimensionSelection(graph, [{ ...pick('length'), id: 'x' }])).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(undefined, current)).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(graph, NO_SKETCH_DIMENSIONS)).toBe(NO_SKETCH_DIMENSIONS);
@@ -188,7 +192,10 @@ describe('sketch dimension selection', () => {
     expect(replaced).not.toBe(first);
     // Restoring the first dimension replaces the one shown, so it mounts afresh too.
     expect(keys(graph).get('length')).not.toBe(replaced);
-    expect(keys(graph).has('parallel-free')).toBe(false);
+    // The dimensions layer keys only dimensions, the glyph layer only the others; both share one key rule.
+    expect(keys(graph).has('parallel-free')).toBe(true);
+    expect(createCadSketchDimensionKeys(isCadSketchDimensionRelation)(graph).has('parallel-free')).toBe(false);
+    expect([...createCadSketchDimensionKeys(isCadSketchGlyphRelation)(graph).keys()]).toEqual(['x', 'y', 'parallel-free']);
     expect(isCadSketchDimensionPickCurrent(graph, pick('length'))).toBe(true);
     expect(isCadSketchDimensionPickCurrent(withRelation({ id: 'length', kind: 'distance', pointIds: ['a', 'c'], value: 50 }), pick('length'))).toBe(false);
     expect(isCadSketchDimensionPickCurrent(undefined, pick('length'))).toBe(false);
@@ -200,6 +207,27 @@ describe('sketch dimension selection', () => {
     expect(cadSketchDimensionSelectionStatus(graph, ['size', 'rise'])).toBe('2 dimensions selected · Delete removes them');
     expect(cadSketchDimensionSelectionStatus(graph, [])).toBeNull();
     expect(cadSketchDimensionSelectionStatus(graph, ['gone'])).toBeNull();
+  });
+
+  it('describes a relation glyph selection by the relation names, Fix X and Fix Y on one point as Fixed, and a mixed one by its counts', () => {
+    expect(cadSketchDimensionSelectionStatus(graph, ['parallel-free'])).toBe('Horizontal selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(graph, ['x'])).toBe('Fix X selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(graph, ['x', 'y'])).toBe('Fixed selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(graph, ['length', 'x', 'y'])).toBe('1 dimension and 2 relations selected · Delete removes them');
+    expect(cadSketchDimensionSelectionStatus(graph, ['parallel-free', 'x', 'y'])).toBe('3 relations selected · Delete removes them');
+  });
+
+  it('selects the relations of one glyph together: a click replaces the selection, Shift adds them or, when all are selected, removes them', () => {
+    const fixed = [pick('x'), pick('y')], one = selectCadSketchAnnotations(NO_SKETCH_DIMENSIONS, [pick('length')], graph);
+    expect(cadSketchDimensionIds(selectCadSketchAnnotations(one, fixed, graph))).toEqual(['x', 'y']);
+    const both = selectCadSketchAnnotations(one, fixed, graph, true);
+    expect(cadSketchDimensionIds(both)).toEqual(['length', 'x', 'y']);
+    expect(selectCadSketchAnnotations(both, [pick('y'), pick('x')], graph)).not.toBe(both);
+    expect(cadSketchDimensionIds(selectCadSketchAnnotations(both, fixed, graph, true))).toEqual(['length']);
+    expect(selectCadSketchAnnotations(selectCadSketchAnnotations(NO_SKETCH_DIMENSIONS, fixed, graph), fixed, graph, true)).toBe(NO_SKETCH_DIMENSIONS);
+    // Hiding relation glyphs keeps the dimensions selected, and an unchanged set keeps its identity.
+    expect(cadSketchDimensionIds(keepCadSketchDimensionPicks(both, item => item.id === 'length'))).toEqual(['length']);
+    expect(keepCadSketchDimensionPicks(both, () => true)).toBe(both);
   });
 });
 

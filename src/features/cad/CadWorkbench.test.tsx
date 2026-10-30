@@ -2648,6 +2648,160 @@ describe('CAD sketch interaction', () => {
       expect(refocused).toBe(0); expect(relationsPanel()).toBeNull();
       expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'angle', 'size', 'x']);
     });
+
+    describe('relation glyphs', () => {
+      const edge = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
+      /** A 40 × 20 plate: Horizontal and Vertical on its own edges, Parallel across it, Fix X and Fix Y on one corner and a Length. */
+      const plate = () => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 20] }, { id: 'd', position: [0, 20] }],
+        entities: [edge('bottom', 'a', 'b'), edge('right', 'b', 'c'), edge('top', 'c', 'd'), edge('left', 'd', 'a')],
+        relations: [{ id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'upright', kind: 'vertical', pointIds: ['b', 'c'] }, { id: 'across', kind: 'parallel', lineIds: ['bottom', 'top'] },
+          { id: 'fx', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 }, { id: 'fy', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 },
+          { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 40 }] } }] });
+      const openPlate = (props?: Parameters<typeof mount>[1]) => open(props, plate());
+      const glyphs = (id: string) => [...container.querySelectorAll<SVGGElement>('[data-cad-sketch-relation-glyph]')].filter(item => item.getAttribute('data-cad-sketch-relation-glyph')?.split(' ').includes(id));
+      const glyph = (id: string) => { const found = glyphs(id)[0]; if (!found) throw new Error(`Glyph ${id} missing.`); return found; };
+      const pointer = (target: Element, type: string, init: MouseEventInit = {}) => {
+        const event = new MouseEvent(type, { button: 0, bubbles: true, cancelable: true, ...init }); Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } });
+        target.dispatchEvent(event);
+      };
+      const press = (target: Element, shiftKey = false, detail = 1) => {
+        pointer(target, 'pointerdown', { shiftKey, detail }); pointer(target, 'pointerup', { shiftKey, detail });
+        target.dispatchEvent(new MouseEvent('click', { button: 0, detail, shiftKey, bubbles: true, cancelable: true }));
+      };
+      const clickGlyph = (id: string, shiftKey = false) => act(async () => press(glyph(id), shiftKey));
+      const doubleClickGlyph = (id: string) => act(async () => {
+        const target = glyph(id); press(target); press(target, false, 2); target.dispatchEvent(new MouseEvent('dblclick', { button: 0, detail: 2, bubbles: true, cancelable: true }));
+      });
+      const glyphKey = (id: string, key: string, shiftKey = false) => act(async () => { glyph(id).focus(); glyph(id).dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true })); });
+      const selectedGlyphs = () => [...new Set([...container.querySelectorAll('[data-cad-sketch-relation-glyph].is-selected')].map(item => item.getAttribute('data-cad-sketch-relation-glyph')))];
+      const litGlyphs = () => [...container.querySelectorAll('[data-cad-highlight-glyph]')].map(item => item.getAttribute('data-cad-highlight-glyph'));
+      const relationIds = () => relations().map(relation => relation.id);
+
+      it('marks every relation on the geometry it holds, names it by its operands and lights its geometry and sibling glyphs on hover without rendering the canvas', async () => {
+        const source = await openPlate();
+        expect([...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].map(item => [item.getAttribute('data-cad-sketch-relation-glyph'), item.getAttribute('aria-label')])).toEqual([
+          ['level', 'Horizontal: Point 1 and Point 2'], ['upright', 'Vertical: Point 2 and Point 3'],
+          ['across', 'Parallel: Line 1 and Line 4'], ['across', 'Parallel: Line 1 and Line 4'], ['fx fy', 'Fixed: Point 1']]);
+        // The dimension keeps its own label and draws no glyph.
+        expect(glyphs('length')).toEqual([]); expect(label('length')).not.toBeNull();
+        canvasRenders.mockClear();
+        await hover(glyphs('across')[0]);
+        expect(highlighted('entity')).toEqual(['bottom', 'top']); expect(litGlyphs()).toEqual(['across', 'across']);
+        await hover(glyphs('across')[0], false);
+        expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull(); expect(litGlyphs()).toEqual([]);
+        expect(canvasRenders).not.toHaveBeenCalled(); expect(currentDocument).toBe(source); expect(geometry()).toEqual([]);
+      });
+
+      it('selects with a click, toggles with Shift, clears with Escape and shares one selection with the dimensions', async () => {
+        await openPlate();
+        await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'left' } }));
+        await clickGlyph('across');
+        expect(geometry()).toEqual([]); expect(selectedGlyphs()).toEqual(['across']); expect(status()).toBe('Parallel selected · Delete removes');
+        expect(glyphs('across').map(item => item.getAttribute('aria-pressed'))).toEqual(['true', 'true']); expect(highlighted('entity')).toEqual(['bottom', 'top']);
+        await act(async () => label('length').dispatchEvent(new MouseEvent('click', { button: 0, shiftKey: true, detail: 1, bubbles: true, cancelable: true })));
+        expect(status()).toBe('1 dimension and 1 relation selected · Delete removes them'); expect(selectedDimensions()).toEqual(['length']);
+        await clickGlyph('fx', true); expect(status()).toBe('1 dimension and 3 relations selected · Delete removes them');
+        await clickGlyph('across', true); expect(selectedGlyphs()).toEqual(['fx fy']);
+        await clickGlyph('level'); expect(selectedGlyphs()).toEqual(['level']); expect(selectedDimensions()).toEqual([]); expect(status()).toBe('Horizontal selected · Delete removes');
+        await glyphKey('fx', ' '); expect(status()).toBe('Fixed selected · Delete removes');
+        await canvasKey('Escape'); expect(selectedGlyphs()).toEqual([]); expect(status()).toBeNull();
+        // Escape on a focused glyph clears the selection too, and picking geometry takes the selection back.
+        await clickGlyph('upright'); await glyphKey('upright', 'Escape'); expect(selectedGlyphs()).toEqual([]);
+        await clickGlyph('upright'); await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'top' } }));
+        expect(selectedGlyphs()).toEqual([]); expect(geometry()).toEqual([{ kind: 'entity', id: 'top' }]);
+        expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+      });
+
+      it('deletes the selected relations and dimensions in one undoable edit, and a focused glyph\'s relations while nothing is selected', async () => {
+        const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+        const source = await openPlate({ build: null, buildState: 'idle', onEditMany });
+        await clickGlyph('across'); await act(async () => label('length').dispatchEvent(new MouseEvent('click', { button: 0, shiftKey: true, detail: 1, bubbles: true, cancelable: true })));
+        await canvasKey('Delete');
+        expect(onEditMany).toHaveBeenCalledOnce();
+        expect(onEditMany.mock.calls[0][0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'across' }, { kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'length' }]);
+        expect(relationIds()).toEqual(['level', 'upright', 'fx', 'fy']); expect(glyphs('across')).toEqual([]); expect(status()).toBeNull();
+        await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source); expect(glyphs('across')).toHaveLength(2);
+        // Focus never selects: Backspace on the merged Fixed glyph removes both its relations, and focus returns to the canvas.
+        await glyphKey('fx', 'Backspace');
+        expect(onEditMany).toHaveBeenCalledTimes(2); expect(onEditMany.mock.calls[1][0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'fx' }, { kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'fy' }]);
+        expect(relationIds()).toEqual(['level', 'upright', 'across', 'length']);
+        expect(document.activeElement).toBe(container.querySelector('[aria-label="Sketch drawing canvas"]'));
+      });
+
+      it('keeps the selection and reports a refused removal in the relations list wording', async () => {
+        await openPlate({ build: null, buildState: 'idle', onEditMany: edits => {
+          const graph = plate().features[0];
+          if (edits[0]?.kind === 'remove-sketch-relation' && graph.kind === 'sketch' && graph.graph) throw new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Plate', graph: graph.graph,
+            rejection: { kind: 'rejected', reason: 'failed', message: 'Solver gave up.', diagnostics: { status: 'failed', degreesOfFreedom: 1, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
+          currentSession.edit(edits);
+        } });
+        statusMessage.mockClear(); await clickGlyph('level'); await canvasKey('Delete');
+        expect(statusMessage).toHaveBeenCalledWith(expect.stringContaining('Plate: The sketch solver could not solve this edit.'), 'error');
+        expect(relationIds()).toContain('level'); expect(selectedGlyphs()).toEqual(['level']); expect(status()).toBe('Horizontal selected · Delete removes');
+      });
+
+      it('opens the relations list on its row from a double-click or Enter, and offers Show in relations list and Delete in its menu', async () => {
+        const source = await openPlate();
+        await doubleClickGlyph('across');
+        expect(relationsPanel()).not.toBeNull(); expect(relationRow('Parallel').getAttribute('aria-pressed')).toBe('true');
+        // The relation stays the selection while its row is open, and the list works on the lines it holds.
+        expect(selectedGlyphs()).toEqual(['across']); expect(geometry()).toEqual([]); expect(currentDocument).toBe(source);
+        await canvasKey('Escape'); await canvasKey('Escape');
+        await glyphKey('upright', 'Enter'); expect(relationRow('Vertical').getAttribute('aria-pressed')).toBe('true');
+        await canvasKey('Escape'); await canvasKey('Escape');
+        const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]')!;
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+        await glyphKey('fx', 'F10', true);
+        expect(selectedGlyphs()).toEqual(['fx fy']);
+        expect([...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim())).toEqual(['Show in relations list', 'Delete']);
+        // A zero coordinate's row reads as the axis it holds the point on.
+        await act(async () => menuItem('Show in relations list').click()); expect(relationRow('On the Y axis').getAttribute('aria-pressed')).toBe('true');
+        await canvasKey('Escape'); await canvasKey('Escape');
+        await glyphKey('level', 'ContextMenu'); await act(async () => menuItem('Delete').click());
+        expect(relationIds()).toEqual(['upright', 'across', 'fx', 'fy', 'length']);
+        expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+      });
+
+      it('lights the glyphs of a hovered relations list row and of the selected geometry', async () => {
+        await openPlate();
+        await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'bottom' } }));
+        expect([...container.querySelectorAll('[data-cad-sketch-relation-glyph].is-related')].map(item => item.getAttribute('data-cad-sketch-relation-glyph'))).toEqual(['level', 'across']);
+        await geometryMenu('bottom', 'Constraints and dimensions');
+        const row = relationRow('Parallel').closest('li')!, panel = row.closest('form')!;
+        await act(async () => panel.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row })));
+        expect(litGlyphs()).toEqual(['across', 'across']); expect(highlighted('entity')).toEqual(['bottom', 'top']);
+        await act(async () => row.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: panel })));
+        expect(litGlyphs()).toEqual([]);
+      });
+
+      it('hides every glyph and drops a glyph selection when Show relations is off, keeping the dimensions', async () => {
+        await openPlate();
+        await clickGlyph('level'); await act(async () => label('length').dispatchEvent(new MouseEvent('click', { button: 0, shiftKey: true, detail: 1, bubbles: true, cancelable: true })));
+        await act(async () => glyph('across').focus());
+        await act(async () => setCadPreferences({ ...getCadPreferences(), showRelations: false }));
+        expect(container.querySelector('[data-cad-sketch-relation-glyph]')).toBeNull();
+        expect(selectedDimensions()).toEqual(['length']); expect(status()).toBe('Length selected · Double-click or Enter edits · Delete removes');
+        expect(document.activeElement).toBe(container.querySelector('[aria-label="Sketch drawing canvas"]'));
+        await act(async () => setCadPreferences({ ...getCadPreferences(), showRelations: true }));
+        expect(glyphs('level')).toHaveLength(1); expect(selectedGlyphs()).toEqual([]);
+      });
+
+      it('takes no pointer events or focus with a drawing tool, a pending line chain or a geometry pick', async () => {
+        await openPlate();
+        const inert = () => [...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].every(item => item.getAttribute('tabindex') === '-1' && item.getAttribute('pointer-events') === 'none');
+        expect(inert()).toBe(false);
+        await click('Line'); expect(inert()).toBe(true);
+        await canvasClick(100, 300); await canvasClick(200, 300);
+        expect(inert()).toBe(true); await clickGlyph('level'); expect(selectedGlyphs()).toEqual([]);
+        await canvasKey('Escape'); await canvasKey('Escape'); expect(toolButton('Select').getAttribute('aria-pressed')).toBe('true'); expect(inert()).toBe(false);
+        await click('Constrain');
+        const parallel = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent?.trim() === 'Parallel');
+        if (!parallel) throw new Error('Parallel missing.'); await act(async () => parallel.click());
+        expect(inert()).toBe(true); await clickGlyph('level'); expect(selectedGlyphs()).toEqual([]);
+        await canvasKey('Escape'); expect(inert()).toBe(false);
+      });
+    });
   });
 
   it('picks two points after Dimension without moving geometry, restores canceled selection and keeps the exact ordered axis driver', async () => {

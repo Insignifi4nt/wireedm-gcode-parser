@@ -33,8 +33,13 @@ import { cadSketchDistanceForPair as distanceForPair, cadSketchDrivingDimensionF
   cadSketchPointLineDistanceFor as pointLineDistanceFor, cadSketchRadialRelationForEntity as radialRelationForEntity, cadSketchReferenceDrivingLock as referenceDrivingLock,
   cadSketchRelationHasPointPair as samePair, cadSketchSameIdentityPair as sameIdentityPair } from './cadSketchDimensionCommands';
 import { cadSketchRelationHighlight, type CadSketchHighlight, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
+import { isCadSketchConcentric } from './cadSketchRelationNames';
+import { cadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
+import { CAD_SKETCH_RELATION_ICONS } from './CadSketchRelationGlyphs';
 import './cad-sketch-profile.css';
 
+/** A row lights up its geometry, and the canvas glyphs of the relations it names. */
+type RowHighlight = CadSketchHighlight & { readonly relationIds?: readonly string[] };
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 const relationLabels = {
@@ -194,7 +199,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const highlightOwner = useId(), highlighted = useRef<HighlightedRow | null>(null);
   const hideHighlight = () => { highlighted.current?.store.hide(highlightOwner); highlighted.current = null; };
   /** Pointer and focus handlers for a row; showing records the row, so no state changes and nothing renders but the overlay. */
-  const highlightRow = (row: string, target: () => CadSketchHighlight) => {
+  const highlightRow = (row: string, target: () => RowHighlight) => {
     const show = (element: Element, focused: boolean) => {
       highlighted.current = highlight ? { store: highlight, row, element, focused } : null; highlight?.show(highlightOwner, { kind: 'geometry', ...target() });
     };
@@ -359,7 +364,11 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const labelRelation = (relation: CadSketchGraphRelation) => initialCommand?.kind === 'datum-distance' && relation.kind === 'fixed-axis' && datumDimensions.some(item => item.id === relation.id)
     ? initialCommand.datum === 'origin' ? `${relation.axis.toUpperCase()} from origin` : relation.axis === 'x' ? 'X from Y axis' : 'Y from X axis'
     : relation.kind === 'distance' && pointPair && sameIdentityPair(draftIdentity, relation.pointIds, pointPair) ? 'Distance'
-      : relation.kind === 'distance' && centerPair && sameIdentityPair(draftIdentity, relation.pointIds, centerPair) ? 'Center distance' : relationLabel(relation);
+      : relation.kind === 'distance' && centerPair && sameIdentityPair(draftIdentity, relation.pointIds, centerPair) ? 'Center distance'
+        : isCadSketchConcentric(draft, relation) ? 'Concentric' : relationLabel(relation);
+  // A row draws the glyph its relation draws on the canvas.
+  const relationIcon = (relation: CadSketchGraphRelation) => { const kind = cadSketchRelationGlyphKind(draft, relation); if (!kind) return null; const Icon = CAD_SKETCH_RELATION_ICONS[kind]; return <Icon size={12} />; };
+  const relationRowHighlight = (relation: CadSketchGraphRelation): RowHighlight => ({ ...cadSketchRelationHighlight(draft, relation), relationIds: [relation.id] });
   // A zero coordinate reads as the plane reference it holds the point on; the value editor keeps the coordinate name.
   const listedRelationLabel = (relation: CadSketchGraphRelation) => datumDimensions.some(item => item.id === relation.id) ? null : cadSketchDatumRelationLabel(relation);
   const acceptedScalars = useMemo(() => {
@@ -587,9 +596,9 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   }, [inspectedSubject, onInspectSubject]);
   const scalarContext = { parameters, acceptedScalars, relationEdits, valueDrafts, setValueDraft, setIssue,
     setRelationPending: setBindingPending, markRelationEdited, changeParameter };
-  const subjectHighlight = (subject: CadSketchConstraintFeedbackSubject): CadSketchHighlight => {
+  const subjectHighlight = (subject: CadSketchConstraintFeedbackSubject): RowHighlight => {
     const relation = subject.source.kind === 'relation' ? draft.relations.find(item => item.id === subject.source.id) : undefined;
-    return { pointIds: subject.pointIds, entityIds: subject.entityIds, datums: relation ? cadSketchRelationHighlight(draft, relation).datums : [] };
+    return { pointIds: subject.pointIds, entityIds: subject.entityIds, datums: relation ? cadSketchRelationHighlight(draft, relation).datums : [], relationIds: relation ? [relation.id] : [] };
   };
   // A row that an edit removes or remounts gets no blur or pointer leave, so after every render the highlight follows its row:
   // it is drawn again from the current draft while the row is listed, and hidden once the row is gone or a remount took its focus.
@@ -598,13 +607,13 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     const kept = !shown.focused || shown.element.isConnected;
     const relation = kept && !corner && !dimensionOnly ? relations.find(item => `relation/${item.id}` === shown.row) : undefined;
     const subject = kept && !relation ? feedback?.subjects.find((item, index) => `issue/${issueRowKey(item, index)}` === shown.row) : undefined;
-    const target = relation ? cadSketchRelationHighlight(draft, relation) : subject ? subjectHighlight(subject) : null;
+    const target = relation ? relationRowHighlight(relation) : subject ? subjectHighlight(subject) : null;
     if (target) shown.store.show(highlightOwner, { kind: 'geometry', ...target }); else hideHighlight();
   });
   const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}
-          {...highlightRow(`relation/${relation.id}`, () => cadSketchRelationHighlight(draft, relation))}>
+          {...highlightRow(`relation/${relation.id}`, () => relationRowHighlight(relation))}>
           <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { if(relation.kind === 'linear-pattern') { if (!pending) onEditPattern?.(relation.id); return; } setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
-            {listedRelationLabel(relation) ?? labelRelation(relation)}{!listedRelationLabel(relation) && (relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
+            {relationIcon(relation)}{listedRelationLabel(relation) ?? labelRelation(relation)}{!listedRelationLabel(relation) && (relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
             {relation.kind === 'reference-dimension' && <span>({referenceValue(relation)})</span>}
             {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
           </Button><Button type="button" aria-label={relation.kind === 'linear-pattern' ? 'Detach pattern' : relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'linear-pattern' ? 'Detach all occurrences and retain their current geometry' : relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} disabled={relation.kind === 'linear-pattern' && (pending || !onEditPattern)} onClick={() => { if (relation.kind === 'linear-pattern') onEditPattern?.(relation.id,true); else removeRelation(relation.id); }}><CloseIcon size={12} /></Button>

@@ -39,3 +39,16 @@ it('applies depth handles for the session and explains when device storage fails
   expect(input.checked).toBe(false); expect(getCadPreferences().showDepthHandles).toBe(false);
   expect(container.querySelector('[role="status"]')?.textContent).toContain('Applied for this session');
 });
+
+it('shows relations by default, saves an explicit choice, and reads a stored choice back', () => {
+  display();
+  const input = [...container.querySelectorAll('label')].find(element => element.textContent?.includes('Show relations'))!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(input.checked).toBe(true); expect(getCadPreferences().showRelations).toBeUndefined();
+  act(() => input.click());
+  expect(getCadPreferences()).toEqual({ navigationMode: 'trackpad', showOnPartDimensions: false, showRelations: false });
+  localStorage.setItem(CAD_PREFERENCES_KEY, JSON.stringify({ navigationMode: 'mouse', showOnPartDimensions: true, showRelations: true }));
+  expect(getCadPreferences()).toEqual({ navigationMode: 'mouse', showOnPartDimensions: true, showRelations: true });
+  // A stored choice of another type is not this device's preference, so the defaults apply and the stored bytes stay.
+  localStorage.setItem(CAD_PREFERENCES_KEY, JSON.stringify({ navigationMode: 'mouse', showOnPartDimensions: true, showRelations: 'no' }));
+  expect(getCadPreferences()).toEqual({ navigationMode: 'mouse', showOnPartDimensions: true });
+});
