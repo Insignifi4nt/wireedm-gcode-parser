@@ -1348,7 +1348,6 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     dimensionPointer.set(null);
     showDimensionPicks({ id: crypto.randomUUID(), documentId: document.id, sketchId: sketch.id, previousGraphPick: graphPick, previousProfileId: profileId, placed: null, picks: null }, operands);
   };
-  /** Escape cancels a placement being applied, then drops the picks, then returns to Select. */
   /** Escape stops a placement or drops the picks; with neither, the shared Escape leaves the tool for Select. */
   const escapeDimensionTool = () => {
     const session = dimensionToolOwner.current;
