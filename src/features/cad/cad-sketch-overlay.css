@@ -1,0 +1,3 @@
+/* Pointer-driven drawing over the sketch canvas: it lies exactly over the canvas, takes no pointer events and paints on its own layer. */
+.cad-sketch-overlay { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; overflow: hidden; will-change: transform; }
+.cad-sketch-overlay * { pointer-events: none; }
