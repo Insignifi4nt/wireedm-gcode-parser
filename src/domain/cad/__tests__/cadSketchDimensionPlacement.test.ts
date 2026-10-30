@@ -58,19 +58,33 @@ describe('dimension type by pointer position', () => {
 });
 
 describe('dimension plans per pick kind', () => {
-  it('measures one line as its length and the pointer picks its horizontal or vertical distance', () => {
+  it('measures one line as its length wherever the pointer is, and names its horizontal and vertical distances', () => {
     const graph = sketch(), exact = JSON.stringify(graph), result = plan(graph, [entity('slant')]);
     const length = available(result, 'aligned');
     expect(length.label).toBe('Length');
     expect(length.relations).toEqual([{ id: 'new-1', kind: 'distance', pointIds: ['s0', 's1'], value: Math.hypot(10, 10) }]);
     expect(length.reference).toEqual({ id: 'new-1', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'slant' } });
-    expect(result.defaultForm).toBe('aligned'); expect(result.pair).toEqual([{ x: 60, y: 0 }, { x: 70, y: 10 }]);
-    expect(cadSketchDimensionCandidateAt(result, null)).toBe(length);
-    expect(cadSketchDimensionCandidateAt(result, { x: 65, y: 20 })?.form).toBe('horizontal');
-    expect(cadSketchDimensionCandidateAt(result, { x: 90, y: 5 })?.form).toBe('vertical');
+    // Only a pair of positions lets the pointer choose; one line's projections are there to name.
+    expect(result.defaultForm).toBe('aligned'); expect(result.pair).toBeNull();
+    for (const pointer of [null, { x: 65, y: 20 }, { x: 90, y: 5 }, { x: 65, y: -10 }]) expect(cadSketchDimensionCandidateAt(result, pointer)).toBe(length);
     expect(available(result, 'horizontal').relations).toEqual([{ id: 'new-2', kind: 'axis-distance', pointIds: ['s0', 's1'], axis: 'x', value: 10 }]);
     expect(available(result, 'horizontal').referenceReason).toMatch(/no reference form/);
+    expect(available(result, 'vertical').relations).toEqual([{ id: 'new-3', kind: 'axis-distance', pointIds: ['s0', 's1'], axis: 'y', value: 10 }]);
     expect(JSON.stringify(graph)).toBe(exact);
+  });
+
+  it('places a slanted line\'s length above and beside it, never its horizontal or vertical projection', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'p', position: [0, 0] }, { id: 'q', position: [40, 20] }],
+      entities: [{ id: 'line', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }], relations: [] });
+    const result = plan(graph, [entity('line')]);
+    for (const pointer of [{ x: 20, y: 40 }, { x: 60, y: 10 }, { x: 20, y: -30 }, { x: -20, y: 10 }]) {
+      const placed = cadSketchDimensionCandidateAt(result, pointer);
+      if (placed?.state !== 'available') throw new Error('Expected the length.');
+      expect(cadSketchDimensionRelationsAt(placed, pointer).relations).toEqual([{ id: 'new-1', kind: 'distance', pointIds: ['p', 'q'], value: Math.hypot(40, 20) }]);
+      expect(layoutCadSketchDimensionPreview(placed.preview, pointer, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance', Math.hypot(40, 20)]]);
+    }
+    expect(candidate(result, 'horizontal')).toMatchObject({ state: 'available', relations: [{ kind: 'axis-distance', axis: 'x', value: 40 }] });
+    expect(candidate(result, 'vertical')).toMatchObject({ state: 'available', relations: [{ kind: 'axis-distance', axis: 'y', value: 20 }] });
   });
 
   it('orders a horizontal distance from its left point so its value reads positive', () => {
@@ -118,6 +132,41 @@ describe('dimension plans per pick kind', () => {
     expect(candidate(lines, 'angle')).toMatchObject({ state: 'blocked', reason: 'These lines are parallel, so they have no angle.' });
     const kept = plan(sketch([{ id: 'p', kind: 'parallel', lineIds: ['top', 'bottom'] }]), [entity('bottom'), entity('top')]);
     expect(available(kept, 'point-line')).toMatchObject({ implied: null, relations: [{ kind: 'point-line-distance' }] });
+  });
+
+  it('reuses a distance to one end of the other line and adds the Parallel that keeps it measuring the gap', () => {
+    const gap = { id: 'gap', kind: 'point-line-distance', pointId: 'c', lineId: 'bottom', side: 'left', value: 20 };
+    const reused = available(plan(sketch([gap]), [entity('top'), entity('bottom')]), 'point-line');
+    expect(reused).toMatchObject({ reuses: 'gap', relations: [{ id: reused.implied, kind: 'parallel', lineIds: ['top', 'bottom'] }], reference: null, preview: { value: 20 } });
+    // Once Parallel holds the lines, the distance already keeps the gap.
+    expect(candidate(plan(sketch([gap, { id: 'p', kind: 'parallel', lineIds: ['bottom', 'top'] }]), [entity('top'), entity('bottom')]), 'point-line'))
+      .toMatchObject({ state: 'existing', relationId: 'gap' });
+    // A reference keeps nothing, so it is only selected.
+    expect(candidate(plan(sketch([{ id: 'ref', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'c', lineId: 'bottom' } }]), [entity('bottom'), entity('top')]), 'point-line'))
+      .toMatchObject({ state: 'existing', relationId: 'ref' });
+  });
+
+  it('offers the reference of a zero distance that no driving dimension can take', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'p', position: [0, 0] }, { id: 'q', position: [40, 0] }, { id: 'on', position: [15, 0] }, { id: 'twin', position: [40, 0] }, { id: 'joined', position: [0, 0] }],
+      entities: [{ id: 'line', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }], relations: [{ id: 'join', kind: 'coincident', pointIds: ['p', 'joined'] }] });
+    // A distinct point lying on the line.
+    const onLine = candidate(plan(graph, [point('on'), entity('line')]), 'point-line');
+    expect(onLine).toMatchObject({ state: 'blocked', reason: 'The point lies on the line. Use Point on line to keep it there.',
+      reference: { kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'on', lineId: 'line' } }, preview: { kind: 'point-line', value: 0 } });
+    if (onLine.state !== 'blocked' || !onLine.preview) throw new Error('Expected a reference preview.');
+    expect(layoutCadSketchDimensionPreview(onLine.preview, { x: 15, y: 5 }, .1)).toHaveLength(1);
+    // Two distinct points at one position.
+    const twins = plan(graph, [point('q'), point('twin')]), aligned = candidate(twins, 'aligned');
+    expect(aligned).toMatchObject({ state: 'blocked', reason: 'These points share one position, so they have no distance.',
+      reference: { kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['q', 'twin'] } }, preview: { kind: 'pair', value: 0 } });
+    expect(cadSketchDimensionCandidateAt(twins, { x: 50, y: 10 })).toBe(aligned);
+    expect(candidate(twins, 'horizontal')).not.toHaveProperty('reference');
+    if (aligned.state !== 'blocked' || !aligned.preview) throw new Error('Expected a reference preview.');
+    expect(layoutCadSketchDimensionPreview(aligned.preview, { x: 40, y: 6 }, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance', 0]]);
+    // Joined points are one point, so they take nothing; an existing reference of the zero distance is selected.
+    expect(plan(graph, [point('p'), point('joined')]).candidates.every(item => item.state === 'blocked' && !item.reference)).toBe(true);
+    const measured = parseCadSketchGraph({ ...graph, relations: [...graph.relations, { id: 'zero', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'on', lineId: 'line' } }] });
+    expect(candidate(plan(measured, [point('on'), entity('line')]), 'point-line')).toMatchObject({ state: 'existing', relationId: 'zero', preview: { value: 0 } });
   });
 
   it('gives other line pairs an angle in the sector holding the pointer', () => {
@@ -212,6 +261,21 @@ describe('dimensions to the origin and axes', () => {
     expect(candidate(plan(sketch(), [entity('slant'), datum('y-axis')]), 'datum')).toMatchObject({ state: 'blocked', reason: 'This line is not parallel to the Y axis, so it has no distance from it.' });
     expect(candidate(plan(sketch(), [entity('right'), datum('origin')]), 'datum').state).toBe('blocked');
   });
+
+  it('reuses one end held from the axis and adds the Horizontal that keeps the line at that distance', () => {
+    const line = (relations: unknown[]) => parseCadSketchGraph({ points: [{ id: 'p', position: [10, 10] }, { id: 'q', position: [50, 10] }],
+      entities: [{ id: 'line', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }], relations });
+    // Only the first end's Y is held, so the other end could still move up or down.
+    const result = plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }]), [entity('line'), datum('x-axis')]);
+    expect(available(result, 'datum')).toMatchObject({ reuses: 'held', implied: 'new-1', relations: [{ id: 'new-1', kind: 'horizontal', pointIds: ['p', 'q'] }], reference: null });
+    // A hold on the other end is reused the same way.
+    expect(available(plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }]), [datum('x-axis'), entity('line')]), 'datum'))
+      .toMatchObject({ reuses: 'held', relations: [{ kind: 'horizontal' }] });
+    // With Horizontal, or both ends held, the hold already keeps the distance, so placing only selects it.
+    for (const kept of [[{ id: 'level', kind: 'horizontal', pointIds: ['q', 'p'] }], [{ id: 'other', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }]])
+      expect(candidate(plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }, ...kept]), [entity('line'), datum('x-axis')]), 'datum'))
+        .toMatchObject({ state: 'existing', relationId: 'held' });
+  });
 });
 
 describe('preview measurement', () => {
@@ -231,6 +295,23 @@ describe('preview measurement', () => {
     const radius = available(plan(sketch(), [entity('bend')]), 'radius'), [mark] = layoutCadSketchDimensionPreview(radius.preview, { x: 0, y: 80 }, .1);
     expect(mark).toMatchObject({ kind: 'radius', value: 5 });
     expect(layoutCadSketchDimensionPreview(radius.preview, { x: Number.NaN, y: 0 }, .1)).toEqual([]);
+  });
+
+  it('puts a radius or diameter label at the pointer\'s distance as well as its direction, inside or outside the curve', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 0] }, { id: 's', position: [5, 0] }, { id: 'e', position: [0, 5] }],
+      entities: [{ id: 'ring', kind: 'circle', centerPointId: 'o', radius: 5, construction: false }, { id: 'bend', kind: 'arc', centerPointId: 'o', startPointId: 's', endPointId: 'e', direction: 'ccw', construction: false }], relations: [] });
+    for (const [id, form] of [['ring', 'diameter'], ['ring', 'radius'], ['bend', 'radius'], ['bend', 'diameter']] as const) {
+      const size = available(plan(graph, [entity(id)]), form);
+      const [near] = layoutCadSketchDimensionPreview(size.preview, { x: 10, y: 0 }, .1), [far] = layoutCadSketchDimensionPreview(size.preview, { x: 50, y: 0 }, .1);
+      // Outside the curve the leader runs from the center to the label, with the arrow meeting the curve from outside.
+      expect(near.label).toEqual([10, 0]); expect(far.label).toEqual([50, 0]);
+      expect(near.line).toEqual([[0, 0], [10, 0]]); expect(far.line).toEqual([[0, 0], [50, 0]]);
+      expect(far.arrows[0][0]).toEqual([5, 0]); expect(far.arrows[0][1][0]).toBeGreaterThan(5);
+      // Inside it the leader stops at the curve, with the arrow meeting it from the center.
+      const [inside] = layoutCadSketchDimensionPreview(size.preview, { x: 0, y: 2 }, .1);
+      expect(inside.label[0]).toBeCloseTo(0, 12); expect(inside.label[1]).toBeCloseTo(2, 12);
+      expect(inside.line?.[1][0]).toBeCloseTo(0, 12); expect(inside.line?.[1][1]).toBeCloseTo(5, 12); expect(inside.arrows[0][1][1]).toBeLessThan(5);
+    }
   });
 });
 

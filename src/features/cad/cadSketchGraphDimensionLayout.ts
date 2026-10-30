@@ -164,13 +164,18 @@ function pointLineGeometry(point: Point2, axis: Support, valueMm: number, mmPerP
     label: [foot.x / 2 + point.x / 2 - readY * lift, foot.y / 2 + point.y / 2 + readX * lift], labelAngle: Math.atan2(readY, readX) };
 }
 
-function radialGeometry(center: Point2, radius: number, angle: number, valueMm: number, kind: 'radius' | 'diameter', mmPerPixel: number, reference = false): Omit<LinearDimensionGeometry, 'valueMm'> {
+/**
+ * A radius or diameter leader from the center through the curve at `angle`. The label sits just beyond the curve, or `reach` from the center
+ * when given, as a preview puts it at the pointer: outside the curve the arrow meets it from the label, inside it from the center.
+ */
+function radialGeometry(center: Point2, radius: number, angle: number, valueMm: number, kind: 'radius' | 'diameter', mmPerPixel: number, reference = false, reach?: number): Omit<LinearDimensionGeometry, 'valueMm'> {
   const ux = Math.cos(angle), uy = Math.sin(angle), tip: SketchPoint = [center.x + ux * radius, center.y + uy * radius];
   const box = cadSketchGraphDimensionLabel(valueMm, kind, reference);
   const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
-  const label: SketchPoint = [tip[0] + ux * clearance, tip[1] + uy * clearance];
-  const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, radius / 4), headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, radius / 8);
-  return { line: [[center.x, center.y], label], extensions: [], label, labelAngle: 0,
+  const distance = reach !== undefined && Number.isFinite(reach) && reach > 0 ? reach : radius + clearance, outside = distance >= radius ? 1 : -1;
+  const label: SketchPoint = [center.x + ux * distance, center.y + uy * distance];
+  const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, radius / 4) * outside, headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, radius / 8);
+  return { line: [[center.x, center.y], outside > 0 ? label : tip], extensions: [], label, labelAngle: 0,
     arrows: [[tip, [tip[0] + ux * headLength - uy * headWidth, tip[1] + uy * headLength + ux * headWidth],
       [tip[0] + ux * headLength + uy * headWidth, tip[1] + uy * headLength - ux * headWidth]]] };
 }
@@ -320,7 +325,8 @@ export type CadSketchDimensionPreviewMark = DimensionGeometry & { readonly kind:
 /**
  * A dimension before it is placed, drawn by the placed layouts with its dimension line through the pointer: an aligned distance
  * parallel to its points, a horizontal or vertical one level or upright at the pointer, a radius toward it and an angle in the
- * sector holding it, its arc at the pointer's distance. A point to line distance keeps its placed layout. Placed dimensions keep
+ * sector holding it, its arc at the pointer's distance, and a radius or diameter with its label at the pointer, inside or outside the curve.
+ * A point to line distance keeps its placed layout. Placed dimensions keep
  * the default offset until dimensions store where they were placed.
  */
 export function layoutCadSketchDimensionPreview(source: CadSketchDimensionPreviewSource, pointer: Point2, mmPerPixel: number): readonly CadSketchDimensionPreviewMark[] {
@@ -328,9 +334,10 @@ export function layoutCadSketchDimensionPreview(source: CadSketchDimensionPrevie
   const linear = (a: Point2, b: Point2, form: 'aligned' | 'horizontal' | 'vertical', value: number): CadSketchDimensionPreviewMark | null => {
     const kind = form === 'aligned' ? 'distance' : form === 'horizontal' ? 'distance-x' : 'distance-y', box = cadSketchGraphDimensionLabel(value, kind);
     if (form === 'aligned') {
-      const length = Math.hypot(b.x - a.x, b.y - a.y);
-      if (!(length > 0)) return null;
-      let nx = -(b.y - a.y) / length, ny = (b.x - a.x) / length, out = (pointer.x - a.x) * nx + (pointer.y - a.y) * ny;
+      // Points at one position, which only a reference measures, run level like their placed reference.
+      const length = Math.hypot(b.x - a.x, b.y - a.y), ux = length > 0 ? (b.x - a.x) / length : 1, uy = length > 0 ? (b.y - a.y) / length : 0;
+      if (!Number.isFinite(length)) return null;
+      let nx = -uy, ny = ux, out = (pointer.x - a.x) * nx + (pointer.y - a.y) * ny;
       if (out < 0) { nx = -nx; ny = -ny; out = -out; }
       return { kind, value, ...alignedGeometry(a, b, nx, ny, mmPerPixel, box, out / mmPerPixel) };
     }
@@ -359,8 +366,8 @@ export function layoutCadSketchDimensionPreview(source: CadSketchDimensionPrevie
       return [{ kind: 'point-line', value: source.value, ...pointLineGeometry(source.point, axis, source.value, mmPerPixel, false) }];
     }
     case 'radial': {
-      const dx = pointer.x - source.center.x, dy = pointer.y - source.center.y, angle = Math.hypot(dx, dy) > 0 ? Math.atan2(dy, dx) : Math.PI / 4;
-      return [{ kind: source.quantity, value: source.value, ...radialGeometry(source.center, source.radius, angle, source.value, source.quantity, mmPerPixel) }];
+      const dx = pointer.x - source.center.x, dy = pointer.y - source.center.y, reach = Math.hypot(dx, dy), angle = reach > 0 ? Math.atan2(dy, dx) : Math.PI / 4;
+      return [{ kind: source.quantity, value: source.value, ...radialGeometry(source.center, source.radius, angle, source.value, source.quantity, mmPerPixel, false, reach) }];
     }
     case 'angle': {
       const sector = cadSketchDimensionAngleSectorAt(source, pointer);

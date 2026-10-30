@@ -47,7 +47,8 @@ export const CadSketchDimensionPreview = memo(function CadSketchDimensionPreview
     x2={points[1][0] - center[0]} y2={points[1][1] - center[1]} />;
   return <g className="cad-sketch-dimension-preview" data-cad-dimension-preview={candidate.form} aria-hidden="true">
     {marks.map((mark, index) => {
-      const { text } = cadSketchGraphDimensionLabel(mark.value, mark.kind, candidate.state === 'existing');
+      // An existing dimension, and a blocked one that only its reference measures, read in a reference's parentheses.
+      const { text } = cadSketchGraphDimensionLabel(mark.value, mark.kind, candidate.state !== 'available');
       return <g key={index} className="cad-sketch-graph-dimension is-preview" data-cad-dimension-kind={mark.kind}>
         <g className="cad-sketch-graph-dimension-lines">
           {mark.extensions.map((extension, part) => <g key={part}>{segment(extension, 'cad-sketch-graph-dimension-extension')}</g>)}

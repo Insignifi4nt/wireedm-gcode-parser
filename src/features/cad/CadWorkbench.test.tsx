@@ -2672,7 +2672,7 @@ describe('CAD sketch interaction', () => {
       await open();
       await replace(current => current.filter(relation => relation.id !== 'measured'));
       await geometryMenu('side', 'Dimension');
-      expect(pickInstruction()).toBe('Length · Click or press Enter to place; the pointer side chooses aligned, horizontal or vertical · Or choose a second line, a point, a curve or an axis · Escape drops the picks');
+      expect(pickInstruction()).toBe('Length · Click or press Enter to place; right-click for its horizontal or vertical distance · Or choose a second line, a point, a curve or an axis · Escape drops the picks');
       expect(relationsPanel()).toBeNull();
       await canvasKey('Escape'); await canvasKey('Enter');
       expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'angle', 'size', 'x']);
@@ -2684,13 +2684,14 @@ describe('CAD sketch interaction', () => {
   });
 
   describe('Dimension tool placement', () => {
-    const plate = () => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
-      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [10, 20] }, { id: 'd', position: [40, 20] }, { id: 'o', position: [25, 12] }],
+    type Extra = { readonly points?: readonly unknown[]; readonly entities?: readonly unknown[]; readonly relations?: readonly unknown[] };
+    const plate = (extra: Extra = {}) => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [10, 20] }, { id: 'd', position: [40, 20] }, { id: 'o', position: [25, 12] }, ...extra.points ?? []],
       entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
-        { id: 'hole', kind: 'circle', construction: false, centerPointId: 'o', radius: 3 }],
-      relations: [] } }] });
-    const open = async (onEditMany?: CadWorkbenchProps['onEditMany']) => {
-      const source = plate(); await mount(source, { build: null, buildState: 'idle', ...onEditMany ? { onEditMany } : {} });
+        { id: 'hole', kind: 'circle', construction: false, centerPointId: 'o', radius: 3 }, ...extra.entities ?? []],
+      relations: [...extra.relations ?? []] } }] });
+    const open = async (onEditMany?: CadWorkbenchProps['onEditMany'], extra?: Extra) => {
+      const source = plate(extra); await mount(source, { build: null, buildState: 'idle', ...onEditMany ? { onEditMany } : {} });
       await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
       return source;
     };
@@ -2773,7 +2774,7 @@ describe('CAD sketch interaction', () => {
       expect(edit).toHaveBeenCalledTimes(1); expect(pickInstruction()).toBe('Drawing is paused while another edit or operation is active.');
       await canvasKey('Escape'); await settle();
       expect(signals[0]?.aborted).toBe(true); expect(relations()).toEqual([]);
-      expect(pickInstruction()).toBe('Length · Click or press Enter to place; the pointer side chooses aligned, horizontal or vertical · Or choose a second line, a point, a curve or an axis · Escape drops the picks');
+      expect(pickInstruction()).toBe('Length · Click or press Enter to place; right-click for its horizontal or vertical distance · Or choose a second line, a point, a curve or an axis · Escape drops the picks');
       expect(statusMessage).not.toHaveBeenCalledWith(expect.anything(), 'error');
     });
 
@@ -2812,6 +2813,55 @@ describe('CAD sketch interaction', () => {
       await pick(entity('top')); await pick(datum('y-axis')); await canvasKey('Enter');
       expect(statusMessage).toHaveBeenLastCalledWith('Untitled part: This line is not parallel to the Y axis, so it has no distance from it.', 'error');
       expect(currentDocument).toEqual(source); expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: 'top' }]);
+    });
+
+    it('reuses a dimension that already measures the picks and adds only the relation that keeps it, as one undo step', async () => {
+      const reused = 'Already dimensioned: that dimension is selected, with the relation added that keeps it measuring these picks.';
+      const selected = () => [...container.querySelectorAll('[data-cad-sketch-dimension].is-selected')].map(item => item.getAttribute('data-cad-sketch-dimension'));
+      // One end of the top line is held from the X axis, so its other end could still move.
+      const held = { id: 'held', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 20 };
+      const edit = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+      let source = await open(edit, { relations: [held] });
+      await click('Dimension'); await pick(entity('top')); await pick(datum('x-axis')); await canvasKey('Enter');
+      expect(edit).toHaveBeenCalledTimes(1);
+      expect(relations()).toEqual([held, { id: expect.any(String), kind: 'horizontal', pointIds: ['c', 'd'] }]);
+      expect(statusMessage).toHaveBeenLastCalledWith(reused, 'info');
+      await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source); expect(currentSession.getSnapshot().canUndo).toBe(false);
+      // A distance from the base to an end of the top line keeps the gap only with Parallel; placing adds it and selects that distance.
+      const gap = { id: 'gap', kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 20 };
+      source = await open(edit, { relations: [gap] }); edit.mockClear();
+      await click('Dimension'); await pick(entity('base')); await pick(entity('top')); await canvasKey('Enter');
+      expect(edit).toHaveBeenCalledTimes(1); expect(relations()).toEqual([gap, { id: expect.any(String), kind: 'parallel', lineIds: ['base', 'top'] }]);
+      expect(selected()).toEqual(['gap']); expect(statusMessage).toHaveBeenLastCalledWith(reused, 'info');
+      // When the sketch already keeps the lines parallel some other way, nothing is added and the distance is selected.
+      const redundant = vi.fn<CadWorkbenchProps['onEditMany']>(edits => { throw overDefining(edits, 'redundant'); });
+      await open(redundant, { relations: [gap] });
+      await click('Dimension'); await pick(entity('base')); await pick(entity('top')); await canvasKey('Enter');
+      expect(redundant).toHaveBeenCalledTimes(1); expect(relations()).toEqual([gap]); expect(selected()).toEqual(['gap']);
+      expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+      expect(button('Dimension').getAttribute('aria-pressed')).toBe('true'); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    });
+
+    it('places the reference of a zero distance from the menu, where a click gives the driving reason', async () => {
+      // A point lying on the base line, a point at the top line's end position, and a slanted line.
+      await open(undefined, { points: [{ id: 'on', position: [20, 0] }, { id: 'twin', position: [40, 20] }], entities: [{ id: 'slope', kind: 'line', construction: false, startPointId: 'a', endPointId: 'd' }] });
+      await click('Dimension'); await pick(point('on')); await pick(entity('base'));
+      expect(pickInstruction()).toBe('Dimension · The point lies on the line. Use Point on line to keep it there. · Right-click to place it as a reference · Escape drops the picks');
+      await canvasKey('Enter');
+      expect(statusMessage).toHaveBeenLastCalledWith('Untitled part: The point lies on the line. Use Point on line to keep it there.', 'error'); expect(relations()).toEqual([]);
+      const items = await dimensionMenu(), item = (label: string) => items.find(entry => entry.textContent?.trim() === label);
+      expect(item('Place as reference')?.disabled).toBe(false); expect(item('Distance')?.disabled).toBe(true);
+      await act(async () => item('Place as reference')!.click());
+      expect(relations()).toEqual([{ id: expect.any(String), kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'on', lineId: 'base' } }]);
+      expect(statusMessage).not.toHaveBeenCalledWith('Placed as a reference: a driving dimension would over-define the sketch.', 'info');
+      // Two distinct points at one position.
+      await pick(point('d')); await pick(point('twin')); await dimensionMenu('Place as reference');
+      expect(relations().at(-1)).toEqual({ id: expect.any(String), kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['d', 'twin'] } });
+      // One slanted line places its length; its horizontal and vertical distances are in the menu by name.
+      await pick(entity('slope')); await dimensionMenu('Horizontal distance');
+      expect(relations().at(-1)).toMatchObject({ kind: 'axis-distance', pointIds: ['a', 'd'], axis: 'x', value: 40 });
+      await pick(entity('slope')); await canvasKey('Enter');
+      expect(relations().at(-1)).toMatchObject({ kind: 'distance', pointIds: ['a', 'd'], value: Math.hypot(40, 20) });
     });
   });
 
@@ -3289,7 +3339,7 @@ describe('CAD sketch interaction', () => {
     expect(button('Finish sketch').disabled).toBe(true); expect(button('Edit parameter plateWidth').disabled).toBe(true);
     expect(() => currentSession.assertWorkflowClosed()).toThrow('Finish or cancel');
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: edgeId }]);
-    expect(pickInstruction()).toBe('Length · Click or press Enter to place; the pointer side chooses aligned, horizontal or vertical · Or choose a second line, a point, a curve or an axis · Escape drops the picks');
+    expect(pickInstruction()).toBe('Length · Click or press Enter to place; right-click for its horizontal or vertical distance · Or choose a second line, a point, a curve or an axis · Escape drops the picks');
     await click('Cancel');
     expect(currentSession.getSnapshot()).toEqual(accepted); expect(currentDocument).toBe(accepted.document);
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
