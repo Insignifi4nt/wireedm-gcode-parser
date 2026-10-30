@@ -1,8 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { cadSketchLineAngleGeometry } from '@/domain/cad/cadSketchAngleRelations';
+import { resolveCadSketchCornerTopology } from '@/domain/cad/cadSketchCornerGeometry';
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
-import { cadSketchGraphDimensionLabel, layoutCadSketchGraphDimensions } from './cadSketchGraphDimensionLayout';
+import { cadSketchDrawnDimensions, cadSketchGraphDimensionLabel, layoutCadSketchGraphDimensions } from './cadSketchGraphDimensionLayout';
+import { cadSketchDimensionPick, cadSketchDimensionPickOf, isCadSketchDimensionPickCurrent, isCadSketchDimensionRelation, reconcileCadSketchDimensionSelection } from './cadSketchDimensionSelection';
 
 function rectangle() {
   return parseCadSketchGraph({ points: [
@@ -26,7 +29,7 @@ describe('declared angular dimension layout', () => {
     ], relations: [{ id: 'corner', kind: 'line-angle', rays: [{ lineId: 'incoming', towardPointId: 'a' },
       { lineId: 'outgoing', towardPointId: 'b' }], sense, value: ' cornerAngle ' }] });
     const before = JSON.stringify(graph), dimension = layoutCadSketchGraphDimensions(graph, { cornerAngle: 120 }, .1)[0];
-    if (dimension?.kind !== 'angle') throw new Error('Angular annotation missing.');
+    if (dimension?.kind !== 'angle' || !dimension.arc) throw new Error('Angular annotation missing.');
     expect(dimension.valueDegrees).toBe(120); expect(dimension.relation).toBe(graph.relations[0]);
     expect(dimension.arc.clockwise).toBe(sense === 'cw'); expect(dimension.arc.center).toEqual([0, 0]);
     expect(dimension.arc.start[1]).toBeCloseTo(0, 12); expect(dimension.arc.end[0]).toBeCloseTo(-dimension.arc.radius / 2, 12);
@@ -351,8 +354,8 @@ describe('native graph corner dimension layout', () => {
 });
 
 describe('drivers at any value', () => {
-  // Solving rejects these values, but a file can hold drivers that its parameters take there. Each stays drawn on its actual geometry,
-  // labelled with its driver, so it can be selected and corrected.
+  // Solving rejects these values, and canvas preparation refuses a graph whose drivers take them, so no canvas shows one. The layout still
+  // draws each on its actual geometry, labelled with its driver, rather than leave a dimension out for its value.
   it.each([0, -1])('draws radial, fillet, chamfer, angle, distance and point to line drivers at %s on their geometry', value => {
     const curves = parseCadSketchGraph({ points: [{ id: 'origin', position: [0, 0] }, { id: 'center', position: [10, 20] }, { id: 'start', position: [5, 0] }, { id: 'end', position: [0, 5] }],
       entities: [{ id: 'circle', kind: 'circle', centerPointId: 'center', radius: 5, construction: false },
@@ -489,3 +492,151 @@ describe('distance from an axis layout', () => {
     expect([y.relation.id, y.valueMm, span(y, 1)]).toEqual(['gy', 40, [0, 40]]); expect(y.line[0][0]).toBeCloseTo(y.line[1][0], 12);
   });
 });
+
+describe('angles whose corner is out of reach', () => {
+  const corner = (graph: CadSketchGraph) => cadSketchLineAngleGeometry(graph, graph.relations[0] as Extract<CadSketchGraph['relations'][number], { kind: 'line-angle' }>,
+    new Map(graph.points.map(point => [point.id, { x: point.position[0] as number, y: point.position[1] as number }])));
+
+  it.each([
+    // Their supports meet about 1e10 mm away, beyond where the corner can be placed reliably.
+    ['cannot be placed', 1e-7, (graph: CadSketchGraph) => expect(() => corner(graph)).toThrow(expect.objectContaining({ code: 'sketch-angle-precision' }))],
+    // Their corner is placed, 1e6 mm away: an arc there would be far out of sight of the lines.
+    ['is far beyond the sketch', 1e-3, (graph: CadSketchGraph) => expect(corner(graph).vertex.x).toBeCloseTo(-1e6, -1)]
+  ] as const)('draws an angle whose corner %s as a leader across the ends its rays point to', (_name, rise, check) => {
+    const graph = nearParallelLines(rise), length = Math.hypot(10, rise), toward = { x: 10 / length, y: rise / length };
+    check(graph);
+    expect([...cadSketchDrawnDimensions(graph, {}).ids]).toEqual(['angle', 'gap']);
+    for (const scale of [.01, .1, 1]) {
+      const dimension = layoutCadSketchGraphDimensions(graph, {}, scale).find(layout => layout.relation.id === 'angle');
+      if (dimension?.kind !== 'angle' || !dimension.line) throw new Error('The angle is not drawn across its ends.');
+      expect(dimension.arc).toBeUndefined();
+      // Each line runs on past its end, and the leader joins them 12 px out with an arrow at each line.
+      expect(dimension.line[0][0]).toBeCloseTo(10 + 12 * scale, 9); expect(dimension.line[0][1]).toBeCloseTo(0, 9);
+      expect(dimension.line[1][0]).toBeCloseTo(10 + toward.x * 12 * scale, 9); expect(dimension.line[1][1]).toBeCloseTo(100 + rise + toward.y * 12 * scale, 9);
+      expect(dimension.arrows.map(arrow => arrow[0])).toEqual(dimension.line);
+      expect(dimension.extensions[0][0][0]).toBeCloseTo(10 + 3 * scale, 9); expect(dimension.extensions[0][1][0]).toBeCloseTo(10 + 14 * scale, 9);
+      // The label sits between the lines, beside the leader just past their ends.
+      const { width } = cadSketchGraphDimensionLabel(dimension.valueDegrees, 'angle');
+      expect(Math.abs(dimension.label[1] - 50)).toBeLessThan(.1);
+      expect(dimension.label[0] - (10 + 12 * scale)).toBeGreaterThan((width / 2 + 7) * scale);
+      expect(dimension.label[0] - (10 + 12 * scale)).toBeLessThan((width / 2 + 9) * scale);
+      expect(dimension.labelAngle).toBe(0);
+    }
+  });
+
+  it('keeps the arc for a corner within the sketch, also when the lines stop short of it', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [20, 5] }, { id: 'd', position: [20, 15] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'side', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+      relations: [{ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'side', towardPointId: 'd' }], sense: 'cw', value: 90 }] });
+    const [dimension] = layoutCadSketchGraphDimensions(graph, {}, .1);
+    if (dimension?.kind !== 'angle' || !dimension.arc) throw new Error('The angle has no arc.');
+    expect(dimension.arc.center).toEqual([20, 0]); expect(dimension.line).toBeUndefined();
+  });
+});
+
+describe('drawn dimensions', () => {
+  // Canvas selection, editing, Delete and the viewport flag act on `cadSketchDrawnDimensions`, and the canvas draws
+  // `layoutCadSketchGraphDimensions`. For every dimension, at every zoom, they must agree.
+  const kinds = (graph: CadSketchGraph) => graph.relations.filter(isCadSketchDimensionRelation).map(relation => relation.id);
+  const shifted = (graph: CadSketchGraph, by: number): CadSketchGraph => ({ ...graph,
+    points: graph.points.map(point => ({ ...point, position: point.position.map(value => typeof value === 'number' ? value + by : `(${value}) + ${by}`) as unknown as typeof point.position })) });
+  const everyKind = parseCadSketchGraph({
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: ['width', 0] }, { id: 'c', position: ['width', 30] }, { id: 'd', position: [0, 30] },
+      { id: 'p', position: [20, 10] }, { id: 'h', position: [10, 15] }, { id: 'm', position: [30, 15] }, { id: 's', position: [33, 15] }, { id: 'e', position: [30, 18] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'right', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+      { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }, { id: 'left', kind: 'line', construction: false, startPointId: 'd', endPointId: 'a' },
+      { id: 'hole', kind: 'circle', centerPointId: 'h', radius: 4, construction: false },
+      { id: 'bend', kind: 'arc', centerPointId: 'm', startPointId: 's', endPointId: 'e', direction: 'ccw', construction: false }],
+    relations: [
+      { id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: 'width' },
+      { id: 'rise', kind: 'axis-distance', pointIds: ['b', 'c'], axis: 'y', value: 30 },
+      { id: 'gap', kind: 'point-line-distance', pointId: 'p', lineId: 'base', side: 'left', value: 10 },
+      { id: 'hx', kind: 'fixed-axis', pointId: 'h', axis: 'x', value: 10 },
+      { id: 'on-axis', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 },
+      { id: 'bore', kind: 'radial-size', entityId: 'hole', quantity: 'diameter', value: 'bore' },
+      { id: 'bend-radius', kind: 'radial-size', entityId: 'bend', quantity: 'radius', value: 3 },
+      { id: 'corner', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'right', towardPointId: 'c' }], sense: 'cw', value: 90 },
+      { id: 'diagonal', kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['a', 'c'] } },
+      { id: 'span', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'top' } },
+      { id: 'offset', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'h', lineId: 'left' } },
+      { id: 'bend-size', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'bend', quantity: 'diameter' } },
+      { id: 'flat', kind: 'horizontal', pointIds: ['a', 'b'] }
+    ] });
+  const fillet = createCadSketchCornerTreatment({ graph: corner().graph, parameters: { r: 2 }, pointId: 'vertex', treatment: { kind: 'fillet', radius: 'r' }, createId: ids() }).graph;
+  const chamfer = createCadSketchCornerTreatment({ graph: corner().graph, parameters: { first: 2, second: 3 }, pointId: 'vertex', treatment: { kind: 'chamfer', setbacks: ['first', 'second'] }, createId: ids() }).graph;
+  const chamferId = chamfer.relations.find(relation => relation.kind === 'chamfer-corner')!.id;
+  const cutBack = (sides: readonly (0 | 1)[]): CadSketchGraph => {
+    const relation = chamfer.relations.find(item => item.kind === 'chamfer-corner');
+    if (relation?.kind !== 'chamfer-corner') throw new Error('The chamfer has no relation.');
+    const topology = resolveCadSketchCornerTopology(chamfer, relation), vertex = chamfer.points.find(point => point.id === topology.vertexId)!;
+    const moved = new Set(sides.map(side => topology.trimPointIds[side]));
+    return { ...chamfer, points: chamfer.points.map(point => moved.has(point.id) ? { ...point, position: vertex.position } : point) };
+  };
+  const zero = parseCadSketchGraph({
+    points: [{ id: 'a', position: [0, 0] }, { id: 'same', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'on', position: [5, 0] }, { id: 'h', position: [0, 'lift'] },
+      { id: 'o', position: [40, 40] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'dot', kind: 'circle', centerPointId: 'o', radius: 'size', construction: false }],
+    relations: [
+      { id: 'touching', kind: 'distance', pointIds: ['a', 'same'], value: 'nil' },
+      { id: 'flush', kind: 'point-line-distance', pointId: 'on', lineId: 'base', side: 'left', value: 'nil' },
+      { id: 'lifted', kind: 'fixed-axis', pointId: 'h', axis: 'y', value: 'lift' },
+      { id: 'measured-zero', kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['a', 'same'] } },
+      { id: 'dot-size', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'dot', quantity: 'radius' } }
+    ] });
+  const unresolved = parseCadSketchGraph({
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'lost', position: ['nowhere', 5] }, { id: 'c', position: [0, 10] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'stray', kind: 'line', construction: false, startPointId: 'c', endPointId: 'lost' }],
+    relations: [
+      { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 'nowhere' },
+      { id: 'reach', kind: 'distance', pointIds: ['a', 'lost'], value: 5 },
+      { id: 'tilt', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'stray', towardPointId: 'lost' }], sense: 'ccw', value: 30 },
+      { id: 'held', kind: 'distance', pointIds: ['a', 'c'], value: 10 }
+    ] });
+  const corpus: readonly { readonly name: string; readonly graph: CadSketchGraph; readonly parameters: Readonly<Record<string, number>>; readonly hidden: readonly string[] }[] = [
+    { name: 'every kind', graph: everyKind, parameters: { width: 40, bore: 8 }, hidden: [] },
+    { name: 'every kind far from the origin', graph: shifted(everyKind, 1e6), parameters: { width: 40, bore: 8 }, hidden: [] },
+    { name: 'a parameter that takes the hole to 0', graph: everyKind, parameters: { width: 40, bore: 0 }, hidden: [] },
+    { name: 'a parameter that takes lines to no length', graph: everyKind, parameters: { width: 0, bore: 8 }, hidden: ['gap', 'corner'] },
+    { name: 'a fillet', graph: fillet, parameters: { r: 2 }, hidden: [] },
+    { name: 'a fillet driven to 0', graph: fillet, parameters: { r: 0 }, hidden: [] },
+    { name: 'a chamfer', graph: chamfer, parameters: { first: 2, second: 3 }, hidden: [] },
+    { name: 'a chamfer cut back on one side', graph: cutBack([0]), parameters: { first: 2, second: 3 }, hidden: [] },
+    { name: 'a chamfer cut back on both sides', graph: cutBack([0, 1]), parameters: { first: 2, second: 3 }, hidden: [chamferId] },
+    { name: 'zero values', graph: zero, parameters: { lift: 0, size: 3, nil: 0 }, hidden: [] },
+    { name: 'a curve with no radius', graph: zero, parameters: { lift: 0, size: 0, nil: 0 }, hidden: ['dot-size'] },
+    { name: 'expressions that do not evaluate', graph: unresolved, parameters: {}, hidden: ['length', 'reach', 'tilt'] },
+    { name: 'near-parallel lines', graph: nearParallelLines(1e-7), parameters: {}, hidden: [] },
+    { name: 'near-parallel lines with a far corner', graph: nearParallelLines(1e-3), parameters: {}, hidden: [] }
+  ];
+
+  it('covers every dimension kind drawn and left out', () => {
+    const drawnKinds = new Set(corpus.flatMap(({ graph, parameters }) => graph.relations.filter(relation => cadSketchDrawnDimensions(graph, parameters).ids.has(relation.id)).map(relation => relation.kind)));
+    expect([...drawnKinds].sort()).toEqual(['axis-distance', 'chamfer-corner', 'distance', 'fillet-corner', 'fixed-axis', 'line-angle', 'point-line-distance', 'radial-size', 'reference-dimension']);
+    expect(corpus.filter(entry => entry.hidden.length).length).toBeGreaterThan(3);
+  });
+
+  it.each(corpus)('$name: a dimension can be picked on the canvas exactly when the canvas draws it', ({ graph, parameters, hidden }) => {
+    const drawn = cadSketchDrawnDimensions(graph, parameters);
+    expect(cadSketchDrawnDimensions(graph, parameters)).toBe(drawn); expect(drawn.graph).toBe(graph);
+    expect([...drawn.ids].sort()).toEqual(kinds(graph).filter(id => !hidden.includes(id)).sort());
+    for (const scale of [.001, .1, 1, 40]) {
+      const laid = new Set(layoutCadSketchGraphDimensions(graph, parameters, scale).map(layout => layout.relation.id));
+      expect([...laid].sort()).toEqual([...drawn.ids].sort());
+    }
+    for (const relation of graph.relations) {
+      const shown = drawn.ids.has(relation.id);
+      expect(cadSketchDimensionPick(drawn, relation.id) !== null).toBe(shown);
+      if (!isCadSketchDimensionRelation(relation)) { expect(shown).toBe(false); continue; }
+      const pick = cadSketchDimensionPickOf(relation);
+      expect(isCadSketchDimensionPickCurrent(drawn, pick)).toBe(shown);
+      expect(reconcileCadSketchDimensionSelection(drawn, [pick])).toHaveLength(shown ? 1 : 0);
+    }
+  });
+});
+function nearParallelLines(rise: number) {
+  return parseCadSketchGraph({
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, 100] }, { id: 'd', position: [10, 100 + rise] }],
+    entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+    relations: [{ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'top', towardPointId: 'd' }], sense: 'ccw', value: Math.atan2(rise, 10) * 180 / Math.PI },
+      { id: 'gap', kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 100 }] });
+}

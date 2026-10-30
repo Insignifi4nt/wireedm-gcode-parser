@@ -135,7 +135,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
         pressed.current = elementKey; down(event);
       };
       const tone = selected || inspected ? ' is-selected' : reference ? ' is-reference' : '';
-      const measure = (className?: string) => dimension.kind === 'angle' ? <path className={className} d={`M ${dimension.arc.start[0] - center[0]} ${dimension.arc.start[1] - center[1]} A ${dimension.arc.radius} ${dimension.arc.radius} 0 0 ${dimension.arc.clockwise ? 0 : 1} ${dimension.arc.end[0] - center[0]} ${dimension.arc.end[1] - center[1]}`} />
+      const measure = (className?: string) => dimension.kind === 'angle' && dimension.arc ? <path className={className} d={`M ${dimension.arc.start[0] - center[0]} ${dimension.arc.start[1] - center[1]} A ${dimension.arc.radius} ${dimension.arc.radius} 0 0 ${dimension.arc.clockwise ? 0 : 1} ${dimension.arc.end[0] - center[0]} ${dimension.arc.end[1] - center[1]}`} />
         : line(dimension.line, className);
       const arrows = (className?: string) => dimension.arrows.map((arrow, index) => <polygon key={index} className={className}
         points={arrow.map(point => `${point[0] - center[0]},${point[1] - center[1]}`).join(' ')} />);

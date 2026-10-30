@@ -2066,6 +2066,37 @@ describe('CAD sketch interaction', () => {
       expect(label('x').getAttribute('aria-label')).toBe('Dimension distance 0 mm, press Enter to edit'); expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true });
     });
 
+    /** Two lines a hair from parallel: their supports meet about 1e10 mm away, too far to place the angle's corner reliably. */
+    const nearParallel = () => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Slot', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, 100] }, { id: 'd', position: [10, 100.0000001] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+      relations: [{ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'top', towardPointId: 'd' }], sense: 'ccw', value: Math.atan2(1e-7, 10) * 180 / Math.PI }] } }] });
+
+    it('draws an angle whose lines meet out of reach across their ends, and selects, counts and edits it like any dimension', async () => {
+      await open(undefined, nearParallel());
+      const drawn = container.querySelector('[data-cad-sketch-dimension="angle"]');
+      expect(drawn?.getAttribute('data-cad-dimension-kind')).toBe('angle');
+      expect(drawn?.querySelector('path')).toBeNull(); expect(drawn?.querySelector('line.cad-sketch-graph-dimension-line')).not.toBeNull();
+      expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true });
+      await pick('angle'); expect(selectedDimensions()).toEqual(['angle']); expect(status()).toBe('Angle selected · Double-click or Enter edits · Delete removes');
+      await press('angle', 'Enter'); expect(Number(field('Angle').value)).toBeCloseTo(Math.atan2(1e-7, 10) * 180 / Math.PI, 12); expect(selectedDimensions()).toEqual(['angle']);
+    });
+
+    it('selects, edits, deletes and counts only the dimensions the canvas draws, so hiding them drops them from the selection but not from the relations list', async () => {
+      await open(); await pick('length'); expect(status()).toBe('Length selected · Double-click or Enter edits · Delete removes');
+      await act(async () => setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: false }));
+      expect(container.querySelector('[data-cad-sketch-dimension]')).toBeNull(); expect(status()).toBeNull();
+      expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: false });
+      await canvasKey('Delete'); expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'angle', 'size', 'x', 'measured']);
+      // It left the selection for good, so showing dimensions again selects nothing.
+      await act(async () => setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true }));
+      expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true }); expect(selectedDimensions()).toEqual([]); expect(status()).toBeNull();
+      // Hidden, the relations list still edits it, as a relation; the canvas selection stays empty.
+      await act(async () => setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: false }));
+      await geometryMenu('base', 'Constraints and dimensions'); await editRow('Distance relation 1');
+      expect(field('Length').value).toBe('40'); expect(status()).toBeNull();
+    });
+
     it('keeps a distance from an axis drawn, selected and editable when its parameter is edited to 0', async () => {
       await open(undefined, post(10, 'offset')); await pick('x'); expect(selectedDimensions()).toEqual(['x']);
       const moved = post(0, 'offset'); await act(async () => replaceDocument({ ...currentDocument, parameters: moved.parameters, features: moved.features }));
@@ -2862,6 +2893,33 @@ describe('CAD sketch interaction', () => {
       // Its reference form is one more menu command away.
       await pick(point('o')); await pick(entity('base')); await dimensionMenu('Place as reference');
       expect(relations().at(-1)).toEqual({ id: expect.any(String), kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'o', lineId: 'base' } });
+    });
+
+    it('places an angle on lines whose corner is far beyond the sketch, drawn across their ends, then selected, counted and edited with Enter', async () => {
+      setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+      // The lid's support meets the base's 1e6 mm to the left.
+      await open(undefined, { points: [{ id: 'p', position: [0, 100] }, { id: 'q', position: [10, 100.001] }], entities: [{ id: 'lid', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }] });
+      await click('Dimension'); await pick(entity('base')); await pick(entity('lid')); await dimensionMenu('Angle');
+      const angle = relations().find(relation => relation.kind === 'line-angle'); if (!angle) throw new Error('No angle placed.');
+      const drawn = container.querySelector(`[data-cad-sketch-dimension="${angle.id}"]`);
+      expect(drawn?.querySelector('path')).toBeNull(); expect(drawn?.querySelector('line.cad-sketch-graph-dimension-line')).not.toBeNull();
+      expect(drawn?.classList.contains('is-selected')).toBe(true); expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true });
+      await focusedKey('Enter'); expect(Number(field('Angle').value)).toBeGreaterThan(0);
+    });
+
+    it('selects an existing angle on lines a hair from parallel when it is placed again, drawn across their ends, and Enter edits it', async () => {
+      setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+      // Their supports meet about 4e10 mm away, too far to place the corner reliably; the angle reads the lines' own directions.
+      const value = Math.atan2(1e-7, 40) * 180 / Math.PI;
+      await open(undefined, { points: [{ id: 'p', position: [0, 100] }, { id: 'q', position: [40, 100.0000001] }], entities: [{ id: 'lid', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
+        relations: [{ id: 'tilt', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'lid', towardPointId: 'q' }], sense: 'ccw', value }] });
+      await click('Dimension'); await pick(entity('base')); await pick(entity('lid')); await dimensionMenu('Angle');
+      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+      expect(relations().map(relation => relation.id)).toEqual(['tilt']);
+      const drawn = container.querySelector('[data-cad-sketch-dimension="tilt"]');
+      expect(drawn?.querySelector('path')).toBeNull(); expect(drawn?.classList.contains('is-selected')).toBe(true);
+      expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true });
+      await focusedKey('Enter'); expect(Number(field('Angle').value)).toBeCloseTo(value, 12);
     });
 
     it('starts and ends from D, starts from selected plane references, and measures a line from an axis it runs along', async () => {

@@ -12,7 +12,7 @@ import { inspectCadSketchCornerTarget } from '@/domain/cad/cadSketchCornerTreatm
 import { cadPathDraftInferences, type CadPathDraft } from './cadPathDrawing';
 import { CadSketchRelationsPanel, type CadSketchRelationCommand } from './CadSketchRelationsPanel';
 import {
-  cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionPickOf, createCadSketchHighlightStore, isCadSketchDimensionPickCurrent, isCadSketchDimensionRelation,
+  cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionPickOf, createCadSketchHighlightStore, isCadSketchDimensionInGraph, isCadSketchDimensionPickCurrent, isCadSketchDimensionRelation,
   NO_SKETCH_DIMENSIONS, reconcileCadSketchDimensionSelection, sameCadSketchDimensionPick, selectCadSketchDimension, type CadSketchDimensionPick
 } from './cadSketchDimensionSelection';
 import { cadSketchAxisDistanceLine, cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
@@ -22,7 +22,7 @@ import {
 } from './cadSketchDimensionPlacement';
 import { createCadSketchPointerStore } from './CadSketchDimensionPreview';
 import type { Point2 } from '@/domain/path-intel/types';
-import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
+import { cadSketchDrawnDimensions, type CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { CadSketchAreaRepairPanel } from './CadSketchAreaRepairPanel';
 import { CadSketchOffsetEditor, cadSketchOffsetSource } from './CadSketchOffsetEditor';
 import { CadSketchLinearPatternEditor, type CadSketchLinearPatternRequest, type CadSketchLinearPatternInteraction } from './CadSketchLinearPatternEditor';
@@ -459,8 +459,11 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   }), [document.id]);
   const sketch = document.features.find((feature): feature is CadSketchFeature => feature.kind === 'sketch' && feature.id === sketchId);
   const graphSelections = useMemo(() => graphPick?.sketchId === sketch?.id ? reconcileCadSketchGraphSelection(sketch?.graph, graphPick?.selections ?? NO_SKETCH_SELECTIONS) : NO_SKETCH_SELECTIONS, [graphPick, sketch]);
-  // A selected dimension that disappears, or whose ID now names a different measurement, leaves the selection for good.
-  const graphDimensionPicks = useMemo(() => graphPick?.sketchId === sketch?.id ? reconcileCadSketchDimensionSelection(sketch?.graph, graphPick?.dimensions ?? NO_SKETCH_DIMENSIONS) : NO_SKETCH_DIMENSIONS, [graphPick, sketch]);
+  // The dimensions the canvas draws, from the layout it draws them with; canvas selection, editing, Delete and the viewport flag act only on these.
+  const sketchGraph = sketch?.graph, dimensionsShown = preferences.showOnPartDimensions && tool === 'select';
+  const drawnDimensions = useMemo(() => sketchGraph && dimensionsShown ? cadSketchDrawnDimensions(sketchGraph, document.parameters) : undefined, [sketchGraph, dimensionsShown, document.parameters]);
+  // A selected dimension that disappears, whose ID now names a different measurement, or that is no longer drawn, leaves the selection for good.
+  const graphDimensionPicks = useMemo(() => graphPick?.sketchId === sketch?.id ? reconcileCadSketchDimensionSelection(drawnDimensions, graphPick?.dimensions ?? NO_SKETCH_DIMENSIONS) : NO_SKETCH_DIMENSIONS, [graphPick, sketch, drawnDimensions]);
   const graphDimensions = useMemo(() => cadSketchDimensionIds(graphDimensionPicks), [graphDimensionPicks]);
   useLayoutEffect(() => {
     if (!graphPick || graphPick.selections === graphSelections && (graphPick.dimensions ?? NO_SKETCH_DIMENSIONS) === graphDimensionPicks) return;
@@ -474,7 +477,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const dimensionEditor = graphRelationCommand?.dimension;
   const dimensionEditorCurrent = Boolean(dimensionEditor && dimensionEditor.documentId === document.id && dimensionEditor.sketchId === sketch?.id && !profileId
     && !graphSelections.length && !graphDatums.length && graphDimensionPicks.length === 1 && sameCadSketchDimensionPick(graphDimensionPicks[0], dimensionEditor.pick, sketch.graph)
-    && isCadSketchDimensionPickCurrent(sketch.graph, dimensionEditor.pick));
+    && isCadSketchDimensionPickCurrent(drawnDimensions, dimensionEditor.pick));
   useLayoutEffect(() => { if (dimensionEditor && !dimensionEditorCurrent) setGraphRelationCommand(current => current?.dimension === dimensionEditor ? null : current); }, [dimensionEditor, dimensionEditorCurrent]);
   /** The geometry the relations panel works on: a dimension editor's measured geometry, otherwise the geometry selection. */
   const relationOperands = useMemo(() => !dimensionEditor ? graphSelections : dimensionEditorCurrent ? reconcileCadSketchGraphSelection(sketch?.graph, dimensionEditor.operands) : NO_SKETCH_SELECTIONS,
@@ -510,13 +513,13 @@ export function CadWorkbench(props: CadWorkbenchProps) {
    */
   const selectGraphDimension = useCallback((dimension: CadSketchDimensionPick | null, additive = false) => {
     if (!sketchId) return;
-    const pick = dimension && sketch?.id === sketchId && sketch.graph ? cadSketchDimensionPick(sketch.graph, dimension.id) : null;
+    const pick = dimension && sketch?.id === sketchId && drawnDimensions ? cadSketchDimensionPick(drawnDimensions, dimension.id) : null;
     if (dimension && (!pick || !sameCadSketchDimensionPick(pick, dimension, sketch?.graph))) return;
     const dimensions = pick ? selectCadSketchDimension(graphDimensionPicks, pick, sketch?.graph, additive) : NO_SKETCH_DIMENSIONS;
     setGraphPick(dimensions.length ? { sketchId, selections: NO_SKETCH_SELECTIONS, datums: NO_SKETCH_DATUMS, dimensions } : null);
     setGraphRelationCommand(null);
     if (dimensions.length) { setProfileId(null); setProfileCommand(null); }
-  }, [sketchId, sketch, graphDimensionPicks]);
+  }, [sketchId, sketch, graphDimensionPicks, drawnDimensions]);
   // Box selection never takes the origin or axes; a Shift box keeps the ones already selected.
   const selectGraphBox = useCallback((selections: readonly CadSketchGraphSelection[], additive = false) => selectGraphSet(selections, additive ? graphDatums : NO_SKETCH_DATUMS), [graphDatums, selectGraphSet]);
   const inspectRelation = useCallback((relation: CadSketchGraphRelation | null) => setRelationInspection(relation && sketchId ? { sketchId, relation } : null), [sketchId]);
@@ -573,7 +576,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     if (!sketchId || !graph || command?.token !== token) return;
     const editor = command.dimension;
     if (!relationId) { if (command.kind === 'inspect') setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, null, current.dimension) : current); return; }
-    const pick = cadSketchDimensionPick(graph, relationId);
+    const pick = drawnDimensions ? cadSketchDimensionPick(drawnDimensions, relationId) : null;
     if (pick) {
       if (!editor || !sameCadSketchDimensionPick(editor.pick, pick, graph)) editSketchDimension(pick, relationOperands, editor?.datums ?? graphDatums, token);
       else if (command.kind === 'relations') setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, pick.id, editor) : current);
@@ -585,7 +588,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   };
   /** Double-click, Enter or Edit value… opens the editor of the dimension shown, never a replacement under the same ID, on the geometry it measures. */
   const configureGraphRelation = useCallback((relation: CadSketchDimensionRelation) => {
-    const graph = sketch?.graph, pick = graph ? cadSketchDimensionPick(graph, relation.id) : null;
+    const graph = sketch?.graph, pick = graph && drawnDimensions?.graph === graph ? cadSketchDimensionPick(drawnDimensions, relation.id) : null;
     if (interactionState.current.locked || !sketchId || !graph || !pick || !sameCadSketchDimensionPick(pick, cadSketchDimensionPickOf(relation), graph)) return;
     const points = (ids: readonly string[]) => ids.map(id => ({ kind: 'point' as const, id })), entity = (id: string) => [{ kind: 'entity' as const, id }];
     let operands: readonly CadSketchGraphSelection[], datums: readonly CadSketchDatum[] = NO_SKETCH_DATUMS;
@@ -605,7 +608,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     else if (relation.kind === 'line-angle') operands = relation.rays.map(ray => ({ kind: 'entity' as const, id: ray.lineId }));
     else operands = entity(relation.kind === 'radial-size' ? relation.entityId : relation.kind === 'fillet-corner' ? relation.arcId : relation.chamferId);
     editSketchDimension(pick, operands, datums);
-  }, [sketchId, sketch, editSketchDimension]);
+  }, [sketchId, sketch, drawnDimensions, editSketchDimension]);
   // Another part or sketch starts with nothing selected before anything renders against it, so a relations row open on the old
   // selection never mounts, or takes focus, in the new part.
   const [pickScope, setPickScope] = useState({ documentId: document.id, sketchId });
@@ -683,7 +686,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   useLayoutEffect(() => { if (mirrorCommand && !currentMirror) setMirrorCommand(null); }, [mirrorCommand, currentMirror]);
   const dimensionGeometry = profile?.geometry;
   renderedPreferences.current = { navigationMode: preferences.navigationMode, onPartDimensionsVisible: preferences.showOnPartDimensions
-    && tool === 'select' && (Boolean(sketch?.graph?.relations.some(isCadSketchDimensionRelation))
+    && tool === 'select' && (Boolean(drawnDimensions?.ids.size)
       || !profilePreview && !preparedSketch && Boolean(profile && (inspectCadSketchDimensions(profile, document.parameters).length || dimensionGeometry?.kind === 'plugin' && dimensionGeometry.package.id === 'wireedm.spur-gear'))) };
   const parameterInspection = useMemo(() => inspectCadParameters(document), [document]);
   const parameterUsages = parameterInspection.parameters.find(parameter => parameter.name === inspectedParameter)?.usages.filter(usage => usage.active) ?? [];
@@ -1001,7 +1004,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
    * version, cancellation and the dimension it opened on; a change to any of them closes it, and each command checks them again.
    */
   const openDimensionMenu = (dimension: CadSketchDimensionPick, request: { readonly clientX: number; readonly clientY: number }) => {
-    const pick = sketch?.graph ? cadSketchDimensionPick(sketch.graph, dimension.id) : null;
+    const pick = sketch?.graph && drawnDimensions ? cadSketchDimensionPick(drawnDimensions, dimension.id) : null;
     if (interactionState.current.locked || !sketch || !pick || !sameCadSketchDimensionPick(pick, dimension, sketch.graph)) return;
     if (!graphDimensionPicks.some(item => sameCadSketchDimensionPick(item, pick, sketch.graph))) selectGraphDimension(pick);
     setCanvasMenu({ kind: 'dimension', document, version: props.documentVersion, buildId: build?.buildId ?? null, sketchId: sketch.id, relationId: pick.id, pick, cancel: cancelSignal, request });
@@ -1034,7 +1037,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   } else if (currentCanvasMenu?.kind === 'dimension') {
     const menu = currentCanvasMenu, source = sketch?.id === menu.sketchId ? sketch : undefined;
     const relation = source?.graph?.relations.find(item => item.id === menu.relationId);
-    if (source?.graph && relation && isCadSketchDimensionRelation(relation) && isCadSketchDimensionPickCurrent(source.graph, menu.pick)) {
+    if (source?.graph && relation && isCadSketchDimensionRelation(relation) && drawnDimensions?.graph === source.graph && isCadSketchDimensionPickCurrent(drawnDimensions, menu.pick)) {
       const graph = source.graph, reference = relation.kind === 'reference-dimension';
       const count = graphDimensions.includes(relation.id) ? graphDimensions.length : 1;
       // Menu commands run after the menu closes; a changed part, version, sketch or cancellation drops them.
@@ -1167,9 +1170,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
    */
   const deleteSketchDimensions = (dimension?: CadSketchDimensionPick) => {
     const graph = sketch?.graph;
-    if (!sketch || !graph || interactionState.current.locked || dimension && !isCadSketchDimensionPickCurrent(graph, dimension)) return;
+    if (!sketch || !graph || interactionState.current.locked || dimension && !isCadSketchDimensionPickCurrent(drawnDimensions, dimension)) return;
     const selected = !dimension || graphDimensionPicks.some(pick => sameCadSketchDimensionPick(pick, dimension, graph));
-    const ids = (selected ? graphDimensions : [dimension.id]).filter(id => graph.relations.some(relation => relation.id === id && isCadSketchDimensionRelation(relation)));
+    const ids = (selected ? graphDimensions : [dimension.id]).filter(id => drawnDimensions?.graph === graph && drawnDimensions.ids.has(id));
     if (!ids.length) return;
     submitEdit(signal => props.onEditMany(ids.map(id => ({ kind: 'remove-sketch-relation' as const, sketchId: sketch.id, relationId: id })), signal),
       () => setGraphPick(current => current?.dimensions?.some(pick => ids.includes(pick.id)) ? null : current), SKETCH_RELATION_FAILURE);
@@ -1381,7 +1384,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     // A blocked driving form whose quantity a reference still measures, such as a zero distance, places only as that reference.
     if (candidate.state === 'blocked' && !(choice.reference && candidate.reference)) { setError(candidate.reason); return; }
     if (candidate.state === 'existing') {
-      const picks = candidate.relationIds.flatMap(id => cadSketchDimensionPick(graph, id) ?? []);
+      const picks = candidate.relationIds.flatMap(id => drawnDimensions ? cadSketchDimensionPick(drawnDimensions, id) ?? [] : []);
       const onDatum = picks.length ? null : cadSketchDimensionOnDatumReason(graph.relations.filter(relation => candidate.relationIds.includes(relation.id)));
       settleDimension(session, { picks, selected: false }); props.onStatusMessage?.(onDatum ?? candidate.reason, 'info'); return;
     }
@@ -1427,12 +1430,14 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     }, 'The dimension could not be placed.');
   };
   // Placed dimensions become the selection once the sketch holds them, so Enter or a double-click opens an editor and Delete removes them.
+  // Only those the canvas draws are selected; one it cannot draw stays in the relations list.
   useLayoutEffect(() => {
     const session = currentDimensionTool, placed = session?.placed, graph = sketch?.graph;
-    if (!session || !placed?.picks.length || placed.selected || !graph || !placed.picks.every(pick => isCadSketchDimensionPickCurrent(graph, pick))) return;
-    setGraphPick({ sketchId: session.sketchId, selections: NO_SKETCH_SELECTIONS, datums: NO_SKETCH_DATUMS, dimensions: Object.freeze([...placed.picks]) });
-    setDimensionTool(current => current === session ? { ...current, placed: { ...placed, selected: true } } : current);
-  }, [currentDimensionTool, sketch]);
+    if (!session || !placed?.picks.length || placed.selected || !graph || !placed.picks.every(pick => isCadSketchDimensionInGraph(graph, pick))) return;
+    const picks = Object.freeze(placed.picks.filter(pick => isCadSketchDimensionPickCurrent(drawnDimensions, pick)));
+    setGraphPick(picks.length ? { sketchId: session.sketchId, selections: NO_SKETCH_SELECTIONS, datums: NO_SKETCH_DATUMS, dimensions: picks } : null);
+    setDimensionTool(current => current === session ? { ...current, placed: { ...placed, picks, selected: true } } : current);
+  }, [currentDimensionTool, sketch, drawnDimensions]);
   /** Picking the same line, or an arc or circle with a size, again places its own dimension; after two picks a click anywhere places. */
   const pickDimensionOperand = (operand: CadSketchDimensionOperand) => {
     const session = dimensionToolOwner.current;

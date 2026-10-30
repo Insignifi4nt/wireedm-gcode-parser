@@ -39,6 +39,7 @@ import { cadArcSvgPath } from './cadSketchSvg';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
 import { cadSketchDimensionPick, cadSketchDimensionSelectionStatus, type CadSketchDimensionPick } from './cadSketchDimensionSelection';
+import { cadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
 import { CAD_SKETCH_AXIS_PIXELS, CAD_SKETCH_DATUMS, cadSketchDatumName, cadSketchRelationDatum, cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, pickCadSketchDatum, type CadSketchDatum, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
 import { CadSketchDimensionPreview, CadSketchPointerReadout } from './CadSketchDimensionPreview';
@@ -1209,7 +1210,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const label = target?.closest('[data-cad-sketch-dimension]')?.getAttribute('data-cad-sketch-dimension') ?? null;
           const line = label ? null : target?.closest('[data-cad-sketch-dimension-hit]')?.getAttribute('data-cad-sketch-dimension-hit') ?? null;
           const dimensionId = label ?? (line && !dimensionLineCover.current(event)?.covered ? line : null);
-          const dimension = dimensionId && sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchDimensionPick(sourceSketch.graph, dimensionId) : null;
+          const dimension = dimensionId && sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchDimensionPick(cadSketchDrawnDimensions(sourceSketch.graph, graphSourceParameters), dimensionId) : null;
           pan.current = { x: event.clientX, y: event.clientY, center, pointerId: event.pointerId, button: event.button, buttonMask: event.button === 1 ? 4 : 2, moved: false, element: event.currentTarget,
             dimension, dimensionLine: !label };
           try { event.currentTarget.setPointerCapture(event.pointerId); } catch { finishPan(); }

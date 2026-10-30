@@ -1,14 +1,15 @@
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { cadSketchRelationEntityIds } from '@/domain/cad/cadSketchGraphReferences';
-import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
+import type { CadSketchDimensionRelation, CadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
 import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
 import { cadSketchZeroScalar, type CadSketchDatum } from './cadSketchGraphSelection';
 
 const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['distance', 'point-line-distance', 'axis-distance', 'fixed-axis', 'radial-size', 'fillet-corner', 'chamfer-corner', 'line-angle', 'reference-dimension']);
 /**
- * Relations drawn as a dimension annotation on the sketch canvas. A coordinate held from an axis is a distance from that axis, unless it is 0
- * whatever the parameters are, which keeps its point on the axis as a relation.
+ * Relations of the dimension kinds, which the canvas lays out as annotations and the properties count. A coordinate held from an axis is a
+ * distance from that axis, unless it is 0 whatever the parameters are, which keeps its point on the axis as a relation. Whether one is drawn,
+ * and so can be picked on the canvas, is the layout's: see `cadSketchDrawnDimensions`.
  */
 export const isCadSketchDimensionRelation = (relation: CadSketchGraphRelation): relation is CadSketchDimensionRelation => DIMENSION_KINDS.has(relation.kind)
   && !(relation.kind === 'fixed-axis' && cadSketchZeroScalar(relation.value));
@@ -122,26 +123,32 @@ export function cadSketchDimensionPickOf(relation: CadSketchDimensionRelation): 
     }
   }
 }
-/** The pick for a canvas dimension, or null when the relation is gone or is not a dimension. */
-export function cadSketchDimensionPick(graph: CadSketchGraph, relationId: string): CadSketchDimensionPick | null {
-  const relation = graph.relations.find(item => item.id === relationId);
+/** The pick for a dimension the canvas draws, or null when the relation is gone, is not a dimension or is not drawn. */
+export function cadSketchDimensionPick(drawn: CadSketchDrawnDimensions, relationId: string): CadSketchDimensionPick | null {
+  const relation = drawn.ids.has(relationId) ? drawn.graph.relations.find(item => item.id === relationId) : undefined;
   return relation && isCadSketchDimensionRelation(relation) ? cadSketchDimensionPickOf(relation) : null;
 }
-/** Whether a pick still names the dimension the graph holds under its ID. */
-export function isCadSketchDimensionPickCurrent(graph: CadSketchGraph | undefined, pick: CadSketchDimensionPick): boolean {
-  const current = graph ? cadSketchDimensionPick(graph, pick.id) : null;
-  return Boolean(graph && current && samePick(current, pick, graph));
+/** Whether a pick still names the dimension the graph holds under its ID, drawn or not. */
+export function isCadSketchDimensionInGraph(graph: CadSketchGraph, pick: CadSketchDimensionPick): boolean {
+  const relation = graph.relations.find(item => item.id === pick.id);
+  return Boolean(relation && isCadSketchDimensionRelation(relation) && samePick(cadSketchDimensionPickOf(relation), pick, graph));
+}
+/** Whether a pick still names a drawn dimension, the one the graph holds under its ID. */
+export function isCadSketchDimensionPickCurrent(drawn: CadSketchDrawnDimensions | undefined, pick: CadSketchDimensionPick): boolean {
+  const current = drawn ? cadSketchDimensionPick(drawn, pick.id) : null;
+  return Boolean(drawn && current && samePick(current, pick, drawn.graph));
 }
 /**
- * Undo, redo, deletion and agent edits can remove or replace a selected dimension; the rest stay selected. Each pick compares in the new
- * graph, and a kept pick takes the dimension's current form and operands.
+ * Undo, redo, deletion and agent edits can remove or replace a selected dimension, and an edit can leave one with nothing to draw it on;
+ * the rest stay selected. Each pick compares in the new graph, and a kept pick takes the dimension's current form and operands.
  */
-export function reconcileCadSketchDimensionSelection(graph: CadSketchGraph | undefined, current: readonly CadSketchDimensionPick[]): readonly CadSketchDimensionPick[] {
+export function reconcileCadSketchDimensionSelection(drawn: CadSketchDrawnDimensions | undefined, current: readonly CadSketchDimensionPick[]): readonly CadSketchDimensionPick[] {
   if (!current.length) return current;
-  if (!graph) return NO_SKETCH_DIMENSIONS;
+  if (!drawn) return NO_SKETCH_DIMENSIONS;
+  const graph = drawn.graph;
   let changed = false;
   const kept = current.flatMap(pick => {
-    const now = cadSketchDimensionPick(graph, pick.id);
+    const now = cadSketchDimensionPick(drawn, pick.id);
     if (!now || !samePick(now, pick, graph)) { changed = true; return []; }
     if (!equalPick(now, pick)) changed = true;
     return [equalPick(now, pick) ? pick : now];

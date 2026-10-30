@@ -355,19 +355,25 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
     } catch (cause) { distance = { form: 'point-line', label: 'Distance', state: 'blocked', reason: userFacingMessage(cause, 'These lines cannot take a distance.') }; }
     let angle: CadSketchDimensionCandidate;
     const existingAngle = graph.relations.find(relation => relation.kind === 'line-angle' && relation.rays.some(ray => ray.lineId === lineIds[0]) && relation.rays.some(ray => ray.lineId === lineIds[1]));
-    if (parallel) angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: 'These lines are parallel, so they have no angle.' };
-    else if (!existingAngle && orientation) angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: `Remove ${orientation.kind === 'parallel' ? 'Parallel' : orientation.kind === 'perpendicular' ? 'Perpendicular' : 'Collinear'} before adding Angle.` };
+    const anglePreview = () => {
+      const relationId = newId(), sectors = cadSketchLineAngleSectors({ graph, parameters, lineIds, relationId });
+      let natural: string | null = null;
+      try { natural = JSON.stringify(createCadSketchLineAngleRelation({ graph, parameters, lineIds, relationId }).rays); }
+      catch (cause) { if (!(cause instanceof CadError && cause.code === 'ambiguous-sketch-angle-sector')) throw cause; }
+      const fallback = natural === null ? null : sectors.findIndex(sector => JSON.stringify(sector.relation.rays) === natural);
+      return { kind: 'angle', sectors, fallback: fallback === null || fallback < 0 ? null : fallback } as const;
+    };
+    // An angle the sketch holds is selected even on lines too near parallel for its sectors; it then previews nothing.
+    if (existingAngle) {
+      let preview: ReturnType<typeof anglePreview> | null = null;
+      try { preview = anglePreview(); } catch (cause) { if (!(cause instanceof CadError)) throw cause; }
+      angle = { form: 'angle', label: 'Angle', state: 'existing', relationIds: [existingAngle.id], reason: EXISTING, preview };
+    }
+    else if (parallel) angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: 'These lines are parallel, so they have no angle.' };
+    else if (orientation) angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: `Remove ${orientation.kind === 'parallel' ? 'Parallel' : orientation.kind === 'perpendicular' ? 'Perpendicular' : 'Collinear'} before adding Angle.` };
     else {
-      try {
-        const relationId = newId(), sectors = cadSketchLineAngleSectors({ graph, parameters, lineIds, relationId });
-        let natural: string | null = null;
-        try { natural = JSON.stringify(createCadSketchLineAngleRelation({ graph, parameters, lineIds, relationId }).rays); }
-        catch (cause) { if (!(cause instanceof CadError && cause.code === 'ambiguous-sketch-angle-sector')) throw cause; }
-        const fallback = natural === null ? null : sectors.findIndex(sector => JSON.stringify(sector.relation.rays) === natural);
-        const preview = { kind: 'angle', sectors, fallback: fallback === null || fallback < 0 ? null : fallback } as const;
-        angle = existingAngle ? { form: 'angle', label: 'Angle', state: 'existing', relationIds: [existingAngle.id], reason: EXISTING, preview }
-          : { form: 'angle', label: 'Angle', state: 'available', relations: [], implied: null, reuses: null, reference: null, referenceReason: NO_REFERENCE_ANGLE, preview };
-      } catch (cause) { angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: userFacingMessage(cause, 'These lines cannot take an angle.') }; }
+      try { angle = { form: 'angle', label: 'Angle', state: 'available', relations: [], implied: null, reuses: null, reference: null, referenceReason: NO_REFERENCE_ANGLE, preview: anglePreview() }; }
+      catch (cause) { angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: userFacingMessage(cause, 'These lines cannot take an angle.') }; }
     }
     return plan([distance, angle], distance.state === 'blocked' ? 'angle' : 'point-line');
   }
