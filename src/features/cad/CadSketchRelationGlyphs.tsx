@@ -212,7 +212,8 @@ function useRestingReveal(layer: SVGGElement | null, highlight: CadSketchHighlig
  * Relation glyphs: thin, quiet marks in the annotation colour on each point or edge a relation names. The layer lies beneath the dimension
  * lines, the sketch points and the edges, so they keep their own picks; a press on a glyph over geometry, a datum, a grip or a profile edge
  * leaves it to the canvas too. The glyphs at rest paint as a few paths in one scaled group: their plates as one path per state and their
- * icons as one path per state, so every repaint of the sketch, as each hover move brings, paints a few items whatever the number of glyphs.
+ * icons as one path per state, so every repaint of the sketch, as each hover move brings, paints a few items per layer rather than per glyph,
+ * and the layers below count how deeply glyphs overlap, not how many there are.
  * Each glyph keeps one row, which takes its pointer, focus and accessible name through a plate that paints nothing; a selected or focused
  * glyph leaves the paths and draws in its row, and a lit one keeps its place in them and draws a copy on top with its ring, so the paths
  * are joined again only on a selection, a focus, a drag that moves glyphs or a view change, never on a pointer move. Where plates overlap,
