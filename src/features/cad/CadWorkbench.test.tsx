@@ -2791,7 +2791,8 @@ describe('CAD sketch interaction', () => {
         const source = await open(); const { hit, send, sketchOf } = pointerSetup(), mm = scale(), original = relation('length');
         // The length's line runs level with the base, so its offset is the line's height.
         const height = sketchOf(hit('length').start).y;
-        await dragBy(send, () => hit('length').element, hit('length').along(.3), [0, -10]);
+        // Along the line as well as away, which moves only the line.
+        await dragBy(send, () => hit('length').element, hit('length').along(.3), [15, -10]);
         expectLinear('length', height + 10 * mm, .5); expect(selectedDimensions()).toEqual(['length']);
         const lifted = relations();
         await dragBy(send, () => label('length'), { clientX: 200, clientY: 200 }, [10, 5], [30, 20]);
