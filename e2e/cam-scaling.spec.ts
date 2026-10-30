@@ -27,7 +27,8 @@ test('uniform scale UI and public edits share bounds, undo and saved-reopen beha
   context = await rawCadToolCall(page, 'edm_get_context');
   expect(await rawCadToolCall(page, 'edm_save_project', { draftVersion: context.data.draft.version })).toMatchObject({ ok: true });
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Geometry menu', exact: true })).toBeVisible();
+  // A reload starts the whole app again before the editor opens, which can pass the default wait on a busy two-core runner.
+  await expect(page.getByRole('button', { name: 'Geometry menu', exact: true })).toBeVisible({ timeout: 20_000 });
   context = await rawCadToolCall(page, 'edm_get_context');
   summary = await rawCadToolCall(page, 'edm_get_project', { target: { kind: 'current-draft', version: context.data.draft.version } });
   expect(summary.data.bounds).toEqual({ minX: -70, maxX: 70, minY: -70, maxY: 70 });
