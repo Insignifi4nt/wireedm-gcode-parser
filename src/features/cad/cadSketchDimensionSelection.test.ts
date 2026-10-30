@@ -78,6 +78,18 @@ describe('sketch dimension selection', () => {
     expect(reconcileCadSketchDimensionSelection(drawn(withRelation({ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'side', towardPointId: 'c' }], sense: 'ccw', value: 90 })), [angle])).toBe(NO_SKETCH_DIMENSIONS);
   });
 
+  it('keeps every kind of dimension selected when it is placed, moved or reset, which changes only where it is drawn', () => {
+    const current = Object.freeze(['length', 'rise', 'angle', 'size', 'x'].map(pick));
+    const placed = { ...graph, relations: graph.relations.map(relation => relation.id === 'angle' ? { ...relation, annotation: { kind: 'angle' as const, radius: 9, along: 0.25 } }
+      : relation.id === 'size' ? { ...relation, annotation: { kind: 'radial' as const, angle: 1, distance: 6 } }
+      : ['length', 'rise', 'x'].includes(relation.id) ? { ...relation, annotation: { kind: 'linear' as const, offset: -7, along: 1.5 } } : relation) } as CadSketchGraph;
+    expect(reconcileCadSketchDimensionSelection(drawn(placed), current)).toBe(current);
+    for (const id of ['length', 'rise', 'angle', 'size', 'x']) expect(isCadSketchDimensionPickCurrent(drawn(placed), pick(id))).toBe(true);
+    // The pick made from the relation as placed names the same dimension back in the graph without the placement, as Reset leaves it.
+    const placedPicks = Object.freeze(current.map(item => cadSketchDimensionPick(drawn(placed), item.id)!));
+    expect(reconcileCadSketchDimensionSelection(drawn(graph), placedPicks)).toBe(placedPicks);
+  });
+
   it('keeps the selection through Make reference and Make driving, which measure the same thing', () => {
     const current = Object.freeze([pick('length'), pick('diagonal'), pick('size')]);
     const referenced = { ...graph, relations: graph.relations.map(relation => relation.id === 'length' ? { id: 'length', kind: 'reference-dimension' as const, measurement: { kind: 'line-length' as const, entityId: 'base' } }

@@ -96,8 +96,8 @@ function measuredIn(graph: CadSketchGraph, measures: CadSketchDimensionMeasure):
   }
 }
 /**
- * The pick for a dimension relation, without its value. Editing the value keeps the selection, and so do Make reference and
- * Make driving, which keep the measured length, distance, radius or diameter. A relation that measures something else does not.
+ * The pick for a dimension relation, without its value or where it is drawn. Editing the value or moving it keeps the selection, and so do
+ * Make reference and Make driving, which keep the measured length, distance, radius or diameter. A relation that measures something else does not.
  * The pick keeps the operands as authored. Only a comparison resolves them, in the graph it compares in, so a driver on a coincident alias of a
  * line's endpoint and the line's reference measure the same length only while that graph joins the two points.
  * A point to line distance names its point and line, not its side, which an edit that turns the line around flips to keep the point where it is.
@@ -118,7 +118,7 @@ export function cadSketchDimensionPickOf(relation: CadSketchDimensionRelation): 
       return pick(form, measurement.entityId, { kind: 'line-length', lineId: measurement.entityId });
     }
     default: {
-      const identity = canonical(Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id' && key !== 'value' && key !== 'values')));
+      const identity = canonical(Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id' && key !== 'value' && key !== 'values' && key !== 'annotation')));
       return { id: relation.id, form: relation.kind, identity, measures: { kind: 'own', key: `${relation.kind}/${identity}` } };
     }
   }

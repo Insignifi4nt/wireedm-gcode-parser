@@ -44,7 +44,8 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   await expect(page.getByRole('button', { name: 'Rectangle', exact: true })).toHaveAttribute('aria-pressed', 'true');
   const view = async () => (await call(page, 'cad_get_viewport', { expectedVersion: (await context(page)).version })).view;
   expect(await view()).toMatchObject({ onPartDimensionsVisible: false });
-  const distance = { id: expect.any(String), kind: 'fixed-axis', pointId: right.startPointId, axis: 'x', value: 30 };
+  // A click places the distance where its preview drew it, its line through the click, 5 mm above the middle of the side.
+  const distance = { id: expect.any(String), kind: 'fixed-axis', pointId: right.startPointId, axis: 'x', value: 30, annotation: { kind: 'linear', offset: expect.closeTo(5, 0), along: 0.5 } };
   const label = (relations: unknown[]) => page.locator(`[data-cad-sketch-dimension="${(relations.at(-1) as { id: string }).id}"] [role="button"]`);
 
   // Dimension, the Y axis, then the right side: the preview shows the distance, a click places it, it draws, and a double-click edits it as Distance.
