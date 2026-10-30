@@ -181,9 +181,9 @@ const NO_REFERENCE_PAIR ='A horizontal or vertical distance has no reference for
 const NO_REFERENCE_ANGLE = 'An angle has no reference form yet.';
 const NO_REFERENCE_DATUM = CAD_SKETCH_NO_REFERENCE_DATUM;
 /** Why placing selects a dimension that already measures the picks instead of adding one. */
-export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension, and a click also moves it there.';
+export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.';
 const EXISTING = CAD_SKETCH_DIMENSION_EXISTING_REASON;
-const REUSED = 'This is already dimensioned. Placing selects that dimension and adds the relation that keeps it measuring these picks; a click also moves it there.';
+const REUSED = 'This is already dimensioned. Placing selects that dimension, moves it where the preview shows it and adds the relation that keeps it measuring these picks.';
 /**
  * What placing says when none of the relations it placed or reused is a dimension: each is a coordinate held at a plain 0, the relation that
  * keeps a point on an axis, or at the origin with both. Null when one of them is a dimension, or when they are not all such coordinates.

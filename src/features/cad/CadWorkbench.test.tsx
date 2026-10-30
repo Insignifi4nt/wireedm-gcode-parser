@@ -2417,7 +2417,7 @@ describe('CAD sketch interaction', () => {
       expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'angle', 'size', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
       // The menu's Dimension on a dimensioned circle picks it; placing selects its existing dimension, and Enter edits that one.
       await geometryMenu('hole', 'Dimension'); await focusedKey('Enter');
-      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
+      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.', 'info');
       expect(geometry()).toEqual([]); expect(selectedDimensions()).toEqual(['size']); expect(relations()).toHaveLength(5);
       await focusedKey('Enter'); expect(field('Diameter').value).toBe('8');
       expect(geometry()).toEqual([]); expect(selectedDimensions()).toEqual(['size']);
@@ -2787,6 +2787,19 @@ describe('CAD sketch interaction', () => {
         await act(async () => currentSession.redo()); await act(async () => currentSession.redo()); expectLinear('length', -9, .5); expectLinear(added[0].id, -12, .5);
       });
 
+      it('places what the preview shows for Enter while the pointer is on the sketch, and the usual layout before it has been there', async () => {
+        await open(); await replace(current => current.filter(item => item.id !== 'measured'));
+        const before = relations(), added = () => relations().filter(item => !before.some(old => old.id === item.id));
+        // From the keyboard alone no preview is drawn, so Enter places the side's length where it is laid out automatically.
+        await geometryMenu('side', 'Dimension'); await canvasKey('Enter');
+        expect(added()).toEqual([{ id: expect.any(String), kind: 'distance', pointIds: ['b', 'c'], value: 30 }]);
+        await canvasKey('Escape'); await act(async () => currentSession.undo()); expect(relations()).toEqual(before);
+        // With the pointer on the sketch, Enter places it where the preview drew it, as a click there would.
+        const { canvas, send, sketchAt } = pointerSetup();
+        await geometryMenu('side', 'Dimension'); await send(canvas, 'pointermove', sketchAt(52, 15), { buttons: 0 }); await canvasKey('Enter');
+        expect(added()).toMatchObject([{ kind: 'distance', pointIds: ['b', 'c'], value: 30 }]); expectLinear(added()[0].id, -12, .5);
+      });
+
       it('drags a label along and away from its line, and the line only away from its geometry, each as one undo step selecting it', async () => {
         const source = await open(); const { hit, send, sketchOf } = pointerSetup(), mm = scale(), original = relation('length');
         // The length's line runs level with the base, so its offset is the line's height.
@@ -3023,7 +3036,7 @@ describe('CAD sketch interaction', () => {
       await open(undefined, { points: [{ id: 'p', position: [0, 100] }, { id: 'q', position: [40, 100 + rise] }], entities: [{ id: 'lid', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
         relations: [{ id: 'tilt', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'lid', towardPointId: 'q' }], sense: 'ccw', value }] });
       await click('Dimension'); await pick(entity('base')); await pick(entity('lid')); await dimensionMenu('Angle');
-      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
+      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.', 'info');
       expect(relations().map(relation => relation.id)).toEqual(['tilt']);
       const drawn = container.querySelector('[data-cad-sketch-dimension="tilt"]');
       expect(drawn?.querySelector('path')).toBeNull(); expect(drawn?.classList.contains('is-selected')).toBe(true);
@@ -3076,7 +3089,7 @@ describe('CAD sketch interaction', () => {
       await open(redundant, { relations: [gap] });
       await click('Dimension'); await pick(entity('base')); await pick(entity('top')); await focusedKey('Enter');
       expect(redundant).toHaveBeenCalledTimes(1); expect(relations()).toEqual([gap]); expect(selected()).toEqual(['gap']);
-      expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
+      expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.', 'info');
       expect(button('Dimension').getAttribute('aria-pressed')).toBe('true'); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
     });
 
@@ -3135,7 +3148,7 @@ describe('CAD sketch interaction', () => {
         const onAxis = { id: 'onAxis', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 0 }, high = { id: 'high', kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 20 };
         await place([datum('origin'), point('e')], [onAxis, high]);
         expect(relations()).toEqual([onAxis, high]); expect(selected()).toEqual(['high']);
-        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
+        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.', 'info');
         await canvasKey('Enter'); expect(field('Distance').value).toBe('20');
         // With only X = 0 kept, placing adds Y = 20 and selects it.
         await place([point('e'), datum('origin')], [onAxis]);
@@ -3167,13 +3180,13 @@ describe('CAD sketch interaction', () => {
         // With both kept, placing finds them and selects them, X first.
         await place([point('e'), datum('origin')], [offset, high], { offset: 0 });
         expect(relations()).toEqual([offset, high]); expect(selected()).toEqual(['offset', 'high']);
-        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
+        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.', 'info');
         await canvasKey('Enter'); expect(field('Distance').value).toBe('0');
         // The horizontal distance alone is the kept dimension at 0, not a relation that keeps e on the Y axis.
         await open(undefined, posts([offset], { offset: 0 })); await click('Dimension'); await pick(point('e')); await pick(datum('origin'));
         statusMessage.mockClear(); await dimensionMenu('Horizontal distance from the origin');
         expect(relations()).toEqual([offset]); expect(selected()).toEqual(['offset']);
-        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
+        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.', 'info');
         await canvasKey('Enter'); expect(field('Distance').value).toBe('0');
       });
 

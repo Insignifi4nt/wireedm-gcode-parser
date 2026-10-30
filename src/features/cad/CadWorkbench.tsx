@@ -1390,7 +1390,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const session = dimensionToolOwner.current, picks = currentDimensionPicks, graph = sketch?.graph;
     if (!session || !picks || session.picks !== picks || !sketch || !graph || commandSubmission.applying) return;
     const pointer = choice.pointer === undefined ? dimensionPointer.get() : choice.pointer, scale = dimensionPointer.scale(), parameters = document.parameters;
-    // Without a pointer, as from Enter, dimensions take their automatic layout.
+    // What is placed is what the preview shows at the pointer; before the pointer has been over the canvas, Enter places the automatic layout.
     const placedAt = <Relation extends CadSketchGraphRelation>(relations: readonly Relation[]) => pointer && scale ? cadSketchDimensionsPlacedAt(graph, parameters, relations, pointer, scale) : relations;
     const sourceSketchId = sketch.id;
     const current = () => {

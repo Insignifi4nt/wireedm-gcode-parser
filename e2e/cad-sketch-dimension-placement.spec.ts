@@ -33,6 +33,9 @@ test('places each dimension where the pointer puts it, falls back to a reference
     return { version: current.version, relations: (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: sketch.id })).feature.graph.relations as unknown[] };
   };
   const steps = [await settled()];
+  // Placing stores where the preview drew the dimension, its line through the pointer, also for Enter while the pointer rests on the sketch;
+  // the pointer lands within a pixel of the projected position.
+  const at = (offset: number) => ({ kind: 'linear', offset: expect.closeTo(offset, 0), along: 0.5 });
   const placed = async (relation: unknown) => {
     await expect.poll(async () => (await settled()).relations.length).toBe(steps.at(-1)!.relations.length + 1);
     const next = await settled(); expect(next.relations).toEqual([...steps.at(-1)!.relations, relation]); steps.push(next);
@@ -48,7 +51,7 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await expect(overlay.locator('[data-cad-dimension-preview]')).toHaveCount(1); await expect(overlay).toHaveCSS('pointer-events', 'none');
   expect(await overlay.boundingBox()).toEqual(await canvas.boundingBox());
   await clickAt(25, 14);
-  await placed({ id: expect.any(String), kind: 'distance', pointIds: ['a', 'b'], value: 40 });
+  await placed({ id: expect.any(String), kind: 'distance', pointIds: ['a', 'b'], value: 40, annotation: at(4) });
   // The tool stays on with the new dimension selected, and Enter opens its editor at the placed value; a cancelled edit changes nothing.
   await expect(tool).toHaveAttribute('aria-pressed', 'true'); await expect(selected).toHaveCount(1);
   await expect(canvas).toHaveAccessibleDescription(/^Dimension placed · Enter or double-click edits it/);
@@ -73,7 +76,7 @@ test('places each dimension where the pointer puts it, falls back to a reference
   // takes no more picks, and Enter there places the distance; focus then moves to the canvas, so Enter again edits that distance.
   await clickAt(30, 10); await clickAt(30, 30); await hover(60, 20); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'point-line');
   await expect(page.locator('[data-cad-sketch-entity="top"]')).toBeFocused(); await page.keyboard.press('Enter');
-  await placed({ id: expect.any(String), kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: expect.any(String), value: 20 });
+  await placed({ id: expect.any(String), kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: expect.any(String), value: 20, annotation: at(45) });
   await expect(canvas).toBeFocused(); await page.keyboard.press('Enter');
   const gap = page.getByRole('textbox', { name: 'Point to line distance mm', exact: true });
   await expect(gap).toHaveValue('20'); await gap.fill('25'); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -88,7 +91,7 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await clickAt(85, 17.5); await hover(85, 35); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
   await hover(74, 17); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
   await clickAt(74, 17);
-  await placed({ id: expect.any(String), kind: 'distance', pointIds: ['e', 'f'], value: Math.hypot(10, 15) });
+  await placed({ id: expect.any(String), kind: 'distance', pointIds: ['e', 'f'], value: Math.hypot(10, 15), annotation: at((6 * 15 + 7 * 10) / Math.hypot(10, 15)) });
 
   // For two points, the pointer above or below both gives a horizontal distance, beside both a vertical one, and between them an aligned one.
   await pick('[data-cad-sketch-point="a"]'); await pick('[data-cad-sketch-point="o"]');
@@ -96,18 +99,18 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await hover(20, 15); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
   await hover(40, 15); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'vertical');
   await clickAt(40, 15);
-  await placed({ id: expect.any(String), kind: 'axis-distance', axis: 'y', pointIds: ['a', 'o'], value: 10 });
+  await placed({ id: expect.any(String), kind: 'axis-distance', axis: 'y', pointIds: ['a', 'o'], value: 10, annotation: at(20) });
 
-  // A point and an axis, then Enter, hold the point at its distance from that axis, a plain Distance.
+  // A point and an axis, then Enter, hold the point at its distance from that axis, a plain Distance, drawn through the pointer left at (40, 15).
   await pick('[data-cad-sketch-point="c"]'); await pick('[data-cad-sketch-datum="x-axis"]');
   await expect(canvas).toHaveAccessibleDescription(/^Distance · Click or press Enter to place/);
   await page.keyboard.press('Enter');
-  await placed({ id: expect.any(String), kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 30 });
+  await placed({ id: expect.any(String), kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 30, annotation: at(-25) });
 
   // A length the fixed ends already set would over-define the sketch, so it is placed as a reference and the status line says so.
   await clickAt(66, 40); await hover(66, 35); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
   await clickAt(66, 35);
-  await placed({ id: expect.any(String), kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'held' } });
+  await placed({ id: expect.any(String), kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'held' }, annotation: at(-5) });
   await expect(page.getByText('Placed as a reference: a driving dimension would over-define the sketch.').first()).toBeVisible();
 
   // Escape drops the picks and keeps the tool; with nothing picked it returns to Select.
