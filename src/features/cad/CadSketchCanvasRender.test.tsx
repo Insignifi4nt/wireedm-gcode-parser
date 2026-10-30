@@ -97,10 +97,10 @@ async function mountCanvas(graph: NonNullable<CadSketchFeature['graph']>, initia
   let captured: number | null = null;
   Object.assign(svg, { getBoundingClientRect: () => ({ left: 10, top: 20, right: 810, bottom: 620, width: 800, height: 600, x: 10, y: 20, toJSON: () => ({}) }),
     setPointerCapture: (id: number) => { captured = id; }, hasPointerCapture: (id: number) => captured === id, releasePointerCapture: () => { captured = null; } });
-  const pointer = async (type: string, x: number, y: number, target: Element = svg) => {
+  const pointer = async (type: string, x: number, y: number, target: Element = svg, buttons = type === 'pointerdown' ? 1 : 0) => {
     const box = svg.getAttribute('viewBox')!.split(' ').map(Number), state = controls?.getState();
     if (!state || state.mode === 'solid') throw new Error('Sketch frame missing');
-    const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerdown' ? 1 : 0, clientX: 10 + (x - state.centerMm[0] - box[0]) / box[2] * 800, clientY: 20 + (state.centerMm[1] - y - box[1]) / box[3] * 600, bubbles: true });
+    const event = new MouseEvent(type, { button: 0, buttons, clientX: 10 + (x - state.centerMm[0] - box[0]) / box[2] * 800, clientY: 20 + (state.centerMm[1] - y - box[1]) / box[3] * 600, bubbles: true });
     Object.defineProperties(event, { pointerId: { value: 3 }, isPrimary: { value: true } });
     await act(async () => target.dispatchEvent(event));
   };
@@ -165,6 +165,54 @@ describe('sketch canvas cursor rendering', () => {
     await move(15, 25); await move(20, 10, across[0]); await move(30, 26);
     expect(glyphRenders).not.toHaveBeenCalled(); expect(renderedPoints()).toEqual([]);
     expect(glyphs().every(glyph => glyph.getAttribute('pointer-events') === 'none' && glyph.getAttribute('tabindex') === '-1')).toBe(true);
+  });
+
+  it('draws only the glyphs on selected geometry, and the selected ones, above the glyph limit and says so in Select', async () => {
+    // 51 squares with Horizontal and Vertical on each side draw 204 glyphs, past the limit of 200.
+    const points: { id: string; position: [number, number] }[] = [], entities: { id: string; kind: 'line'; construction: false; startPointId: string; endPointId: string }[] = [];
+    const relations: { id: string; kind: 'horizontal' | 'vertical'; pointIds: [string, string] }[] = [];
+    for (let square = 0; square < 51; square++) {
+      const x = square % 10 * 14, y = Math.floor(square / 10) * 14, ids = ['a', 'b', 'c', 'd'].map(corner => `s${square}${corner}`);
+      [[x, y], [x + 10, y], [x + 10, y + 10], [x, y + 10]].forEach(([px, py], corner) => points.push({ id: ids[corner], position: [px, py] }));
+      ids.forEach((id, side) => {
+        entities.push({ id: `s${square}e${side}`, kind: 'line', construction: false, startPointId: id, endPointId: ids[(side + 1) % 4] });
+        relations.push({ id: `s${square}r${side}`, kind: side % 2 ? 'vertical' : 'horizontal', pointIds: [id, ids[(side + 1) % 4]] });
+      });
+    }
+    const { props, show } = await mountCanvas({ points, entities, relations }, { tool: 'select' });
+    const shown = () => [...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].map(glyph => glyph.getAttribute('data-cad-sketch-relation-glyph'));
+    const status = () => container.querySelector('[data-cad-dimension-status]')?.textContent ?? null;
+    await show({ graphControls: { ...props().graphControls!, onSelectRelations: vi.fn() } });
+    expect(shown()).toEqual([]); expect(status()).toBe('Relations shown on selected geometry only · 204 marks in this sketch');
+    await show({ graphControls: { ...props().graphControls!, selection: [{ kind: 'entity', id: 's7e1' }], dimensionSelection: ['s30r2'] } });
+    expect(shown()).toEqual(['s7r1', 's30r2']);
+    // A drawing tool keeps the limit but leaves the status line to the drawing.
+    await show({ tool: 'line' });
+    expect(shown()).toEqual(['s7r1', 's30r2']); expect(status()).toBeNull();
+  });
+
+  it('drags geometry without rendering the relation glyphs it does not move, when the drag starts or ends', async () => {
+    const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
+    const { props, show, pointer } = await mountCanvas({
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 20] }, { id: 'd', position: [0, 20] },
+        { id: 'e', position: [10, 8] }, { id: 'f', position: [16, 8] }],
+      entities: [line('bottom', 'a', 'b'), line('right', 'b', 'c'), line('top', 'c', 'd'), line('left', 'd', 'a'), line('loose', 'e', 'f')],
+      relations: [{ id: 'h1', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'v1', kind: 'vertical', pointIds: ['b', 'c'] }, { id: 'across', kind: 'parallel', lineIds: ['bottom', 'top'] }] }, { tool: 'select' });
+    await show({ graphControls: { ...props().graphControls!, onSelectRelations: vi.fn() } });
+    const loose = container.querySelector<SVGGElement>('[data-cad-sketch-entity="loose"]'), layer = container.querySelector('.cad-sketch-graph');
+    if (!loose || !layer) throw new Error('Loose edge missing.');
+    let captured: number | null = null;
+    Object.assign(loose, { setPointerCapture: (id: number) => { captured = id; }, hasPointerCapture: (id: number) => captured === id, releasePointerCapture: () => { captured = null; } });
+    // The loose edge moves inside the sketch's bounds, so no glyph changes place: neither the drag, its dragging state nor the edit it submits renders a glyph row.
+    glyphRenders.mockClear();
+    await pointer('pointerdown', 13, 8, loose); await pointer('pointermove', 14, 9, loose, 1); await pointer('pointermove', 15, 10, loose, 1);
+    expect(layer.classList.contains('is-dragging')).toBe(true); expect(glyphRenders).not.toHaveBeenCalled();
+    // The drag turns the whole glyph layer inert, while each glyph stays a tab stop.
+    expect(container.querySelector('.cad-sketch-relation-glyphs')?.getAttribute('pointer-events')).toBe('none');
+    await pointer('pointerup', 15, 10, loose);
+    expect(layer.classList.contains('is-dragging')).toBe(false); expect(glyphRenders).not.toHaveBeenCalled();
+    expect(props().graphControls!.onEditMany).toHaveBeenCalledTimes(1);
+    expect([...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].every(glyph => glyph.getAttribute('tabindex') === '0')).toBe(true);
   });
 
   it('highlights the measured geometry on dimension hover and selection without rendering rows or the canvas again', async () => {

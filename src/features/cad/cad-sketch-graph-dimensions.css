@@ -35,11 +35,11 @@
 .cad-sketch-relation-glyph.is-interactive { cursor: pointer; }
 .cad-sketch-relation-glyph-box {
   fill: color-mix(in srgb, var(--cad-view-top, var(--background)) 50%, var(--cad-view-bottom, var(--background))); fill-opacity: .82;
-  stroke: currentColor; stroke-opacity: .35; stroke-width: 1px; vector-effect: non-scaling-stroke;
+  stroke: currentColor; stroke-opacity: .35; stroke-width: 1px;
 }
 .cad-sketch-relation-glyph.is-selected .cad-sketch-relation-glyph-box { stroke-opacity: .9; }
 .cad-sketch-relation-glyph:focus-visible .cad-sketch-relation-glyph-box { stroke-opacity: 1; stroke-dasharray: 2 1.5; }
 .cad-sketch-relation-glyph-icon { pointer-events: none; }
 /* The relations of a hovered glyph or dock row ring every glyph they draw. */
 .cad-sketch-relation-glyph-highlight { fill: none; stroke: var(--warning, #f0bf71); }
-.cad-sketch-relation-glyph-highlight rect { stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.cad-sketch-relation-glyph-highlight rect { stroke-width: 1.5px; }

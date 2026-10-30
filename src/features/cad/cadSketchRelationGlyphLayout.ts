@@ -46,6 +46,11 @@ export function cadSketchRelationGlyphKind(graph: CadSketchGraph, relation: CadS
 export const CAD_SKETCH_RELATION_GLYPH_PIXELS = { size: 12, edge: 12, point: 10, stack: 15 } as const;
 
 interface Entry { readonly relationIds: readonly string[]; readonly operand: CadSketchRelationGlyphOperand; readonly kind: CadSketchRelationGlyphKind; readonly name: string; readonly label: string }
+/**
+ * A glyph before it is placed: what it names and its slot among the glyphs on its operand. Only the sketch's relations, edges and point
+ * IDs decide it, so a drag, which moves geometry only, places the same entries again without naming them again.
+ */
+export interface CadSketchRelationGlyphEntry extends Entry { readonly key: string; readonly index: number; readonly count: number }
 type Operands = readonly CadSketchRelationGlyphOperand[];
 const point = (id: string): CadSketchRelationGlyphOperand => `point:${id}`, entity = (id: string): CadSketchRelationGlyphOperand => `entity:${id}`;
 
@@ -90,9 +95,16 @@ export function countCadSketchRelationGlyphs(graph: CadSketchGraph): number {
 }
 /** Every relation glyph of a sketch, in a deterministic order: relations in graph order, and on each operand in that order too. */
 export function layoutCadSketchRelationGlyphs(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): readonly CadSketchRelationGlyph[] {
-  const entries = glyphEntries(graph);
-  if (!entries.length) return [];
-  return placeGlyphs(graph, parameters, entries);
+  return placeCadSketchRelationGlyphs(graph, parameters, cadSketchRelationGlyphEntries(graph));
+}
+/** The glyph entries of a sketch, in layout order, each with its slot among the glyphs on its operand. */
+export function cadSketchRelationGlyphEntries(graph: CadSketchGraph): readonly CadSketchRelationGlyphEntry[] {
+  const entries = glyphEntries(graph), counts = new Map<CadSketchRelationGlyphOperand, number>(), placed = new Map<CadSketchRelationGlyphOperand, number>();
+  for (const entry of entries) counts.set(entry.operand, (counts.get(entry.operand) ?? 0) + 1);
+  return Object.freeze(entries.map(entry => {
+    const index = placed.get(entry.operand) ?? 0; placed.set(entry.operand, index + 1);
+    return Object.freeze({ ...entry, relationIds: Object.freeze(entry.relationIds), key: `${entry.relationIds.join('+')}@${entry.operand}`, index, count: counts.get(entry.operand)! });
+  }));
 }
 function glyphEntries(graph: CadSketchGraph): readonly Entry[] {
   if (!graph.relations.length) return [];
@@ -121,7 +133,9 @@ function glyphEntries(graph: CadSketchGraph): readonly Entry[] {
   }
   return entries;
 }
-function placeGlyphs(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entries: readonly Entry[]): readonly CadSketchRelationGlyph[] {
+/** Places entries made from this graph, or from one with the same relations, edges and point IDs; an entry whose geometry is missing draws nothing. */
+export function placeCadSketchRelationGlyphs(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entries: readonly CadSketchRelationGlyphEntry[]): readonly CadSketchRelationGlyph[] {
+  if (!entries.length) return [];
   const positions = new Map(graph.points.map(item => [item.id, [evaluateCadScalar(item.position[0], parameters), evaluateCadScalar(item.position[1], parameters)] as const]));
   const entities = new Map(graph.entities.map(item => [item.id, item]));
   const bounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
@@ -129,13 +143,9 @@ function placeGlyphs(graph: CadSketchGraph, parameters: Readonly<Record<string, 
     bounds.minX = Math.min(bounds.minX, x); bounds.maxX = Math.max(bounds.maxX, x); bounds.minY = Math.min(bounds.minY, y); bounds.maxY = Math.max(bounds.maxY, y);
   }
   const middle: SketchPoint = [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2];
-  const stacks = new Map<CadSketchRelationGlyphOperand, number>();
-  for (const entry of entries) stacks.set(entry.operand, (stacks.get(entry.operand) ?? 0) + 1);
-  const placedOn = new Map<CadSketchRelationGlyphOperand, number>();
   return Object.freeze(entries.flatMap((entry): CadSketchRelationGlyph[] => {
-    const index = placedOn.get(entry.operand) ?? 0; placedOn.set(entry.operand, index + 1);
-    const at = place(entry.operand, index, stacks.get(entry.operand)!, positions, entities, parameters, middle);
-    return at ? [Object.freeze({ key: `${entry.relationIds.join('+')}@${entry.operand}`, relationIds: Object.freeze(entry.relationIds), operand: entry.operand, kind: entry.kind,
+    const at = place(entry.operand, entry.index, entry.count, positions, entities, parameters, middle);
+    return at ? [Object.freeze({ key: entry.key, relationIds: entry.relationIds, operand: entry.operand, kind: entry.kind,
       // Adding zero turns a negative zero into zero, so equal places compare equal.
       anchor: at.anchor, offset: [at.offset[0] + 0, at.offset[1] + 0] satisfies SketchPoint, name: entry.name, label: entry.label })] : [];
   }));

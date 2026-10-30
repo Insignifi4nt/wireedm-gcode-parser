@@ -4,7 +4,8 @@ import { RelationCoincidentIcon, RelationCollinearIcon, RelationConcentricIcon, 
   RelationVerticalIcon, type WorkbenchIconComponent } from '@wire-edm/icons-react';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchDimensionPickOf, cadSketchHighlightRelationIds, createCadSketchDimensionKeys, isCadSketchGlyphRelation, type CadSketchDimensionPick, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
-import { CAD_SKETCH_RELATION_GLYPH_PIXELS, cadSketchRelationGlyphTransform, layoutCadSketchRelationGlyphs, type CadSketchRelationGlyph, type CadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
+import { CAD_SKETCH_RELATION_GLYPH_PIXELS, cadSketchRelationGlyphEntries, cadSketchRelationGlyphTransform, placeCadSketchRelationGlyphs, type CadSketchRelationGlyph, type CadSketchRelationGlyphKind,
+  type CadSketchRelationGlyphOperand } from './cadSketchRelationGlyphLayout';
 import type { SketchPoint } from './cadSketchInteraction';
 import './cad-sketch-graph-dimensions.css';
 
@@ -19,7 +20,10 @@ export const CAD_SKETCH_RELATION_ICONS: Readonly<Record<CadSketchRelationGlyphKi
 export interface CadSketchRelationGlyphFocus { readonly pointIds: readonly string[]; readonly entityIds: readonly string[] }
 type GlyphEvent = { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event };
 export interface CadSketchRelationGlyphsProps {
+  /** The graph drawn, which a drag preview replaces every frame. */
   readonly graph: CadSketchGraph;
+  /** The graph whose relations, edges and point IDs `graph` shares, which names the glyphs; it changes only on an edit. Defaults to `graph`. */
+  readonly topology?: CadSketchGraph;
   readonly parameters: Readonly<Record<string, number>>;
   readonly center: SketchPoint;
   readonly mmPerPixel: number;
@@ -31,7 +35,10 @@ export interface CadSketchRelationGlyphsProps {
   readonly focus?: CadSketchRelationGlyphFocus | null;
   /** Above this many glyphs only the focused and selected ones are shown. */
   readonly limit: number;
+  /** Whether the glyphs take the pointer and their commands; a drag or an applying edit turns the layer off without rendering a row. */
   readonly interactive: boolean;
+  /** Whether the glyphs are tab stops: in Select, outside a pending path or a pick. Defaults to `interactive`. */
+  readonly focusable?: boolean;
   readonly highlight?: CadSketchHighlightStore;
   /** Whether a sketch point or edge, a datum, a profile grip or a profile edge under the pointer keeps the pick from a glyph. */
   covered?(event: GlyphEvent): boolean;
@@ -48,7 +55,7 @@ interface Actions {
   enter(key: string, event: GlyphEvent): void; leave(key: string): void; down(key: string, event: PointerEvent<SVGGElement>): void;
   click(key: string, event: MouseEvent<SVGGElement>): void; doubleClick(key: string, event: MouseEvent<SVGGElement>): void; keyDown(key: string, event: KeyboardEvent<SVGGElement>): void;
 }
-const operandIn = (glyph: CadSketchRelationGlyph, focus: { readonly points: ReadonlySet<string>; readonly entities: ReadonlySet<string> }) => {
+const operandIn = (glyph: { readonly operand: CadSketchRelationGlyphOperand }, focus: { readonly points: ReadonlySet<string>; readonly entities: ReadonlySet<string> }) => {
   const id = glyph.operand.slice(glyph.operand.indexOf(':') + 1);
   return glyph.operand.startsWith('point:') ? focus.points.has(id) : focus.entities.has(id);
 };
@@ -58,22 +65,23 @@ const operandIn = (glyph: CadSketchRelationGlyph, focus: { readonly points: Read
  * sketch points and edges, so they keep their own picks; a press on a glyph over geometry, a datum, a grip or a profile edge leaves it
  * to the canvas too. Rows render again only when their own place, selection or state changes; hover lights up through the shared store.
  */
-export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ graph, parameters, center, mmPerPixel, selectedIds, inspectedRelationId, focus, limit, interactive,
-  highlight, covered, onSelect, onOpen, onDelete, onMenu }: CadSketchRelationGlyphsProps) {
-  const layout = useMemo(() => layoutCadSketchRelationGlyphs(graph, parameters), [graph, parameters]);
+export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ graph, topology = graph, parameters, center, mmPerPixel, selectedIds, inspectedRelationId, focus, limit, interactive,
+  focusable = interactive, highlight, covered, onSelect, onOpen, onDelete, onMenu }: CadSketchRelationGlyphsProps) {
+  // Naming and stacking follow the topology; a drag only places the shown entries again.
+  const entries = useMemo(() => cadSketchRelationGlyphEntries(topology), [topology]);
   // A glyph keeps its element while the graph names the same relations; a replacement under a reused ID mounts afresh and never inherits hover or focus.
   const [relationKeys] = useState(() => createCadSketchDimensionKeys(isCadSketchGlyphRelation));
-  // A glyph relation compares by its own operands, so a drag that only moves points keeps every key without comparing again.
-  const keys = useMemo(() => relationKeys(graph), [relationKeys, graph.relations]);
+  // A glyph relation compares by its own operands, and a drag keeps the topology, so it keeps every key without comparing again.
+  const keys = useMemo(() => relationKeys(topology), [relationKeys, topology.relations]);
   const focusSets = useMemo(() => focus ? { points: new Set(focus.pointIds), entities: new Set(focus.entityIds) } : null, [focus]);
-  const capped = layout.length > limit;
-  const glyphs = useMemo(() => {
+  const capped = entries.length > limit;
+  const shownEntries = useMemo(() => {
+    if (!capped) return entries;
     const selected = new Set(selectedIds);
-    return layout.flatMap((glyph): Shown[] => {
-      if (capped && !glyph.relationIds.some(id => selected.has(id) || id === inspectedRelationId) && !(focusSets && operandIn(glyph, focusSets))) return [];
-      return [{ ...glyph, mountKey: `${glyph.relationIds.map(id => keys.get(id) ?? id).join('+')}@${glyph.operand}` }];
-    });
-  }, [layout, keys, capped, selectedIds, inspectedRelationId, focusSets]);
+    return entries.filter(entry => entry.relationIds.some(id => selected.has(id) || id === inspectedRelationId) || Boolean(focusSets && operandIn(entry, focusSets)));
+  }, [entries, capped, selectedIds, inspectedRelationId, focusSets]);
+  const glyphs = useMemo(() => placeCadSketchRelationGlyphs(graph, parameters, shownEntries)
+    .map((glyph): Shown => ({ ...glyph, mountKey: `${glyph.relationIds.map(id => keys.get(id) ?? id).join('+')}@${glyph.operand}` })), [graph, parameters, shownEntries, keys]);
   const byKey = useRef(new Map<string, Shown>()); byKey.current = new Map(glyphs.map(glyph => [glyph.mountKey, glyph]));
   const elements = useRef(new Map<string, SVGGElement>());
   const layer = useRef<SVGGElement>(null);
@@ -88,13 +96,13 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
     window.addEventListener('blur', blur);
     return () => { window.removeEventListener('blur', blur); hideOnUnmount.current(); };
   }, []);
-  // A glyph that leaves the drawing or is replaced, or a layer that stops accepting picks, drops its hover; a hidden glyph gives its focus back to the canvas.
+  // A glyph that leaves the drawing or is replaced, or a layer that stops accepting picks, drops its hover; glyphs that stop being tab stops give their focus back to the canvas.
   useLayoutEffect(() => {
     const owner = hovered.current;
     if (owner && (!interactive || !byKey.current.has(owner.slice('glyph:'.length)))) hideOnUnmount.current();
     const focused = document.activeElement;
-    if (!interactive && focused instanceof SVGElement && layer.current?.contains(focused)) layer.current.ownerSVGElement?.focus({ preventScroll: true });
-  }, [glyphs, interactive]);
+    if (!focusable && focused instanceof SVGElement && layer.current?.contains(focused)) layer.current.ownerSVGElement?.focus({ preventScroll: true });
+  }, [glyphs, interactive, focusable]);
   const [actions] = useState<Actions>(() => {
     const glyphOf = (key: string) => byKey.current.get(key);
     // The relations a glyph names, as the graph it was drawn from holds them; picks are made only when a command needs them.
@@ -149,18 +157,18 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
   });
   const selected = new Set(selectedIds);
   if (!glyphs.length) return null;
-  return <g ref={layer} className={`cad-sketch-relation-glyphs${interactive ? ' is-interactive' : ''}`} role="group" aria-label="Sketch relations on the canvas">
+  return <g ref={layer} className={`cad-sketch-relation-glyphs${interactive ? ' is-interactive' : ''}`} role="group" aria-label="Sketch relations on the canvas" pointerEvents={interactive ? undefined : 'none'}>
     {glyphs.map(glyph => <RelationGlyphRow key={glyph.mountKey} glyphKey={glyph.mountKey} relationIds={glyph.relationIds.join(' ')} kind={glyph.kind} label={glyph.label}
       x={glyph.anchor[0] - center[0]} y={glyph.anchor[1] - center[1]} dx={glyph.offset[0]} dy={glyph.offset[1]} mmPerPixel={mmPerPixel}
       selected={glyph.relationIds.some(id => selected.has(id) || id === inspectedRelationId)} related={Boolean(focusSets && operandIn(glyph, focusSets))}
-      interactive={interactive} actions={actions} elements={elements.current} />)}
+      focusable={focusable} actions={actions} elements={elements.current} />)}
     {highlight && <RelationGlyphHighlight store={highlight} glyphs={glyphs} center={center} mmPerPixel={mmPerPixel} />}
   </g>;
 });
 
-const RelationGlyphRow = memo(function RelationGlyphRow({ glyphKey, relationIds, kind, label, x, y, dx, dy, mmPerPixel, selected, related, interactive, actions, elements }: {
+const RelationGlyphRow = memo(function RelationGlyphRow({ glyphKey, relationIds, kind, label, x, y, dx, dy, mmPerPixel, selected, related, focusable, actions, elements }: {
   glyphKey: string; relationIds: string; kind: CadSketchRelationGlyphKind; label: string; x: number; y: number; dx: number; dy: number; mmPerPixel: number;
-  selected: boolean; related: boolean; interactive: boolean; actions: Actions; elements: Map<string, SVGGElement>;
+  selected: boolean; related: boolean; focusable: boolean; actions: Actions; elements: Map<string, SVGGElement>;
 }) {
   const Icon = CAD_SKETCH_RELATION_ICONS[kind], half = CAD_SKETCH_RELATION_GLYPH_PIXELS.size / 2;
   // A glyph that leaves the drawing while focused, because its relation was removed, Show relations hid it or the limit left it out,
@@ -171,8 +179,8 @@ const RelationGlyphRow = memo(function RelationGlyphRow({ glyphKey, relationIds,
     return () => { if (elements.get(glyphKey) === element) elements.delete(glyphKey); if (element.contains(document.activeElement)) element.ownerSVGElement?.focus({ preventScroll: true }); };
   }, [elements, glyphKey]);
   return <g data-cad-sketch-relation-glyph={relationIds} data-cad-relation-glyph-kind={kind} ref={attach}
-    className={`cad-sketch-relation-glyph${selected ? ' is-selected' : related ? ' is-related' : ''}${interactive ? ' is-interactive' : ''}`}
-    role="button" aria-label={label} aria-pressed={selected} aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1} pointerEvents={interactive ? undefined : 'none'}
+    className={`cad-sketch-relation-glyph${selected ? ' is-selected' : related ? ' is-related' : ''}${focusable ? ' is-interactive' : ''}`}
+    role="button" aria-label={label} aria-pressed={selected} aria-disabled={!focusable || undefined} tabIndex={focusable ? 0 : -1} pointerEvents={focusable ? undefined : 'none'}
     transform={cadSketchRelationGlyphTransform(x, y, mmPerPixel, dx, dy)}
     onPointerEnter={event => actions.enter(glyphKey, event)} onPointerMove={event => actions.enter(glyphKey, event)} onPointerLeave={() => actions.leave(glyphKey)}
     onPointerDown={event => actions.down(glyphKey, event)} onClick={event => actions.click(glyphKey, event)} onDoubleClick={event => actions.doubleClick(glyphKey, event)}

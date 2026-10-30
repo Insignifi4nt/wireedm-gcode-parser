@@ -82,10 +82,11 @@ export interface CadSketchGraphControls {
 type CircleControl = ReturnType<typeof cadSketchGraphCircleControl>;
 /**
  * Above this many relation glyphs only those on selected or inspected geometry, and the selected ones, are drawn. Every glyph is a focusable
- * SVG group with its own handlers, and a drag lays all of them out again each frame; 400 keeps a drag over a sketch at that size within a
- * frame at 4× CPU slowdown, and is more than a sketch of a few hundred edges draws.
+ * SVG group that a drag places and paints again each frame. At 4× CPU slowdown, a 60-move point drag over 200 shown glyphs took 1.3 s
+ * longer than the same sketch without glyphs, about 20 ms a move; 400 shown took 2.8 s longer, with long tasks at 1.8× the time. Above the
+ * limit, drags and hover cost what they did without glyphs. 200 is every mark of 50 rectangles with Horizontal or Vertical on each edge.
  */
-export const CAD_SKETCH_RELATION_GLYPH_LIMIT = 400;
+export const CAD_SKETCH_RELATION_GLYPH_LIMIT = 200;
 type GlyphEvent = { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event };
 type Intent = { readonly kind: 'point'; readonly point: CadSketchGraphPointControl; readonly translation: SketchPoint; readonly snap: CadSketchSnapCandidate | null }
   | { readonly kind: 'radius'; readonly circle: CircleControl; readonly radius: number }
@@ -472,9 +473,11 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   return <g className={`cad-sketch-graph${interactive && !controls.geometryPick ? ' is-draggable' : ''}${intent && !submission.applying ? ' is-dragging' : ''}`} onKeyDown={event => { if (event.key === 'Escape' && (drag.current || intent || submission.applying)) { event.preventDefault(); event.stopPropagation(); cancel(); } }}>
     {/* Dimension lines and arrows take the pointer beneath the points and edges, so the geometry they end on or cross keeps its picks. */}
     <g ref={setDimensionHits} className="cad-sketch-graph-dimension-hits" />
-    {/* Relation glyphs lie beneath the points and edges too, and leave a press over geometry, a datum, a grip or a profile edge to the canvas. */}
-    {controls.showRelations !== false && <CadSketchRelationGlyphs graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
+    {/* Relation glyphs lie beneath the points and edges too, and leave a press over geometry, a datum, a grip or a profile edge to the canvas.
+        A drag or an applying edit turns the whole layer inert and keeps the tab stops, so neither renders a glyph row when it starts or ends. */}
+    {controls.showRelations !== false && <CadSketchRelationGlyphs graph={displayed.graph} topology={(visual ?? prepared).graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
       selectedIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSION_IDS} inspectedRelationId={controls.relation?.id ?? null} focus={glyphFocus} limit={CAD_SKETCH_RELATION_GLYPH_LIMIT}
+      focusable={active && !locked && !controls.geometryPick && Boolean(controls.onSelectRelations)}
       interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onSelectRelations)} highlight={highlightStore} covered={coversRelationGlyph}
       onSelect={glyphCommands.select} onOpen={glyphCommands.open} onDelete={glyphCommands.remove} onMenu={glyphCommands.menu} />}
     {displayed.geometry.segments.map((segment, index) => {
