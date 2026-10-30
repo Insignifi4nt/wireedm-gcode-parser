@@ -50,9 +50,16 @@ test('uses graph context Dimension and selected-set Move privately through a com
   await expect(hole).toBeFocused();
   expect(await read()).toEqual(sketch);
 
+  const canvas = page.locator('[aria-label="Sketch drawing canvas"]');
+  // The menu's Dimension starts the tool with the hole picked; Enter places its diameter at the measured size, or selects the one
+  // already there, and Enter again opens its editor.
   const dimension = async () => {
     await hole.press('Shift+F10');
     await page.getByRole('menuitem', { name: 'Dimension', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Dimension', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await canvas.press('Enter');
+    await expect(page.locator('[data-cad-sketch-dimension] [role="button"][aria-pressed="true"]')).toHaveCount(1);
+    await canvas.press('Enter');
     await expect(page.getByRole('textbox', { name: 'Diameter mm', exact: true })).toBeVisible();
   };
   await dimension();

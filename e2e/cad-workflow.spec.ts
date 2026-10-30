@@ -1601,15 +1601,20 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   await canvas.locator(`[data-cad-sketch-entity="${widthEdge.id}"]`).focus();
   await canvas.locator(`[data-cad-sketch-entity="${widthEdge.id}"]`).press('Enter');
   await page.getByRole('button', { name: 'Dimension', exact: true }).click();
-  // Dimension starts with the selected edge; picking it again asks for its length.
+  // Dimension starts with the selected edge; picking it again places its length at the drawn size and selects it, and Enter opens its editor.
   await canvas.locator(`[data-cad-sketch-entity="${widthEdge.id}"]`).press('Enter');
+  await expect(canvas.locator('[data-cad-sketch-dimension] [role="button"][aria-pressed="true"]')).toHaveCount(1);
+  await expect.poll(async () => (await context(page)).version).not.toBe(drawn.version);
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  const placed = await context(page);
+  await canvas.press('Enter');
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('53');
-  expect(await context(page)).toMatchObject({ version: drawn.version, workflowOpen: true });
-  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: drawn.version, edits: [{ kind: 'rename-document', name: 'Interrupt dimension' }] }))
+  expect(await context(page)).toMatchObject({ version: placed.version, workflowOpen: true });
+  expect(await rawCall(page, 'cad_edit_document', { expectedVersion: placed.version, edits: [{ kind: 'rename-document', name: 'Interrupt dimension' }] }))
     .toMatchObject({ ok: false, error: { code: 'WORKFLOW_OPEN' } });
   await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
-  await expect.poll(async () => (await context(page)).version).not.toBe(drawn.version);
+  await expect.poll(async () => (await context(page)).version).not.toBe(placed.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   current = await context(page);
   const features = await call(page, 'cad_read_features', { expectedVersion: current.version });
@@ -1627,14 +1632,17 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   expect(Math.max(...xsAfter) - Math.min(...xsAfter)).toBeCloseTo(53, 8);
   expect(Math.max(...ysAfter) - Math.min(...ysAfter)).toBeCloseTo(freeHeight, 8);
   await expect(canvas.locator(`[data-cad-sketch-dimension="${width.id}"]`).getByRole('button', { name: /^Dimension distance / })).toBeVisible();
-  await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
-  current = await context(page);
+  // Placing the length and setting its value are one undo step each.
+  for (const command of ['Undo', 'Undo']) {
+    await page.getByRole('button', { name: command, exact: true }).click();
+    await expect.poll(async () => (await context(page)).version).not.toBe(current.version); current = await context(page);
+  }
   const undone = await call(page, 'cad_read_features', { expectedVersion: current.version });
   expect(undone.items).toEqual([freeSketch]);
-  await page.getByRole('button', { name: 'Redo', exact: true }).click();
-  await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
-  current = await context(page);
+  for (const command of ['Redo', 'Redo']) {
+    await page.getByRole('button', { name: command, exact: true }).click();
+    await expect.poll(async () => (await context(page)).version).not.toBe(current.version); current = await context(page);
+  }
   expect((await call(page, 'cad_read_features', { expectedVersion: current.version })).items).toEqual(features.items);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await page.getByRole('button', { name: 'Pad / Pocket', exact: true }).click();
