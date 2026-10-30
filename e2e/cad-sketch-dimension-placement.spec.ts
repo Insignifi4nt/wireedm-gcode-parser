@@ -44,6 +44,10 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await clickAt(30, 10); await hover(25, 14);
   await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
   await expect(canvas).toHaveAccessibleDescription(/^Length · Click or press Enter to place/);
+  // The preview draws in a pointer-transparent overlay laid exactly over the canvas, so the click that places it still reaches the canvas.
+  const overlay = page.locator('svg[data-cad-sketch-overlay="pointer"]');
+  await expect(overlay.locator('[data-cad-dimension-preview]')).toHaveCount(1); await expect(overlay).toHaveCSS('pointer-events', 'none');
+  expect(await overlay.boundingBox()).toEqual(await canvas.boundingBox());
   await clickAt(25, 14);
   await placed({ id: expect.any(String), kind: 'distance', pointIds: ['a', 'b'], value: 40 });
   // The tool stays on with the new dimension selected, and Enter opens its editor at the placed value; a cancelled edit changes nothing.
@@ -75,6 +79,12 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await clickAt(30, 10); await clickAt(85, 17.5); await hover(65, 20); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'angle');
   await clickAt(65, 20);
   await placed(expect.objectContaining({ kind: 'line-angle' }));
+
+  // One slanted line places its length above and beside it alike; its horizontal and vertical distances are only in the menu.
+  await clickAt(85, 17.5); await hover(85, 35); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
+  await hover(100, 17); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
+  await clickAt(100, 17);
+  await placed({ id: expect.any(String), kind: 'distance', pointIds: ['e', 'f'], value: Math.hypot(10, 15) });
 
   // For two points, the pointer above or below both gives a horizontal distance, beside both a vertical one, and between them an aligned one.
   await pick('[data-cad-sketch-point="a"]'); await pick('[data-cad-sketch-point="o"]');
