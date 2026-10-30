@@ -2766,7 +2766,8 @@ describe('CAD sketch interaction', () => {
       it('lights the glyphs of a hovered relations list row and of the selected geometry', async () => {
         await openPlate();
         await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'bottom' } }));
-        expect([...container.querySelectorAll('[data-cad-sketch-relation-glyph].is-related')].map(item => item.getAttribute('data-cad-sketch-relation-glyph'))).toEqual(['level', 'across']);
+        // Every mark of the bottom edge's relations lights, the Parallel's mark on the top edge too.
+        expect([...container.querySelectorAll('[data-cad-sketch-relation-glyph].is-related')].map(item => item.getAttribute('data-cad-sketch-relation-glyph'))).toEqual(['level', 'across', 'across']);
         await geometryMenu('bottom', 'Constraints and dimensions');
         const row = relationRow('Parallel').closest('li')!, panel = row.closest('form')!;
         await act(async () => panel.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row })));
