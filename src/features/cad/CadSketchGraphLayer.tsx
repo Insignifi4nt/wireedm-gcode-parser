@@ -81,7 +81,8 @@ export interface CadSketchGraphControls {
 }
 type CircleControl = ReturnType<typeof cadSketchGraphCircleControl>;
 /**
- * Above this many relation glyphs only those on selected, inspected or hovered geometry, and the selected or hovered ones, are drawn. During a
+ * Above this many relation glyphs only those on selected or inspected geometry, the selected ones and, once the pointer rests on it in Select,
+ * those of the geometry, glyph or list row it points at are drawn. During a
  * drag the glyph layer is composited apart and moved glyphs draw beside it, but each shown glyph still adds rows, hit areas and the frames'
  * moved marks. At 4× CPU slowdown, a 60-move point drag over 200 shown glyphs measured within noise of the same sketch without glyphs (2%
  * less time, no more long-task time); 400 shown took 25% longer, with 26% more long-task time. 200 is every mark of 50 rectangles with

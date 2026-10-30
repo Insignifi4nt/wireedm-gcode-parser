@@ -37,10 +37,10 @@ export interface CadSketchRelationGlyphsProps {
   readonly inspectedRelationId?: string | null;
   /**
    * Geometry a dock row or the selection names: the glyphs of relations that hold it draw related, and above `limit` only those, the
-   * selected ones and the hovered ones are shown.
+   * selected ones and the ones the pointer rests on are shown.
    */
   readonly focus?: CadSketchRelationGlyphFocus | null;
-  /** Above this many glyphs only the focused, selected and hovered ones are shown. */
+  /** Above this many glyphs only the focused and selected ones are shown, and those of what the pointer rests on in Select. */
   readonly limit: number;
   /** Whether the glyphs take the pointer and their commands; a drag or an applying edit turns the layer off without rendering a row. */
   readonly interactive: boolean;
@@ -75,7 +75,6 @@ type Pointed = { readonly kind: 'point' | 'entity'; readonly id: string } | null
 interface GlyphPath { readonly key: string; readonly part: 'plates' | 'icons'; readonly state: GlyphState; readonly data: string }
 const holdsIn = (glyph: { readonly holds: CadSketchRelationGlyphHolds }, geometry: Geometry | null) =>
   Boolean(geometry && (glyph.holds.points.some(id => geometry.points.has(id)) || glyph.holds.entities.some(id => geometry.entities.has(id))));
-const unsubscribed = () => () => {}, noSource = (): CadSketchHighlightSource | null => null;
 const STATES: readonly GlyphState[] = ['plain', 'related', 'selected'];
 
 /** Each kind's icon, 10 px wide on its 14 px plate, as path data placed by its centre. */
@@ -118,30 +117,71 @@ function glyphPaths(glyphs: readonly Shown[], part: GlyphPath['part'], moved: bo
   return STATES.flatMap(state => { const list = parts.get(state); return list ? [{ key: `${moved ? 'moved-' : ''}${part}-${state}`, part, state, data: list.join('') }] : []; });
 }
 
+/** How long the pointer rests on one target before a sketch above the glyph limit shows the glyphs of its relations. */
+export const CAD_SKETCH_RELATION_GLYPH_REVEAL_MS = 120;
+/** How long empty canvas keeps the glyphs that geometry revealed, so the pointer can cross from the geometry to one of them. */
+const REVEAL_LINGER_MS = 400;
+/** What hover reveals above the glyph limit: the relation or geometry a hovered glyph, dimension or dock row names, and the sketch point or edge under the pointer. */
+interface Revealed { readonly source: CadSketchHighlightSource | null; readonly pointed: Pointed }
+const NOTHING_REVEALED: Revealed = Object.freeze({ source: null, pointed: null });
+const samePointed = (a: Pointed, b: Pointed) => a === b || Boolean(a && b && a.kind === b.kind && a.id === b.id);
+
 /**
- * Above the glyph limit, the sketch point or edge under the pointer reveals the glyphs of its relations. Moving onto a revealed glyph keeps
- * them, and empty canvas lets them go after a moment, so the pointer can cross the gap to a glyph. Below the limit nothing listens.
+ * Above the glyph limit, what the pointer has rested on. A target reveals the glyphs of its relations once the pointer has stayed on it for
+ * CAD_SKETCH_RELATION_GLYPH_REVEAL_MS, and every change of target starts the wait again. What the last target showed stays until the next
+ * one has rested, so a pointer passing over the sketch renders nothing, which measured cheaper than hiding at once. Moving onto a glyph
+ * keeps the geometry's glyphs, and empty canvas lets them go after a moment, so the pointer can cross the gap to one. Turning off, as a
+ * drag, an applying edit or a tool other than Select does, a new `scope`, which an edit or another sketch brings, the pointer leaving the
+ * canvas and unmounting each drop the pending reveal and what is shown. Below the limit nothing listens.
  */
-function usePointedGeometry(layer: SVGGElement | null, enabled: boolean): Pointed {
-  const [pointed, setPointed] = useState<Pointed>(null);
+function useRestingReveal(layer: SVGGElement | null, highlight: CadSketchHighlightStore | undefined, enabled: boolean, scope: unknown): Revealed {
+  const [revealed, setRevealed] = useState(NOTHING_REVEALED);
   useEffect(() => {
     const canvas = layer?.ownerSVGElement;
     if (!enabled || !canvas) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const settle = (next: Pointed) => { clearTimeout(timer); setPointed(current => current?.kind === next?.kind && current?.id === next?.id ? current : next); };
+    // The targets under the pointer now, and what has been shown for them.
+    let source: CadSketchHighlightSource | null = null, pointed: Pointed = null, shown = NOTHING_REVEALED;
+    let sourceTimer: ReturnType<typeof setTimeout> | undefined, pointedTimer: ReturnType<typeof setTimeout> | undefined;
+    const show = (next: Partial<Revealed>) => {
+      const value: Revealed = { ...shown, ...next };
+      if (value.source === shown.source && samePointed(value.pointed, shown.pointed)) return;
+      shown = value; setRevealed(value);
+    };
+    // The store publishes only when its source changes, so a new snapshot is a new target.
+    const followSource = () => {
+      const next = highlight?.getSnapshot() ?? null;
+      if (next === source) return;
+      source = next; clearTimeout(sourceTimer);
+      if (next !== shown.source) sourceTimer = setTimeout(() => show({ source: next }), CAD_SKETCH_RELATION_GLYPH_REVEAL_MS);
+    };
+    const point = (next: Pointed) => {
+      if (samePointed(next, pointed)) return;
+      pointed = next; clearTimeout(pointedTimer);
+      if (!samePointed(next, shown.pointed)) pointedTimer = setTimeout(() => show({ pointed: next }), next ? CAD_SKETCH_RELATION_GLYPH_REVEAL_MS : REVEAL_LINGER_MS);
+    };
     const over = (event: Event) => {
       const target = event.target instanceof Element ? event.target : null;
       const geometry = target?.closest('[data-cad-sketch-point], [data-cad-sketch-entity]');
-      const point = geometry?.getAttribute('data-cad-sketch-point'), edge = geometry?.getAttribute('data-cad-sketch-entity');
-      if (point) settle({ kind: 'point', id: point });
-      else if (edge) settle({ kind: 'entity', id: edge });
-      else { clearTimeout(timer); if (!target?.closest('[data-cad-sketch-relation-glyph]')) timer = setTimeout(() => settle(null), 400); }
+      const pointId = geometry?.getAttribute('data-cad-sketch-point'), edge = geometry?.getAttribute('data-cad-sketch-entity');
+      if (pointId) point({ kind: 'point', id: pointId });
+      else if (edge) point({ kind: 'entity', id: edge });
+      // Reaching a glyph across empty canvas keeps the geometry that revealed it.
+      else if (target?.closest('[data-cad-sketch-relation-glyph]')) { if (!pointed) point(shown.pointed); }
+      else point(null);
     };
-    const leave = () => settle(null);
+    const leave = () => {
+      clearTimeout(sourceTimer); clearTimeout(pointedTimer);
+      source = highlight?.getSnapshot() ?? null; pointed = null; show(NOTHING_REVEALED);
+    };
+    const unsubscribe = highlight?.subscribe(followSource);
+    followSource();
     canvas.addEventListener('pointerover', over); canvas.addEventListener('pointerleave', leave);
-    return () => { clearTimeout(timer); canvas.removeEventListener('pointerover', over); canvas.removeEventListener('pointerleave', leave); setPointed(null); };
-  }, [layer, enabled]);
-  return enabled ? pointed : null;
+    return () => {
+      clearTimeout(sourceTimer); clearTimeout(pointedTimer); unsubscribe?.();
+      canvas.removeEventListener('pointerover', over); canvas.removeEventListener('pointerleave', leave); setRevealed(NOTHING_REVEALED);
+    };
+  }, [layer, highlight, enabled, scope]);
+  return enabled ? revealed : NOTHING_REVEALED;
 }
 
 /**
@@ -151,7 +191,8 @@ function usePointedGeometry(layer: SVGGElement | null, enabled: boolean): Pointe
  * draw as one path, so a large sketch adds few elements. A drag renders no row: it hides the plates of the glyphs it moves and draws those
  * glyphs as paths of their own beside the layer, so a frame writes only those paths. Meanwhile the layer, unchanged, has a compositor layer
  * of its own, so the sketch repainting each frame rasters no other glyph again. Rows render again only when their own place, selection or
- * state changes; hover lights up through the shared store.
+ * state changes; hover lights up through the shared store. Above the limit, hover changes which glyphs are drawn only once the pointer
+ * rests, so moving across a large sketch renders no row.
  */
 export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ graph, topology = graph, parameters, topologyParameters = parameters, center, mmPerPixel, selectedIds,
   inspectedRelationId, focus, limit, interactive, focusable = interactive, highlight, covered, onSelect, onOpen, onDelete, onMenu }: CadSketchRelationGlyphsProps) {
@@ -164,10 +205,9 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
   const identity = cadSketchPointIdentity(topology);
   const capped = entries.length > limit;
   const [layerElement, setLayerElement] = useState<SVGGElement | null>(null);
-  // Only a sketch above the limit follows hover, because only there does hover change which glyphs are drawn.
-  const snapshot = capped && highlight ? highlight.getSnapshot : noSource;
-  const source = useSyncExternalStore(capped && highlight ? highlight.subscribe : unsubscribed, snapshot, snapshot);
-  const pointed = usePointedGeometry(layerElement, capped);
+  // Only a sketch above the limit follows hover, because only there does hover change which glyphs are drawn, and only while the glyphs
+  // take the pointer, in Select outside a drag, an applying edit or a pick. An edit or another sketch starts afresh.
+  const { source, pointed } = useRestingReveal(layerElement, highlight, capped && interactive, topology);
   // Geometry compares by Coincident identity, as the glyphs name it.
   const focusSets = useMemo((): Geometry | null => focus ? { points: new Set(focus.pointIds.map(identity)), entities: new Set(focus.entityIds) } : null, [focus, identity]);
   const shownEntries = useMemo(() => {
