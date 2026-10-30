@@ -285,6 +285,8 @@ describe('sketch canvas cursor rendering', () => {
     // The overlay is a sibling of the canvas in the same frame, so the canvas keeps every pick.
     expect(overlay.parentElement).toBe(svg.parentElement); expect(svg.contains(overlay)).toBe(false);
     expect(overlay.getAttribute('viewBox')).toBe(svg.getAttribute('viewBox')); expect(overlay.getAttribute('aria-hidden')).toBe('true');
+    // Idle Select draws nothing there, so the overlay holds no layer of its own until a tool, pick or box can draw into it.
+    const layered = () => overlay.classList.contains('is-active'); expect(layered()).toBe(false);
     // Observers deliver their records between the awaited moves, so each one counts what it saw since the last check.
     const seen = { canvas: 0, overlay: 0 }, options = { subtree: true, childList: true, attributes: true, characterData: true };
     const canvasChanges = new MutationObserver(records => { seen.canvas += records.length; }), overlayChanges = new MutationObserver(records => { seen.overlay += records.length; });
@@ -298,19 +300,22 @@ describe('sketch canvas cursor rendering', () => {
       eligibleEntityIds: [], eligiblePointIds: [], eligibleDatums: [], label: 'Distance', onPick: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(), pointer: store, dimensionPreview: plan } } });
     await move(4, 6); changes();
     await move(6, 9); await move(14, -7); await move(3, 12);
-    expect(overlay.querySelector('[data-cad-dimension-preview]')).not.toBeNull(); expect(changes()).toEqual({ canvas: 0, overlay: true });
+    expect(overlay.querySelector('[data-cad-dimension-preview]')).not.toBeNull(); expect(changes()).toEqual({ canvas: 0, overlay: true }); expect(layered()).toBe(true);
 
     // Trim previews the piece under the pointer, here on each side of the crossing.
     await show({ tool: 'trim', graphControls: { ...props().graphControls!, geometryPick: undefined } }); changes();
     await move(4, 0.1); expect(overlay.querySelector('[aria-label="Trim preview"]')).not.toBeNull();
     await move(16, 0.1); await move(10.1, 5); await move(10.1, -5);
     expect(overlay.querySelector('[aria-label="Trim preview"]')).not.toBeNull(); expect(changes()).toEqual({ canvas: 0, overlay: true });
+    // Trim keeps the layer between pieces, so pointing on and off an edge never creates or drops it.
+    await move(30, 30); expect(overlay.querySelector('[aria-label="Trim preview"]')).toBeNull(); expect(layered()).toBe(true);
 
     // A rectangle's rubber band and size readout follow the pointer after its first corner.
     await show({ tool: 'rectangle' }); await move(-30, 20); await tap(-30, 20); changes();
     await move(-24, 26); await move(-18, 30); await move(-26, 34);
     expect(overlay.querySelector('[data-cad-drawing-readout]')).not.toBeNull(); expect(overlay.querySelector('.cad-profile-preview')).not.toBeNull();
-    expect(changes()).toEqual({ canvas: 0, overlay: true });
+    expect(changes()).toEqual({ canvas: 0, overlay: true }); expect(layered()).toBe(true);
+    await show({ tool: 'select' }); expect(layered()).toBe(false);
     canvasChanges.disconnect(); overlayChanges.disconnect();
   });
 

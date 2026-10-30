@@ -1583,8 +1583,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         {attachmentMarkers}
       </g>
     </svg>
-    {/* Drawing that follows the pointer paints on its own layer, so a move repaints only it; the canvas keeps every pick. */}
-    <CadSketchOverlay frame={overlayFrame} layer="pointer">
+    {/* Drawing that follows the pointer paints on its own layer, so a move repaints only it; the canvas keeps every pick. The layer lasts while
+        a tool, pick, menu choice or box can draw there, so idle Select composites none. */}
+    <CadSketchOverlay frame={overlayFrame} layer="pointer" active={tool !== 'select' || Boolean(positionPick || placement || geometryPick?.dimensionPreview || currentOverlap?.action || boxSelection.box)}>
       {geometryPick?.dimensionPreview && geometryPick.pointer && <CadSketchDimensionPreview plan={geometryPick.dimensionPreview} pointer={geometryPick.pointer} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
       {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
       {currentTrim?.kind === 'ready' && <CadSketchTrimPreview preview={currentTrim} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
