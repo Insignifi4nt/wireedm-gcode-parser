@@ -82,8 +82,8 @@ test('places each dimension where the pointer puts it, falls back to a reference
 
   // One slanted line places its length above and beside it alike; its horizontal and vertical distances are only in the menu.
   await clickAt(85, 17.5); await hover(85, 35); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
-  await hover(100, 17); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
-  await clickAt(100, 17);
+  await hover(74, 17); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'aligned');
+  await clickAt(74, 17);
   await placed({ id: expect.any(String), kind: 'distance', pointIds: ['e', 'f'], value: Math.hypot(10, 15) });
 
   // For two points, the pointer above or below both gives a horizontal distance, beside both a vertical one, and between them an aligned one.
