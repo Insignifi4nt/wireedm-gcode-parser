@@ -119,6 +119,18 @@ test('places a dimension where it is clicked, moves it by its label and line, ke
   await page.keyboard.press('Control+Shift+z'); await expect.poll(placementOf).toEqual(labelled.annotation);
   await page.keyboard.press('Control+Shift+z'); await expect.poll(placementOf).toEqual(slid.annotation);
 
+  // A relation mark beneath the text never takes its drag: with the value moved onto the mark of a side, the text is drawn and picked
+  // above the mark, and a press there drags the dimension again.
+  const markId = (await page.locator('[data-cad-sketch-relation-glyph]').first().getAttribute('data-cad-sketch-relation-glyph'))!;
+  const mark = page.locator(`[data-cad-sketch-relation-glyph="${markId}"]`), onMark = await middle(mark);
+  await drag(gap.id, await middle(label(gap.id)), onMark);
+  const stacked = await page.evaluate(({ x, y }) => document.elementsFromPoint(x, y).map(element => element.closest('[data-cad-sketch-relation-glyph]') ? 'mark'
+    : element.closest('[data-cad-sketch-dimension]') ? 'dimension' : null).filter(Boolean), onMark);
+  expect(stacked[0]).toBe('dimension'); expect(stacked).toContain('mark');
+  const beyond = { x: onMark.x + 30, y: onMark.y + 20 };
+  await drag(gap.id, onMark, beyond); near(await middle(label(gap.id)), beyond);
+  await expect(label(gap.id)).toHaveAttribute('aria-pressed', 'true'); await expect(mark).toHaveAttribute('aria-pressed', 'false');
+
   // Saved and reloaded, the dimension keeps its placement: its line is drawn at the same place in the sketch, and its text at the same place along it.
   // The text keeps a fixed gap in pixels from the line, so across the zoom the reload fits, only its place along the upright line is compared.
   const drawnAt = { line: (await sketchAt(await middle(line))).x, text: (await sketchAt(await middle(label(gap.id)))).y };
