@@ -23,6 +23,7 @@ import { resolveCadSketchMidpointOperands } from './cadSketchMidpointRelations';
 import { cadSketchExternalReferenceComponents, validateCadSketchExternalReference } from './cadSketchExternalReferences';
 import { resolveCadSketchReferenceDimension } from './cadSketchReferenceDimensions';
 import { deepFreezeCadData } from './cadDeepFreeze';
+import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -139,6 +140,18 @@ export type CadSketchGraphIssue = Immutable<Static<typeof CadSketchGraphIssueSch
 // never on how numeric values relate, so a solved copy with in-range numbers stays valid.
 const acceptedGraphs = new WeakSet<CadSketchGraph>();
 
+// A graph from `cadSketchGraphWithPlacements`, mapped to the first accepted graph of its line of dimension moves.
+const placementSources = new WeakMap<CadSketchGraph, CadSketchGraph>();
+
+/**
+ * The accepted graph `graph` was made from by moving dimensions alone, the first of that line, or `graph` itself. It holds the same
+ * points, entities and relations apart from where dimensions are drawn, so a result that never reads placement can be computed from
+ * it and kept across those moves.
+ */
+export function cadSketchGraphPlacedFrom(graph: CadSketchGraph): CadSketchGraph {
+  return placementSources.get(graph) ?? graph;
+}
+
 /** Whether `graph` is one of those trusted outputs, which cannot change, so facts read from it can be kept with it. */
 export function isAcceptedCadSketchGraph(graph: CadSketchGraph): boolean {
   return acceptedGraphs.has(graph);
@@ -166,11 +179,8 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
   for (const item of graph.relations) {
     if (item.kind === 'linear-pattern') validateCadSketchLinearPattern(graph, item);
-    if (item.kind === 'reference-dimension') {
-      resolveCadSketchReferenceDimension(graph, item);
-      if (item.annotation && (item.annotation.kind === 'radial') !== (item.measurement.kind === 'radial-size'))
-        throw new CadError('invalid-sketch-annotation', `Reference dimension "${item.id}" has a placement for another kind of dimension.`);
-    }
+    if (item.kind === 'reference-dimension') resolveCadSketchReferenceDimension(graph, item);
+    assertCadSketchPlacementFits(item);
     if (item.kind === 'external-reference') validateCadSketchExternalReference(graph, item);
     if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
     if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'collinear' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
@@ -192,6 +202,40 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   deepFreezeCadData(graph);
   acceptedGraphs.add(graph);
   return graph;
+}
+
+/** A placement the schema admits for every relation that has one, but that fits only some of its measurements, is refused. */
+function assertCadSketchPlacementFits(relation: CadSketchGraphRelation) {
+  if (relation.kind === 'reference-dimension' && relation.annotation && (relation.annotation.kind === 'radial') !== (relation.measurement.kind === 'radial-size'))
+    throw new CadError('invalid-sketch-annotation', `Reference dimension "${relation.id}" has a placement for another kind of dimension.`);
+}
+
+/**
+ * `source` with each of `relations` in place of the relation with its identity, from which it differs only in where it is drawn.
+ * Placement takes part in no reference, geometry or solve check, so only the new placements are checked, and every other point,
+ * entity and relation is the accepted graph's own frozen data: the result is accepted without parsing it again. Null when a relation is
+ * new or changes more than its placement, which needs the full parse; `source` itself when nothing changes.
+ */
+export function cadSketchGraphWithPlacements(source: CadSketchGraph, relations: readonly unknown[]): CadSketchGraph | null {
+  const graph = parseCadSketchGraph(source);
+  const invalid = () => new CadError('invalid-sketch-graph', 'Sketch relations must contain complete portable relation data.');
+  if (!isCadImportData(relations) || !Array.isArray(relations)) throw invalid();
+  let copies: unknown[];
+  try { copies = structuredClone(relations) as unknown[]; } catch { throw invalid(); }
+  if (!isCadImportData(copies) || !copies.every(relation => Value.Check(CadSketchGraphSchema.properties.relations.items, relation))) throw invalid();
+  const next = [...graph.relations];
+  let changed = false;
+  for (const relation of copies as CadSketchGraphRelation[]) {
+    const index = next.findIndex(item => item.id === relation.id);
+    if (index < 0 || !cadSketchRelationsEqualButPlacement(next[index], relation)) return null;
+    if (Value.Equal(next[index], relation)) continue;
+    assertCadSketchPlacementFits(relation);
+    next[index] = deepFreezeCadData(relation); changed = true;
+  }
+  if (!changed) return graph;
+  const placed: CadSketchGraph = Object.freeze({ ...graph, relations: Object.freeze(next) });
+  acceptedGraphs.add(placed); placementSources.set(placed, cadSketchGraphPlacedFrom(graph));
+  return placed;
 }
 
 /** Changes whenever `cadSketchSolvedSlots` orders or selects values differently; a reply must carry it. */

@@ -50,6 +50,28 @@ function contourCells(repair: CadSketchAreaRepairInspection) {
 }
 
 describe('owned consumed-sketch draft', () => {
+  it('moves a dimension of the owned sketch at once, as one local undo step that Finish publishes, and prepares any other batch', async () => {
+    const dimensioned = parseCadDocument({ ...source(), features: source().features.map(feature => feature.id !== 'sketch' || feature.kind !== 'sketch' ? feature
+      : { ...feature, graph: { ...feature.graph!, relations: [{ id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: ' span ' }] } }) });
+    const main = new CadSession(dimensioned), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch'), local = draft.getSnapshot();
+    const accepted = sketchOf(local.document).graph!.relations[0];
+    const placing = (offset: number): CadEdit[] => [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { ...accepted, annotation: { kind: 'linear', offset, along: 0.5 } } as typeof accepted }];
+    const preparing = vi.fn(prepare), current = vi.fn();
+    expect(() => draft.editPlacements([{ ...placing(4)[0], sketchId: 'later' } as CadEdit])).toThrow('sketch');
+    expect(draft.editPlacements([{ kind: 'set-parameter', name: 'span', value: 30 }])).toBeNull();
+    const moved = draft.editPlacements(placing(4), local.version, current);
+    expect(current).toHaveBeenCalledOnce(); expect(moved?.canUndo).toBe(true); expect(draft.getSnapshot()).toBe(moved);
+    expect(sketchOf(moved!.document).graph!.points).toBe(sketchOf(local.document).graph!.points);
+    expect(() => draft.editPlacements(placing(5), local.version)).toThrow('The CAD draft changed');
+    draft.undo(); expect(draft.getSnapshot().document).toBe(local.document); draft.redo();
+    await draft.editPrepared([{ kind: 'set-parameter', name: 'span', value: 30 }], preparing);
+    expect(preparing).toHaveBeenCalledOnce();
+    expect(sketchOf(draft.getSnapshot().document).graph!.relations[0]).toMatchObject({ annotation: { kind: 'linear', offset: 4, along: 0.5 } });
+    const finish = draft.finishEdits(base);
+    expect(finish.edits.some(edit => edit.kind === 'update-feature' && edit.feature.kind === 'sketch'
+      && edit.feature.graph?.relations[0].kind === 'distance' && 'annotation' in edit.feature.graph.relations[0])).toBe(true);
+  });
+
   it('places a private detail with local no-op/Undo/Redo and one guarded full-part Finish', async () => {
     const main = new CadSession(placementPart()), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
     const edit = { kind: 'place-sketch-geometry', sketchId: 'sketch', ...dPlacement } as const;

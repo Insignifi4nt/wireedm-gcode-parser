@@ -679,6 +679,27 @@ describe('graph dimension moves', () => {
     expect(h.pending.mock.calls).toEqual([[true], [false]]); expect(h.error).not.toHaveBeenCalled();
   });
 
+  it('accepts a move at once from a host that settles it there and then, showing nothing as pending, and reveals the drawn dimension when it is refused', async () => {
+    const h = await dimensioned(); h.pending.mockClear();
+    const drag = async (to: number) => {
+      await h.pointer(h.line(), 'pointerdown', { clientX: 100, clientY: 100 }, 3);
+      await h.pointer(h.line(), 'pointermove', { clientX: 100, clientY: to }, 3); await h.pointer(h.line(), 'pointerup', { clientX: 100, clientY: to }, 3);
+    };
+    await drag(90);
+    expect(h.edited).toHaveBeenCalledTimes(1); expect(h.pending).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+    // The host kept the old graph, so the released position stays drawn until it is replaced, and nothing more is taken.
+    expect(container.querySelector('[data-cad-sketch-dimension-moving]')).not.toBeNull();
+    await h.source(parseCadDocument({ ...h.document, name: 'Renamed' }));
+    expect(container.querySelector('[data-cad-sketch-dimension-moving]')).toBeNull(); h.pending.mockClear();
+    h.edited.mockImplementationOnce(() => { throw new Error('The CAD draft changed.'); });
+    await drag(80);
+    expect(h.edited).toHaveBeenCalledTimes(2); expect(h.pending).not.toHaveBeenCalled();
+    expect(h.error).toHaveBeenCalledExactlyOnceWith('The CAD draft changed.');
+    expect(container.querySelector('[data-cad-sketch-dimension-moving]')).toBeNull();
+    await drag(80);
+    expect(h.edited).toHaveBeenCalledTimes(3);
+  });
+
   it('refuses a move of a dimension drawn from a preview that measures something else, and moves nothing during a geometry pick', async () => {
     const h = await dimensioned(), sketch = h.document.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');

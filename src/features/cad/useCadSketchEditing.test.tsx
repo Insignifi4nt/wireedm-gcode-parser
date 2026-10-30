@@ -176,7 +176,7 @@ it.each(['storage', 'open', 'source'] as const)('aborts a pending local edit whe
   let complete: (document: CadDocument) => void = () => { throw new Error('Preparation missing'); };
   h.preparing.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
   let editing: Promise<unknown> | undefined;
-  await act(async () => { editing = h.editing().edit([rectangle(base.document, 30)]); void editing.catch(() => undefined); });
+  await act(async () => { const started = Promise.resolve(h.editing().edit([rectangle(base.document, 30)])); editing = started; void started.catch(() => undefined); });
   if (change === 'source') await act(async () => h.session.replace(part()));
   else await h.changeHost(change === 'storage' ? { storage: {} } : { open: false });
   expect(h.editing().sketchId).toBeNull();

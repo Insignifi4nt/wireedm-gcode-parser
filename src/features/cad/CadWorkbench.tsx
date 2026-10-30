@@ -54,9 +54,9 @@ import { AddIcon, ArcIcon, ArrowLeft, BooleanIcon, CameraCaptureIcon, Check, Che
 import { CadFeatureTree } from './CadFeatureTree';
 import { CadCommandDock } from './CadCommandDock';
 import type { CadBuildResult, CadCurveFeature, CadDocument, CadFeature, CadPathSegment, CadPlane, CadSketchPlane, CadProfile, CadSketchFeature, CadSketchProfile } from '@/domain/cad/cadDocument';
-import type { CadEdit } from '@/domain/cad/cadOperations';
+import { cadEditsOnlyPlaceDimensions, type CadEdit } from '@/domain/cad/cadOperations';
 import type { CadTopologyPickSet, CadTopologyResolvePicksRequest, CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
-import { cadFeatureDependencies, cadFeatureProducesBody, cadVisibleBodyIds } from '@/domain/cad/cadSchema';
+import { cadDocumentsPlacedAlike, cadFeatureDependencies, cadFeatureProducesBody, cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { CadFeatureEditor, CadProfileEditor, featureLabels } from './CadFeatureEditor';
 import { CadSketchProfilePanel, type CadSketchProfileCommand } from './CadSketchProfilePanel';
 import { cadSketchDimensionQuantities, inspectCadSketchDimensions } from '@/domain/cad/cadSketchConstraints';
@@ -206,7 +206,9 @@ const NO_SKETCH_ANALYSIS = Object.freeze({ freedom: null, locks: false, definiti
  */
 function shownSketchAnalysis(state: SketchAnalysisState | null, document: CadDocument, version: string, sketchId: string | null | undefined) {
   if (!state || state.document.id !== document.id || state.sketchId !== sketchId) return NO_SKETCH_ANALYSIS;
-  const exact = state.document === document && state.version === version;
+  // A version that only moved this sketch's dimensions holds the same analysis, so its freedom and locks show from its first render.
+  // The same document at another version, as undo restores it, waits for its own analysis.
+  const exact = state.document === document ? state.version === version : cadDocumentsPlacedAlike(state.document, document, state.sketchId);
   return { freedom: exact ? state.freedom : null, locks: exact && state.locks, definition: state.definition, diagnosis: state.diagnosis };
 }
 
@@ -790,6 +792,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     ...source, profiles: source.profiles.filter(profile => profile.id !== id)
   } }, signal), () => setProfileId(current => current === id ? null : current));
   const applyCanvasEdits = (edits: readonly CadEdit[], signal?: AbortSignal) => {
+    // Moving dimensions is accepted at once, so it opens no workflow for its caller to close.
+    if (cadEditsOnlyPlaceDimensions(document, edits)) return props.onEditMany(edits, signal);
     props.onWorkflowChange(true);
     const received = (result: Awaited<CadEditCompletion>) => {
       if (!signal?.aborted && result?.document === document && interactionState.current.document === document

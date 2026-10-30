@@ -5,6 +5,7 @@ import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { cadSketchGraphCircleControl, cadSketchGraphCircleRadiusEdit, cadSketchGraphPointTranslation, prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
+import { prepareCadViewportReferences } from './cadViewportReferences';
 
 const source: CadSketchGraph = parseCadSketchGraph({ points: [
   { id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 'd', position: [0, 10] }
@@ -247,5 +248,29 @@ describe('pattern copy interaction ownership', () => {
     const detached=applyCadEdits(document,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:'row'}]), independent=rowSketch(detached);
     expect(prepareCadSketchGraphInteraction(independent.graph,detached.parameters).points.find(p=>p.id==='holes_i1_p0')?.freeAxes).toEqual([true,true]);
     expect(cadSketchGraphCircleControl(independent.graph,detached.parameters,'holes_i1_e0').lockedReason).toBeNull();
+  });
+});
+
+describe('prepared sketch work across dimension moves', () => {
+  it('keeps the interaction, snaps and viewport references of the sketch a dimension move was placed from, and prepares a geometry change again', () => {
+    const document = parseCadDocument({ ...createCadDocument('Moves', 'moves'), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Plate', plane: 'XY', offset: 0,
+      suppressed: false, profiles: [], graph: { ...source, relations: [{ id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: 20 }] } }] });
+    const sketchOf = (part: typeof document) => part.features[0] as CadSketchFeature & { readonly graph: CadSketchGraph };
+    const prepared = prepareCadSketchGraphInteraction(sketchOf(document).graph, document.parameters);
+    const references = prepareCadViewportReferences(document.features, document.parameters);
+    const relation = sketchOf(document).graph.relations[0];
+    let placed = document;
+    for (const offset of [5, -3]) {
+      placed = applyCadEdits(placed, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { ...relation, annotation: { kind: 'linear', offset, along: 0.5 } } as typeof relation }]);
+      const moved = prepareCadSketchGraphInteraction(sketchOf(placed).graph, placed.parameters);
+      // The moved dimension is drawn from the new graph; points, geometry and snaps are the ones already prepared.
+      expect(moved.graph).toBe(sketchOf(placed).graph);
+      expect(moved.points).toBe(prepared.points); expect(moved.geometry).toBe(prepared.geometry); expect(moved.snap).toBe(prepared.snap);
+      prepareCadViewportReferences(placed.features, placed.parameters).forEach((reference, index) => expect(reference).toBe(references[index]));
+    }
+    const nudged = applyCadEdits(placed, [{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'c', translation: [1, 0] }]);
+    const changed = prepareCadSketchGraphInteraction(sketchOf(nudged).graph, nudged.parameters);
+    expect(changed.points).not.toBe(prepared.points); expect(changed.points.find(point => point.id === 'c')?.position).toEqual([21, 10]);
+    expect(prepareCadViewportReferences(nudged.features, nudged.parameters).some((reference, index) => reference !== references[index])).toBe(true);
   });
 });

@@ -77,8 +77,17 @@ export function useCadSketchEditing<Inspection>(host: Host<Inspection>) {
     const owned: Owner = { draft: new CadSketchEditDraft(source, sketchId), storage: now.storage, abort: new AbortController(), pending: false, finishing: false };
     current.current = owned; setOwner(owned); session.setWorkflowOpen(true, 'sketch-edit');
   };
-  const edit = async (edits: readonly CadEdit[], signal?: AbortSignal) => {
-    const owned = requireOwner(); owned.pending = true; setWorking(true);
+  const edit = (edits: readonly CadEdit[], signal?: AbortSignal) => {
+    let owned: Owner, placed: ReturnType<CadSketchEditDraft['editPlacements']>;
+    try {
+      owned = requireOwner(); signal?.throwIfAborted();
+      // Moving dimensions is accepted at once, with no preparation to wait for or show. A refusal still settles as a prepared edit's does.
+      placed = owned.draft.editPlacements(edits, undefined, () => assertOwner(owned));
+    } catch (cause) { return Promise.reject(cause); }
+    return placed ?? editPrepared(owned, edits, signal);
+  };
+  const editPrepared = async (owned: Owner, edits: readonly CadEdit[], signal?: AbortSignal) => {
+    owned.pending = true; setWorking(true);
     const combined = signal ? AbortSignal.any([signal, owned.abort.signal]) : owned.abort.signal;
     try {
       return await owned.draft.editPrepared(edits, (document, captured, signal) => latest.current.prepare(document, captured, signal),

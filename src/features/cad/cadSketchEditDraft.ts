@@ -1,6 +1,6 @@
 import type { CadDocument, CadFeature, CadScalar } from '@/domain/cad/cadDocument';
 import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
-import { validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
+import { cadEditsOnlyPlaceDimensions, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadError } from '@/domain/cad/cadError';
 import { keepCadSketchPointLineSides } from '@/domain/cad/cadSketchPointLineDistanceRelations';
@@ -136,6 +136,16 @@ export class CadSketchEditDraft {
       const candidate = parseCadDocument(await prepare(document, captured, combined));
       this.assertOpen(); assertCurrent?.(); this.assertOwnedPrefix(candidate); return candidate;
     }, combined, () => { this.assertOpen(); assertCurrent?.(); });
+  }
+  /**
+   * Accepts at once a batch that only moves dimensions of the owned sketch, since nothing in it needs preparing; null for any other
+   * batch, which `editPrepared` takes. It is one undo step of the draft, as a prepared edit is.
+   */
+  editPlacements(edits: readonly CadEdit[], expectedLocalVersion = this.local.getSnapshot().version, assertCurrent?: () => void) {
+    this.validateEdits(edits);
+    if (!cadEditsOnlyPlaceDimensions(this.local.getSnapshot().document, edits)) return null;
+    assertCurrent?.();
+    return this.local.edit(structuredClone(edits), expectedLocalVersion);
   }
   undo(expectedLocalVersion = this.local.getSnapshot().version) { this.assertOpen(); this.local.undo(expectedLocalVersion); }
   redo(expectedLocalVersion = this.local.getSnapshot().version) { this.assertOpen(); this.local.redo(expectedLocalVersion); }

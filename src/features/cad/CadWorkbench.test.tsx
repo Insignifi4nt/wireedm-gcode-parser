@@ -7,6 +7,7 @@ import type { CadBuildResult, CadDocument, CadSketchPlane } from '@/domain/cad/c
 import type { CadTopologyDescriptor, CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
+import type { CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { CadWorkbench, type CadWorkbenchProps } from './CadWorkbench';
@@ -2805,11 +2806,14 @@ describe('CAD sketch interaction', () => {
         // The length's line runs level with the base, so its offset is the line's height.
         const height = sketchOf(hit('length').start).y;
         // Along the line as well as away, which moves only the line.
+        workflow.mockClear();
         await dragBy(send, () => hit('length').element, hit('length').along(.3), [15, -10]);
         expectLinear('length', height + 10 * mm, .5); expect(selectedDimensions()).toEqual(['length']);
         const lifted = relations();
         await dragBy(send, () => label('length'), { clientX: 200, clientY: 200 }, [10, 5], [30, 20]);
         expectLinear('length', height + 10 * mm - 20 * mm, .5 + 30 * mm / 40); expect(selectedDimensions()).toEqual(['length']);
+        // Each move is accepted at once, so none opens a workflow that locks the workbench while it waits.
+        expect(workflow).not.toHaveBeenCalledWith(true);
         // Text dragged beyond an extension line takes the line out to it.
         await dragBy(send, () => label('length'), { clientX: 200, clientY: 200 }, [-(1 + 30 * mm / 40) * 40 / mm, 0]);
         expect((annotationOf('length') as Linear).along).toBeLessThan(0);
@@ -4606,6 +4610,34 @@ describe('sketch definition colours and locks', () => {
     expect(marked('defined')).toEqual([]); expect(point('c').classList.contains('is-locked')).toBe(false);
     await h.answer(h.answers.length - 1, solved(6, { points: ['a', 'b'], entities: ['base'] }));
     expect(marked('defined')).toEqual(['base', 'point a', 'point b']); expect(point('a').classList.contains('is-locked')).toBe(true);
+  });
+
+  it('keeps the freedom, colours and locks through each dimension move without a frame that drops them, and asks again after a geometry change', async () => {
+    const span = { id: 'span', kind: 'distance', pointIds: ['a', 'b'], value: 20 };
+    const source = parseCadDocument({ ...createCadDocument('Bracket', 'definition-placed'), schemaVersion: 2, features: [sketchFeature('sketch', bracketPoints, bracketEdges, [span])] });
+    const h = await mountAnalysed(source);
+    await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    await h.answer(0, solved(4, { points: ['a', 'b'], entities: ['base'] }));
+    expect(status()).toBe('Under defined · 4 DOF'); expect(point('a').classList.contains('is-locked')).toBe(true);
+    // Every commit is watched, so a render that showed the move without its analysis would leave a record.
+    const records: MutationRecord[] = [], changes = new MutationObserver(list => { records.push(...list); });
+    changes.observe(container, { subtree: true, attributes: true, attributeFilter: ['class'], characterData: true, childList: true });
+    const kept = () => [...records.splice(0), ...changes.takeRecords()].filter(record => {
+      const target = record.target instanceof Element ? record.target : record.target.parentElement;
+      return Boolean(target?.closest('[aria-label="Sketch constraint status"]') || record.attributeName === 'class' && target?.closest('[data-cad-sketch-point], [data-cad-sketch-entity]'));
+    });
+    for (const offset of [4, -6]) {
+      const relation = { ...span, annotation: { kind: 'linear', offset, along: 0.5 } } as CadSketchGraphRelation;
+      await act(async () => h.session.edit([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }]));
+      expect(kept()).toEqual([]);
+      expect(status()).toBe('Under defined · 4 DOF'); expect(point('a').classList.contains('is-locked')).toBe(true); expect(marked('defined')).toEqual(['base', 'point a', 'point b']);
+    }
+    expect(h.answers).toHaveLength(1);
+    // Moving geometry is no dimension move: the locks wait for its own answer.
+    await keyDown(point('c'), 'ArrowRight');
+    expect(h.answers).toHaveLength(2); expect(status()).toBe('Checking freedom…'); expect(point('a').classList.contains('is-locked')).toBe(false);
+    expect(kept().length).toBeGreaterThan(0);
+    changes.disconnect();
   });
 
   it('marks every operand of a rejected preview beyond the eight it lists until the preview ends, over the analysis marks', async () => {

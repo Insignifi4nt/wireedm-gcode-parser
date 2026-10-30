@@ -419,9 +419,14 @@ describe('shared CAD edit preparation with the real sketch solver', () => {
     const relations = graphOf(redundant).relations, distance = relations[1], measured = relations[3];
     let solves = 0; const counting = { solve: (...args: Parameters<typeof solver.solve>) => { solves += 1; return solver.solve(...args); } };
     for (const relation of [{ ...distance, annotation: { kind: 'linear', offset: -4, along: 0.75 } } as typeof distance, { ...measured, annotation: { kind: 'linear', offset: 6, along: 1.5 } } as typeof measured]) {
-      const prepared = await prepareCadEdits(redundant, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }], counting);
+      const edits: CadEdit[] = [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }];
+      // The controller then takes the plain path, which accepts it at once.
+      expect(needsCadSketchPreparation(redundant, edits)).toBe(false);
+      const prepared = await prepareCadEdits(redundant, edits, counting);
       expect(solves).toBe(0);
       expect(graphOf(prepared.document)).toEqual({ ...graphOf(redundant), relations: relations.map(item => item.id === relation.id ? relation : item) });
+      // Nothing is parsed again: the accepted geometry is kept as it is.
+      expect(graphOf(prepared.document).points).toBe(graphOf(redundant).points);
     }
     // A change to what the dimension measures solves, which finds the redundancy.
     await expect(prepareCadEdits(redundant, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { ...distance, value: ' length + 0 ', annotation: { kind: 'linear', offset: -4, along: 0.75 } } as typeof distance }], counting))

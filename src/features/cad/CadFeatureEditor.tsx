@@ -15,7 +15,7 @@ import { CadPathSegmentFields } from './CadPathSegmentFields';
 import { CadPolygonVertexFields } from './CadPolygonVertexFields';
 import { CadPluginFields } from './CadPluginFields';
 import { inspectCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
-import { cadVisibleBodyIds } from '@/domain/cad/cadSchema';
+import { cadSketchPlacedFrom, cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
 import { CadLoftSections } from './CadLoftSections';
 import { CadSweepSources } from './CadSweepSources';
@@ -108,12 +108,14 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const [relationPending, setRelationPendingFields] = useState<Readonly<Record<string, boolean>>>({});
   const [relationEdits, setRelationEdits] = useState<Readonly<Record<string, boolean>>>({});
   const [depthGestureActive, setDepthGestureActive] = useState(false);
+  // A sketch whose dimensions alone were moved holds the scalars of the sketch it was placed from.
+  const scalarSource = feature.kind === 'sketch' ? cadSketchPlacedFrom(feature) : feature;
   const acceptedScalars = useMemo(() => {
     const values: Record<string, CadScalar> = {};
-    mapCadFeatureScalars(feature, (value, path) => { values[path] = value; return value; });
+    mapCadFeatureScalars(scalarSource, (value, path) => { values[path] = value; return value; });
     return values;
-  }, [feature]);
-  const featureChanged = useMemo(() => JSON.stringify(draft) !== JSON.stringify(feature), [draft, feature]);
+  }, [scalarSource]);
+  const featureChanged = useMemo(() => draft !== feature && JSON.stringify(draft) !== JSON.stringify(feature), [draft, feature]);
   const changed = featureChanged || Object.keys(parameterEdits).length > 0;
   const scalarPending = Object.keys(fieldIssues).length > 0 || Object.values(relationPending).some(Boolean);
   const effectiveDocument = useMemo(() => ({ ...document, parameters: { ...document.parameters, ...parameterEdits } }), [document, parameterEdits]);

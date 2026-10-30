@@ -1,7 +1,7 @@
 import type { CadDocument, CadFeature } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
-import { reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
+import { cadEditsOnlyPlaceDimensions, placeCadSketchDimensions, reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { hasValidCadSketchGeometry, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchSolveDiagnostics, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
@@ -28,6 +28,8 @@ type GeometryIntentEdit = Extract<CadEdit, { kind: keyof typeof geometryIntentEr
 const isGeometryIntentEdit = (edit: CadEdit): edit is GeometryIntentEdit => Object.hasOwn(geometryIntentErrors, edit.kind);
 
 export function needsCadSketchPreparation(document: CadDocument, edits: readonly CadEdit[]): boolean {
+  // Moving dimensions changes only where they are drawn, which the plain edit path accepts without solving or checking geometry.
+  if (cadEditsOnlyPlaceDimensions(document, edits)) return false;
   return document.features.some(feature => feature.kind === 'sketch' && feature.graph)
     || edits.some(edit => edit.kind === 'append-sketch-entities' || edit.kind === 'offset-sketch-loop' || edit.kind === 'copy-sketch-profile' || edit.kind === 'use-sketch-entity' || (edit.kind === 'add-feature' || edit.kind === 'update-feature') && edit.feature.kind === 'sketch' && edit.feature.graph);
 }
@@ -60,6 +62,9 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   validateCadEditBatch(edits);
   const captured = structuredClone(edits);
   let candidate = parseCadDocument(document);
+  // A batch that only moves dimensions keeps every solution and certificate as it is.
+  const placed = placeCadSketchDimensions(candidate, captured);
+  if (placed) return { document: placed, sketchDiagnostics: [] };
   // The last document whose sketches all hold a solution: the parsed original, then each completed solve.
   let accepted = candidate;
   const diagnostics = new Map<string, CadSketchSolveDiagnostics>();
