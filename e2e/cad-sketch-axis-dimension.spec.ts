@@ -43,6 +43,8 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   const selected = async () => (await call(page, 'cad_get_viewport', { expectedVersion: (await context(page)).version })).selectedSketchGeometrySet;
   await page.getByRole('button', { name: 'Select', exact: true }).click(); await canvas.focus(); await page.keyboard.press('Escape');
   await expect.poll(selected).toEqual([]);
+  const view = async () => (await call(page, 'cad_get_viewport', { expectedVersion: (await context(page)).version })).view;
+  expect(await view()).toMatchObject({ onPartDimensionsVisible: false });
   const distance = { id: expect.any(String), kind: 'fixed-axis', pointId: right.startPointId, axis: 'x', value: 30 };
   const label = (relations: unknown[]) => page.locator(`[data-cad-sketch-dimension="${(relations.at(-1) as { id: string }).id}"] [role="button"]`);
 
@@ -57,6 +59,8 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   const placed = await settled(); expect(placed.relations).toEqual([...drawn.relations, distance]);
   await expect(label(placed.relations)).toHaveAccessibleName('Dimension distance 30 mm, press Enter to edit');
   await expect(label(placed.relations)).toHaveAttribute('aria-pressed', 'true');
+  // The viewport reports the drawn distance, the sketch's only dimension.
+  expect(await view()).toMatchObject({ onPartDimensionsVisible: true });
   await label(placed.relations).dblclick();
   const value = page.getByRole('textbox', { name: 'Distance mm', exact: true });
   await expect(value).toHaveValue('30'); await value.fill('35'); await page.getByRole('button', { name: 'Apply', exact: true }).click();
