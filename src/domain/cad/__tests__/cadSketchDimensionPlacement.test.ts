@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
 import {
-  cadSketchDimensionAngleSectorAt, cadSketchDimensionCandidateAt, cadSketchDimensionRelationsAt, cadSketchDimensionRetry, cadSketchPointPairDimensionForm,
+  cadSketchDimensionAngleSectorAt, cadSketchDimensionCandidateAt, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt,
+  cadSketchDimensionRetry, cadSketchPointPairDimensionForm,
   planCadSketchDimension, type CadSketchDimensionCandidate, type CadSketchDimensionOperand, type CadSketchDimensionPlan
 } from '@/features/cad/cadSketchDimensionPlacement';
 import { layoutCadSketchDimensionPreview } from '@/features/cad/cadSketchGraphDimensionLayout';
@@ -139,6 +140,42 @@ describe('dimension plans per pick kind', () => {
     const result = plan(sketch(), [entity('bend'), point('a')]);
     expect(available(result, 'aligned').relations[0]).toMatchObject({ kind: 'distance', pointIds: ['a', 'arc-center'] });
     expect(candidate(plan(sketch(), [point('arc-center'), entity('bend')]), 'aligned')).toMatchObject({ state: 'blocked', reason: 'This point is the center. Pick another point.' });
+  });
+});
+
+describe('dimension pick rules', () => {
+  const edges = ['bottom', 'right', 'top', 'slant', 'hole', 'bend'], corners = ['a', 'b', 'c', 'd', 's0', 's1', 'o', 'arc-center', 'arc-start', 'arc-end'];
+  // `top` stands for a linked edge: it can be picked, but takes no size of its own.
+  const targets = { entityIds: edges, sizedEntityIds: edges.filter(id => id !== 'top'), pointIds: corners };
+  const next = (operands: readonly CadSketchDimensionOperand[]) => cadSketchDimensionPickEligibility(sketch(), targets, operands);
+
+  it('offers each next pick the rules allow, and nothing once two are picked', () => {
+    expect(next([])).toEqual({ entityIds: edges, pointIds: corners, datums: ['origin', 'x-axis', 'y-axis'] });
+    // A point skips the lines it ends and itself; a line skips its own ends and the origin, and may be picked again for its length.
+    expect(next([point('a')])).toEqual({ entityIds: ['right', 'top', 'slant', 'hole', 'bend'], pointIds: corners.filter(id => id !== 'a'), datums: ['origin', 'x-axis', 'y-axis'] });
+    expect(next([entity('bottom')])).toEqual({ entityIds: edges, pointIds: corners.filter(id => id !== 'a' && id !== 'b'), datums: ['x-axis', 'y-axis'] });
+    expect(next([entity('hole')])).toEqual({ entityIds: edges, pointIds: corners.filter(id => id !== 'o'), datums: ['origin', 'x-axis', 'y-axis'] });
+    expect(next([datum('origin')])).toEqual({ entityIds: ['hole', 'bend'], pointIds: corners, datums: [] });
+    expect(next([datum('y-axis')])).toEqual({ entityIds: edges, pointIds: corners, datums: [] });
+    expect(next([point('a'), point('c')])).toEqual({ entityIds: [], pointIds: [], datums: [] });
+  });
+
+  it('pairs a linked edge with other picks but never sizes it on its own', () => {
+    expect(next([entity('top')]).entityIds).toEqual(edges.filter(id => id !== 'top'));
+    expect(planCadSketchDimension(sketch(), {}, [entity('top')], ids(), targets.sizedEntityIds).candidates).toEqual([]);
+    expect(available(planCadSketchDimension(sketch(), {}, [entity('top'), entity('bottom')], ids(), targets.sizedEntityIds), 'point-line').preview).toMatchObject({ value: 20 });
+    expect(available(planCadSketchDimension(sketch(), {}, [entity('bottom')], ids(), targets.sizedEntityIds), 'aligned').preview).toMatchObject({ value: 40 });
+  });
+
+  it('starts from a preselection the tool takes in its own order, and from none it cannot take', () => {
+    const preselect = (operands: readonly CadSketchDimensionOperand[]) => cadSketchDimensionPreselection(sketch(), targets, operands);
+    expect(preselect([datum('x-axis'), point('c')])).toEqual([datum('x-axis'), point('c')]);
+    expect(preselect([entity('bottom'), datum('y-axis')])).toEqual([entity('bottom'), datum('y-axis')]);
+    expect(preselect([point('a'), entity('slant')])).toEqual([point('a'), entity('slant')]);
+    expect(preselect([entity('bottom'), datum('origin')])).toEqual([]);
+    expect(preselect([point('a'), entity('bottom')])).toEqual([]);
+    expect(preselect([entity('bottom'), entity('bottom')])).toEqual([]);
+    expect(preselect([point('a'), point('b'), point('c')])).toEqual([]);
   });
 });
 

@@ -9,6 +9,8 @@ import { CadSketchCanvas } from './CadSketchCanvas';
 import { cadArcSvgPath } from './cadSketchSvg';
 import { cadSketchDimensionSelectionStatus } from './cadSketchDimensionSelection';
 import { cadSketchDefinitionMarks } from './cadSketchDefinitionMarks';
+import { createCadSketchPointerStore } from './CadSketchDimensionPreview';
+import { planCadSketchDimension } from './cadSketchDimensionPlacement';
 import { cadSketchGraphDimensionLabel } from './cadSketchGraphDimensionLayout';
 import type { CadRenderedViewControls } from './cadViewportControls';
 
@@ -250,6 +252,29 @@ describe('sketch canvas cursor rendering', () => {
     expect(await hover(10, 0, container.querySelector('[data-cad-sketch-point="a"]')!)).toEqual({ graph: 0, profile: 0, edge: 0, grip: 0 }); expect(highlighted()).toEqual([]);
     // Away from both axes nothing beyond the grip test runs.
     expect(await hover(40, 30)).toEqual({ graph: 0, profile: 0, edge: 0, grip: 1 }); expect(highlighted()).toEqual([]);
+  });
+
+  it('moves the Dimension preview with the pointer, rendering only the preview: no row, no placed dimension and not the canvas', async () => {
+    const graph: NonNullable<CadSketchFeature['graph']> = { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }],
+      relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 20 }] };
+    const { props, show, move } = await mountCanvas(graph, { tool: 'select' });
+    let next = 0;
+    const pointer = createCadSketchPointerStore(), plan = planCadSketchDimension(graph, {}, [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'c' }], () => `new-${++next}`);
+    const onPick = vi.fn(), onConfirm = vi.fn();
+    await show({ graphControls: { ...props().graphControls!, onSelectDimension: vi.fn(), onConfigureRelation: vi.fn(), geometryPick: {
+      eligibleEntityIds: [], eligiblePointIds: [], eligibleDatums: [], label: 'Distance', onPick, onConfirm, onCancel: vi.fn(), pointer, dimensionPreview: plan } } });
+    const preview = () => container.querySelector('[data-cad-dimension-preview]'), caption = () => container.querySelector('.cad-view-caption')?.textContent;
+    clearRenders(); canvasRenders.mockClear(); dimensionRenders.mockClear(); Object.assign(picks, { graph: 0, profile: 0, edge: 0, grip: 0 });
+    // Between the two points the preview is aligned; above or below them it is horizontal, and beside them vertical.
+    await move(10, 5); expect(preview()?.getAttribute('data-cad-dimension-preview')).toBe('aligned'); expect(caption()).toBe('10, 5 mm');
+    await move(12, 30); expect(preview()?.getAttribute('data-cad-dimension-preview')).toBe('horizontal');
+    await move(12, -15); expect(preview()?.getAttribute('data-cad-dimension-preview')).toBe('horizontal');
+    await move(45, 6); expect(preview()?.getAttribute('data-cad-dimension-preview')).toBe('vertical'); expect(caption()).toBe('45, 6 mm');
+    expect(preview()?.textContent).toBe('ΔY 10 mm');
+    // Each move lays out the preview's one label; the placed length, the rows, the canvas and the graph pickers do no work for it.
+    expect(dimensionRenders).toHaveBeenCalledTimes(4); expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]); expect(canvasRenders).not.toHaveBeenCalled();
+    expect(picks).toEqual({ graph: 0, profile: 0, edge: 0, grip: 0 }); expect(onPick).not.toHaveBeenCalled(); expect(onConfirm).not.toHaveBeenCalled();
   });
 
   it('answers hover over a dimension line from one query of each picker, rendering neither rows nor dimensions for it', async () => {
