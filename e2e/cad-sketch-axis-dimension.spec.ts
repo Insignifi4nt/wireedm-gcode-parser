@@ -39,10 +39,9 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   const side = (test: (a: [number, number], b: [number, number]) => boolean) => drawn.entities.find(line => test(at(line.startPointId), at(line.endPointId)))!;
   const right = side((a, b) => a[0] === 30 && b[0] === 30), top = side((a, b) => a[1] === 40 && b[1] === 40);
   expect(drawn.relations).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'vertical' }), expect.objectContaining({ kind: 'horizontal' })]));
-  // Rectangle leaves one of its sides selected, as 0.0.781 does, and Dimension would start on it. The owner's flow starts with nothing picked.
-  const selected = async () => (await call(page, 'cad_get_viewport', { expectedVersion: (await context(page)).version })).selectedSketchGeometrySet;
-  await page.getByRole('button', { name: 'Select', exact: true }).click(); await canvas.focus(); await page.keyboard.press('Escape');
-  await expect.poll(selected).toEqual([]);
+  // Rectangle stays active and leaves nothing selected, so Dimension chosen straight after it starts with no pick.
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: drawn.version })).selectedSketchGeometrySet).toEqual([]);
+  await expect(page.getByRole('button', { name: 'Rectangle', exact: true })).toHaveAttribute('aria-pressed', 'true');
   const view = async () => (await call(page, 'cad_get_viewport', { expectedVersion: (await context(page)).version })).view;
   expect(await view()).toMatchObject({ onPartDimensionsVisible: false });
   const distance = { id: expect.any(String), kind: 'fixed-axis', pointId: right.startPointId, axis: 'x', value: 30 };
