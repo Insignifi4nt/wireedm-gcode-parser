@@ -522,6 +522,111 @@ export const iconCatalog = {
       "M3 20h18M9 20V4M9 15h5v5"
     ]
   },
+  "relation-horizontal": {
+    "label": "Horizontal relation",
+    "category": "geometry",
+    "paths": [
+      "M4 12h16M4 9v6M20 9v6"
+    ]
+  },
+  "relation-vertical": {
+    "label": "Vertical relation",
+    "category": "geometry",
+    "paths": [
+      "M12 4v16M9 4h6M9 20h6"
+    ]
+  },
+  "relation-parallel": {
+    "label": "Parallel relation",
+    "category": "geometry",
+    "paths": [
+      "M4 16L14 6M10 18L20 8"
+    ]
+  },
+  "relation-perpendicular": {
+    "label": "Perpendicular relation",
+    "category": "geometry",
+    "paths": [
+      "M4 19h16M10 19V5M10 15h4v4"
+    ]
+  },
+  "relation-collinear": {
+    "label": "Collinear relation",
+    "category": "geometry",
+    "paths": [
+      "M3 19l6-6M15 7l6-6M11.35 10a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0Z"
+    ]
+  },
+  "relation-equal-length": {
+    "label": "Equal length relation",
+    "category": "geometry",
+    "paths": [
+      "M5 9h14M5 15h14"
+    ]
+  },
+  "relation-equal-radius": {
+    "label": "Equal radius relation",
+    "category": "geometry",
+    "paths": [
+      "M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0ZM8 10h8M8 14h8"
+    ]
+  },
+  "relation-tangent": {
+    "label": "Tangent relation",
+    "category": "geometry",
+    "paths": [
+      "M6 14a6 6 0 1 0 12 0a6 6 0 1 0 -12 0ZM3 8h18"
+    ]
+  },
+  "relation-coincident": {
+    "label": "Coincident relation",
+    "category": "geometry",
+    "paths": [
+      "M4 19l8-7 8 7M9.5 12a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0Z"
+    ]
+  },
+  "relation-concentric": {
+    "label": "Concentric relation",
+    "category": "geometry",
+    "paths": [
+      "M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0ZM8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0Z"
+    ]
+  },
+  "relation-midpoint": {
+    "label": "Midpoint relation",
+    "category": "geometry",
+    "paths": [
+      "M4 18L20 6M3.35 18a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM19.35 6a0.65 0.65 0 1 0 1.3 0a0.65 0.65 0 1 0 -1.3 0ZM9.5 12a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0Z"
+    ]
+  },
+  "relation-symmetric": {
+    "label": "Symmetric relation",
+    "category": "geometry",
+    "paths": [
+      "M12 3v4M12 10v4M12 17v4M3.5 12a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0ZM15.5 12a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0Z"
+    ]
+  },
+  "relation-fix": {
+    "label": "Fix relation",
+    "category": "geometry",
+    "paths": [
+      "M12 3v10M5 13h14M7 13l-2 4M11 13l-2 4M15 13l-2 4M19 13l-2 4"
+    ]
+  },
+  "relation-point-on-line": {
+    "label": "Point on line relation",
+    "category": "geometry",
+    "paths": [
+      "M3 16h18M12.5 16a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0Z"
+    ]
+  },
+  "relation-point-on-curve": {
+    "label": "Point on curve relation",
+    "category": "geometry",
+    "paths": [
+      "M3 18a9 9 0 0 1 18 0M9.5 9a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0Z"
+    ]
+  },
   "trim": {
     "label": "Trim geometry",
     "category": "geometry",

@@ -666,6 +666,111 @@
     "file": "constraint.svg"
   },
   {
+    "id": "relation-horizontal",
+    "label": "Horizontal relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-horizontal.svg"
+  },
+  {
+    "id": "relation-vertical",
+    "label": "Vertical relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-vertical.svg"
+  },
+  {
+    "id": "relation-parallel",
+    "label": "Parallel relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-parallel.svg"
+  },
+  {
+    "id": "relation-perpendicular",
+    "label": "Perpendicular relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-perpendicular.svg"
+  },
+  {
+    "id": "relation-collinear",
+    "label": "Collinear relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-collinear.svg"
+  },
+  {
+    "id": "relation-equal-length",
+    "label": "Equal length relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-equal-length.svg"
+  },
+  {
+    "id": "relation-equal-radius",
+    "label": "Equal radius relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-equal-radius.svg"
+  },
+  {
+    "id": "relation-tangent",
+    "label": "Tangent relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-tangent.svg"
+  },
+  {
+    "id": "relation-coincident",
+    "label": "Coincident relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-coincident.svg"
+  },
+  {
+    "id": "relation-concentric",
+    "label": "Concentric relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-concentric.svg"
+  },
+  {
+    "id": "relation-midpoint",
+    "label": "Midpoint relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-midpoint.svg"
+  },
+  {
+    "id": "relation-symmetric",
+    "label": "Symmetric relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-symmetric.svg"
+  },
+  {
+    "id": "relation-fix",
+    "label": "Fix relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-fix.svg"
+  },
+  {
+    "id": "relation-point-on-line",
+    "label": "Point on line relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-point-on-line.svg"
+  },
+  {
+    "id": "relation-point-on-curve",
+    "label": "Point on curve relation",
+    "category": "geometry",
+    "aliases": [],
+    "file": "relation-point-on-curve.svg"
+  },
+  {
     "id": "trim",
     "label": "Trim geometry",
     "category": "geometry",

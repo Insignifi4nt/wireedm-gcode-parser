@@ -4,6 +4,7 @@ import { cadSketchRelationEntityIds } from '@/domain/cad/cadSketchGraphReference
 import type { CadSketchDimensionRelation, CadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
 import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
 import { cadSketchZeroScalar, type CadSketchDatum } from './cadSketchGraphSelection';
+import { cadSketchCurveCentres, cadSketchRelationName, isCadSketchConcentric } from './cadSketchRelationNames';
 
 const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['distance', 'point-line-distance', 'axis-distance', 'fixed-axis', 'radial-size', 'fillet-corner', 'chamfer-corner', 'line-angle', 'reference-dimension']);
 /**
@@ -13,6 +14,23 @@ const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['d
  */
 export const isCadSketchDimensionRelation = (relation: CadSketchGraphRelation): relation is CadSketchDimensionRelation => DIMENSION_KINDS.has(relation.kind)
   && !(relation.kind === 'fixed-axis' && cadSketchZeroScalar(relation.value));
+/**
+ * Relations the canvas draws as a selectable annotation: the dimensions, and the geometric relations drawn as relation glyphs. A linear
+ * pattern and a linked reference keep their own canvas and list controls, whose Detach keeps their geometry, so they are no annotation.
+ */
+export const isCadSketchAnnotationRelation = (relation: CadSketchGraphRelation): boolean => relation.kind !== 'linear-pattern' && relation.kind !== 'external-reference';
+/** Relations drawn as relation glyphs: every annotation that is no dimension, a coordinate held at 0 among them. */
+export const isCadSketchGlyphRelation = (relation: CadSketchGraphRelation): boolean => !isCadSketchDimensionRelation(relation) && isCadSketchAnnotationRelation(relation);
+/**
+ * The canvas annotations of one graph that a pick can name: the dimensions it draws, as `cadSketchDrawnDimensions` resolves them, and
+ * every relation glyph while `glyphs` is set. On-part dimensions and Show relations each switch one of the two, never the other.
+ */
+export interface CadSketchDrawnAnnotations extends CadSketchDrawnDimensions { readonly glyphs: boolean }
+const NO_DRAWN_IDS: ReadonlySet<string> = new Set();
+/** The annotations drawn for a graph: `dimensions` when they are drawn for it, and the glyphs when `glyphs` is set. */
+export function cadSketchDrawnAnnotations(graph: CadSketchGraph, dimensions: CadSketchDrawnDimensions | undefined, glyphs: boolean): CadSketchDrawnAnnotations {
+  return Object.freeze({ graph, ids: dimensions?.graph === graph ? dimensions.ids : NO_DRAWN_IDS, glyphs });
+}
 
 /**
  * What a dimension measures, with the operands it was authored on. A driving and a reference form of one quantity share it, and it names
@@ -56,6 +74,19 @@ export function selectCadSketchDimension(current: readonly CadSketchDimensionPic
   if (current.some(item => samePick(item, pick, graph))) { const kept = current.filter(item => !samePick(item, pick, graph)); return kept.length ? Object.freeze(kept) : NO_SKETCH_DIMENSIONS; }
   return current.length >= MAX_SELECTED_DIMENSIONS ? current : Object.freeze([...current, pick]);
 }
+/**
+ * The same for a glyph that draws several relations, such as X and Y held at 0 on one point drawn as one At the origin glyph: a plain pick selects
+ * them all; an additive pick removes them once all are selected, and otherwise adds the ones missing.
+ */
+export function selectCadSketchAnnotations(current: readonly CadSketchDimensionPick[], picks: readonly CadSketchDimensionPick[], graph: CadSketchGraph | null | undefined, additive = false): readonly CadSketchDimensionPick[] {
+  if (picks.length === 1) return selectCadSketchDimension(current, picks[0], graph, additive);
+  if (!picks.length) return current;
+  const selected = (pick: CadSketchDimensionPick, among: readonly CadSketchDimensionPick[]) => among.some(item => samePick(item, pick, graph));
+  if (!additive) return current.length === picks.length && picks.every(pick => selected(pick, current)) ? current : Object.freeze([...picks]);
+  if (picks.every(pick => selected(pick, current))) { const kept = current.filter(item => !selected(item, picks)); return kept.length ? Object.freeze(kept) : NO_SKETCH_DIMENSIONS; }
+  const added = picks.filter(pick => !selected(pick, current));
+  return current.length + added.length > MAX_SELECTED_DIMENSIONS ? current : Object.freeze([...current, ...added]);
+}
 /** Keeps the picks that still name an available dimension; an unchanged set keeps its identity. */
 export function keepCadSketchDimensionPicks(current: readonly CadSketchDimensionPick[], available: (pick: CadSketchDimensionPick) => boolean): readonly CadSketchDimensionPick[] {
   if (!current.length) return current;
@@ -71,7 +102,8 @@ const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.m
 // One resolver per graph, kept on that graph, so a canvas of dimensions joins its Coincident relations once and no graph reads another's joins.
 // A graph that names a missing point keeps raw IDs.
 const identities = new WeakMap<CadSketchGraph, (pointId: string) => string>();
-function pointIdentities(graph: CadSketchGraph): (pointId: string) => string {
+/** The point a graph's Coincident relations join a point ID to, the same ID for every point of one place; cached per graph. */
+export function cadSketchPointIdentity(graph: CadSketchGraph): (pointId: string) => string {
   let identity = identities.get(graph);
   if (!identity) {
     let root: (pointId: string) => string;
@@ -83,7 +115,7 @@ function pointIdentities(graph: CadSketchGraph): (pointId: string) => string {
 }
 /** The quantity a pick measures, resolved in `graph`: points through its Coincident joins, a line's length through its current endpoints. */
 function measuredIn(graph: CadSketchGraph, measures: CadSketchDimensionMeasure): string {
-  const point = pointIdentities(graph);
+  const point = cadSketchPointIdentity(graph);
   switch (measures.kind) {
     case 'point-distance': return canonical(['point-distance', measures.pointIds.map(point).sort()]);
     case 'point-line-distance': return canonical(['point-line-distance', point(measures.pointId), measures.lineId]);
@@ -102,7 +134,7 @@ function measuredIn(graph: CadSketchGraph, measures: CadSketchDimensionMeasure):
  * line's endpoint and the line's reference measure the same length only while that graph joins the two points.
  * A point to line distance names its point and line, not its side, which an edit that turns the line around flips to keep the point where it is.
  */
-export function cadSketchDimensionPickOf(relation: CadSketchDimensionRelation): CadSketchDimensionPick {
+export function cadSketchDimensionPickOf(relation: CadSketchGraphRelation): CadSketchDimensionPick {
   const pair = (pointIds: readonly string[]) => [...pointIds].sort();
   const pick = (form: string, identity: unknown, measures: CadSketchDimensionMeasure) => ({ id: relation.id, form, identity: canonical(identity), measures });
   switch (relation.kind) {
@@ -118,29 +150,33 @@ export function cadSketchDimensionPickOf(relation: CadSketchDimensionRelation): 
       return pick(form, measurement.entityId, { kind: 'line-length', lineId: measurement.entityId });
     }
     default: {
-      const identity = canonical(Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id' && key !== 'value' && key !== 'values')));
+      // A relation's own value, values or fixed position is what an edit changes; the relation keeps its pick through that edit.
+      const identity = canonical(Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id' && key !== 'value' && key !== 'values' && key !== 'position')));
       return { id: relation.id, form: relation.kind, identity, measures: { kind: 'own', key: `${relation.kind}/${identity}` } };
     }
   }
 }
-/** The pick for a dimension the canvas draws, or null when the relation is gone, is not a dimension or is not drawn. */
-export function cadSketchDimensionPick(drawn: CadSketchDrawnDimensions, relationId: string): CadSketchDimensionPick | null {
-  const relation = drawn.ids.has(relationId) ? drawn.graph.relations.find(item => item.id === relationId) : undefined;
-  return relation && isCadSketchDimensionRelation(relation) ? cadSketchDimensionPickOf(relation) : null;
+/**
+ * The pick for a canvas annotation that is drawn: a dimension the canvas draws, or a relation glyph while the glyphs are drawn. Null when
+ * the relation is gone, is no annotation or is not drawn.
+ */
+export function cadSketchDimensionPick(drawn: CadSketchDrawnDimensions | CadSketchDrawnAnnotations, relationId: string): CadSketchDimensionPick | null {
+  const glyphs = 'glyphs' in drawn && drawn.glyphs, relation = glyphs || drawn.ids.has(relationId) ? drawn.graph.relations.find(item => item.id === relationId) : undefined;
+  return relation && (isCadSketchDimensionRelation(relation) ? drawn.ids.has(relationId) : glyphs && isCadSketchGlyphRelation(relation)) ? cadSketchDimensionPickOf(relation) : null;
 }
 /** Whether a pick still names the dimension the graph holds under its ID, drawn or not. */
 export function isCadSketchDimensionInGraph(graph: CadSketchGraph, pick: CadSketchDimensionPick): boolean {
   const relation = graph.relations.find(item => item.id === pick.id);
   return Boolean(relation && isCadSketchDimensionRelation(relation) && samePick(cadSketchDimensionPickOf(relation), pick, graph));
 }
-/** Whether a pick still names a drawn dimension, the one the graph holds under its ID. */
+/** Whether a pick still names a drawn annotation, the one the graph holds under its ID. */
 export function isCadSketchDimensionPickCurrent(drawn: CadSketchDrawnDimensions | undefined, pick: CadSketchDimensionPick): boolean {
   const current = drawn ? cadSketchDimensionPick(drawn, pick.id) : null;
   return Boolean(drawn && current && samePick(current, pick, drawn.graph));
 }
 /**
- * Undo, redo, deletion and agent edits can remove or replace a selected dimension, and an edit can leave one with nothing to draw it on;
- * the rest stay selected. Each pick compares in the new graph, and a kept pick takes the dimension's current form and operands.
+ * Undo, redo, deletion and agent edits can remove or replace a selected dimension or relation, an edit can leave one with nothing to draw
+ * it on, and hiding dimensions or relation glyphs leaves the hidden ones undrawn; the rest stay selected. Each pick compares in the new graph, and a kept pick takes the dimension's current form and operands.
  */
 export function reconcileCadSketchDimensionSelection(drawn: CadSketchDrawnDimensions | undefined, current: readonly CadSketchDimensionPick[]): readonly CadSketchDimensionPick[] {
   if (!current.length) return current;
@@ -156,15 +192,15 @@ export function reconcileCadSketchDimensionSelection(drawn: CadSketchDrawnDimens
   return !changed ? current : kept.length ? Object.freeze(kept) : NO_SKETCH_DIMENSIONS;
 }
 /**
- * Mount keys for dimension annotations. A relation keeps its key while each new graph names the same dimension, compared in that new graph,
- * so focus and a menu's focus return stay with it; a replacement under the same ID gets a new key, so it never inherits either.
+ * Mount keys for canvas annotations, dimensions and relation glyphs, for the relations `include` takes. A relation keeps its key while each new graph names the same
+ * dimension, compared in that new graph, so focus and a menu's focus return stay with it; a replacement under the same ID gets a new key, so it never inherits either.
  */
-export function createCadSketchDimensionKeys() {
+export function createCadSketchDimensionKeys(include: (relation: CadSketchGraphRelation) => boolean = isCadSketchAnnotationRelation) {
   let entries = new Map<string, { pick: CadSketchDimensionPick; generation: number }>(), next = 0;
   return (graph: CadSketchGraph): ReadonlyMap<string, string> => {
     const updated = new Map<string, { pick: CadSketchDimensionPick; generation: number }>(), keys = new Map<string, string>();
     for (const relation of graph.relations) {
-      if (!isCadSketchDimensionRelation(relation)) continue;
+      if (!isCadSketchAnnotationRelation(relation) || !include(relation)) continue;
       const pick = cadSketchDimensionPickOf(relation), previous = entries.get(relation.id);
       const entry = previous && samePick(previous.pick, pick, graph) ? { pick, generation: previous.generation } : { pick, generation: next++ };
       updated.set(relation.id, entry); keys.set(relation.id, `${relation.id}/${entry.generation}`);
@@ -189,25 +225,76 @@ export function cadSketchDimensionName(graph: CadSketchGraph, relation: CadSketc
     case 'reference-dimension': return 'Reference dimension';
   }
 }
-/** What the canvas status line says about the selected dimensions; selection never opens the editor. */
+/** How a relation glyph that draws X and Y held at 0 on one place names them: the point sits at the origin. */
+export const CAD_SKETCH_ORIGIN_PAIR_NAME = 'At the origin';
+/**
+ * Whether the relations are X and Y held at 0 on one point, or on points that Coincident joins in one place: two relation glyph
+ * relations that one glyph draws as the point at the origin. A coordinate held away from 0 is a Distance dimension, never part of one.
+ */
+export function isCadSketchOriginPair(graph: CadSketchGraph, relations: readonly CadSketchGraphRelation[]): boolean {
+  const [first, second] = relations;
+  if (relations.length !== 2 || !relations.every(isCadSketchGlyphRelation) || first.kind !== 'fixed-axis' || second.kind !== 'fixed-axis' || first.axis === second.axis) return false;
+  const identity = cadSketchPointIdentity(graph);
+  return identity(first.pointId) === identity(second.pointId);
+}
+/**
+ * What the canvas status line says about the selected dimensions and relations; selection never opens the editor. X and Y held at 0 on
+ * one point, drawn as one At the origin glyph, read as that glyph.
+ */
 export function cadSketchDimensionSelectionStatus(graph: CadSketchGraph | undefined, ids: readonly string[]): string | null {
   if (!graph || !ids.length) return null;
-  if (ids.length > 1) return `${ids.length} dimensions selected · Delete removes them`;
-  const relation = graph.relations.find(item => item.id === ids[0]);
-  return relation && isCadSketchDimensionRelation(relation) ? `${cadSketchDimensionName(graph, relation)} selected · Double-click or Enter edits · Delete removes` : null;
+  const relations = ids.flatMap(id => graph.relations.filter(item => item.id === id && isCadSketchAnnotationRelation(item)));
+  if (!relations.length) return null;
+  const dimensions = relations.filter(isCadSketchDimensionRelation);
+  if (isCadSketchOriginPair(graph, relations)) return `${CAD_SKETCH_ORIGIN_PAIR_NAME} selected · Delete removes`;
+  if (relations.length === 1) return dimensions.length ? `${cadSketchDimensionName(graph, dimensions[0])} selected · Double-click or Enter edits · Delete removes`
+    : `${cadSketchRelationName(graph, relations[0])} selected · Delete removes`;
+  return `${cadSketchAnnotationCount(graph, ids)} selected · Delete removes them`;
+}
+/** "2 dimensions and 1 relation": the annotations the IDs name, as the status line and a Delete command count them. */
+export function cadSketchAnnotationCount(graph: CadSketchGraph, ids: readonly string[]): string {
+  const relations = graph.relations.filter(relation => ids.includes(relation.id) && isCadSketchAnnotationRelation(relation));
+  const dimensions = relations.filter(isCadSketchDimensionRelation).length, others = relations.length - dimensions;
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+  return !others ? count(dimensions, 'dimension') : !dimensions ? count(others, 'relation') : `${count(dimensions, 'dimension')} and ${count(others, 'relation')}`;
 }
 
 /** Geometry a relation names directly, plus the sketch datum it measures from. */
 export interface CadSketchHighlight { readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly datums: readonly CadSketchDatum[] }
 export const NO_SKETCH_HIGHLIGHT: CadSketchHighlight = Object.freeze({ pointIds: [], entityIds: [], datums: [] });
+/** A graph's point and edge IDs, its lines by their two end IDs and its curves by centre, built once per graph so naming many relations reads no graph twice. */
+interface GeometryIndex {
+  readonly points: ReadonlySet<string>; readonly entities: ReadonlySet<string>;
+  /** Line indices in graph order, by the Coincident identities of their ends as `start end` and `end start`. */
+  readonly lines: ReadonlyMap<string, readonly number[]>;
+  readonly centres: ReadonlyMap<string, readonly string[]>;
+}
+const geometryIndices = new WeakMap<CadSketchGraph, GeometryIndex>();
+function geometryIndex(graph: CadSketchGraph): GeometryIndex {
+  let index = geometryIndices.get(graph);
+  if (!index) {
+    const lines = new Map<string, number[]>(), identity = cadSketchPointIdentity(graph);
+    graph.entities.forEach((entity, at) => {
+      if (entity.kind !== 'line') return;
+      const start = identity(entity.startPointId), end = identity(entity.endPointId);
+      for (const key of new Set([`${start} ${end}`, `${end} ${start}`])) lines.set(key, [...lines.get(key) ?? [], at]);
+    });
+    index = { points: new Set(graph.points.map(point => point.id)), entities: new Set(graph.entities.map(entity => entity.id)), lines, centres: cadSketchCurveCentres(graph) };
+    geometryIndices.set(graph, index);
+  }
+  return index;
+}
 export function cadSketchRelationHighlight(graph: CadSketchGraph, relation: CadSketchGraphRelation): CadSketchHighlight {
   const named = relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds
     : relation.measurement.kind === 'point-line-distance' ? [relation.measurement.pointId] : []
     : relation.kind === 'tangent-joint' ? relation.endpoints.map(endpoint => endpoint.pointId)
       : 'pointIds' in relation ? relation.pointIds : 'pointId' in relation ? [relation.pointId] : [];
-  // A dimension or relation between a line's own endpoints is about that line.
-  const spanned = named.length === 2 ? graph.entities.filter(entity => entity.kind === 'line' && named.includes(entity.startPointId) && named.includes(entity.endPointId)).map(entity => entity.id) : [];
-  const entities = new Set(graph.entities.map(entity => entity.id)), points = new Set(graph.points.map(point => point.id));
+  const { points, entities, lines, centres } = geometryIndex(graph);
+  // A dimension or relation between a line's own endpoints, or points that Coincident joins to them, is about that line, and a Concentric
+  // about the curves on its two centres.
+  const identity = cadSketchPointIdentity(graph), [first, second] = named.map(identity);
+  const spanned = relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, centres) ? relation.pointIds.flatMap(id => centres.get(id) ?? [])
+    : named.length === 2 ? [...new Set([`${first} ${second}`, `${first} ${first}`, `${second} ${second}`].flatMap(key => lines.get(key) ?? []))].sort((a, b) => a - b).map(at => graph.entities[at].id) : [];
   // A coordinate is measured from the other axis: X from the Y axis, Y from the X axis. A distance drawn to a line kept along the axis lights that line.
   const datums: readonly CadSketchDatum[] = relation.kind === 'fixed-axis' ? [relation.axis === 'x' ? 'y-axis' : 'x-axis'] : relation.kind === 'fixed-point' ? ['origin'] : [];
   const measured = relation.kind === 'fixed-axis' && isCadSketchDimensionRelation(relation) ? cadSketchAxisDistanceLine(graph, relation)?.id : undefined;
@@ -215,8 +302,16 @@ export function cadSketchRelationHighlight(graph: CadSketchGraph, relation: CadS
     entityIds: [...new Set([...cadSketchRelationEntityIds(relation), ...spanned, ...measured ? [measured] : []])].filter(id => entities.has(id)), datums };
 }
 
-/** A relation resolves against the drawn graph, so a dimension removed by undo highlights nothing; dock rows pass their own draft geometry. */
-export type CadSketchHighlightSource = { readonly kind: 'relation'; readonly relationId: string } | ({ readonly kind: 'geometry' } & CadSketchHighlight);
+/**
+ * A relation resolves against the drawn graph, so a dimension removed by undo highlights nothing; dock rows pass their own draft geometry,
+ * with the relations whose canvas glyphs they light up. A glyph that draws several relations shows them all.
+ */
+export type CadSketchHighlightSource = { readonly kind: 'relation'; readonly relationId: string } | { readonly kind: 'relations'; readonly relationIds: readonly string[] }
+  | ({ readonly kind: 'geometry'; readonly relationIds?: readonly string[] } & CadSketchHighlight);
+/** The relations a highlight names, whose glyphs light up with it. */
+export function cadSketchHighlightRelationIds(source: CadSketchHighlightSource | null): readonly string[] {
+  return !source ? NO_SKETCH_DIMENSION_IDS : source.kind === 'relation' ? [source.relationId] : source.relationIds ?? NO_SKETCH_DIMENSION_IDS;
+}
 /**
  * Hover highlight shared by canvas dimensions and dock rows. Only the overlay subscribes, so hovering renders no graph rows,
  * no canvas and no workbench. Each owner shows and hides only its own highlight.
