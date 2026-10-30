@@ -1,6 +1,6 @@
 {
-  "version": "0.0.784",
-  "previousVersion": "0.0.783",
+  "version": "0.0.783",
+  "previousVersion": "0.0.782",
   "postCompatibility": "preserved-posts-with-unselected-drawing",
   "summary": "Drawing a shape in a sketch with connected edges no longer leaves one of its edges selected. Rectangle, Circle, Slot, Arc and a saved Line chain used to select their first edge, so Dimension, a constraint, Delete or Move chosen next started from that edge: after drawing a rectangle, Dimension then the Y axis tried to measure the bottom side against the axis. A finished shape now leaves nothing selected, and the drawing tool stays active as before. Offset loop now selects its whole copy, as Mirror copy does, where it selected one edge of it, and Offset loop accepts several edges of one closed outline as well as a single edge, so choosing it again offsets the copy.",
   "warning": "Potentially breaking for people and automation that drive the sketch canvas: after a drawing tool saves a shape, the viewport selection is empty where it held the shape's first edge, so the Construction check box, Delete, Move selection, Dimension and Constrain no longer act on that edge without a pick. After Offset loop, the selection holds every edge of the copy where it held one, so commands that take a single edge, such as a length Dimension, need a pick first. Offset loop with several selected edges was unavailable and now offsets the one closed outline that contains them all; edges from different outlines still name none.",
