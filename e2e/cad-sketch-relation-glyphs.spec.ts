@@ -63,12 +63,20 @@ test('moves the marks of dragged geometry with it while the drag is drawn and af
   const before = await top(), corner = await page.locator('[data-cad-sketch-point="c"]').boundingBox();
   if (!before || !corner) throw new Error('Plate corner or mark unavailable.');
   const x = corner.x + corner.width / 2, y = corner.y + corner.height / 2;
+  // While the drag is drawn, the moved marks draw beside the layer and their rows stay hidden where the saved sketch places them.
+  const highestMoved = async () => {
+    const boxes = (await Promise.all((await page.locator('.cad-sketch-relation-glyphs-moved path').all()).map(item => item.boundingBox()))).filter(box => box !== null);
+    return boxes.sort((a, b) => a.y - b.y)[0];
+  };
   await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x, y - 40, { steps: 8 });
-  await expect.poll(async () => before.y - ((await top())?.y ?? before.y)).toBeGreaterThan(25);
-  expect(Math.abs(((await top())?.x ?? Infinity) - before.x)).toBeLessThan(2);
+  await expect.poll(async () => before.y - ((await highestMoved())?.y ?? before.y)).toBeGreaterThan(25);
+  await expect(glyph('across').and(page.locator('[visibility="hidden"]'))).toHaveCount(1);
+  expect((await top())?.y).toBeCloseTo(before.y, 0);
   await page.mouse.up();
   await expect.poll(async () => before.y - ((await top())?.y ?? before.y)).toBeGreaterThan(25);
-  await expect(glyph('across')).toHaveCount(2);
+  expect(Math.abs(((await top())?.x ?? Infinity) - before.x)).toBeLessThan(2);
+  await expect(glyph('across')).toHaveCount(2); await expect(page.locator('.cad-sketch-relation-glyphs-moved')).toHaveCount(0);
+  await expect(page.locator('[data-cad-sketch-relation-glyph][visibility="hidden"]')).toHaveCount(0);
 });
 
 test('leaves a pick on the geometry beside a mark, in Select and with a drawing tool', async ({ page }) => {
