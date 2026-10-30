@@ -362,8 +362,15 @@ describe('CAD sketch interaction', () => {
     expect(accepted.graph.points.slice(0, 4)).toEqual(sourceSketch.graph.points);
     expect(accepted.graph.points.slice(4).map(point => point.position)).toEqual([[2, 2], [38, 2], [38, 18], [2, 18]]);
     expect(accepted.graph.entities).toHaveLength(8);
-    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: accepted.graph.entities[4].id }]);
+    const copy = accepted.graph.entities.slice(4);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual(copy.map(entity => ({ kind: 'entity', id: entity.id })));
     expect(viewport().getState().workflowOpen).toBe(false);
+    // The selected copy is a loop Offset takes again; edges from both loops name none.
+    await click('Offset loop'); expect(viewport().getState().workflowOpen).toBe(true);
+    for (const entity of accepted.graph.entities) expect(container.querySelector(`[data-cad-sketch-entity="${entity.id}"]`)?.classList.contains('is-relation-highlighted')).toBe(copy.includes(entity));
+    await click('Cancel'); expect(currentDocument.features[0]).toBe(accepted);
+    await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'ab' }, { kind: 'entity', id: copy[0].id }] }));
+    expect(button('Offset loop').disabled).toBe(true);
   });
 
   it('opens the same offset editor for a legacy profile, cancels its preview, then accepts a detached graph copy', async () => {
@@ -1621,7 +1628,8 @@ describe('CAD sketch interaction', () => {
     expect(sketch.graph?.relations.slice(4)).toEqual([{ id: expect.any(String), kind: 'fixed-axis', pointId: sketch.graph?.points[0].id, axis: 'x', value: 0 },
       { id: expect.any(String), kind: 'fixed-axis', pointId: sketch.graph?.points[0].id, axis: 'y', value: 0 }]);
     expect(currentDocument.schemaVersion).toBe(2);
-    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph?.entities[0].id }]);
+    // Drawing leaves nothing selected, so Dimension or a constraint chosen next starts from its own picks.
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
     expect(workflow).toHaveBeenLastCalledWith(false);
     await rowMenu(sketch.name, 'Properties');
     expect(property('Material area')).toBe('2,000 mm²'); expect(property('Boundary length')).toBe('180 mm');
@@ -1629,7 +1637,7 @@ describe('CAD sketch interaction', () => {
     expect(sendToCam).toHaveBeenCalledWith(sketch.id);
   });
 
-  it('retains a new graph edge selection when deferred drawing acceptance publishes its source', async () => {
+  it('leaves nothing selected when deferred drawing acceptance publishes its source', async () => {
     let accept: (() => void) | undefined;
     await mount(createCadDocument(), { build: null, buildState: 'idle', onEdit: (edit, signal) => {
       if (edit.kind !== 'append-sketch-entities') { currentSession.edit([edit]); return; }
@@ -1642,10 +1650,10 @@ describe('CAD sketch interaction', () => {
     await act(async () => accept?.());
     const sketch = currentDocument.features[0];
     if (sketch.kind !== 'sketch' || !sketch.graph?.entities.length) throw new Error('Accepted graph missing');
-    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
     expect(currentSession.getSnapshot().workflowOpen).toBe(false);
     await click('Select');
-    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
   });
 
   it('appends a fresh inferred circle atomically after acceptance and aborts a cancelled attachment without clearing redo', async () => {
@@ -1669,14 +1677,14 @@ describe('CAD sketch interaction', () => {
     expect(pending).toHaveLength(1); expect(currentDocument).toBe(original);
     expect(currentSession.getSnapshot().workflowOpen).toBe(true);
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
-    const payload = pending[0].edit.geometry, center = payload.points[0], entity = payload.entities[0];
+    const payload = pending[0].edit.geometry, center = payload.points[0];
     expect(payload.points).toHaveLength(1); expect(center.id).not.toBe('anchor');
     expect(center.position).toEqual([0, 0]);
     expect(payload.relations).toEqual([{ id: expect.any(String), kind: 'coincident', pointIds: [center.id, 'anchor'] }]);
     await act(async () => pending[0].accept());
     const accepted = currentDocument;
     expect(currentDocument.features[0]).toMatchObject({ graph: { points: [{ id: 'anchor', position: [' anchorX ', ' 0 '] }, center], relations: payload.relations } });
-    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: entity.id }]);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
     await act(async () => currentSession.undo()); expect(currentDocument).toBe(original);
     await act(async () => currentSession.redo()); expect(currentDocument).toBe(accepted);
     await act(async () => currentSession.undo()); const before = currentSession.getSnapshot();
@@ -1877,7 +1885,7 @@ describe('CAD sketch interaction', () => {
     expect(sketch.profiles).toEqual([]);
     expect(sketch.graph.points.map(point => point.position)).toEqual([[0, 0], [50, 0], [25, 40]]);
     expect(sketch.graph.entities).toHaveLength(3); expect(sketch.graph.relations).toEqual([]);
-    expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: sketch.graph.entities[0].id }]);
+    expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
     await click('Select');
     const edge = sketch.graph.entities[1];
     await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: edge.id } }));
@@ -2144,8 +2152,8 @@ describe('CAD sketch interaction', () => {
       await canvasKey('Escape');
       expect(entities()).toHaveLength(5); expect(toolButton('Line').getAttribute('aria-pressed')).toBe('true');
       expect(container.querySelector('button[aria-label="Finish chain"]')).toBeNull(); expect(container.querySelector('[data-cad-sketch-dimension]')).toBeNull();
-      // The saved chain took the selection from the dimension, and the Escape that leaves the tool clears it.
-      expect(geometry()).toHaveLength(1);
+      // Choosing Line dropped the dimension, the saved chain leaves nothing selected, and the next Escape leaves the tool.
+      expect(geometry()).toEqual([]);
       await canvasKey('Escape'); expect(toolButton('Select').getAttribute('aria-pressed')).toBe('true'); expect(geometry()).toEqual([]);
       // Back in Select, a selected dimension takes the next Escape.
       await pick('length'); expect(selectedDimensions()).toEqual(['length']);
