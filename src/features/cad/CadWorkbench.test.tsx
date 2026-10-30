@@ -2050,15 +2050,28 @@ describe('CAD sketch interaction', () => {
       expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
     });
 
-    it('reports dimensions visible to the viewport when the only one is a distance from an axis', async () => {
-      const post = (x: number) => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Post', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    /** A post at X = x, held there by a distance from the Y axis of `value`, a number or the parameter offset = x. */
+    const post = (x: number, value: number | string = x) => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters: { offset: x }, features: [{ id: 'sketch', kind: 'sketch', name: 'Post', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
         points: [{ id: 'p', position: [x, 0] }, { id: 'q', position: [x, 30] }], entities: [{ id: 'post', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
-        relations: [{ id: 'x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value: x }] } }] });
+        relations: [{ id: 'x', kind: 'fixed-axis', pointId: 'p', axis: 'x', value }] } }] });
+
+    it('reports dimensions visible to the viewport when the only one is a distance from an axis', async () => {
       await open(undefined, post(10));
       expect(label('x').getAttribute('aria-label')).toBe('Dimension distance 10 mm, press Enter to edit'); expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true });
       // Held on the Y axis instead, the point keeps a relation and nothing is drawn.
       await open(undefined, post(0));
       expect(container.querySelector('[data-cad-sketch-dimension]')).toBeNull(); expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: false });
+      // Held there by a parameter of 0, it stays a dimension, drawn at 0.
+      await open(undefined, post(0, 'offset'));
+      expect(label('x').getAttribute('aria-label')).toBe('Dimension distance 0 mm, press Enter to edit'); expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true });
+    });
+
+    it('keeps a distance from an axis drawn, selected and editable when its parameter is edited to 0', async () => {
+      await open(undefined, post(10, 'offset')); await pick('x'); expect(selectedDimensions()).toEqual(['x']);
+      const moved = post(0, 'offset'); await act(async () => replaceDocument({ ...currentDocument, parameters: moved.parameters, features: moved.features }));
+      expect(label('x').getAttribute('aria-label')).toBe('Dimension distance 0 mm, press Enter to edit'); expect(selectedDimensions()).toEqual(['x']);
+      expect(status()).toBe('Distance selected · Double-click or Enter edits · Delete removes'); expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true });
+      await press('x', 'Enter'); expect(field('Distance').value).toBe('0');
     });
 
     it('draws a distance from an axis as a dimension named Distance, and selects, edits and deletes it as one', async () => {
@@ -2739,8 +2752,8 @@ describe('CAD sketch interaction', () => {
   });
 
   describe('Dimension tool placement', () => {
-    type Extra = { readonly points?: readonly unknown[]; readonly entities?: readonly unknown[]; readonly relations?: readonly unknown[] };
-    const plate = (extra: Extra = {}) => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    type Extra = { readonly points?: readonly unknown[]; readonly entities?: readonly unknown[]; readonly relations?: readonly unknown[]; readonly parameters?: Readonly<Record<string, number>> };
+    const plate = (extra: Extra = {}) => parseCadDocument({ ...createCadDocument(), schemaVersion: 2, ...extra.parameters ? { parameters: extra.parameters } : {}, features: [{ id: 'sketch', kind: 'sketch', name: 'Plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
       points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [10, 20] }, { id: 'd', position: [40, 20] }, { id: 'o', position: [25, 12] }, ...extra.points ?? []],
       entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' },
         { id: 'hole', kind: 'circle', construction: false, centerPointId: 'o', radius: 3 }, ...extra.entities ?? []],
@@ -2907,9 +2920,9 @@ describe('CAD sketch interaction', () => {
       const coordinate = (pointId: string, axis: 'x' | 'y') => relations().find(relation => relation.kind === 'fixed-axis' && relation.pointId === pointId && relation.axis === axis)?.id;
       const editor = () => container.querySelector('form[aria-label="Sketch relations"]');
       // e sits on the Y axis, and c has no coordinate of zero.
-      const posts = (relations: readonly unknown[] = []) => ({ points: [{ id: 'e', position: [0, 20] }], entities: [{ id: 'stub', kind: 'line', construction: false, startPointId: 'e', endPointId: 'c' }], relations });
-      const place = async (picks: readonly string[], relations?: readonly unknown[]) => {
-        await open(undefined, posts(relations)); await click('Dimension');
+      const posts = (relations: readonly unknown[] = [], parameters?: Readonly<Record<string, number>>) => ({ points: [{ id: 'e', position: [0, 20] }], entities: [{ id: 'stub', kind: 'line', construction: false, startPointId: 'e', endPointId: 'c' }], relations, parameters });
+      const place = async (picks: readonly string[], relations?: readonly unknown[], parameters?: Readonly<Record<string, number>>) => {
+        await open(undefined, posts(relations, parameters)); await click('Dimension');
         for (const target of picks) await pick(target);
         statusMessage.mockClear(); await focusedKey('Enter');
       };
@@ -2946,6 +2959,34 @@ describe('CAD sketch interaction', () => {
         expect(relations()).toEqual([left, { id: expect.any(String), kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 20 }]);
         expect(selected()).toEqual(['left', coordinate('c', 'y')]); expect(pickInstruction()).toBe(both); expect(statusMessage).not.toHaveBeenCalled();
         await canvasKey('Enter'); expect(field('Distance').value).toBe('10');
+        // c keeps Y = 20 instead: placing adds X = 10 and selects X before Y, so Enter edits X.
+        const level = { id: 'level', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 20 };
+        await place([point('c'), datum('origin')], [level]);
+        expect(relations()).toEqual([level, { id: expect.any(String), kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 10 }]);
+        expect(selected()).toEqual(['level', coordinate('c', 'x')]); expect(pickInstruction()).toBe(both); expect(statusMessage).not.toHaveBeenCalled();
+        await canvasKey('Enter'); expect(field('Distance').value).toBe('10');
+      });
+
+      it('selects and draws a coordinate that follows a parameter at 0, placed or kept', async () => {
+        const offset = { id: 'offset', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 'offset' }, high = { id: 'high', kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 20 };
+        // With X kept at a parameter of 0, placing adds Y = 20; both are dimensions, drawn and selected X first.
+        await place([datum('origin'), point('e')], [offset], { offset: 0 });
+        expect(relations()).toEqual([offset, { id: expect.any(String), kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 20 }]);
+        expect(selected()).toEqual(['offset', coordinate('e', 'y')]); expect(pickInstruction()).toBe(both); expect(statusMessage).not.toHaveBeenCalled();
+        expect(container.querySelector('[data-cad-sketch-dimension="offset"] [role="button"]')?.getAttribute('aria-label')).toBe('Dimension distance 0 mm, press Enter to edit');
+        expect(viewport().getState().view).toMatchObject({ onPartDimensionsVisible: true });
+        await canvasKey('Enter'); expect(field('Distance').value).toBe('0');
+        // With both kept, placing finds them and selects them, X first.
+        await place([point('e'), datum('origin')], [offset, high], { offset: 0 });
+        expect(relations()).toEqual([offset, high]); expect(selected()).toEqual(['offset', 'high']);
+        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+        await canvasKey('Enter'); expect(field('Distance').value).toBe('0');
+        // The horizontal distance alone is the kept dimension at 0, not a relation that keeps e on the Y axis.
+        await open(undefined, posts([offset], { offset: 0 })); await click('Dimension'); await pick(point('e')); await pick(datum('origin'));
+        statusMessage.mockClear(); await dimensionMenu('Horizontal distance from the origin');
+        expect(relations()).toEqual([offset]); expect(selected()).toEqual(['offset']);
+        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+        await canvasKey('Enter'); expect(field('Distance').value).toBe('0');
       });
 
       it('selects nothing for a point on an axis or at the origin, says so and waits for the next picks', async () => {

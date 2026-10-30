@@ -105,7 +105,7 @@ type DimensionEditor = { readonly documentId: string; readonly sketchId: string;
 type GraphRelationCommand = CadSketchRelationCommand & { token: string; dimension?: DimensionEditor };
 /**
  * The Dimension tool from the moment it starts until it ends. `previousGraphPick` and `previousProfileId` come back when it ends without
- * placing anything; `placed` keeps the dimensions it placed or reused last that are drawn, with whether they have been selected yet; `picks` are
+ * placing anything; `placed` keeps the dimensions it placed or reused last, with whether they have been selected yet; `picks` are
  * its pending operands.
  */
 interface DimensionToolSession<GraphPick> {
@@ -118,6 +118,9 @@ const NO_DIMENSION_OPERANDS: readonly CadSketchDimensionOperand[] = Object.freez
 const DIMENSION_REFERENCE_STATUS = 'Placed as a reference: a driving dimension would over-define the sketch.';
 const DIMENSION_REUSED_STATUS = 'Already dimensioned: that dimension is selected, with the relation added that keeps it measuring these picks.';
 const NO_SKETCH_RELATIONS: readonly CadSketchGraphRelation[] = Object.freeze([]);
+/** The coordinates of a point placed from the origin, X before Y whichever of them it kept already, so Enter edits X. */
+const coordinatesInOrder = (relations: readonly CadSketchGraphRelation[]) => relations.every(relation => relation.kind === 'fixed-axis')
+  ? [...relations].sort((a, b) => Number(a.kind === 'fixed-axis' && a.axis === 'y') - Number(b.kind === 'fixed-axis' && b.axis === 'y')) : relations;
 /**
  * A relations list command follows the row it edits, so a remounted panel reopens that row, and records a row that closes, so a remount
  * never replays a cancelled editor. Only a canvas dimension's row has an editor; a command that places a new dimension keeps its kind.
@@ -1385,7 +1388,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const resolved = candidate.state === 'available' ? cadSketchDimensionRelationsAt(candidate, pointer) : { relations: NO_SKETCH_RELATIONS, reason: null }, reference = candidate.reference ?? null;
     if (!resolved.relations) { setError(resolved.reason); return; }
     if (choice.reference && !reference) return;
-    // A reused relation stays and is selected with what the placement adds, when drawn: the placement adds only the implied relation that
+    // A reused relation stays and is selected with what the placement adds, when it is a dimension: the placement adds only the implied relation that
     // keeps a reused dimension measuring the picks, or the other coordinate of a point from the origin.
     const reused = candidate.state === 'available' && candidate.reuses ? graph.relations.find(relation => relation.id === candidate.reuses) ?? null : null;
     const sourceSketchId = sketch.id, driving = resolved.relations, plannedImplied = candidate.state === 'available' ? candidate.implied : null;
@@ -1402,7 +1405,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         if (!relations.length) { placed = reused ? [reused] : NO_SKETCH_RELATIONS; return; }
         try {
           await applyCanvasEdits(relations.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation })), signal);
-          placed = referenced || !reused ? relations : [reused, ...relations]; added = true; return;
+          placed = referenced || !reused ? relations : coordinatesInOrder([reused, ...relations]); added = true; return;
         } catch (cause) {
           if (signal.aborted || !(cause instanceof CadSketchPreparationError)) throw cause;
           // A rejected preparation leaves no history, so the attempt that applies is the only undo step.
@@ -1415,7 +1418,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     }, () => {
       const owner = dimensionToolOwner.current, relations = placed;
       if (owner?.id !== session.id || !relations.length) return;
-      // Only what is drawn is selected: a coordinate of zero keeps its point on an axis as a relation, so with nothing drawn the status says so.
+      // Only dimensions are selected, and each is drawn: a coordinate held at a plain 0 keeps its point on an axis as a relation, so with no dimension the status says so.
       const picks = relations.filter(isCadSketchDimensionRelation).map(cadSketchDimensionPickOf), onDatum = picks.length ? null : cadSketchDimensionOnDatumReason(relations);
       settleDimension(owner, { picks, selected: false });
       if (fellBack) props.onStatusMessage?.(DIMENSION_REFERENCE_STATUS, 'info');

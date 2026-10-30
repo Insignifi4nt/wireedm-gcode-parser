@@ -61,8 +61,10 @@ function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixe
   const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = length === 0 ? 0 : dx / length, uy = length === 0 ? 0 : dy / length;
   let readX = length === 0 ? -ny : ux, readY = length === 0 ? nx : uy;
   if (readX < -1e-12 || Math.abs(readX) <= 1e-12 && readY < 0) { readX = -readX; readY = -readY; }
-  // A dimension being placed sits where the pointer put it, `placedOffset` screen pixels out.
-  const upX = -readY, upY = readX, lineOffset = placedOffset ?? (upX * nx + upY * ny < -1e-12 ? 20 + isoInwardClearance : 20);
+  // A dimension being placed sits where the pointer put it, `placedOffset` screen pixels out. With no length, the extensions are one leader
+  // out from the point and the label continues it, beyond the line's end, so it never faces the part.
+  const upX = -readY, upY = readX, lineOffset = placedOffset ?? (length > 0 && upX * nx + upY * ny < -1e-12 ? 20 + isoInwardClearance : 20);
+  const liftX = length === 0 ? nx : upX, liftY = length === 0 ? ny : upY;
   const offset = (point: Point2, pixels: number): SketchPoint => [point.x + nx * pixels * mmPerPixel, point.y + ny * pixels * mmPerPixel];
   const line: Pair = [offset(a, lineOffset), offset(b, lineOffset)];
   const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, length / 4), headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, length / 8);
@@ -71,7 +73,7 @@ function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixe
     [point[0] + ux * headLength * sign - nx * headWidth, point[1] + uy * headLength * sign - ny * headWidth]];
   const lift = (box.height / 2 + isoTextGap) * mmPerPixel;
   return { line, extensions: lineOffset > 3 ? [[offset(a, 3), offset(a, lineOffset + 2)], [offset(b, 3), offset(b, lineOffset + 2)]] : [], arrows: length === 0 ? [] : [arrow(line[0], 1), arrow(line[1], -1)],
-    label: [line[0][0] / 2 + line[1][0] / 2 + upX * lift, line[0][1] / 2 + line[1][1] / 2 + upY * lift], labelAngle: Math.atan2(readY, readX) };
+    label: [line[0][0] / 2 + line[1][0] / 2 + liftX * lift, line[0][1] / 2 + line[1][1] / 2 + liftY * lift], labelAngle: Math.atan2(readY, readX) };
 }
 /** Screen pixels between an ISO dimension line and its text, and the extra line offset when text faces the part. */
 const isoTextGap = 2, isoInwardClearance = 8;
@@ -144,14 +146,15 @@ function pointLineDimension(graph: CadSketchGraph, relation: Extract<CadSketchDi
     if (!axis || !point) return [];
     const length = Math.abs(cadSketchSignedPointLineDistance(point, axis));
     const valueMm = relation.kind === 'reference-dimension' ? length : evaluateCadScalar(relation.value, parameters);
-    if (!Number.isFinite(length) || !Number.isFinite(valueMm) || (relation.kind === 'reference-dimension' ? valueMm < 0 : length === 0 || valueMm <= 0)) return [];
+    // Every dimension draws at any value, also at 0 with its point on the support.
+    if (!Number.isFinite(length) || !Number.isFinite(valueMm)) return [];
     return [{ kind: 'point-line', relation, valueMm, ...pointLineGeometry(point, axis, valueMm, mmPerPixel, relation.kind === 'reference-dimension') }];
   } catch { return []; }
 }
 type Support = { readonly x: number; readonly y: number; readonly start: Point2; readonly end: Point2; readonly length: number };
 function pointLineGeometry(point: Point2, axis: Support, valueMm: number, mmPerPixel: number, reference: boolean): Omit<LinearDimensionGeometry, 'valueMm'> {
   const signed = cadSketchSignedPointLineDistance(point, axis), length = Math.abs(signed);
-  // The dimension line runs from the foot on the support to the point; arrows widen along the support. A reference that
+  // The dimension line runs from the foot on the support to the point; arrows widen along the support. A dimension that
   // measures zero, its point on the support, keeps its label beside the support, reading along it, without arrows.
   const foot = { x: point.x + axis.y * signed, y: point.y - axis.x * signed };
   const ux = length === 0 ? axis.x : (point.x - foot.x) / length, uy = length === 0 ? axis.y : (point.y - foot.y) / length;
@@ -197,7 +200,7 @@ type AngleGeometry = DimensionGeometry & { readonly valueDegrees: number; readon
 /** The arc between the two rays, `radiusPixels` out from the corner, with its label beyond the middle of the arc. */
 function angleGeometry(geometry: CadSketchLineAngleGeometry, sense: 'cw' | 'ccw', valueDegrees: number, mmPerPixel: number, radiusPixels = 40): AngleGeometry | null {
   const { vertex, first, second, signedSweepRadians: sweep } = geometry;
-  if (!Number.isFinite(valueDegrees) || valueDegrees <= 0 || valueDegrees >= 180 || !Number.isFinite(sweep) || Math.abs(sweep) >= Math.PI || sweep === 0) return null;
+  if (!Number.isFinite(valueDegrees) || !Number.isFinite(sweep) || Math.abs(sweep) >= Math.PI || sweep === 0) return null;
   const radius = radiusPixels * mmPerPixel, sign = sense === 'ccw' ? 1 : -1;
   const at = (direction: Point2, length: number): SketchPoint => [vertex.x + direction.x * length, vertex.y + direction.y * length];
   const start = at(first.direction, radius), end = at(second.direction, radius);
@@ -231,7 +234,7 @@ function radialDimension(graph: CadSketchGraph, relation: Extract<CadSketchDimen
   }
   if (!Number.isFinite(radius) || radius <= 0) return [];
   const valueMm = relation.kind === 'reference-dimension' ? radius * (descriptor.quantity === 'diameter' ? 2 : 1) : evaluateCadScalar(relation.value, parameters);
-  if (!Number.isFinite(valueMm) || valueMm <= 0) return [];
+  if (!Number.isFinite(valueMm)) return [];
   const geometry = radialGeometry(center, radius, angle, valueMm, descriptor.quantity, mmPerPixel, relation.kind === 'reference-dimension');
   return descriptor.quantity === 'radius' ? [{ kind: 'radius', relation, valueMm, ...geometry }] : [{ kind: 'diameter', relation, valueMm, ...geometry }];
 }
@@ -242,7 +245,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDime
   if (relation.kind === 'fillet-corner' && topology.entity.kind === 'arc') {
     const center = points.get(topology.entity.centerPointId), start = points.get(topology.entity.startPointId), end = points.get(topology.entity.endPointId);
     const valueMm = evaluateCadScalar(relation.value, parameters);
-    if (!center || !start || !end || !Number.isFinite(valueMm) || valueMm <= 0) return [];
+    if (!center || !start || !end || !Number.isFinite(valueMm)) return [];
     const arc = createArcSegment({ id: topology.entity.id, center, start, end, clockwise: topology.entity.direction === 'cw',
       source: { sourceEntityIndex: 0, sourceEntityType: 'arc', layer: null, exact: true } });
     return [{ kind: 'radius', relation, valueMm, ...radialGeometry(center, arc.radius, arc.startAngleRadians + arc.sweepRadians / 2, valueMm, 'radius', mmPerPixel) }];
@@ -254,14 +257,19 @@ function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDime
   return ([0, 1] as const).flatMap((side): CadSketchGraphDimensionLayout[] => {
     const trim = trims[side], other = trims[side === 0 ? 1 : 0], dx = trim.x - vertex.x, dy = trim.y - vertex.y, length = Math.hypot(dx, dy);
     const valueMm = evaluateCadScalar(relation.values[side], parameters);
-    if (!Number.isFinite(length) || length === 0 || !Number.isFinite(valueMm) || valueMm <= 0) return [];
+    if (!Number.isFinite(length) || length === 0 || !Number.isFinite(valueMm)) return [];
     let nx = -dy / length, ny = dx / length;
     if ((other.x - vertex.x) * nx + (other.y - vertex.y) * ny > 0) { nx = -nx; ny = -ny; }
     return [{ kind: 'setback', relation, side, lineId: relation.lineIds[side], valueMm, ...alignedGeometry(vertex, trim, nx, ny, mmPerPixel, cadSketchGraphDimensionLabel(valueMm, 'setback')) }];
   });
 }
 
-/** Display-only declared dimensions. Scalar drivers and source IDs remain authoritative. */
+/**
+ * Display-only declared dimensions. Scalar drivers and source IDs remain authoritative. Every dimension draws at any value its driver
+ * takes, also 0 or one solving rejects that a file holds, so a selected dimension is always drawn. Only an expression that does not
+ * evaluate, or geometry with nothing to attach to (a missing point, a curve with no radius, parallel lines for an angle, a chamfer cut
+ * back to its corner), leaves one out.
+ */
 export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
   if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(isCadSketchDimensionRelation)) return [];
   const points = new Map(graph.points.map(point => [point.id, {
@@ -285,11 +293,12 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
   const bounds = coordinates.reduce((box, point) => ({ minX: Math.min(box.minX, point.x), minY: Math.min(box.minY, point.y),
     maxX: Math.max(box.maxX, point.x), maxY: Math.max(box.maxY, point.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
   const center: SketchPoint = [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2];
-  // An aligned distance stands off on the side away from the middle of the sketch.
-  const aligned = (relation: Extract<CadSketchGraphDimensionLayout, { kind: 'distance' }>['relation'], a: Point2, b: Point2, valueMm: number): CadSketchGraphDimensionLayout[] => {
+  // An aligned distance stands off on the side away from the middle of the sketch. With no length it has no line of its own: it takes `along`
+  // for one, and its extensions are a short leader square to it with the label at its end.
+  const aligned = (relation: Extract<CadSketchGraphDimensionLayout, { kind: 'distance' }>['relation'], a: Point2, b: Point2, valueMm: number, along: Point2 = { x: 1, y: 0 }): CadSketchGraphDimensionLayout[] => {
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
-    if (!Number.isFinite(length) || !Number.isFinite(valueMm) || (relation.kind === 'reference-dimension' ? valueMm < 0 : length === 0 || valueMm <= 0)) return [];
-    const ux = length === 0 ? 1 : dx / length, uy = length === 0 ? 0 : dy / length;
+    if (!Number.isFinite(length) || !Number.isFinite(valueMm)) return [];
+    const ux = length === 0 ? along.x : dx / length, uy = length === 0 ? along.y : dy / length;
     const direction = dx < 0 || dx === 0 && dy < 0 ? -1 : 1;
     let nx = -uy * direction, ny = ux * direction;
     const midpoint: SketchPoint = [a.x / 2 + b.x / 2, a.y / 2 + b.y / 2];
@@ -302,13 +311,15 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
   const dimensions = graph.relations.flatMap((relation): CadSketchGraphDimensionLayout[] => {
     if (relation.kind === 'fixed-axis') {
       // A distance from an axis runs square to the axis, to its point or to the middle of the line Horizontal or Vertical keeps along the
-      // axis, and reads as its size on either side of the axis. One that is 0 is a relation and draws nothing.
+      // axis, and reads as its size on either side of the axis. One held at a plain 0 is a relation and draws nothing; one that follows a
+      // parameter stays a dimension at 0 too, its line taken along the axis it is measured from, so its leader stands square to it, clear of it.
       if (cadSketchZeroScalar(relation.value)) return [];
       try { identity ??= resolveCadSketchPointIdentities(graph); } catch { return []; }
       const line = cadSketchAxisDistanceLine(graph, relation, identity), start = line && points.get(line.startPointId), end = line && points.get(line.endPointId);
       const to = start && end ? { x: start.x / 2 + end.x / 2, y: start.y / 2 + end.y / 2 } : points.get(relation.pointId);
       if (!to) return [];
-      try { return aligned(relation, relation.axis === 'x' ? { x: 0, y: to.y } : { x: to.x, y: 0 }, to, Math.abs(evaluateCadScalar(relation.value, parameters))); } catch { return []; }
+      const foot = relation.axis === 'x' ? { x: 0, y: to.y } : { x: to.x, y: 0 }, along = relation.axis === 'x' ? { x: 0, y: 1 } : { x: 1, y: 0 };
+      try { return aligned(relation, foot, to, Math.abs(evaluateCadScalar(relation.value, parameters)), along); } catch { return []; }
     }
     if (relation.kind === 'line-angle') return [...angularDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'radial-size' || relation.kind === 'reference-dimension' && relation.measurement.kind === 'radial-size') return [...radialDimension(graph, relation, points, parameters, mmPerPixel)];

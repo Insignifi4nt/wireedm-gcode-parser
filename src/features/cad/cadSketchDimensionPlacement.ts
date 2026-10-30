@@ -41,8 +41,8 @@ interface CandidateBase { readonly form: CadSketchDimensionForm; readonly label:
  *   measures the same quantity, or null with `referenceReason`. `reuses` names a relation that already measures this, or part of it, and
  *   stays: one end of a line held from an axis without Horizontal, where `relations` holds only the implied relation that keeps it measuring
  *   the picks, or the one coordinate a point already keeps from the origin, where `relations` holds the other. Placing selects what it reuses
- *   and adds that is drawn as a dimension, which leaves out a coordinate of zero: that is the relation that keeps a point on an axis.
- * - `existing` names the relations that already measure this; placing selects those drawn as dimensions.
+ *   and adds that is a dimension, which leaves out a coordinate held at a plain 0: that is the relation that keeps a point on an axis.
+ * - `existing` names the relations that already measure this; placing selects those that are dimensions.
  * - `blocked` says why the picks cannot take this form as a driving dimension. When the reference model still measures the quantity, such as
  *   a zero distance, `reference` and `preview` carry its reference form, which the menu can place.
  */
@@ -185,8 +185,8 @@ export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned
 const EXISTING = CAD_SKETCH_DIMENSION_EXISTING_REASON;
 const REUSED = 'This is already dimensioned. Placing selects that dimension and adds the relation that keeps it measuring these picks.';
 /**
- * What placing says when none of the relations it placed or reused is drawn as a dimension: each is a coordinate of zero, the relation that
- * keeps a point on an axis, or at the origin with both. Null when one of them is drawn, or when they are not all such coordinates.
+ * What placing says when none of the relations it placed or reused is a dimension: each is a coordinate held at a plain 0, the relation that
+ * keeps a point on an axis, or at the origin with both. Null when one of them is a dimension, or when they are not all such coordinates.
  */
 export function cadSketchDimensionOnDatumReason(relations: readonly CadSketchGraphRelation[]): string | null {
   if (!relations.length || relations.some(relation => relation.kind !== 'fixed-axis' || isCadSketchDimensionRelation(relation))) return null;
