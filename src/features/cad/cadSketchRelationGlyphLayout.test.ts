@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadSketchDimensionKeys } from './cadSketchDimensionSelection';
-import { cadSketchRelationGlyphEntries, layoutCadSketchRelationGlyphs, placeCadSketchRelationGlyphs } from './cadSketchRelationGlyphLayout';
+import { cadSketchRelationGlyphEntries, cadSketchRelationGlyphOverlaps, cadSketchRelationGlyphPaintOrder, cadSketchRelationGlyphPixel, layoutCadSketchRelationGlyphs,
+  placeCadSketchRelationGlyphs } from './cadSketchRelationGlyphLayout';
 
 const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
 /** A 40 × 20 rectangle a-b-c-d with bottom, right, top and left edges. */
@@ -141,6 +142,34 @@ describe('relation glyph layout', () => {
     expect(placed).toEqual(placeCadSketchRelationGlyphs(dragged, {}, entries));
     // Entries named again, as after an edit, place new glyphs even where they lie, so a glyph never keeps an earlier name or label.
     expect(placeCadSketchRelationGlyphs(graph, {}, cadSketchRelationGlyphEntries(graph), resting).some(glyph => resting.includes(glyph))).toBe(false);
+  });
+
+  it('finds the earlier glyphs whose plates overlap each glyph, leaving a stack\'s touching plates apart, across the cells it files them by', () => {
+    // A stack's plates touch 15 px apart; 14.9 px apart they overlap, on x, on y or both, and on either side of a cell's border.
+    expect(cadSketchRelationGlyphOverlaps([{ x: 0, y: 0 }, { x: 15, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 15 }])).toEqual([[], [], [], []]);
+    expect(cadSketchRelationGlyphOverlaps([{ x: 14.5, y: 0 }, { x: 29.4, y: 3 }, { x: 15.2, y: 14.9 }, { x: 0.3, y: -14.8 }, { x: 44.3, y: 0 }]))
+      .toEqual([[], [0], [0, 1], [0], [1]]);
+    expect(cadSketchRelationGlyphOverlaps([])).toEqual([]);
+    // Two glyphs stacked along a diagonal edge lie 15 px apart along it, so their square plates overlap.
+    const graph: CadSketchGraph = { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [30, 30] }, { id: 'c', position: [10, 0] }, { id: 'd', position: [40, 30] }],
+      entities: [line('diagonal', 'a', 'b'), line('beside', 'c', 'd')],
+      relations: [{ id: 'p', kind: 'parallel', lineIds: ['diagonal', 'beside'] }, { id: 'e', kind: 'equal-length', lineIds: ['diagonal', 'beside'] }] };
+    const placed = layoutCadSketchRelationGlyphs(graph, {}).filter(glyph => glyph.operand === 'entity:diagonal');
+    const centres = placed.map(glyph => { const [x, y] = cadSketchRelationGlyphPixel(glyph, [0, 0], 0.1); return { x, y }; });
+    expect(centres).toHaveLength(2); expect(Math.hypot(centres[1].x - centres[0].x, centres[1].y - centres[0].y)).toBeCloseTo(15);
+    expect(cadSketchRelationGlyphOverlaps(centres)).toEqual([[], [0]]);
+  });
+
+  it('paints overlapping glyphs in drawing order: in shared path layers that no two overlapping plates share, and in rows after every glyph drawn in one before them', () => {
+    // 0 to 3 overlap in a chain, 4 overlaps 0 and 2, and 5 stands alone.
+    const overlaps = [[], [0], [1], [2], [0, 2], []];
+    expect(cadSketchRelationGlyphPaintOrder(overlaps, () => false)).toEqual({
+      own: [false, false, false, false, false, false], layers: [0, 1, 2, 3, 3, 0], covered: [true, true, true, false, false, false] });
+    // A glyph drawn in its row passes that on to every later glyph that overlaps one drawn there, and leaves earlier ones in their layers.
+    expect(cadSketchRelationGlyphPaintOrder(overlaps, index => index === 1)).toMatchObject({ own: [false, true, true, true, true, false], layers: [0, -1, -1, -1, -1, 0] });
+    expect(cadSketchRelationGlyphPaintOrder(overlaps, index => index === 3)).toMatchObject({ own: [false, false, false, true, false, false], layers: [0, 1, 2, -1, 3, 0] });
+    // A hidden glyph paints nowhere, so the glyphs above it in the shared paths need no layer of their own for it.
+    expect(cadSketchRelationGlyphPaintOrder(overlaps, () => false, index => index === 1)).toMatchObject({ own: [false, false, false, false, false, false], layers: [0, -1, 0, 1, 1, 0] });
   });
 
   it('gives a relation that reuses an ID for other operands a new mount key, so it never inherits hover, focus or selection', () => {

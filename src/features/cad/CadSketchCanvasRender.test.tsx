@@ -368,6 +368,33 @@ describe('sketch canvas cursor rendering', () => {
     expect(rows().every((row, index) => row === before[index])).toBe(true);
   });
 
+  it('paints overlapping glyphs in layers of shared paths, at rest and while a drag moves them, so a later glyph stays drawn over an earlier one', async () => {
+    const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
+    // Two diagonal edges held Parallel and Equal: the two glyphs stacked along each lie 15 px apart along it, so their square plates overlap.
+    const { props, show, pointer } = await mountCanvas({
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [30, 30] }, { id: 'c', position: [20, 0] }, { id: 'd', position: [50, 30] }],
+      entities: [line('diagonal', 'a', 'b'), line('beside', 'c', 'd')],
+      relations: [{ id: 'p', kind: 'parallel', lineIds: ['diagonal', 'beside'] }, { id: 'e', kind: 'equal-length', lineIds: ['diagonal', 'beside'] }] }, { tool: 'select' });
+    await show({ graphControls: { ...props().graphControls!, onSelectRelations: vi.fn() } });
+    const diagonal = container.querySelector<SVGGElement>('[data-cad-sketch-entity="diagonal"]')!; let captured: number | null = null;
+    Object.assign(diagonal, { setPointerCapture: (id: number) => { captured = id; }, hasPointerCapture: (id: number) => captured === id, releasePointerCapture: () => { captured = null; } });
+    // Each path's part and, for plates, each plate's corner: a plate's figure starts 2 px in from it.
+    const paths = (selector: string) => [...container.querySelectorAll(selector)].map(path => ({ part: path.getAttribute('class')!.split(' ')[0].replace('cad-sketch-relation-glyph-', ''),
+      corners: [...path.getAttribute('d')!.matchAll(/M(-?[\d.]+) (-?[\d.]+)/g)].map(([, x, y]) => [Number(x) - 2, Number(y)]) }));
+    const apart = (corners: readonly number[][]) => corners.every((one, index) => corners.slice(index + 1).every(other => Math.abs(one[0] - other[0]) >= 15 - 1e-6 || Math.abs(one[1] - other[1]) >= 15 - 1e-6));
+    // Layer by layer, its plates then its icons, and no two plates of one path overlap.
+    const layered = (selector: string) => {
+      const drawn = paths(selector);
+      expect(drawn.map(path => path.part).join(' ')).toMatch(/^plates icons( plates icons)+$/);
+      expect(drawn.filter(path => path.part === 'plates').every(path => apart(path.corners))).toBe(true);
+    };
+    expect(container.querySelectorAll('[data-cad-sketch-relation-glyph]')).toHaveLength(4); layered('.cad-sketch-relation-glyphs > path');
+    // Dragging the diagonal edge carries its two glyphs, which draw beside the layer in layers of their own.
+    await pointer('pointerdown', 15, 15, diagonal); await pointer('pointermove', 16, 17, diagonal, 1);
+    expect(container.querySelectorAll('[data-cad-sketch-relation-glyph][visibility="hidden"]').length).toBeGreaterThan(1); layered('.cad-sketch-relation-glyphs-moved path');
+    await pointer('pointerup', 16, 17, diagonal);
+  });
+
   it('draws the glyphs at rest as shared paths, a lit glyph as a copy on top and a selected or focused glyph on its own, and joins the paths again only on a selection, a focus or a view change, never on hover', async () => {
     const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
     const { props, show, move } = await mountCanvas({
@@ -436,7 +463,7 @@ describe('sketch canvas cursor rendering', () => {
     expect([...layer().querySelectorAll(':scope > path')].every((path, index) => path === zoomed[index])).toBe(true);
   });
 
-  it('picks a glyph drawn in the shared paths through its row: of two that overlap, the later is drawn and picked on top, and a moved glyph stands aside while the one beside it keeps its place', async () => {
+  it('picks a glyph drawn in the shared paths through its row: of two that overlap, the later is drawn and picked on top in every state, and a moved glyph stands aside while the one beside it keeps its place', async () => {
     const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
     const onSelectRelations = vi.fn();
     // Two fixed points 0.4 mm apart, whose glyphs overlap, and a short vertical edge beside the rectangle's right edge.
@@ -446,12 +473,14 @@ describe('sketch canvas cursor rendering', () => {
       entities: [line('bottom', 'a', 'b'), line('right', 'b', 'c'), line('top', 'c', 'd'), line('left', 'd', 'a'), line('post', 'i', 'j')],
       relations: [{ id: 'h1', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'v1', kind: 'vertical', pointIds: ['b', 'c'] }, { id: 'pin', kind: 'fixed-point', pointId: 'e', position: [10, 30] },
         { id: 'peg', kind: 'fixed-point', pointId: 'g', position: [10.4, 30] }, { id: 'v3', kind: 'vertical', pointIds: ['i', 'j'] }] }, { tool: 'select' });
-    await show({ graphControls: { ...props().graphControls!, onSelectRelations } });
+    const store = createCadSketchHighlightStore();
+    await show({ graphControls: { ...props().graphControls!, onSelectRelations, highlight: store } });
     const row = (id: string) => container.querySelector<SVGGElement>(`[data-cad-sketch-relation-glyph="${id}"]`)!;
     const box = (id: string) => ['x', 'y', 'width', 'height'].map(name => Number(row(id).querySelector('rect')!.getAttribute(name)));
-    // Where a glyph's plate starts in the shared plate path: its first move is 2 px in from its row's plate corner.
+    // Which shared plate path, in paint order, holds a glyph's plate, or -1: its plate's first move is 2 px in from its row's plate corner.
     const format = (value: number) => String(Math.round(value * 100) / 100 + 0);
-    const plateAt = (id: string) => { const [x, y] = box(id); return container.querySelector('.cad-sketch-relation-glyphs > .cad-sketch-relation-glyph-plates')!.getAttribute('d')!.indexOf(`M${format(x + 2)} ${format(y)}`); };
+    const sharedPaths = () => [...container.querySelectorAll('.cad-sketch-relation-glyphs > path')];
+    const plateAt = (id: string) => { const [x, y] = box(id); return sharedPaths().filter(path => path.classList.contains('cad-sketch-relation-glyph-plates')).findIndex(path => path.getAttribute('d')!.includes(`M${format(x + 2)} ${format(y)}`)); };
     // A press and click in empty canvas, as the cover test sees it, on a glyph's row.
     const press = async (id: string) => {
       await pointer('pointerdown', 20, 10, row(id));
@@ -459,18 +488,36 @@ describe('sketch canvas cursor rendering', () => {
     };
     const picked = () => onSelectRelations.mock.lastCall?.[0]?.map((pick: { readonly id: string }) => pick.id);
 
-    // Each glyph picks its own relation, though its row paints nothing. A press focuses the glyph, which then draws in its row until focus leaves it.
-    const ids = ['h1', 'v1', 'pin', 'peg', 'v3'], painted = (id: string) => row(id).querySelector('rect')?.getAttribute('visibility') !== 'hidden';
-    expect(ids.filter(painted)).toEqual([]);
-    for (const id of ids) { await press(id); expect(picked()).toEqual([id]); expect(ids.filter(painted)).toEqual([id]); }
-    await act(async () => container.querySelector<SVGSVGElement>('svg.cad-sketch-canvas')!.focus()); expect(ids.filter(painted)).toEqual([]);
-    // The two Fixed glyphs of the close points overlap. The shared path paints the plates in the rows' order, the reverse of the
-    // order the pointer finds the rows in, so the one drawn on top is the one a press there picks.
+    // The two Fixed glyphs of the close points overlap, and the pointer finds the later row first, so the later glyph must be drawn on top.
     const [pinX, pinY, width, height] = box('pin'), [pegX, pegY] = box('peg');
     expect(Math.abs(pinX - pegX) < width && Math.abs(pinY - pegY) < height).toBe(true);
     const order = [...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].map(item => item.getAttribute('data-cad-sketch-relation-glyph')!);
-    const starts = order.map(plateAt);
-    expect(starts.every(start => start >= 0)).toBe(true); expect(starts).toEqual([...starts].sort((first, second) => first - second));
+    expect(order.indexOf('pin')).toBeLessThan(order.indexOf('peg'));
+    // At rest the shared paths paint them in two layers, each its plates then its icons, so the later glyph's plate covers the earlier's icon too.
+    const ids = ['h1', 'v1', 'pin', 'peg', 'v3'], painted = (id: string) => row(id).querySelector('rect')?.getAttribute('visibility') !== 'hidden';
+    expect(ids.filter(painted)).toEqual([]); expect(ids.map(plateAt)).toEqual([0, 0, 0, 1, 0]);
+    expect(sharedPaths().map(path => path.getAttribute('class'))).toEqual(['cad-sketch-relation-glyph-plates is-plain', 'cad-sketch-relation-glyph-icons is-plain',
+      'cad-sketch-relation-glyph-plates is-plain', 'cad-sketch-relation-glyph-icons is-plain']);
+    // Each glyph picks its own relation, though its row paints nothing. A press focuses the glyph, which then draws in its row until focus
+    // leaves it, and so does the later glyph over it, so it stays on top; the earlier one stays in the shared paths beneath the later.
+    const drawnApart = { h1: ['h1'], v1: ['v1'], pin: ['pin', 'peg'], peg: ['peg'], v3: ['v3'] } as const;
+    for (const id of ids) { await press(id); expect(picked()).toEqual([id]); expect(ids.filter(painted)).toEqual(drawnApart[id as keyof typeof drawnApart]); }
+    await act(async () => container.querySelector<SVGSVGElement>('svg.cad-sketch-canvas')!.focus()); expect(ids.filter(painted)).toEqual([]);
+    // Selected, the earlier glyph draws in its row with the later one after it; the later glyph alone leaves the earlier in the shared paths.
+    await show({ graphControls: { ...props().graphControls!, dimensionSelection: ['pin'] } }); expect(ids.filter(painted)).toEqual(['pin', 'peg']);
+    expect(plateAt('pin')).toBe(-1); expect(plateAt('peg')).toBe(-1); expect(row('peg').classList.contains('is-selected')).toBe(false);
+    await show({ graphControls: { ...props().graphControls!, dimensionSelection: ['peg'] } }); expect(ids.filter(painted)).toEqual(['peg']); expect(plateAt('pin')).toBe(0);
+    // Related to selected geometry, the earlier glyph paints in a path of its own state, still in a layer beneath the later glyph's.
+    await show({ graphControls: { ...props().graphControls!, dimensionSelection: [], selection: [{ kind: 'point', id: 'e' }] } });
+    expect(row('pin').classList.contains('is-related')).toBe(true); expect(ids.filter(painted)).toEqual([]); expect(ids.map(plateAt)).toEqual([0, 0, 1, 2, 0]);
+    expect(sharedPaths().map(path => path.getAttribute('class')).filter(name => name!.includes('plates'))).toEqual(['cad-sketch-relation-glyph-plates is-plain',
+      'cad-sketch-relation-glyph-plates is-related', 'cad-sketch-relation-glyph-plates is-plain']);
+    await show({ graphControls: { ...props().graphControls!, selection: [] } });
+    // Lit, the later glyph draws a copy on top; the earlier, under the later one, gains only its ring, so no copy covers the later glyph.
+    const copies = () => [...container.querySelectorAll('.cad-sketch-relation-glyphs-lit > g')].length, rings = () => container.querySelectorAll('[data-cad-highlight-glyph]').length;
+    await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], datums: [], relationIds: ['pin'] })); expect(copies()).toBe(0); expect(rings()).toBe(1);
+    await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], datums: [], relationIds: ['peg'] })); expect(copies()).toBe(1); expect(rings()).toBe(1);
+    await act(async () => store.hide('row'));
 
     // Dragging the rectangle's top right corner up moves the right edge's Vertical. Its row stands aside, hidden and out of picks, while the
     // short edge's Vertical beside it keeps its row, its place and its place in the shared paths, and the drag keeps every glyph inert.

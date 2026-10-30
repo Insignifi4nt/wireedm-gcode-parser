@@ -244,3 +244,49 @@ export function cadSketchRelationGlyphPlate(x: number, y: number, margin = 0): {
   const half = CAD_SKETCH_RELATION_GLYPH_PIXELS.size / 2 + 1 + margin;
   return { x: x - half, y: y - half, width: 2 * half, height: 2 * half };
 }
+
+/**
+ * How far apart, in pixels along x or y, two glyph centres must lie for their plates to leave each other alone: a plate's width and its
+ * 1 px stroke, half of it on each side, which the plate paints and picks with. Glyphs stacked on one point or edge lie exactly this far apart.
+ */
+const PLATE_REACH = cadSketchRelationGlyphPlate(0, 0).width + 1;
+
+/**
+ * For each glyph, in drawing order, the earlier glyphs whose plates overlap its own, by their pixel centres, in order. Plates that only touch, as a
+ * stack's do, do not overlap. Glyphs are filed by a grid as wide as a plate's reach, so each looks only at its own cell and the eight around it.
+ */
+export function cadSketchRelationGlyphOverlaps(centres: readonly { readonly x: number; readonly y: number }[]): readonly (readonly number[])[] {
+  const reach = PLATE_REACH - 1e-6, cells = new Map<string, number[]>();
+  return centres.map(({ x, y }, index) => {
+    const column = Math.floor(x / PLATE_REACH), row = Math.floor(y / PLATE_REACH), earlier: number[] = [];
+    for (let i = column - 1; i <= column + 1; i++) for (let j = row - 1; j <= row + 1; j++) for (const other of cells.get(`${i} ${j}`) ?? []) {
+      if (Math.abs(centres[other].x - x) < reach && Math.abs(centres[other].y - y) < reach) earlier.push(other);
+    }
+    const key = `${column} ${row}`, cell = cells.get(key);
+    if (cell) cell.push(index); else cells.set(key, [index]);
+    return earlier.length > 1 ? earlier.sort((a, b) => a - b) : earlier;
+  });
+}
+
+/**
+ * How glyphs drawn in order paint, so that wherever plates overlap the glyph drawn on top is the later one, which the pointer finds first.
+ * A glyph that `apart` names draws in its own row, after every shared path, and so does every later glyph that overlaps one drawn there.
+ * Each other glyph, unless `hidden`, paints in the shared paths one layer above the highest earlier glyph it overlaps there, so no two plates
+ * of one layer overlap and the layers, painted in turn, draw the glyphs as painting them one by one in order would. `covered` marks the
+ * glyphs that a later glyph overlaps.
+ */
+export function cadSketchRelationGlyphPaintOrder(overlaps: readonly (readonly number[])[], apart: (index: number) => boolean, hidden: (index: number) => boolean = () => false): {
+  /** Whether each glyph draws in its own row. */
+  readonly own: readonly boolean[];
+  /** Each glyph's layer in the shared paths, from 0, or -1 for one drawn in its row or hidden. */
+  readonly layers: readonly number[];
+  readonly covered: readonly boolean[];
+} {
+  const own: boolean[] = [], layers: number[] = [], covered = overlaps.map(() => false);
+  overlaps.forEach((earlier, index) => {
+    for (const other of earlier) covered[other] = true;
+    own.push(apart(index) || earlier.some(other => own[other]));
+    layers.push(own[index] || hidden(index) ? -1 : earlier.reduce((top, other) => Math.max(top, layers[other] + 1), 0));
+  });
+  return { own, layers, covered };
+}

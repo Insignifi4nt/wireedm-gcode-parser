@@ -5,8 +5,8 @@ import { RelationCoincidentIcon, RelationCollinearIcon, RelationConcentricIcon, 
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchDimensionPickOf, cadSketchHighlightRelationIds, cadSketchPointIdentity, createCadSketchDimensionKeys, isCadSketchGlyphRelation, type CadSketchDimensionPick,
   type CadSketchHighlightSource, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
-import { CAD_SKETCH_RELATION_GLYPH_PIXELS, cadSketchRelationGlyphEntries, cadSketchRelationGlyphPixel, cadSketchRelationGlyphPlate, placeCadSketchRelationGlyphs, type CadSketchRelationGlyph,
-  type CadSketchRelationGlyphHolds, type CadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
+import { CAD_SKETCH_RELATION_GLYPH_PIXELS, cadSketchRelationGlyphEntries, cadSketchRelationGlyphOverlaps, cadSketchRelationGlyphPaintOrder, cadSketchRelationGlyphPixel,
+  cadSketchRelationGlyphPlate, placeCadSketchRelationGlyphs, type CadSketchRelationGlyph, type CadSketchRelationGlyphHolds, type CadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
 import { joinedPathData, placedPathData } from './cadSketchRelationGlyphDrawing';
 import type { SketchPoint } from './cadSketchInteraction';
 import './cad-sketch-graph-dimensions.css';
@@ -74,6 +74,8 @@ interface Actions {
 interface Geometry { readonly points: ReadonlySet<string>; readonly entities: ReadonlySet<string> }
 type Pointed = { readonly kind: 'point' | 'entity'; readonly id: string } | null;
 interface GlyphPath { readonly key: string; readonly part: 'plates' | 'icons'; readonly state: GlyphState; readonly data: string }
+/** The glyphs the shared paths draw, in drawing order, with each one's paint layer. */
+interface Batch { readonly glyphs: readonly Shown[]; readonly layers: readonly number[] }
 const holdsIn = (glyph: { readonly holds: CadSketchRelationGlyphHolds }, geometry: Geometry | null) =>
   Boolean(geometry && (glyph.holds.points.some(id => geometry.points.has(id)) || glyph.holds.entities.some(id => geometry.entities.has(id))));
 const STATES: readonly GlyphState[] = ['plain', 'related', 'selected'];
@@ -113,14 +115,25 @@ function placedData(glyph: Shown, part: GlyphPath['part']) {
   if (data === undefined) { data = part === 'plates' ? drawPlate(glyph.x, glyph.y) : drawing(glyph.kind)(glyph.x, glyph.y); cache.set(glyph, data); }
   return data;
 }
-/** The icons, or the plates, of the given glyphs as one path per state. */
-function glyphPaths(glyphs: readonly Shown[], part: GlyphPath['part'], moved: boolean): readonly GlyphPath[] {
-  const parts = new Map<GlyphState, string[]>();
-  for (const glyph of glyphs) {
-    let list = parts.get(glyph.state); if (!list) parts.set(glyph.state, list = []);
-    list.push(placedData(glyph, part));
-  }
-  return STATES.flatMap(state => { const list = parts.get(state); return list ? [{ key: `${moved ? 'moved-' : ''}${part}-${state}`, part, state, data: joinedPathData(list) }] : []; });
+/**
+ * The plates and icons of the given glyphs, in the paint layers `layers` gives them, as one path per layer, part and state: each layer's
+ * plates, then its icons, the layers in turn. No two plates of one layer overlap, so a glyph's icon never paints over a later glyph's plate.
+ */
+function glyphPaths(glyphs: readonly Shown[], layers: readonly number[], moved: boolean): readonly GlyphPath[] {
+  const grouped: Map<GlyphState, Shown[]>[] = [];
+  glyphs.forEach((glyph, index) => {
+    const states = grouped[layers[index]] ??= new Map();
+    let list = states.get(glyph.state); if (!list) states.set(glyph.state, list = []);
+    list.push(glyph);
+  });
+  const paths: GlyphPath[] = [];
+  grouped.forEach((states, layer) => {
+    for (const part of ['plates', 'icons'] as const) for (const state of STATES) {
+      const list = states.get(state);
+      if (list) paths.push({ key: `${moved ? 'moved-' : ''}${layer}-${part}-${state}`, part, state, data: joinedPathData(list.map(glyph => placedData(glyph, part))) });
+    }
+  });
+  return paths;
 }
 /** The shown glyphs the hovered relation, or a hovered dock row, lights up. */
 function litGlyphs(source: CadSketchHighlightSource | null, glyphs: readonly Shown[]) {
@@ -202,8 +215,12 @@ function useRestingReveal(layer: SVGGElement | null, highlight: CadSketchHighlig
  * icons as one path per state, so every repaint of the sketch, as each hover move brings, paints a few items whatever the number of glyphs.
  * Each glyph keeps one row, which takes its pointer, focus and accessible name through a plate that paints nothing; a selected or focused
  * glyph leaves the paths and draws in its row, and a lit one keeps its place in them and draws a copy on top with its ring, so the paths
- * are joined again only on a selection, a focus, a drag that moves glyphs or a view change, never on a pointer move. A drag renders no row: it hides the rows of the glyphs it moves and draws those glyphs as paths of their own beside the
- * layer, so a frame writes only those paths. Meanwhile the layer, unchanged, has a compositor layer of its own, so the sketch repainting
+ * are joined again only on a selection, a focus, a drag that moves glyphs or a view change, never on a pointer move. Where plates overlap,
+ * the glyph drawn on top is the later one, whose row the pointer finds first, whatever the glyphs' states: the shared paths paint in layers
+ * that no two overlapping plates share, a later layer for a later glyph, the rows draw after them, and every later glyph that overlaps a
+ * glyph drawn in its row draws in its own row too, while a lit copy draws only for a glyph that no later glyph overlaps. A drag renders
+ * no row: it hides the rows of the glyphs it moves and draws those glyphs as paths of their own beside the layer, so a frame writes only
+ * those paths. Meanwhile the layer, unchanged, has a compositor layer of its own, so the sketch repainting
  * each frame rasters no other glyph again. Rows render again only when their own place, selection, focus or state changes; hover lights
  * up through the shared store. Above the limit, hover changes which glyphs are drawn only once the pointer rests, so moving across a large
  * sketch renders no row.
@@ -251,11 +268,21 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
   // was; the others keep their paths, joined once when the drag starts moving them.
   const movedKeys = glyphs.flatMap(glyph => glyph.moved ? [glyph.mountKey] : []).join('\n');
   const hidden = useMemo(() => new Set(movedKeys ? movedKeys.split('\n') : []), [movedKeys]);
-  // The glyph a key or a press has focused draws in its row, so its focus ring shows; a selected one does too.
+  // The glyph a key or a press has focused draws in its row, so its focus ring shows; a selected one does too, and so does every later
+  // glyph that overlaps one drawn in its row, so it stays drawn over it. The others paint in the shared paths, a later layer for a later
+  // glyph where they overlap, and a lit one draws a copy on top only where no later glyph overlaps it. A pointer move changes none of it.
+  const overlaps = useMemo(() => cadSketchRelationGlyphOverlaps(rows), [rows]);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const batched = useMemo(() => rows.filter(glyph => glyph.state !== 'selected' && glyph.mountKey !== focusedKey && !hidden.has(glyph.mountKey)), [rows, focusedKey, hidden]);
+  const order = useMemo(() => cadSketchRelationGlyphPaintOrder(overlaps, index => rows[index].state === 'selected' || rows[index].mountKey === focusedKey,
+    index => hidden.has(rows[index].mountKey)), [overlaps, rows, focusedKey, hidden]);
+  const batch = useMemo((): Batch => {
+    const batched: Shown[] = [], layers: number[] = [];
+    rows.forEach((glyph, index) => { if (order.layers[index] >= 0) { batched.push(glyph); layers.push(order.layers[index]); } });
+    return { glyphs: batched, layers };
+  }, [rows, order]);
+  const copied = useMemo(() => new Set(rows.filter((_, index) => order.layers[index] >= 0 && !order.covered[index])), [rows, order]);
   const moved = hidden.size ? glyphs.filter(glyph => glyph.moved) : [];
-  const movedPaths = moved.length ? [...glyphPaths(moved, 'plates', true), ...glyphPaths(moved, 'icons', true)] : [];
+  const movedPaths = moved.length ? glyphPaths(moved, cadSketchRelationGlyphPaintOrder(cadSketchRelationGlyphOverlaps(moved), () => false).layers, true) : [];
   const shown = useRef(glyphs); shown.current = glyphs;
   const elements = useRef(new Map<string, SVGGElement>());
   const layer = useRef<SVGGElement | null>(null);
@@ -337,9 +364,9 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
   return <>
     <g ref={attachLayer} className={`cad-sketch-relation-glyphs${interactive ? ' is-interactive' : ''}${dragging ? ' is-dragging' : ''}`} role={glyphs.length ? 'group' : undefined}
       aria-label={glyphs.length ? 'Sketch relations on the canvas' : undefined} pointerEvents={interactive ? undefined : 'none'} transform={scale}>
-      <RelationGlyphBatch glyphs={batched} />
-      <RelationGlyphRows glyphs={rows} hidden={hidden} focusedKey={focusedKey} focusable={focusable} actions={actions} elements={elements.current} />
-      {highlight && glyphs.length > 0 && <RelationGlyphHighlight store={highlight} glyphs={glyphs} batched={batched} />}
+      <RelationGlyphBatch batch={batch} />
+      <RelationGlyphRows glyphs={rows} own={order.own} hidden={hidden} focusable={focusable} actions={actions} elements={elements.current} />
+      {highlight && glyphs.length > 0 && <RelationGlyphHighlight store={highlight} glyphs={glyphs} copied={copied} />}
     </g>
     {movedPaths.length > 0 && <g className="cad-sketch-relation-glyphs-moved" pointerEvents="none" aria-hidden="true" transform={scale}>{movedPaths.map(drawGlyphPath)}</g>}
   </>;
@@ -348,26 +375,29 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
 const drawGlyphPath = (path: GlyphPath) => <path key={path.key} className={`cad-sketch-relation-glyph-${path.part} is-${path.state}`} d={path.data} aria-hidden="true" />;
 
 /**
- * The glyphs at rest, lit or not: their plates, then their icons, as one path per state. Each glyph's data is placed once for each view,
- * and the paths are joined again only when the glyphs they hold change, as a selection, a focus, a drag moving them or a view change does.
- * A hover that lights glyphs draws their copies on top, so it renders nothing here.
+ * The glyphs at rest, lit or not, layer by layer: each layer's plates, then its icons, as one path per state. Each glyph's data is placed
+ * once for each view, and the paths are joined again only when the glyphs they hold change, as a selection, a focus, a drag moving them or
+ * a view change does. A hover that lights glyphs draws their copies on top, so it renders nothing here.
  */
-const RelationGlyphBatch = memo(function RelationGlyphBatch({ glyphs }: { glyphs: readonly Shown[] }) {
-  return [...glyphPaths(glyphs, 'plates', false), ...glyphPaths(glyphs, 'icons', false)].map(drawGlyphPath);
+const RelationGlyphBatch = memo(function RelationGlyphBatch({ batch }: { batch: Batch }) {
+  return glyphPaths(batch.glyphs, batch.layers, false).map(drawGlyphPath);
 });
 
-/** The glyph rows in layout order, which a drag leaves as they are apart from hiding the glyphs it moves. */
-const RelationGlyphRows = memo(function RelationGlyphRows({ glyphs, hidden, focusedKey, focusable, actions, elements }: {
-  glyphs: readonly Shown[]; hidden: ReadonlySet<string>; focusedKey: string | null; focusable: boolean; actions: Actions; elements: Map<string, SVGGElement>;
+/**
+ * The glyph rows in layout order, which a drag leaves as they are apart from hiding the glyphs it moves. Where plates overlap, the pointer
+ * finds the later row first, and the later glyph is drawn on top: `own` names the glyphs that draw in their rows, after the shared paths.
+ */
+const RelationGlyphRows = memo(function RelationGlyphRows({ glyphs, own, hidden, focusable, actions, elements }: {
+  glyphs: readonly Shown[]; own: readonly boolean[]; hidden: ReadonlySet<string>; focusable: boolean; actions: Actions; elements: Map<string, SVGGElement>;
 }) {
-  return glyphs.map(glyph => <RelationGlyphRow key={glyph.mountKey} glyphKey={glyph.mountKey} relationIds={glyph.relationIds.join(' ')} kind={glyph.kind} label={glyph.label}
-    x={glyph.x} y={glyph.y} state={glyph.state} hidden={hidden.has(glyph.mountKey)} own={glyph.state === 'selected' || glyph.mountKey === focusedKey} focusable={focusable}
-    actions={actions} elements={elements} />);
+  return glyphs.map((glyph, index) => <RelationGlyphRow key={glyph.mountKey} glyphKey={glyph.mountKey} relationIds={glyph.relationIds.join(' ')} kind={glyph.kind} label={glyph.label}
+    x={glyph.x} y={glyph.y} state={glyph.state} hidden={hidden.has(glyph.mountKey)} own={own[index]} focusable={focusable} actions={actions} elements={elements} />);
 });
 
 /**
  * A glyph's row: its pick, focus and accessible name. Its plate takes the pointer without painting while the glyph draws in the layer's
- * shared paths, so a row at rest adds nothing to a repaint; a selected or focused glyph draws its plate and icon here instead.
+ * shared paths, so a row at rest adds nothing to a repaint; a selected or focused glyph, and a later one over it, draws its plate and icon
+ * here instead.
  */
 const RelationGlyphRow = memo(function RelationGlyphRow({ glyphKey, relationIds, kind, label, x, y, state, hidden, own, focusable, actions, elements }: {
   glyphKey: string; relationIds: string; kind: CadSketchRelationGlyphKind; label: string; x: number; y: number; state: GlyphState; hidden: boolean; own: boolean;
@@ -397,13 +427,15 @@ const RelationGlyphRow = memo(function RelationGlyphRow({ glyphKey, relationIds,
 });
 
 /**
- * Rings the glyphs of the hovered relation, or of a hovered dock row, and draws a copy of each lit glyph that the shared paths draw on top
- * of them, as the only subscriber here below the limit, so hover neither renders a glyph row nor joins the shared paths.
+ * Rings the glyphs of the hovered relation, or of a hovered dock row, and draws a copy on top of each lit glyph in `copied`, those the
+ * shared paths draw and no later glyph overlaps, as the only subscriber here below the limit, so hover neither renders a glyph row nor
+ * joins the shared paths. A copy over a later glyph would cover the glyph the pointer finds there, so a lit glyph under one gains only its
+ * ring, an outline that takes no pointer and leaves every glyph it crosses showing.
  */
-const RelationGlyphHighlight = memo(function RelationGlyphHighlight({ store, glyphs, batched }: { store: CadSketchHighlightStore; glyphs: readonly Shown[]; batched: readonly Shown[] }) {
+const RelationGlyphHighlight = memo(function RelationGlyphHighlight({ store, glyphs, copied }: { store: CadSketchHighlightStore; glyphs: readonly Shown[]; copied: ReadonlySet<Shown> }) {
   const lit = litGlyphs(useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot), glyphs);
   if (!lit.length) return null;
-  const resting = new Set(batched), drawn = lit.filter(glyph => resting.has(glyph));
+  const drawn = lit.filter(glyph => copied.has(glyph));
   return <>
     {drawn.length > 0 && <g className="cad-sketch-relation-glyphs-lit" pointerEvents="none" aria-hidden="true">
       {drawn.map(glyph => <g key={glyph.mountKey}>
