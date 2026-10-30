@@ -13,13 +13,12 @@ export function cadSketchViewFrame(center: SketchPoint, width: number, span: num
 
 /**
  * A transparent SVG over the sketch canvas, in the canvas frame, for drawing that follows the pointer: previews, snap hints, readouts and
- * the selection box. It takes no pointer events, so every pick still belongs to the canvas. While `active`, when something can draw into
- * it, it paints on its own layer, so a change in it repaints only itself instead of the whole canvas; otherwise it adds no layer.
- * Children draw like the canvas geometry: sketch millimetres from the frame center, Y up.
+ * the selection box. It takes no pointer events, so every pick still belongs to the canvas, and it paints on its own layer, so a change in
+ * it repaints only itself instead of the whole canvas. Children draw like the canvas geometry: sketch millimetres from the frame center, Y up.
  * Each overlay names its `layer`; later layers stack in the order they are mounted.
  */
-export function CadSketchOverlay({ frame, layer, active, children }: { readonly frame: CadSketchViewFrame; readonly layer: string; readonly active: boolean; readonly children?: ReactNode }) {
-  return <svg className={`cad-sketch-overlay${active ? ' is-active' : ''}`} data-cad-sketch-overlay={layer} aria-hidden="true" focusable="false"
+export function CadSketchOverlay({ frame, layer, children }: { readonly frame: CadSketchViewFrame; readonly layer: string; readonly children?: ReactNode }) {
+  return <svg className="cad-sketch-overlay" data-cad-sketch-overlay={layer} aria-hidden="true" focusable="false"
     viewBox={`${-frame.width / 2} ${-frame.span / 2} ${frame.width} ${frame.span}`} preserveAspectRatio="none">
     <g transform="scale(1,-1)" strokeWidth={frame.span / 450}>{children}</g>
   </svg>;
