@@ -1318,8 +1318,10 @@ test('draws and constrains fresh geometry through the UI, then extrudes, exports
   expect(sketch.graph.relations.map((relation: { kind: string }) => relation.kind)).toEqual(['horizontal', 'vertical', 'horizontal', 'vertical', 'fixed-axis', 'fixed-axis']);
   await page.getByRole('button', { name: 'Select', exact: true }).click();
   await expect(page.getByLabel('Sketch constraint status')).toHaveText('Under defined · 2 DOF');
-  // Dimension starts with the selected line; picking it again places its length at the drawn size and selects it, and Enter opens its editor.
-  await page.getByRole('button', { name: 'Dimension', exact: true }).click(); await page.locator('[data-cad-sketch-entity].is-selected').press('Enter');
+  // Drawing left nothing selected. Dimension picks the bottom line, picking it again places its length at the drawn size and selects it, and Enter opens its editor.
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: current.version })).selectedSketchGeometrySet).toEqual([]);
+  const bottom = page.locator(`[data-cad-sketch-entity="${sketch.graph.entities[0].id}"]`);
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click(); await bottom.press('Enter'); await bottom.press('Enter');
   const dimension = page.locator('[data-cad-sketch-dimension] [role="button"][aria-pressed="true"]'); await expect(dimension).toHaveCount(1);
   await expect.poll(async () => (await context(page)).version).not.toBe(current.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); current = await context(page);
