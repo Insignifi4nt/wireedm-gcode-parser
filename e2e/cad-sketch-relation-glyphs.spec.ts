@@ -183,3 +183,57 @@ test('leaves the Dimension tool its picks, preview hover and placement click ove
   await page.keyboard.press('Escape'); await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(glyph('upright')).toHaveAttribute('tabindex', '0');
 });
+
+test('picks a mark painted in the shared paths where it lies: the top one of two that overlap, and the one beside a mark a drag moved', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  // Two fixed points 0.4 mm apart, whose marks overlap, and a short upright edge beside the rectangle's right edge.
+  const sketch = { id: 'close', kind: 'sketch', name: 'Close', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 20] }, { id: 'd', position: [0, 20] },
+      { id: 'e', position: [10, 30] }, { id: 'g', position: [10.4, 30] }, { id: 'i', position: [43, 8] }, { id: 'j', position: [43, 12] }],
+    entities: [edge('bottom', 'a', 'b'), edge('right', 'b', 'c'), edge('top', 'c', 'd'), edge('left', 'd', 'a'), edge('post', 'i', 'j')],
+    relations: [{ id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'upright', kind: 'vertical', pointIds: ['b', 'c'] },
+      { id: 'pin', kind: 'fixed-point', pointId: 'e', position: [10, 30] }, { id: 'peg', kind: 'fixed-point', pointId: 'g', position: [10.4, 30] },
+      { id: 'beside', kind: 'vertical', pointIds: ['i', 'j'] }] } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  await (await historyRow(page, 'Close')).dblclick();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeVisible();
+  const glyph = (id: string) => page.locator(`[data-cad-sketch-relation-glyph="${id}"]`);
+  const centre = async (id: string) => { const box = await glyph(id).boundingBox(); if (!box) throw new Error(`Mark ${id} unavailable.`); return { ...box, cx: box.x + box.width / 2, cy: box.y + box.height / 2 }; };
+  // The relation of the mark the pointer finds at a place, if any.
+  const markAt = (at: { x: number; y: number }) => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-cad-sketch-relation-glyph]')?.getAttribute('data-cad-sketch-relation-glyph') ?? null, at);
+  // Every mark paints in the shared paths; its own element paints nothing but still takes the pointer.
+  await expect(page.locator('[data-cad-sketch-relation-glyph]')).toHaveCount(5);
+  await expect(page.locator('[data-cad-sketch-relation-glyph] > rect[visibility="hidden"]')).toHaveCount(5);
+  await expect(page.locator('.cad-sketch-relation-glyphs > path.cad-sketch-relation-glyph-plates')).toHaveCount(1);
+  for (const id of ['level', 'upright', 'beside']) { const at = await centre(id); expect(await markAt({ x: at.cx, y: at.cy })).toBe(id); }
+
+  // The Fixed marks overlap. The later one draws over the earlier and takes the overlap; the rest of the earlier one keeps its own pick.
+  const order = await page.locator('[data-cad-sketch-relation-glyph]').evaluateAll(items => items.map(item => item.getAttribute('data-cad-sketch-relation-glyph')));
+  const [earlier, later] = order.filter(id => id === 'pin' || id === 'peg') as [string, string];
+  const first = await centre(earlier), second = await centre(later);
+  const left = Math.max(first.x, second.x), right = Math.min(first.x + first.width, second.x + second.width), top = Math.max(first.y, second.y), bottom = Math.min(first.y + first.height, second.y + second.height);
+  expect(right - left).toBeGreaterThan(2); expect(bottom - top).toBeGreaterThan(2);
+  const overlap = { x: (left + right) / 2, y: (top + bottom) / 2 };
+  const alone = { x: second.x > first.x ? (first.x + second.x) / 2 : (first.x + first.width + second.x + second.width) / 2, y: first.cy };
+  expect(await markAt(overlap)).toBe(later); expect(await markAt(alone)).toBe(earlier);
+  await page.mouse.click(overlap.x, overlap.y);
+  await expect(glyph(later)).toHaveAttribute('aria-pressed', 'true'); await expect(glyph(earlier)).toHaveAttribute('aria-pressed', 'false');
+  await page.mouse.click(alone.x, alone.y);
+  await expect(glyph(earlier)).toHaveAttribute('aria-pressed', 'true'); await expect(glyph(later)).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('Escape'); await expect(glyph(earlier)).toHaveAttribute('aria-pressed', 'false');
+
+  // Dragging the top right corner up moves the right edge's Vertical; the drag keeps every mark inert, and the mark beside it keeps its place.
+  const near = await centre('beside'), moving = await centre('upright'), corner = await page.locator('[data-cad-sketch-point="c"]').boundingBox();
+  if (!corner) throw new Error('Corner unavailable.');
+  await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2); await page.mouse.down();
+  await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2 - 60, { steps: 8 });
+  await expect(glyph('upright')).toHaveAttribute('visibility', 'hidden');
+  expect(await markAt({ x: near.cx, y: near.cy })).toBeNull(); expect((await centre('beside')).cy).toBeCloseTo(near.cy, 0);
+  await page.mouse.up();
+  // Once the drag is saved, the mark beside picks where it lay and the moved one where the drag left it.
+  await expect.poll(() => markAt({ x: near.cx, y: near.cy })).toBe('beside');
+  const moved = await centre('upright'); expect(moving.cy - moved.cy).toBeGreaterThan(20);
+  expect(await markAt({ x: moving.cx, y: moving.cy })).toBeNull(); expect(await markAt({ x: moved.cx, y: moved.cy })).toBe('upright');
+  await page.mouse.click(near.cx, near.cy); await expect(glyph('beside')).toHaveAttribute('aria-pressed', 'true');
+  await page.mouse.click(moved.cx, moved.cy); await expect(glyph('upright')).toHaveAttribute('aria-pressed', 'true'); await expect(glyph('beside')).toHaveAttribute('aria-pressed', 'false');
+});

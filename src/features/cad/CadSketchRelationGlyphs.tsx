@@ -7,7 +7,7 @@ import { cadSketchDimensionPickOf, cadSketchHighlightRelationIds, cadSketchPoint
   type CadSketchHighlightSource, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import { CAD_SKETCH_RELATION_GLYPH_PIXELS, cadSketchRelationGlyphEntries, cadSketchRelationGlyphPixel, cadSketchRelationGlyphPlate, placeCadSketchRelationGlyphs, type CadSketchRelationGlyph,
   type CadSketchRelationGlyphHolds, type CadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
-import { placedPathData } from './cadSketchRelationGlyphDrawing';
+import { joinedPathData, placedPathData } from './cadSketchRelationGlyphDrawing';
 import type { SketchPoint } from './cadSketchInteraction';
 import './cad-sketch-graph-dimensions.css';
 
@@ -67,8 +67,9 @@ interface Shown extends CadSketchRelationGlyph {
   readonly state: GlyphState;
 }
 interface Actions {
-  enter(key: string, event: GlyphEvent): void; leave(key: string): void; down(key: string, event: PointerEvent<SVGRectElement>): void;
-  click(key: string, event: MouseEvent<SVGRectElement>): void; doubleClick(key: string, event: MouseEvent<SVGRectElement>): void; keyDown(key: string, event: KeyboardEvent<SVGRectElement>): void;
+  enter(key: string, event: GlyphEvent): void; leave(key: string): void; down(key: string, event: PointerEvent<SVGGElement>): void;
+  click(key: string, event: MouseEvent<SVGGElement>): void; doubleClick(key: string, event: MouseEvent<SVGGElement>): void; keyDown(key: string, event: KeyboardEvent<SVGGElement>): void;
+  focus(key: string, focused: boolean): void;
 }
 interface Geometry { readonly points: ReadonlySet<string>; readonly entities: ReadonlySet<string> }
 type Pointed = { readonly kind: 'point' | 'entity'; readonly id: string } | null;
@@ -104,18 +105,32 @@ function glyphsByMountKey(glyphs: readonly Shown[]) {
   return byKey;
 }
 
-/** The icons, or the plates, of the given glyphs as one path per state, each glyph's data placed once. */
+/** A placed glyph's plate or icon as path data, placed once for each placement, so a view change places them again and nothing else does. */
 const iconData = new WeakMap<Shown, string>(), plateData = new WeakMap<Shown, string>();
-function glyphPaths(glyphs: readonly Shown[], part: GlyphPath['part'], moved: boolean): readonly GlyphPath[] {
-  const parts = new Map<GlyphState, string[]>(), cache = part === 'plates' ? plateData : iconData;
-  for (const glyph of glyphs) {
-    let data = cache.get(glyph);
-    if (data === undefined) { data = part === 'plates' ? drawPlate(glyph.x, glyph.y) : drawing(glyph.kind)(glyph.x, glyph.y); cache.set(glyph, data); }
-    let list = parts.get(glyph.state); if (!list) parts.set(glyph.state, list = []);
-    list.push(data);
-  }
-  return STATES.flatMap(state => { const list = parts.get(state); return list ? [{ key: `${moved ? 'moved-' : ''}${part}-${state}`, part, state, data: list.join('') }] : []; });
+function placedData(glyph: Shown, part: GlyphPath['part']) {
+  const cache = part === 'plates' ? plateData : iconData;
+  let data = cache.get(glyph);
+  if (data === undefined) { data = part === 'plates' ? drawPlate(glyph.x, glyph.y) : drawing(glyph.kind)(glyph.x, glyph.y); cache.set(glyph, data); }
+  return data;
 }
+/** The icons, or the plates, of the given glyphs as one path per state. */
+function glyphPaths(glyphs: readonly Shown[], part: GlyphPath['part'], moved: boolean): readonly GlyphPath[] {
+  const parts = new Map<GlyphState, string[]>();
+  for (const glyph of glyphs) {
+    let list = parts.get(glyph.state); if (!list) parts.set(glyph.state, list = []);
+    list.push(placedData(glyph, part));
+  }
+  return STATES.flatMap(state => { const list = parts.get(state); return list ? [{ key: `${moved ? 'moved-' : ''}${part}-${state}`, part, state, data: joinedPathData(list) }] : []; });
+}
+/** The shown glyphs the hovered relation, or a hovered dock row, lights up. */
+function litGlyphs(source: CadSketchHighlightSource | null, glyphs: readonly Shown[]) {
+  const ids = cadSketchHighlightRelationIds(source);
+  return ids.length ? glyphs.filter(glyph => glyph.relationIds.some(id => ids.includes(id))) : [];
+}
+const noSubscription = () => () => undefined, noSource = () => null;
+/** The hovered relation or dock row, or nothing without a store. */
+const useHighlightSource = (store: CadSketchHighlightStore | undefined) =>
+  useSyncExternalStore(store?.subscribe ?? noSubscription, store?.getSnapshot ?? noSource, store?.getSnapshot ?? noSource);
 
 /** How long the pointer rests on one target before a sketch above the glyph limit shows the glyphs of its relations. */
 export const CAD_SKETCH_RELATION_GLYPH_REVEAL_MS = 120;
@@ -187,12 +202,15 @@ function useRestingReveal(layer: SVGGElement | null, highlight: CadSketchHighlig
 /**
  * Relation glyphs: thin, quiet marks in the annotation colour on each point or edge a relation names. The layer lies beneath the dimension
  * lines, the sketch points and the edges, so they keep their own picks; a press on a glyph over geometry, a datum, a grip or a profile edge
- * leaves it to the canvas too. Each glyph is one plate element in one scaled group, with no transform of its own, and the icons of one state
- * draw as one path, so a large sketch adds few elements. A drag renders no row: it hides the plates of the glyphs it moves and draws those
- * glyphs as paths of their own beside the layer, so a frame writes only those paths. Meanwhile the layer, unchanged, has a compositor layer
- * of its own, so the sketch repainting each frame rasters no other glyph again. Rows render again only when their own place, selection or
- * state changes; hover lights up through the shared store. Above the limit, hover changes which glyphs are drawn only once the pointer
- * rests, so moving across a large sketch renders no row.
+ * leaves it to the canvas too. The glyphs at rest paint as a few paths in one scaled group: their plates as one path per state and their
+ * icons as one path per state, so every repaint of the sketch, as each hover move brings, paints a few items whatever the number of glyphs.
+ * Each glyph keeps one row, which takes its pointer, focus and accessible name through a plate that paints nothing; a selected or focused
+ * glyph draws in its row, a lit one with its ring, and both leave the paths, which are joined again only when the glyphs they hold change
+ * or the view does. A drag renders no row: it hides the rows of the glyphs it moves and draws those glyphs as paths of their own beside the
+ * layer, so a frame writes only those paths. Meanwhile the layer, unchanged, has a compositor layer of its own, so the sketch repainting
+ * each frame rasters no other glyph again. Rows render again only when their own place, selection, focus or state changes; hover lights
+ * up through the shared store. Above the limit, hover changes which glyphs are drawn only once the pointer rests, so moving across a large
+ * sketch renders no row.
  */
 export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ graph, topology = graph, parameters, topologyParameters = parameters, center, mmPerPixel, selectedIds,
   inspectedRelationId, focus, limit, interactive, focusable = interactive, highlight, covered, onSelect, onOpen, onDelete, onMenu }: CadSketchRelationGlyphsProps) {
@@ -234,14 +252,16 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
     .map(glyph => atRest.get(glyph) ?? shownGlyph(glyph, center, mmPerPixel, keys, true, stateOf(glyph))), [dragging, rows, graph, parameters, shownEntries, resting, atRest, center, mmPerPixel, keys, stateOf]);
   // The rows stay where the sketch as last edited places them, and a drag only hides the ones it moves, so a frame renders no row. The moved
   // glyphs draw their plates and icons as one path per state beside the layer, so the layer, composited apart during the drag, stays as it
-  // was; the icons of the others draw as one path per state that keeps its data.
+  // was; the others keep their paths, joined once when the drag starts moving them.
   const movedKeys = glyphs.flatMap(glyph => glyph.moved ? [glyph.mountKey] : []).join('\n');
   const hidden = useMemo(() => new Set(movedKeys ? movedKeys.split('\n') : []), [movedKeys]);
-  const restingIcons = useMemo(() => glyphPaths(hidden.size ? rows.filter(glyph => !hidden.has(glyph.mountKey)) : rows, 'icons', false), [rows, hidden]);
+  // The glyph a key or a press has focused draws in its row, so its focus ring shows; a selected one does too.
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const batched = useMemo(() => rows.filter(glyph => glyph.state !== 'selected' && glyph.mountKey !== focusedKey && !hidden.has(glyph.mountKey)), [rows, focusedKey, hidden]);
   const moved = hidden.size ? glyphs.filter(glyph => glyph.moved) : [];
   const movedPaths = moved.length ? [...glyphPaths(moved, 'plates', true), ...glyphPaths(moved, 'icons', true)] : [];
   const shown = useRef(glyphs); shown.current = glyphs;
-  const elements = useRef(new Map<string, SVGRectElement>());
+  const elements = useRef(new Map<string, SVGGElement>());
   const layer = useRef<SVGGElement | null>(null);
   const attachLayer = useCallback((element: SVGGElement | null) => { layer.current = element; setLayerElement(element); }, []);
   const hovered = useRef<string | null>(null), pressed = useRef<string | null>(null);
@@ -311,7 +331,8 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
         else if (event.key === 'Escape') current.onSelect?.(null, false);
         else if (menu) { const box = event.currentTarget.getBoundingClientRect(); current.onMenu?.(picks, { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }); }
         else current.onDelete?.(picks, event.key === 'Delete' ? 'Delete' : 'Backspace');
-      }
+      },
+      focus: (key, focused) => setFocusedKey(current => focused ? key : current === key ? null : current)
     };
   });
   // Above the limit the layer stays mounted with no glyph shown, so it can follow the geometry under the pointer.
@@ -320,9 +341,9 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
   return <>
     <g ref={attachLayer} className={`cad-sketch-relation-glyphs${interactive ? ' is-interactive' : ''}${dragging ? ' is-dragging' : ''}`} role={glyphs.length ? 'group' : undefined}
       aria-label={glyphs.length ? 'Sketch relations on the canvas' : undefined} pointerEvents={interactive ? undefined : 'none'} transform={scale}>
-      <RelationGlyphRows glyphs={rows} hidden={hidden} focusable={focusable} actions={actions} elements={elements.current} />
-      {restingIcons.map(drawGlyphPath)}
-      {highlight && glyphs.length > 0 && <RelationGlyphHighlight store={highlight} glyphs={glyphs} />}
+      <RelationGlyphBatch store={highlight} glyphs={batched} />
+      <RelationGlyphRows glyphs={rows} hidden={hidden} focusedKey={focusedKey} focusable={focusable} actions={actions} elements={elements.current} />
+      {highlight && glyphs.length > 0 && <RelationGlyphHighlight store={highlight} glyphs={glyphs} batched={batched} />}
     </g>
     {movedPaths.length > 0 && <g className="cad-sketch-relation-glyphs-moved" pointerEvents="none" aria-hidden="true" transform={scale}>{movedPaths.map(drawGlyphPath)}</g>}
   </>;
@@ -330,44 +351,77 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
 
 const drawGlyphPath = (path: GlyphPath) => <path key={path.key} className={`cad-sketch-relation-glyph-${path.part} is-${path.state}`} d={path.data} aria-hidden="true" />;
 
-/** The glyph rows in layout order, which a drag leaves as they are apart from hiding the glyphs it moves. */
-const RelationGlyphRows = memo(function RelationGlyphRows({ glyphs, hidden, focusable, actions, elements }: {
-  glyphs: readonly Shown[]; hidden: ReadonlySet<string>; focusable: boolean; actions: Actions; elements: Map<string, SVGRectElement>;
-}) {
-  return glyphs.map(glyph => <RelationGlyphRow key={glyph.mountKey} glyphKey={glyph.mountKey} relationIds={glyph.relationIds.join(' ')} kind={glyph.kind} label={glyph.label}
-    x={glyph.x} y={glyph.y} state={glyph.state} hidden={hidden.has(glyph.mountKey)} focusable={focusable} actions={actions} elements={elements} />);
+/**
+ * The glyphs at rest that the hovered relation does not light: their plates, then their icons, as one path per state. Each glyph's data
+ * is placed once for each view, and the paths are joined again only when the glyphs they hold change, as a selection, a focus, a drag
+ * moving them, a hover lighting them or a view change does; a pointer move that changes none of that renders nothing here.
+ */
+const RelationGlyphBatch = memo(function RelationGlyphBatch({ store, glyphs }: { store?: CadSketchHighlightStore; glyphs: readonly Shown[] }) {
+  const litKeys = litGlyphs(useHighlightSource(store), glyphs).map(glyph => glyph.mountKey).join('\n');
+  const paths = useMemo(() => {
+    const lit = new Set(litKeys ? litKeys.split('\n') : []), resting = lit.size ? glyphs.filter(glyph => !lit.has(glyph.mountKey)) : glyphs;
+    return [...glyphPaths(resting, 'plates', false), ...glyphPaths(resting, 'icons', false)];
+  }, [glyphs, litKeys]);
+  return paths.map(drawGlyphPath);
 });
 
-/** A glyph's plate: its pick, focus and accessible name. Its icon draws in the layer's shared icon paths. */
-const RelationGlyphRow = memo(function RelationGlyphRow({ glyphKey, relationIds, kind, label, x, y, state, hidden, focusable, actions, elements }: {
-  glyphKey: string; relationIds: string; kind: CadSketchRelationGlyphKind; label: string; x: number; y: number; state: GlyphState; hidden: boolean; focusable: boolean;
-  actions: Actions; elements: Map<string, SVGRectElement>;
+/** The glyph rows in layout order, which a drag leaves as they are apart from hiding the glyphs it moves. */
+const RelationGlyphRows = memo(function RelationGlyphRows({ glyphs, hidden, focusedKey, focusable, actions, elements }: {
+  glyphs: readonly Shown[]; hidden: ReadonlySet<string>; focusedKey: string | null; focusable: boolean; actions: Actions; elements: Map<string, SVGGElement>;
+}) {
+  return glyphs.map(glyph => <RelationGlyphRow key={glyph.mountKey} glyphKey={glyph.mountKey} relationIds={glyph.relationIds.join(' ')} kind={glyph.kind} label={glyph.label}
+    x={glyph.x} y={glyph.y} state={glyph.state} hidden={hidden.has(glyph.mountKey)} own={glyph.state === 'selected' || glyph.mountKey === focusedKey} focusable={focusable}
+    actions={actions} elements={elements} />);
+});
+
+/**
+ * A glyph's row: its pick, focus and accessible name. Its plate takes the pointer without painting while the glyph draws in the layer's
+ * shared paths, so a row at rest adds nothing to a repaint; a selected or focused glyph draws its plate and icon here instead.
+ */
+const RelationGlyphRow = memo(function RelationGlyphRow({ glyphKey, relationIds, kind, label, x, y, state, hidden, own, focusable, actions, elements }: {
+  glyphKey: string; relationIds: string; kind: CadSketchRelationGlyphKind; label: string; x: number; y: number; state: GlyphState; hidden: boolean; own: boolean;
+  focusable: boolean; actions: Actions; elements: Map<string, SVGGElement>;
 }) {
   // A glyph that leaves the drawing while focused, because its relation was removed, Show relations hid it or the limit left it out,
   // gives its focus back to the canvas, so the canvas keys keep working.
-  const attach = useCallback((element: SVGRectElement | null) => {
+  const attach = useCallback((element: SVGGElement | null) => {
     if (!element) return;
     elements.set(glyphKey, element);
-    return () => { if (elements.get(glyphKey) === element) elements.delete(glyphKey); if (element === document.activeElement) element.ownerSVGElement?.focus({ preventScroll: true }); };
-  }, [elements, glyphKey]);
+    return () => {
+      if (elements.get(glyphKey) === element) elements.delete(glyphKey);
+      if (element === document.activeElement) { actions.focus(glyphKey, false); element.ownerSVGElement?.focus({ preventScroll: true }); }
+    };
+  }, [elements, glyphKey, actions]);
   const plate = cadSketchRelationGlyphPlate(x, y);
-  return <rect data-cad-sketch-relation-glyph={relationIds} data-cad-relation-glyph-kind={kind} ref={attach}
-    className={`cad-sketch-relation-glyph${state === 'plain' ? '' : ` is-${state}`}${focusable ? ' is-interactive' : ''}`}
+  return <g data-cad-sketch-relation-glyph={relationIds} data-cad-relation-glyph-kind={kind} ref={attach}
+    className={`cad-sketch-relation-glyph${state === 'plain' ? '' : ` is-${state}`}${focusable ? ' is-interactive' : ''}${hidden ? ' is-moved' : ''}`}
     role="button" aria-label={label} aria-pressed={state === 'selected'} aria-disabled={!focusable || undefined} tabIndex={focusable ? 0 : -1} pointerEvents={focusable ? undefined : 'none'}
-    x={plate.x} y={plate.y} width={plate.width} height={plate.height} rx={2} visibility={hidden ? 'hidden' : undefined}
+    visibility={hidden ? 'hidden' : undefined}
     onPointerEnter={event => actions.enter(glyphKey, event)} onPointerMove={event => actions.enter(glyphKey, event)} onPointerLeave={() => actions.leave(glyphKey)}
     onPointerDown={event => actions.down(glyphKey, event)} onClick={event => actions.click(glyphKey, event)} onDoubleClick={event => actions.doubleClick(glyphKey, event)}
-    onKeyDown={event => actions.keyDown(glyphKey, event)} />;
+    onKeyDown={event => actions.keyDown(glyphKey, event)} onFocus={() => actions.focus(glyphKey, true)} onBlur={() => actions.focus(glyphKey, false)}>
+    <rect x={plate.x} y={plate.y} width={plate.width} height={plate.height} rx={2} visibility={own ? undefined : 'hidden'} />
+    {own && <path className={`cad-sketch-relation-glyph-icons is-${state}`} d={drawing(kind)(x, y)} />}
+  </g>;
 });
 
-/** Rings the glyphs of the hovered relation, or of a hovered dock row, as the only subscriber here below the limit, so hover renders no glyph rows. */
-const RelationGlyphHighlight = memo(function RelationGlyphHighlight({ store, glyphs }: { store: CadSketchHighlightStore; glyphs: readonly Shown[] }) {
-  const source = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const ids = cadSketchHighlightRelationIds(source);
-  if (!ids.length) return null;
-  const lit = glyphs.filter(glyph => glyph.relationIds.some(id => ids.includes(id)));
+/**
+ * Rings the glyphs of the hovered relation, or of a hovered dock row, and draws the lit glyphs that would otherwise draw in the shared
+ * paths, as one of the two subscribers here below the limit with the paths, so hover renders no glyph rows.
+ */
+const RelationGlyphHighlight = memo(function RelationGlyphHighlight({ store, glyphs, batched }: { store: CadSketchHighlightStore; glyphs: readonly Shown[]; batched: readonly Shown[] }) {
+  const lit = litGlyphs(useHighlightSource(store), glyphs);
   if (!lit.length) return null;
-  return <g className="cad-sketch-relation-glyph-highlight" pointerEvents="none" aria-hidden="true">
-    {lit.map(glyph => <rect key={glyph.mountKey} data-cad-highlight-glyph={glyph.relationIds.join(' ')} rx={3} {...cadSketchRelationGlyphPlate(glyph.x, glyph.y, 1)} />)}
-  </g>;
+  const resting = new Set(batched), drawn = lit.filter(glyph => resting.has(glyph));
+  return <>
+    {drawn.length > 0 && <g className="cad-sketch-relation-glyphs-lit" pointerEvents="none" aria-hidden="true">
+      {drawn.map(glyph => <g key={glyph.mountKey}>
+        <path className={`cad-sketch-relation-glyph-plates is-${glyph.state}`} d={placedData(glyph, 'plates')} />
+        <path className={`cad-sketch-relation-glyph-icons is-${glyph.state}`} d={placedData(glyph, 'icons')} />
+      </g>)}
+    </g>}
+    <g className="cad-sketch-relation-glyph-highlight" pointerEvents="none" aria-hidden="true">
+      {lit.map(glyph => <rect key={glyph.mountKey} data-cad-highlight-glyph={glyph.relationIds.join(' ')} rx={3} {...cadSketchRelationGlyphPlate(glyph.x, glyph.y, 1)} />)}
+    </g>
+  </>;
 });

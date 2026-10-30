@@ -72,3 +72,6 @@ export function placedPathData(paths: readonly string[], grid: number, size: num
     return data;
   };
 }
+
+/** Placed copies of drawings as one path's data, so they paint as one item. */
+export const joinedPathData = (parts: readonly string[]) => parts.join('');

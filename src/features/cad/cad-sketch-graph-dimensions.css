@@ -28,12 +28,12 @@
 .cad-sketch-highlight :is(line, path, circle) { stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .cad-sketch-highlight .cad-sketch-highlight-point { fill: var(--warning, #f0bf71); stroke: var(--foreground); stroke-width: 1px; }
 
-/* Relation glyphs: small quiet marks in the annotation colour, with a faint plate in the canvas colour so they read over the grid. Each plate is
-   one element; the icons of one state share one path above the plates. */
+/* Relation glyphs: small quiet marks in the annotation colour, with a faint plate in the canvas colour so they read over the grid. The marks at
+   rest share one plate path and one icon path per state; a selected, focused or lit mark draws on its own. */
 /* Every drag frame repaints the sketch. While a drag runs the glyph layer has a compositor layer of its own, so those frames neither paint nor
    raster the glyphs again; at rest it shares the sketch's layer, so a zoom rasters the glyphs at the new scale. */
 .cad-sketch-relation-glyphs.is-dragging { will-change: transform; }
-/* A drag draws the plates of the glyphs it moves as one path per state, styled as the rows. */
+/* The shared plate paths are styled as the rows that draw their own plate. */
 .cad-sketch-relation-glyph, .cad-sketch-relation-glyph-plates {
   color: var(--muted-foreground); outline: none;
   fill: color-mix(in srgb, var(--cad-view-top, var(--background)) 50%, var(--cad-view-bottom, var(--background))); fill-opacity: .82;
@@ -43,7 +43,9 @@
 .cad-sketch-relation-glyph.is-selected, .cad-sketch-relation-glyph-plates.is-selected { color: var(--primary); stroke-opacity: .9; }
 .cad-sketch-relation-glyph-plates { pointer-events: none; }
 .cad-sketch-relation-glyph.is-interactive { cursor: pointer; }
-.cad-sketch-relation-glyph:focus-visible { stroke-opacity: 1; stroke-dasharray: 2 1.5; }
+/* A row's plate takes its pointer even while it paints nothing, as long as the layer and the row take picks and a drag has not moved it. */
+.cad-sketch-relation-glyphs.is-interactive .cad-sketch-relation-glyph.is-interactive:not(.is-moved) > rect { pointer-events: all; }
+.cad-sketch-relation-glyph:focus-visible > rect { stroke-opacity: 1; stroke-dasharray: 2 1.5; }
 .cad-sketch-relation-glyph-icons {
   fill: none; stroke: var(--muted-foreground); stroke-width: .8333px; stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
 }
