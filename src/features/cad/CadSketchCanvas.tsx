@@ -644,7 +644,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const dimensionStatus = tool === 'select' && sourceSketch.kind === 'sketch' ? cadSketchDimensionSelectionStatus(sourceSketch.graph, graphControls?.dimensionSelection ?? []) : null;
   const relationsShown = Boolean(graphControls) && graphControls?.showRelations !== false, sourceGraphValue = sourceSketch.kind === 'sketch' ? sourceSketch.graph : undefined;
   const glyphCount = useMemo(() => relationsShown && sourceGraphValue ? countCadSketchRelationGlyphs(sourceGraphValue) : 0, [relationsShown, sourceGraphValue]);
-  const glyphStatus = tool === 'select' && glyphCount > CAD_SKETCH_RELATION_GLYPH_LIMIT ? `Relations shown on selected geometry only · ${glyphCount} marks in this sketch` : null;
+  const glyphStatus = tool === 'select' && glyphCount > CAD_SKETCH_RELATION_GLYPH_LIMIT ? `Relations shown on selected or hovered geometry · ${glyphCount} marks in this sketch` : null;
   const contextStatus = dimensionStatus && glyphStatus ? `${dimensionStatus} · ${glyphStatus}` : dimensionStatus ?? glyphStatus;
   const layerControls = useMemo(() => graphControls && boxSelections ? { ...graphControls, selection: boxSelections } : graphControls, [graphControls, boxSelections]);
   const graphPickAt = useRef<(event: { clientX: number; clientY: number }) => CadSketchGraphSelection | null>(() => null);
@@ -806,7 +806,11 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   const dimensionLineCover = useRef(measureLineCover); dimensionLineCover.current = measureLineCover;
   const coversDimensionLine = useCallback((event: DimensionLineEvent) => Boolean(dimensionLineCover.current(event)?.covered), []);
-  /** A relation glyph lies beneath the sketch points and edges; one within their pick reach, or over a datum, grip or profile edge, leaves the pick to them. */
+  /**
+   * A relation glyph lies beneath the dimension lines, labels, sketch points and edges. Dimensions pick only by their own elements, which
+   * follow the glyph layer, so where one crosses a glyph it receives the event first. Geometry picks reach further than its elements, so a
+   * glyph within that reach, or over a datum, grip or profile edge, leaves the pick to them here.
+   */
   const glyphCover = useRef<{ readonly event: Event; readonly covered: boolean } | null>(null);
   const measureGlyphCover = (event: DimensionLineEvent) => {
     if (glyphCover.current?.event === event.nativeEvent) return glyphCover.current.covered;

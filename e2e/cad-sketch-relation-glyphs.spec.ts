@@ -96,3 +96,57 @@ test('leaves a pick on the geometry beside a mark, in Select and with a drawing 
   await page.keyboard.press('Escape'); await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(glyph('anchor')).toHaveAttribute('tabindex', '0');
 });
+
+test('leaves a dimension line or label that crosses a mark its hover, click, double-click and menu', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  // The fixed centre's mark sits diagonally off the centre, right on the circle's diagonal size line. A fixed point at the line's arrow
+  // tip puts its mark under the size label too.
+  const tip = 10 * Math.SQRT1_2;
+  const sketch = { id: 'hole', kind: 'sketch', name: 'Hole', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'o', position: [30, 20] }, { id: 'p', position: [30 + tip, 20 + tip] }], entities: [{ id: 'ring', kind: 'circle', centerPointId: 'o', radius: 10, construction: false }],
+    relations: [{ id: 'pin', kind: 'fixed-point', pointId: 'o', position: [30, 20] }, { id: 'peg', kind: 'fixed-point', pointId: 'p', position: [30 + tip, 20 + tip] },
+      { id: 'size', kind: 'radial-size', entityId: 'ring', quantity: 'diameter', value: 20 }] } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  await (await historyRow(page, 'Hole')).dblclick();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeVisible();
+  const glyph = (id: string) => page.locator(`[data-cad-sketch-relation-glyph="${id}"]`), status = page.locator('[data-cad-dimension-status]');
+  const label = page.locator('[data-cad-sketch-dimension="size"] [role="button"]'), pointed = page.locator('[data-cad-sketch-dimension="size"].is-pointed');
+  const editor = page.getByRole('textbox', { name: 'Diameter mm', exact: true }), reference = page.getByRole('menuitem', { name: 'Make reference', exact: true });
+  const listed = page.getByRole('menuitem', { name: 'Show in relations list', exact: true });
+  const clear = async () => {
+    await page.mouse.move(2, 2); await page.getByRole('application', { name: 'Sketch drawing canvas', exact: true }).press('Escape');
+    await expect(label).toHaveAttribute('aria-pressed', 'false'); await expect(glyph('pin')).toHaveAttribute('aria-pressed', 'false');
+  };
+  const box = await glyph('pin').boundingBox(); if (!box) throw new Error('Fixed mark unavailable.');
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  expect(await page.locator('[data-cad-sketch-dimension-hit="size"]').evaluate((group, at) => document.elementsFromPoint(at.x, at.y).some(element => group.contains(element)), at)).toBe(true);
+
+  // Hover points out the dimension, not the fix.
+  await page.mouse.move(at.x, at.y);
+  await expect(pointed).toHaveCount(1); await expect(page.locator('[data-cad-highlight-glyph="pin"]')).toHaveCount(0);
+  // A click selects the dimension, so Delete removes the dimension and keeps the fix.
+  await page.mouse.click(at.x, at.y);
+  await expect(label).toHaveAttribute('aria-pressed', 'true'); await expect(glyph('pin')).toHaveAttribute('aria-pressed', 'false');
+  await expect(status).toHaveText('Diameter selected · Double-click or Enter edits · Delete removes');
+  await page.keyboard.press('Delete'); await expect(label).toHaveCount(0); await expect(glyph('pin')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click(); await expect(label).toHaveCount(1);
+  await clear();
+  // A right-click opens the dimension's menu, and a double-click its editor.
+  await page.mouse.click(at.x, at.y, { button: 'right' }); await expect(reference).toBeVisible(); await expect(listed).toHaveCount(0);
+  await page.keyboard.press('Escape'); await expect(reference).toHaveCount(0);
+  await clear();
+  await page.mouse.dblclick(at.x, at.y); await expect(editor).toHaveValue('20');
+  await page.keyboard.press('Escape'); await expect(editor).toHaveCount(0);
+  await clear();
+
+  // Where the arrow tip's mark lies under the size label, the label keeps the click and the menu.
+  const [peg, tag] = await Promise.all([glyph('peg').boundingBox(), label.boundingBox()]); if (!peg || !tag) throw new Error('Mark or label unavailable.');
+  const left = Math.max(peg.x, tag.x), right = Math.min(peg.x + peg.width, tag.x + tag.width), top = Math.max(peg.y, tag.y), bottom = Math.min(peg.y + peg.height, tag.y + tag.height);
+  expect(right - left).toBeGreaterThan(4); expect(bottom - top).toBeGreaterThan(4);
+  const overlap = { x: (left + right) / 2, y: (top + bottom) / 2 };
+  await page.mouse.click(overlap.x, overlap.y);
+  await expect(label).toHaveAttribute('aria-pressed', 'true'); await expect(glyph('peg')).toHaveAttribute('aria-pressed', 'false');
+  await clear();
+  await page.mouse.click(overlap.x, overlap.y, { button: 'right' }); await expect(reference).toBeVisible(); await expect(listed).toHaveCount(0);
+  await page.keyboard.press('Escape');
+});

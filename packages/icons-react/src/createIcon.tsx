@@ -20,5 +20,5 @@ export function createIcon(name: string, paths: readonly string[]): WorkbenchIco
     return renderIcon(name, paths, props, ref);
   });
   Icon.displayName = `WorkbenchIcon(${name})`;
-  return Icon;
+  return Object.assign(Icon, { paths });
 }

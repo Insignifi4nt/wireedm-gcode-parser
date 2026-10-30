@@ -7,10 +7,10 @@ import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPa
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { CadSketchCanvas } from './CadSketchCanvas';
 import { cadArcSvgPath } from './cadSketchSvg';
-import { cadSketchDimensionSelectionStatus } from './cadSketchDimensionSelection';
+import { cadSketchDimensionSelectionStatus, cadSketchPointIdentity, createCadSketchHighlightStore } from './cadSketchDimensionSelection';
 import { cadSketchDefinitionMarks } from './cadSketchDefinitionMarks';
 import { cadSketchGraphDimensionLabel } from './cadSketchGraphDimensionLayout';
-import { cadSketchRelationGlyphTransform } from './cadSketchRelationGlyphLayout';
+import { cadSketchRelationGlyphPlate } from './cadSketchRelationGlyphLayout';
 import type { CadRenderedViewControls } from './cadViewportControls';
 
 // Every graph point row asks for its pattern lock reason once per render, so the call count tracks row renders.
@@ -18,12 +18,12 @@ vi.mock('@/domain/cad/cadSketchLinearPattern', async importOriginal => {
   const original = await importOriginal<typeof import('@/domain/cad/cadSketchLinearPattern')>();
   return { ...original, cadSketchLinearPatternLockReason: vi.fn(original.cadSketchLinearPatternLockReason) };
 });
-// The canvas root reads the dimension status line once per render in the select tool.
+// The canvas root reads the dimension status line once per render in the select tool, and the relation glyph layer resolves Coincident identity once per render.
 vi.mock('./cadSketchDimensionSelection', async importOriginal => {
   const original = await importOriginal<typeof import('./cadSketchDimensionSelection')>();
-  return { ...original, cadSketchDimensionSelectionStatus: vi.fn(original.cadSketchDimensionSelectionStatus) };
+  return { ...original, cadSketchDimensionSelectionStatus: vi.fn(original.cadSketchDimensionSelectionStatus), cadSketchPointIdentity: vi.fn(original.cadSketchPointIdentity) };
 });
-const rowRenders = vi.mocked(cadSketchLinearPatternLockReason), canvasRenders = vi.mocked(cadSketchDimensionSelectionStatus);
+const rowRenders = vi.mocked(cadSketchLinearPatternLockReason), canvasRenders = vi.mocked(cadSketchDimensionSelectionStatus), glyphLayerRenders = vi.mocked(cadSketchPointIdentity);
 // Each graph edge row draws its boundary once per render; presses and drawing previews that also ask stay out of these tests.
 vi.mock('@/domain/cad/compileCadSketchGeometry', async importOriginal => {
   const original = await importOriginal<typeof import('@/domain/cad/compileCadSketchGeometry')>();
@@ -45,9 +45,9 @@ const dimensionRenders = vi.mocked(cadSketchGraphDimensionLabel);
 // Each relation glyph row places itself once per render, and the hover ring places each glyph it lights.
 vi.mock('./cadSketchRelationGlyphLayout', async importOriginal => {
   const original = await importOriginal<typeof import('./cadSketchRelationGlyphLayout')>();
-  return { ...original, cadSketchRelationGlyphTransform: vi.fn(original.cadSketchRelationGlyphTransform) };
+  return { ...original, cadSketchRelationGlyphPlate: vi.fn(original.cadSketchRelationGlyphPlate) };
 });
-const glyphRenders = vi.mocked(cadSketchRelationGlyphTransform);
+const glyphRenders = vi.mocked(cadSketchRelationGlyphPlate);
 // Each picker the canvas prepares counts its queries, so a test can bound the work one pointer move does.
 const picks = vi.hoisted(() => ({ graph: 0, profile: 0, edge: 0, grip: 0 }));
 vi.mock('./cadSketchGraphInteraction', async importOriginal => {
@@ -142,6 +142,8 @@ describe('sketch canvas cursor rendering', () => {
     await show({ graphControls: { ...props().graphControls!, onSelectRelations: vi.fn() } });
     const glyphs = () => [...container.querySelectorAll('[data-cad-sketch-relation-glyph]')];
     expect(glyphs()).toHaveLength(7); expect(glyphs().every(glyph => glyph.getAttribute('pointer-events') === 'none')).toBe(true);
+    // The glyphs lie beneath the dimension lines' hit layer, so a dimension line over a glyph takes the pointer by element order.
+    expect(container.querySelector('.cad-sketch-relation-glyphs')!.compareDocumentPosition(container.querySelector('.cad-sketch-graph-dimension-hits')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The drawing cursor follows the pointer, across the glyphs too, and a first corner's size readout with it, while no glyph row renders again.
     const readout = () => container.querySelector('[data-cad-drawing-readout] text')?.textContent ?? null;
     glyphRenders.mockClear(); clearRenders();
@@ -152,11 +154,21 @@ describe('sketch canvas cursor rendering', () => {
     // In Select, hovering a glyph only rings it and its sibling through the highlight store: two placements, none for a row, and none for moves on it.
     await show({ tool: 'select' });
     const across = glyphs().filter(glyph => glyph.getAttribute('data-cad-sketch-relation-glyph') === 'across');
-    glyphRenders.mockClear(); clearRenders(); canvasRenders.mockClear();
+    glyphRenders.mockClear(); clearRenders(); canvasRenders.mockClear(); glyphLayerRenders.mockClear();
     await move(20, 10, across[0]); await move(20.2, 10.1, across[0]); await move(20.4, 10.2, across[0]);
     expect(container.querySelectorAll('[data-cad-highlight-glyph="across"]')).toHaveLength(2);
     expect(glyphRenders).toHaveBeenCalledTimes(2); expect(renderedPoints()).toEqual([]); expect(canvasRenders).not.toHaveBeenCalled();
+    // Below the glyph limit the layer itself never follows hover; only its ring subscribes to the store.
+    expect(glyphLayerRenders).not.toHaveBeenCalled();
     expect(across.every(glyph => glyph.isConnected)).toBe(true);
+    // Hovering geometry or a dock row that names it renders no glyph row either: only the rings of the relations it names place their glyphs.
+    const store = createCadSketchHighlightStore();
+    await show({ graphControls: { ...props().graphControls!, onSelectRelations: vi.fn(), highlight: store } });
+    glyphRenders.mockClear(); clearRenders(); glyphLayerRenders.mockClear();
+    await act(async () => container.querySelector('[data-cad-sketch-point="b"]')!.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })));
+    await act(async () => store.show('row', { kind: 'geometry', pointIds: ['a', 'b'], entityIds: ['bottom'], datums: [], relationIds: ['h1'] }));
+    expect(container.querySelectorAll('[data-cad-highlight-glyph="h1"]')).toHaveLength(1); expect(glyphRenders).toHaveBeenCalledTimes(1); expect(glyphLayerRenders).not.toHaveBeenCalled();
+    await act(async () => store.hide('row'));
 
     // A pending line chain keeps every glyph inert and renders none while the rubber band follows the pointer.
     await show({ tool: 'line' });
@@ -167,7 +179,7 @@ describe('sketch canvas cursor rendering', () => {
     expect(glyphs().every(glyph => glyph.getAttribute('pointer-events') === 'none' && glyph.getAttribute('tabindex') === '-1')).toBe(true);
   });
 
-  it('draws only the glyphs on selected geometry, and the selected ones, above the glyph limit and says so in Select', async () => {
+  it('draws only the glyphs on selected or hovered geometry, and the selected or hovered ones, above the glyph limit and says so in Select', async () => {
     // 51 squares with Horizontal and Vertical on each side draw 204 glyphs, past the limit of 200.
     const points: { id: string; position: [number, number] }[] = [], entities: { id: string; kind: 'line'; construction: false; startPointId: string; endPointId: string }[] = [];
     const relations: { id: string; kind: 'horizontal' | 'vertical'; pointIds: [string, string] }[] = [];
@@ -183,8 +195,31 @@ describe('sketch canvas cursor rendering', () => {
     const shown = () => [...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].map(glyph => glyph.getAttribute('data-cad-sketch-relation-glyph'));
     const status = () => container.querySelector('[data-cad-dimension-status]')?.textContent ?? null;
     await show({ graphControls: { ...props().graphControls!, onSelectRelations: vi.fn() } });
-    expect(shown()).toEqual([]); expect(status()).toBe('Relations shown on selected geometry only · 204 marks in this sketch');
+    expect(shown()).toEqual([]); expect(status()).toBe('Relations shown on selected or hovered geometry · 204 marks in this sketch');
     await show({ graphControls: { ...props().graphControls!, selection: [{ kind: 'entity', id: 's7e1' }], dimensionSelection: ['s30r2'] } });
+    expect(shown()).toEqual(['s7r1', 's30r2']);
+    // A hovered relations-list row shows its relation's glyphs, and its geometry hover shows nothing more.
+    const store = createCadSketchHighlightStore();
+    await show({ graphControls: { ...props().graphControls!, highlight: store } });
+    await act(async () => store.show('row', { kind: 'geometry', pointIds: ['s40a', 's40b'], entityIds: ['s40e0'], datums: [], relationIds: ['s40r0'] }));
+    expect(shown()).toEqual(['s7r1', 's30r2', 's40r0']);
+    await act(async () => store.hide('row')); expect(shown()).toEqual(['s7r1', 's30r2']);
+    // Hovering a corner shows both edge marks that hold it, though neither sits on the corner; the pointer can cross to a shown glyph and keep them.
+    const over = (target: Element) => act(async () => target.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })));
+    await over(container.querySelector('[data-cad-sketch-point="s45a"]')!);
+    expect(shown()).toEqual(['s7r1', 's30r2', 's45r0', 's45r3']);
+    await over(container.querySelector('[data-cad-sketch-relation-glyph="s45r3"]')!);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); });
+    expect(shown()).toEqual(['s7r1', 's30r2', 's45r0', 's45r3']);
+    // Empty canvas lets them go after a moment, and leaving the canvas at once.
+    const canvas = container.querySelector('svg.cad-sketch-canvas')!;
+    // Leaving the hovered glyph for empty canvas, which lets go of the glyph's own hover too.
+    await act(async () => container.querySelector('[data-cad-sketch-relation-glyph="s45r3"]')!.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: canvas })));
+    await over(canvas); expect(shown()).toEqual(['s7r1', 's30r2', 's45r0', 's45r3']);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); });
+    expect(shown()).toEqual(['s7r1', 's30r2']);
+    await over(container.querySelector('[data-cad-sketch-entity="s46e1"]')!); expect(shown()).toEqual(['s7r1', 's30r2', 's46r1']);
+    await act(async () => canvas.dispatchEvent(new MouseEvent('pointerleave')));
     expect(shown()).toEqual(['s7r1', 's30r2']);
     // A drawing tool keeps the limit but leaves the status line to the drawing.
     await show({ tool: 'line' });
@@ -213,6 +248,44 @@ describe('sketch canvas cursor rendering', () => {
     expect(layer.classList.contains('is-dragging')).toBe(false); expect(glyphRenders).not.toHaveBeenCalled();
     expect(props().graphControls!.onEditMany).toHaveBeenCalledTimes(1);
     expect([...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].every(glyph => glyph.getAttribute('tabindex') === '0')).toBe(true);
+  });
+
+  it('drags the glyphs a drag moves as paths of their own, hiding their rows in place, on a layer composited apart, so later frames render no glyph row', async () => {
+    const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
+    const { props, show, pointer } = await mountCanvas({
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 20] }, { id: 'd', position: [0, 20] }],
+      entities: [line('bottom', 'a', 'b'), line('right', 'b', 'c'), line('top', 'c', 'd'), line('left', 'd', 'a')],
+      relations: [{ id: 'h1', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'v1', kind: 'vertical', pointIds: ['b', 'c'] }, { id: 'v2', kind: 'vertical', pointIds: ['d', 'a'] }] }, { tool: 'select' });
+    await show({ graphControls: { ...props().graphControls!, onSelectRelations: vi.fn() } });
+    const corner = container.querySelector<SVGGElement>('[data-cad-sketch-point="c"]'); if (!corner) throw new Error('Corner missing.');
+    let captured: number | null = null;
+    Object.assign(corner, { setPointerCapture: (id: number) => { captured = id; }, hasPointerCapture: (id: number) => captured === id, releasePointerCapture: () => { captured = null; } });
+    const rows = () => [...container.querySelectorAll('[data-cad-sketch-relation-glyph]')];
+    const hidden = () => rows().filter(row => row.getAttribute('visibility') === 'hidden').map(row => row.getAttribute('data-cad-sketch-relation-glyph'));
+    const moved = () => [...container.querySelectorAll('.cad-sketch-relation-glyph-plates, .cad-sketch-relation-glyph-icons')].map(path => path.getAttribute('d')!);
+    // While a drag runs the layer has a compositor layer of its own, so the sketch repainting each frame leaves the glyphs alone.
+    const composited = () => container.querySelector('.cad-sketch-relation-glyphs')!.classList.contains('is-dragging');
+    const before = rows(), resting = moved();
+    expect(composited()).toBe(false); expect(resting).toHaveLength(1); expect(container.querySelector('.cad-sketch-relation-glyph-plates')).toBeNull();
+    // Moving the corner straight up carries the right edge's Vertical: its row hides once, and its plate and icon draw apart.
+    glyphRenders.mockClear();
+    await pointer('pointerdown', 40, 20, corner); await pointer('pointermove', 40, 22, corner, 1);
+    expect(hidden()).toEqual(['v1']); expect(glyphRenders).toHaveBeenCalledTimes(1); expect(composited()).toBe(true);
+    const first = moved();
+    expect(first).toHaveLength(3); expect(first[0]).not.toBe(resting[0]);
+    // The moved glyphs draw beside the composited layer, which keeps only its rows and resting icons, so the drag leaves it as it was.
+    expect(container.querySelectorAll('.cad-sketch-relation-glyphs-moved path')).toHaveLength(2); expect(container.querySelectorAll('.cad-sketch-relation-glyphs path')).toHaveLength(1);
+    glyphRenders.mockClear();
+    await pointer('pointermove', 40, 24, corner, 1);
+    expect(glyphRenders).not.toHaveBeenCalled(); expect(hidden()).toEqual(['v1']);
+    // Only the moved glyphs' paths change; the resting icons keep their data.
+    const second = moved();
+    expect(second[0]).toBe(first[0]); expect(second.slice(1)).not.toEqual(first.slice(1));
+    // The rows keep their elements, so focus and tab order hold, and show again where they lay once the drag ends.
+    await pointer('pointerup', 40, 24, corner);
+    expect(hidden()).toEqual([]); expect(container.querySelector('.cad-sketch-relation-glyph-plates')).toBeNull(); expect(moved()).toEqual(resting); expect(composited()).toBe(false);
+    expect(container.querySelector('.cad-sketch-relation-glyphs-moved')).toBeNull();
+    expect(rows().every((row, index) => row === before[index])).toBe(true);
   });
 
   it('highlights the measured geometry on dimension hover and selection without rendering rows or the canvas again', async () => {

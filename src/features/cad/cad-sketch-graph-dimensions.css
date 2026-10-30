@@ -28,18 +28,27 @@
 .cad-sketch-highlight :is(line, path, circle) { stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .cad-sketch-highlight .cad-sketch-highlight-point { fill: var(--warning, #f0bf71); stroke: var(--foreground); stroke-width: 1px; }
 
-/* Relation glyphs: small quiet marks in the annotation colour, with a faint plate in the canvas colour so they read over the grid. */
-.cad-sketch-relation-glyph { color: var(--muted-foreground); outline: none; }
-.cad-sketch-relation-glyph.is-related { color: var(--foreground); }
-.cad-sketch-relation-glyph.is-selected { color: var(--primary); }
-.cad-sketch-relation-glyph.is-interactive { cursor: pointer; }
-.cad-sketch-relation-glyph-box {
+/* Relation glyphs: small quiet marks in the annotation colour, with a faint plate in the canvas colour so they read over the grid. Each plate is
+   one element; the icons of one state share one path above the plates. */
+/* Every drag frame repaints the sketch. While a drag runs the glyph layer has a compositor layer of its own, so those frames neither paint nor
+   raster the glyphs again; at rest it shares the sketch's layer, so a zoom rasters the glyphs at the new scale. */
+.cad-sketch-relation-glyphs.is-dragging { will-change: transform; }
+/* A drag draws the plates of the glyphs it moves as one path per state, styled as the rows. */
+.cad-sketch-relation-glyph, .cad-sketch-relation-glyph-plates {
+  color: var(--muted-foreground); outline: none;
   fill: color-mix(in srgb, var(--cad-view-top, var(--background)) 50%, var(--cad-view-bottom, var(--background))); fill-opacity: .82;
   stroke: currentColor; stroke-opacity: .35; stroke-width: 1px;
 }
-.cad-sketch-relation-glyph.is-selected .cad-sketch-relation-glyph-box { stroke-opacity: .9; }
-.cad-sketch-relation-glyph:focus-visible .cad-sketch-relation-glyph-box { stroke-opacity: 1; stroke-dasharray: 2 1.5; }
-.cad-sketch-relation-glyph-icon { pointer-events: none; }
+.cad-sketch-relation-glyph.is-related, .cad-sketch-relation-glyph-plates.is-related { color: var(--foreground); }
+.cad-sketch-relation-glyph.is-selected, .cad-sketch-relation-glyph-plates.is-selected { color: var(--primary); stroke-opacity: .9; }
+.cad-sketch-relation-glyph-plates { pointer-events: none; }
+.cad-sketch-relation-glyph.is-interactive { cursor: pointer; }
+.cad-sketch-relation-glyph:focus-visible { stroke-opacity: 1; stroke-dasharray: 2 1.5; }
+.cad-sketch-relation-glyph-icons {
+  fill: none; stroke: var(--muted-foreground); stroke-width: .8333px; stroke-linecap: round; stroke-linejoin: round; pointer-events: none;
+}
+.cad-sketch-relation-glyph-icons.is-related { stroke: var(--foreground); }
+.cad-sketch-relation-glyph-icons.is-selected { stroke: var(--primary); }
 /* The relations of a hovered glyph or dock row ring every glyph they draw. */
 .cad-sketch-relation-glyph-highlight { fill: none; stroke: var(--warning, #f0bf71); }
 .cad-sketch-relation-glyph-highlight rect { stroke-width: 1.5px; }

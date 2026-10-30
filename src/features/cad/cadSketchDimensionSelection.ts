@@ -86,7 +86,8 @@ const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.m
 // One resolver per graph, kept on that graph, so a canvas of dimensions joins its Coincident relations once and no graph reads another's joins.
 // A graph that names a missing point keeps raw IDs.
 const identities = new WeakMap<CadSketchGraph, (pointId: string) => string>();
-function pointIdentities(graph: CadSketchGraph): (pointId: string) => string {
+/** The point a graph's Coincident relations join a point ID to, the same ID for every point of one place; cached per graph. */
+export function cadSketchPointIdentity(graph: CadSketchGraph): (pointId: string) => string {
   let identity = identities.get(graph);
   if (!identity) {
     let root: (pointId: string) => string;
@@ -98,7 +99,7 @@ function pointIdentities(graph: CadSketchGraph): (pointId: string) => string {
 }
 /** The quantity a pick measures, resolved in `graph`: points through its Coincident joins, a line's length through its current endpoints. */
 function measuredIn(graph: CadSketchGraph, measures: CadSketchDimensionMeasure): string {
-  const point = pointIdentities(graph);
+  const point = cadSketchPointIdentity(graph);
   switch (measures.kind) {
     case 'point-distance': return canonical(['point-distance', measures.pointIds.map(point).sort()]);
     case 'point-line-distance': return canonical(['point-line-distance', point(measures.pointId), measures.lineId]);
@@ -206,8 +207,8 @@ export function cadSketchDimensionSelectionStatus(graph: CadSketchGraph | undefi
   const relations = ids.flatMap(id => graph.relations.filter(item => item.id === id && isCadSketchAnnotationRelation(item)));
   if (!relations.length) return null;
   const dimensions = relations.filter(isCadSketchDimensionRelation);
-  const [first, second] = relations;
-  if (relations.length === 2 && first.kind === 'fixed-axis' && second.kind === 'fixed-axis' && first.pointId === second.pointId && first.axis !== second.axis) return 'Fixed selected · Delete removes';
+  const [first, second] = relations, identity = cadSketchPointIdentity(graph);
+  if (relations.length === 2 && first.kind === 'fixed-axis' && second.kind === 'fixed-axis' && identity(first.pointId) === identity(second.pointId) && first.axis !== second.axis) return 'Fixed selected · Delete removes';
   if (relations.length === 1) return dimensions.length ? `${cadSketchDimensionName(graph, dimensions[0])} selected · Double-click or Enter edits · Delete removes`
     : `${cadSketchRelationName(graph, relations[0])} selected · Delete removes`;
   return `${cadSketchAnnotationCount(graph, ids)} selected · Delete removes them`;
@@ -223,16 +224,37 @@ export function cadSketchAnnotationCount(graph: CadSketchGraph, ids: readonly st
 /** Geometry a relation names directly, plus the sketch datum it measures from. */
 export interface CadSketchHighlight { readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly datums: readonly CadSketchDatum[] }
 export const NO_SKETCH_HIGHLIGHT: CadSketchHighlight = Object.freeze({ pointIds: [], entityIds: [], datums: [] });
+/** A graph's point and edge IDs, its lines by their two end IDs and its curves by centre, built once per graph so naming many relations reads no graph twice. */
+interface GeometryIndex {
+  readonly points: ReadonlySet<string>; readonly entities: ReadonlySet<string>;
+  /** Line indices in graph order, by `start end` and `end start`. */
+  readonly lines: ReadonlyMap<string, readonly number[]>;
+  readonly centres: ReadonlyMap<string, readonly string[]>;
+}
+const geometryIndices = new WeakMap<CadSketchGraph, GeometryIndex>();
+function geometryIndex(graph: CadSketchGraph): GeometryIndex {
+  let index = geometryIndices.get(graph);
+  if (!index) {
+    const lines = new Map<string, number[]>();
+    graph.entities.forEach((entity, at) => {
+      if (entity.kind !== 'line') return;
+      for (const key of new Set([`${entity.startPointId} ${entity.endPointId}`, `${entity.endPointId} ${entity.startPointId}`])) lines.set(key, [...lines.get(key) ?? [], at]);
+    });
+    index = { points: new Set(graph.points.map(point => point.id)), entities: new Set(graph.entities.map(entity => entity.id)), lines, centres: cadSketchCurveCentres(graph) };
+    geometryIndices.set(graph, index);
+  }
+  return index;
+}
 export function cadSketchRelationHighlight(graph: CadSketchGraph, relation: CadSketchGraphRelation): CadSketchHighlight {
   const named = relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds
     : relation.measurement.kind === 'point-line-distance' ? [relation.measurement.pointId] : []
     : relation.kind === 'tangent-joint' ? relation.endpoints.map(endpoint => endpoint.pointId)
       : 'pointIds' in relation ? relation.pointIds : 'pointId' in relation ? [relation.pointId] : [];
+  const { points, entities, lines, centres } = geometryIndex(graph);
   // A dimension or relation between a line's own endpoints is about that line, and a Concentric about the curves on its two centres.
-  const centres = relation.kind === 'coincident' ? cadSketchCurveCentres(graph) : null;
-  const spanned = centres && relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, centres) ? relation.pointIds.flatMap(id => centres.get(id) ?? [])
-    : named.length === 2 ? graph.entities.filter(entity => entity.kind === 'line' && named.includes(entity.startPointId) && named.includes(entity.endPointId)).map(entity => entity.id) : [];
-  const entities = new Set(graph.entities.map(entity => entity.id)), points = new Set(graph.points.map(point => point.id));
+  const [first, second] = named;
+  const spanned = relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, centres) ? relation.pointIds.flatMap(id => centres.get(id) ?? [])
+    : named.length === 2 ? [...new Set([`${first} ${second}`, `${first} ${first}`, `${second} ${second}`].flatMap(key => lines.get(key) ?? []))].sort((a, b) => a - b).map(at => graph.entities[at].id) : [];
   // A coordinate is measured from the other axis: X from the Y axis, Y from the X axis.
   const datums: readonly CadSketchDatum[] = relation.kind === 'fixed-axis' ? [relation.axis === 'x' ? 'y-axis' : 'x-axis'] : relation.kind === 'fixed-point' ? ['origin'] : [];
   return { pointIds: [...new Set(named)].filter(id => points.has(id)), entityIds: [...new Set([...cadSketchRelationEntityIds(relation), ...spanned])].filter(id => entities.has(id)), datums };

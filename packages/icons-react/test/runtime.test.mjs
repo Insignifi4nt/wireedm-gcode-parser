@@ -66,3 +66,9 @@ test('keeps decorative glyphs quiet and supports named, externally labeled and d
   assert.equal(dynamic.querySelector('title').textContent, 'Needs attention');
   assert.equal(host.querySelectorAll('svg [id]').length, 1);
 });
+
+test('carries each drawing as the path data it renders', () => {
+  act(() => root.render(createElement(PadIcon)));
+  assert.deepEqual([...host.querySelectorAll('path')].map(path => path.getAttribute('d')), PadIcon.paths);
+  assert.ok(PadIcon.paths.length > 0);
+});

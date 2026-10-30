@@ -246,6 +246,18 @@ describe('sketch relation highlight', () => {
     expect(highlight('x')).toEqual({ pointIds: ['o'], entityIds: [], datums: ['y-axis'] });
     expect(highlight('y')).toEqual({ pointIds: ['o'], entityIds: [], datums: ['x-axis'] });
   });
+  it('names every line between the two points in graph order, whichever way each runs, and each graph from its own geometry', () => {
+    const lines = parseCadSketchGraph({
+      points: [{ id: 'p', position: [0, 0] }, { id: 'q', position: [10, 0] }, { id: 'r', position: [10, 10] }],
+      entities: [{ id: 'z', kind: 'line', startPointId: 'q', endPointId: 'p', construction: false }, { id: 'other', kind: 'line', startPointId: 'q', endPointId: 'r', construction: false },
+        { id: 'a', kind: 'line', startPointId: 'p', endPointId: 'q', construction: true }],
+      relations: [{ id: 'level', kind: 'horizontal', pointIds: ['p', 'q'] }, { id: 'upright', kind: 'vertical', pointIds: ['r', 'q'] }]
+    });
+    expect(cadSketchRelationHighlight(lines, lines.relations[0])).toEqual({ pointIds: ['p', 'q'], entityIds: ['z', 'a'], datums: [] });
+    expect(cadSketchRelationHighlight(lines, lines.relations[1])).toEqual({ pointIds: ['r', 'q'], entityIds: ['other'], datums: [] });
+    const removed = { ...lines, entities: lines.entities.filter(entity => entity.id !== 'z') };
+    expect(cadSketchRelationHighlight(removed, removed.relations[0]).entityIds).toEqual(['a']);
+  });
 });
 
 describe('sketch highlight store', () => {

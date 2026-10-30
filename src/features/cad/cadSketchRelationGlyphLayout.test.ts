@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadSketchDimensionKeys } from './cadSketchDimensionSelection';
-import { layoutCadSketchRelationGlyphs } from './cadSketchRelationGlyphLayout';
+import { cadSketchRelationGlyphEntries, layoutCadSketchRelationGlyphs, placeCadSketchRelationGlyphs } from './cadSketchRelationGlyphLayout';
 
 const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
 /** A 40 × 20 rectangle a-b-c-d with bottom, right, top and left edges. */
@@ -77,8 +77,46 @@ describe('relation glyph layout', () => {
     expect(summary(graph)).toEqual([
       { relationIds: ['mid'], operand: 'point:m', kind: 'midpoint' },
       { relationIds: ['mirror'], operand: 'point:p', kind: 'symmetric' }, { relationIds: ['mirror'], operand: 'point:q', kind: 'symmetric' }, { relationIds: ['mirror'], operand: 'entity:axis', kind: 'symmetric' },
-      { relationIds: ['smooth'], operand: 'point:b', kind: 'tangent' }, { relationIds: ['on'], operand: 'point:top', kind: 'point-on-line' }, { relationIds: ['curve'], operand: 'point:e', kind: 'point-on-curve' }]);
+      { relationIds: ['smooth'], operand: 'point:b', kind: 'tangent' }, { relationIds: ['on'], operand: 'point:top', kind: 'point-on-line' },
+      { relationIds: ['curve'], operand: 'point:e', kind: 'point-on-curve' }, { relationIds: ['curve'], operand: 'entity:arc', kind: 'point-on-curve' }]);
     expect(layoutCadSketchRelationGlyphs(graph, {})[4].label).toBe('Tangent: Line 3 at Point 2 and Arc 1 at Point 2');
+  });
+
+  it('marks Point on curve on its point and on the circle or arc, where the curve\'s own glyphs sit', () => {
+    const graph: CadSketchGraph = {
+      points: [{ id: 'o', position: [0, 0] }, { id: 'p', position: [3, 4] }, { id: 'q', position: [20, 0] }],
+      entities: [{ id: 'ring', kind: 'circle', construction: false, centerPointId: 'o', radius: 'r' }, { id: 'hole', kind: 'circle', construction: false, centerPointId: 'q', radius: 'r' }],
+      relations: [{ id: 'same', kind: 'equal-radius', curveIds: ['ring', 'hole'] }, { id: 'on', kind: 'point-on-curve', pointId: 'p', curveId: 'ring' }] };
+    const glyphs = layoutCadSketchRelationGlyphs(graph, { r: 5 }).filter(glyph => glyph.relationIds[0] === 'on');
+    // The point keeps its diagonal mark; the circle's mark stacks beside its other glyph at the top of the circle.
+    expect(glyphs.map(glyph => [glyph.operand, glyph.anchor, glyph.offset])).toEqual([['point:p', [3, 4], [10, -10]], ['entity:ring', [0, 5], [7.5, -12]]]);
+    expect(glyphs[0].holds).toEqual({ points: ['p'], entities: ['ring'] });
+  });
+
+  it('places the relations of points that Coincident joins in one place by that place, keeping each relation\'s own ID', () => {
+    const base = rectangle([{ id: 'join', kind: 'coincident', pointIds: ['a', 'aa'] }, { id: 'fix', kind: 'fixed-point', pointId: 'aa', position: [0, 0] },
+      { id: 'on', kind: 'point-on-line', pointId: 'a', lineId: 'top' }]);
+    const graph: CadSketchGraph = { ...base, points: [...base.points, { id: 'aa', position: [0, 0] }] };
+    // One row of glyphs on the shared place, not two glyphs drawn over each other.
+    expect(layoutCadSketchRelationGlyphs(graph, {}).map(glyph => [glyph.relationIds, glyph.operand, glyph.offset])).toEqual([
+      [['join'], 'point:a', [10, -10]], [['fix'], 'point:a', [25, -10]], [['on'], 'point:a', [40, -10]]]);
+  });
+
+  it('draws Fix X and Fix Y on points that Coincident joins as one Fixed glyph that names both relations', () => {
+    const base = rectangle([{ id: 'x', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 }, { id: 'join', kind: 'coincident', pointIds: ['bb', 'b'] },
+      { id: 'y', kind: 'fixed-axis', pointId: 'bb', axis: 'y', value: 0 }]);
+    const graph: CadSketchGraph = { ...base, points: [...base.points, { id: 'bb', position: [40, 0] }] };
+    expect(layoutCadSketchRelationGlyphs(graph, {}).map(glyph => [glyph.relationIds, glyph.operand, glyph.kind, glyph.label])).toEqual([
+      [['x', 'y'], 'point:b', 'fix', 'Fixed: Point 2'], [['join'], 'point:b', 'coincident', 'Coincident: Point 5 and Point 2']]);
+  });
+
+  it('draws Horizontal or Vertical between points joined to a line\'s ends as one mark on that line, holding the line and both places', () => {
+    const base = rectangle([{ id: 'ja', kind: 'coincident', pointIds: ['a', 'a2'] }, { id: 'jb', kind: 'coincident', pointIds: ['b2', 'b'] },
+      { id: 'level', kind: 'horizontal', pointIds: ['a2', 'b2'] }]);
+    const graph: CadSketchGraph = { ...base, points: [...base.points, { id: 'a2', position: [0, 0] }, { id: 'b2', position: [40, 0] }] };
+    const level = layoutCadSketchRelationGlyphs(graph, {}).filter(glyph => glyph.relationIds[0] === 'level');
+    expect(level.map(glyph => [glyph.operand, glyph.anchor, glyph.offset])).toEqual([['entity:bottom', [20, 0], [0, -12]]]);
+    expect(level[0].holds.points).toEqual(['a', 'b']);
   });
 
   it('leaves dimensions, linear patterns and linked references to their own controls, and keeps a broken relation\'s glyphs on the operands that remain, so it can be removed', () => {
@@ -88,6 +126,17 @@ describe('relation glyph layout', () => {
       { id: 'link', kind: 'external-reference', entityId: 'top', sourceSketchId: 'other', source: { kind: 'line', entityId: 'edge', startPointId: 's', endPointId: 'e' } },
       { id: 'lost', kind: 'parallel', lineIds: ['bottom', 'gone'] }, { id: 'ghost', kind: 'horizontal', pointIds: ['a', 'missing'] }]);
     expect(summary(graph)).toEqual([{ relationIds: ['lost'], operand: 'entity:bottom', kind: 'parallel' }, { relationIds: ['ghost'], operand: 'point:a', kind: 'horizontal' }]);
+  });
+
+  it('keeps each glyph a drag leaves in place as the same object, and places the moved ones afresh', () => {
+    const graph = rectangle(), entries = cadSketchRelationGlyphEntries(graph), resting = placeCadSketchRelationGlyphs(graph, {}, entries);
+    // Point c moves up: the right and top edges carry their glyphs with them, the bottom and left keep theirs.
+    const dragged = { ...graph, points: graph.points.map(point => point.id === 'c' ? { ...point, position: [40, 30] as [number, number] } : point) };
+    const placed = placeCadSketchRelationGlyphs(dragged, {}, entries, resting);
+    expect(placed.map(glyph => resting.includes(glyph))).toEqual([true, false, false, true]);
+    expect(placed).toEqual(placeCadSketchRelationGlyphs(dragged, {}, entries));
+    // Entries named again, as after an edit, place new glyphs even where they lie, so a glyph never keeps an earlier name or label.
+    expect(placeCadSketchRelationGlyphs(graph, {}, cadSketchRelationGlyphEntries(graph), resting).some(glyph => resting.includes(glyph))).toBe(false);
   });
 
   it('gives a relation that reuses an ID for other operands a new mount key, so it never inherits hover, focus or selection', () => {

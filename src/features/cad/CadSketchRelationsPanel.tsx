@@ -33,7 +33,7 @@ import { cadSketchDistanceForPair as distanceForPair, cadSketchDrivingDimensionF
   cadSketchPointLineDistanceFor as pointLineDistanceFor, cadSketchRadialRelationForEntity as radialRelationForEntity, cadSketchReferenceDrivingLock as referenceDrivingLock,
   cadSketchRelationHasPointPair as samePair, cadSketchSameIdentityPair as sameIdentityPair } from './cadSketchDimensionCommands';
 import { cadSketchRelationHighlight, type CadSketchHighlight, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
-import { isCadSketchConcentric } from './cadSketchRelationNames';
+import { cadSketchCurveCentres, isCadSketchConcentric } from './cadSketchRelationNames';
 import { cadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
 import { CAD_SKETCH_RELATION_ICONS } from './CadSketchRelationGlyphs';
 import './cad-sketch-profile.css';
@@ -361,13 +361,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const originalEntity = singleton?.kind === 'entity' ? source.graph.entities.find(entity => entity.id === singleton.id) : null;
   const dimensionPair = selectedEntity?.kind === 'line' ? [selectedEntity.startPointId, selectedEntity.endPointId] as const : pointPair;
   const draftIdentity = useMemo(() => resolveCadSketchPointIdentities(draft), [draft]);
+  const draftCentres = useMemo(() => cadSketchCurveCentres(draft), [draft]);
   const labelRelation = (relation: CadSketchGraphRelation) => initialCommand?.kind === 'datum-distance' && relation.kind === 'fixed-axis' && datumDimensions.some(item => item.id === relation.id)
     ? initialCommand.datum === 'origin' ? `${relation.axis.toUpperCase()} from origin` : relation.axis === 'x' ? 'X from Y axis' : 'Y from X axis'
     : relation.kind === 'distance' && pointPair && sameIdentityPair(draftIdentity, relation.pointIds, pointPair) ? 'Distance'
       : relation.kind === 'distance' && centerPair && sameIdentityPair(draftIdentity, relation.pointIds, centerPair) ? 'Center distance'
-        : isCadSketchConcentric(draft, relation) ? 'Concentric' : relationLabel(relation);
+        : isCadSketchConcentric(draft, relation, draftCentres) ? 'Concentric' : relationLabel(relation);
   // A row draws the glyph its relation draws on the canvas.
-  const relationIcon = (relation: CadSketchGraphRelation) => { const kind = cadSketchRelationGlyphKind(draft, relation); if (!kind) return null; const Icon = CAD_SKETCH_RELATION_ICONS[kind]; return <Icon size={12} />; };
+  const relationIcon = (relation: CadSketchGraphRelation) => { const kind = cadSketchRelationGlyphKind(draft, relation, draftCentres); if (!kind) return null; const Icon = CAD_SKETCH_RELATION_ICONS[kind]; return <Icon size={12} />; };
   const relationRowHighlight = (relation: CadSketchGraphRelation): RowHighlight => ({ ...cadSketchRelationHighlight(draft, relation), relationIds: [relation.id] });
   // A zero coordinate reads as the plane reference it holds the point on; the value editor keeps the coordinate name.
   const listedRelationLabel = (relation: CadSketchGraphRelation) => datumDimensions.some(item => item.id === relation.id) ? null : cadSketchDatumRelationLabel(relation);
