@@ -2,11 +2,16 @@ import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSke
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { cadSketchRelationEntityIds } from '@/domain/cad/cadSketchGraphReferences';
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
-import type { CadSketchDatum } from './cadSketchGraphSelection';
+import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
+import { cadSketchZeroScalar, type CadSketchDatum } from './cadSketchGraphSelection';
 
-const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['distance', 'point-line-distance', 'axis-distance', 'radial-size', 'fillet-corner', 'chamfer-corner', 'line-angle', 'reference-dimension']);
-/** Relations drawn as a dimension annotation on the sketch canvas. */
-export const isCadSketchDimensionRelation = (relation: CadSketchGraphRelation): relation is CadSketchDimensionRelation => DIMENSION_KINDS.has(relation.kind);
+const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['distance', 'point-line-distance', 'axis-distance', 'fixed-axis', 'radial-size', 'fillet-corner', 'chamfer-corner', 'line-angle', 'reference-dimension']);
+/**
+ * Relations drawn as a dimension annotation on the sketch canvas. A coordinate held from an axis is a distance from that axis, unless it is 0
+ * whatever the parameters are, which keeps its point on the axis as a relation.
+ */
+export const isCadSketchDimensionRelation = (relation: CadSketchGraphRelation): relation is CadSketchDimensionRelation => DIMENSION_KINDS.has(relation.kind)
+  && !(relation.kind === 'fixed-axis' && cadSketchZeroScalar(relation.value));
 
 /**
  * What a dimension measures, with the operands it was authored on. A driving and a reference form of one quantity share it, and it names
@@ -168,6 +173,8 @@ export function cadSketchDimensionName(graph: CadSketchGraph, relation: CadSketc
     case 'distance': return graph.entities.some(entity => entity.kind === 'line' && relation.pointIds.includes(entity.startPointId) && relation.pointIds.includes(entity.endPointId)) ? 'Length' : 'Distance';
     case 'point-line-distance': return 'Point to line distance';
     case 'axis-distance': return relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance';
+    // A distance from an axis is named like a distance between parallel lines; only its highlight shows the axis.
+    case 'fixed-axis': return 'Distance';
     case 'radial-size': return relation.quantity === 'radius' ? 'Radius' : 'Diameter';
     case 'fillet-corner': return 'Fillet';
     case 'chamfer-corner': return 'Chamfer';
@@ -194,9 +201,11 @@ export function cadSketchRelationHighlight(graph: CadSketchGraph, relation: CadS
   // A dimension or relation between a line's own endpoints is about that line.
   const spanned = named.length === 2 ? graph.entities.filter(entity => entity.kind === 'line' && named.includes(entity.startPointId) && named.includes(entity.endPointId)).map(entity => entity.id) : [];
   const entities = new Set(graph.entities.map(entity => entity.id)), points = new Set(graph.points.map(point => point.id));
-  // A coordinate is measured from the other axis: X from the Y axis, Y from the X axis.
+  // A coordinate is measured from the other axis: X from the Y axis, Y from the X axis. A distance drawn to a line kept along the axis lights that line.
   const datums: readonly CadSketchDatum[] = relation.kind === 'fixed-axis' ? [relation.axis === 'x' ? 'y-axis' : 'x-axis'] : relation.kind === 'fixed-point' ? ['origin'] : [];
-  return { pointIds: [...new Set(named)].filter(id => points.has(id)), entityIds: [...new Set([...cadSketchRelationEntityIds(relation), ...spanned])].filter(id => entities.has(id)), datums };
+  const measured = relation.kind === 'fixed-axis' && isCadSketchDimensionRelation(relation) ? cadSketchAxisDistanceLine(graph, relation)?.id : undefined;
+  return { pointIds: [...new Set(named)].filter(id => points.has(id)),
+    entityIds: [...new Set([...cadSketchRelationEntityIds(relation), ...spanned, ...measured ? [measured] : []])].filter(id => entities.has(id)), datums };
 }
 
 /** A relation resolves against the drawn graph, so a dimension removed by undo highlights nothing; dock rows pass their own draft geometry. */

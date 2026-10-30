@@ -229,12 +229,29 @@ describe('dimension pick rules', () => {
 });
 
 describe('dimensions to the origin and axes', () => {
-  it('holds a point at its distance from an axis, and an arc center the same way', () => {
-    const fromX = plan(sketch(), [point('c'), datum('x-axis')]);
-    expect(fromX.candidates).toHaveLength(1);
-    expect(available(fromX, 'datum')).toMatchObject({ label: 'Distance from the X axis', relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }],
-      reference: null, preview: { kind: 'datum', axes: ['y'] } });
-    expect(available(plan(sketch(), [datum('y-axis'), entity('bend')]), 'datum').relations).toEqual([{ id: 'new-1', kind: 'fixed-axis', pointId: 'arc-center', axis: 'x', value: 0 }]);
+  it('holds a point at its distance from an axis in either pick order, and an arc center the same way', () => {
+    for (const operands of [[point('c'), datum('x-axis')], [datum('x-axis'), point('c')]]) {
+      const fromX = plan(sketch(), operands);
+      expect(fromX.candidates).toHaveLength(1);
+      // An axis is a line, so the distance from it is named as any other; the axis stays in reasons.
+      expect(available(fromX, 'datum')).toMatchObject({ label: 'Distance', relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }],
+        reference: null, preview: { kind: 'datum', axes: ['y'] } });
+    }
+    expect(available(plan(sketch(), [datum('x-axis'), entity('bend')]), 'datum').relations).toEqual([{ id: 'new-1', kind: 'fixed-axis', pointId: 'arc-center', axis: 'y', value: 60 }]);
+    // Its preview is drawn as placed: square to the axis, labelled with its size whichever side of the axis the point is on.
+    const below = available(plan(parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'c' ? { ...item, position: [50, -25] } : item) }), [datum('x-axis'), point('c')]), 'datum');
+    expect(below.relations).toMatchObject([{ kind: 'fixed-axis', axis: 'y', value: -25 }]);
+    expect(layoutCadSketchDimensionPreview(below.preview, { x: 70, y: -10 }, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance', 25]]);
+  });
+
+  it('takes no distance from an axis for a point or line on it, and says Coincident keeps it there', () => {
+    expect(candidate(plan(sketch(), [datum('y-axis'), entity('bend')]), 'datum')).toEqual({ form: 'datum', label: 'Distance', state: 'blocked',
+      reason: 'This point is on the Y axis, so it has no distance from it. Use Coincident to keep it there.' });
+    const graph = parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'b' || item.id === 'c' ? { ...item, position: [0, item.position[1]] } : item) });
+    expect(candidate(plan(graph, [entity('right'), datum('y-axis')]), 'datum')).toMatchObject({ state: 'blocked',
+      reason: 'This line is on the Y axis, so it has no distance from it. Use Coincident to keep it there.' });
+    // A line across the axis keeps its own refusal, even with an end on it.
+    expect(candidate(plan(graph, [datum('x-axis'), entity('right')]), 'datum')).toMatchObject({ state: 'blocked', reason: 'This line is not parallel to the X axis, so it has no distance from it.' });
   });
 
   it('gives a point and the origin its position, or one coordinate by the pointer region', () => {
@@ -290,8 +307,9 @@ describe('preview measurement', () => {
   });
 
   it('draws a datum per axis and a radial size toward the pointer', () => {
+    // Each coordinate from the origin previews as the distance from its axis it places, labelled with its size.
     const position = available(plan(sketch(), [datum('origin'), point('c')]), 'datum');
-    expect(layoutCadSketchDimensionPreview(position.preview, { x: 20, y: 10 }, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance-x', 50], ['distance-y', 25]]);
+    expect(layoutCadSketchDimensionPreview(position.preview, { x: 20, y: 10 }, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance', 50], ['distance', 25]]);
     const radius = available(plan(sketch(), [entity('bend')]), 'radius'), [mark] = layoutCadSketchDimensionPreview(radius.preview, { x: 0, y: 80 }, .1);
     expect(mark).toMatchObject({ kind: 'radius', value: 5 });
     expect(layoutCadSketchDimensionPreview(radius.preview, { x: Number.NaN, y: 0 }, .1)).toEqual([]);

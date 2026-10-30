@@ -4,7 +4,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import type { CadPrepareEdits } from './useCadPreparedPreview';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
-import { cadSketchDatumLabels, cadSketchRelationDatum, isCadSketchGraphSelected, reconcileCadSketchGraphSelection, toggleCadSketchGraphSelection, type CadSketchDatum, type CadSketchGeometryPick, cadSketchGraphSelectionsEqual } from './cadSketchGraphSelection';
+import { cadSketchDatumName, cadSketchRelationDatum, isCadSketchGraphSelected, reconcileCadSketchGraphSelection, toggleCadSketchGraphSelection, type CadSketchDatum, type CadSketchGeometryPick, cadSketchGraphSelectionsEqual } from './cadSketchGraphSelection';
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { createCadFreshSketchDrawing, createCadFreshSketchGraph, type CadFreshSketchDrawing } from '@/domain/cad/cadFreshSketchGraph';
 import { createCadPathDraftGraph } from './cadPathDraftGraph';
@@ -15,7 +15,7 @@ import {
   cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionPickOf, createCadSketchHighlightStore, isCadSketchDimensionPickCurrent, isCadSketchDimensionRelation,
   NO_SKETCH_DIMENSIONS, reconcileCadSketchDimensionSelection, sameCadSketchDimensionPick, selectCadSketchDimension, type CadSketchDimensionPick
 } from './cadSketchDimensionSelection';
-import { cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
+import { cadSketchAxisDistanceLine, cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
 import {
   CAD_SKETCH_DIMENSION_EXISTING_REASON, cadSketchDimensionCandidateAt, cadSketchDimensionPickAllowed, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt, cadSketchDimensionRetry,
   NO_SKETCH_DIMENSION_PLAN, planCadSketchDimension, type CadSketchDimensionForm, type CadSketchDimensionOperand
@@ -584,8 +584,12 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const graph = sketch?.graph, pick = graph ? cadSketchDimensionPick(graph, relation.id) : null;
     if (interactionState.current.locked || !sketchId || !graph || !pick || !sameCadSketchDimensionPick(pick, cadSketchDimensionPickOf(relation), graph)) return;
     const points = (ids: readonly string[]) => ids.map(id => ({ kind: 'point' as const, id })), entity = (id: string) => [{ kind: 'entity' as const, id }];
-    let operands: readonly CadSketchGraphSelection[];
-    if (relation.kind === 'reference-dimension') {
+    let operands: readonly CadSketchGraphSelection[], datums: readonly CadSketchDatum[] = NO_SKETCH_DATUMS;
+    if (relation.kind === 'fixed-axis') {
+      // A distance from an axis edits on the line it is drawn to, or its point, with the axis it is measured from.
+      const line = cadSketchAxisDistanceLine(graph, relation);
+      operands = line ? entity(line.id) : points([relation.pointId]); datums = [relation.axis === 'x' ? 'y-axis' : 'x-axis'];
+    } else if (relation.kind === 'reference-dimension') {
       const measurement = relation.measurement;
       operands = measurement.kind === 'point-distance' ? points(measurement.pointIds)
         : measurement.kind === 'point-line-distance' ? [{ kind: 'point', id: measurement.pointId }, { kind: 'entity', id: measurement.lineId }] : entity(measurement.entityId);
@@ -596,7 +600,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     else if (relation.kind === 'axis-distance') operands = points(relation.pointIds);
     else if (relation.kind === 'line-angle') operands = relation.rays.map(ray => ({ kind: 'entity' as const, id: ray.lineId }));
     else operands = entity(relation.kind === 'radial-size' ? relation.entityId : relation.kind === 'fillet-corner' ? relation.arcId : relation.chamferId);
-    editSketchDimension(pick, operands, NO_SKETCH_DATUMS);
+    editSketchDimension(pick, operands, datums);
   }, [sketchId, sketch, editSketchDimension]);
   // Another part or sketch starts with nothing selected before anything renders against it, so a relations row open on the old
   // selection never mounts, or takes focus, in the new part.
@@ -1488,7 +1492,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     if (!first) return shownPlacement ? 'Dimension placed · Enter or double-click edits it; choose geometry for the next one' : 'Dimension · Choose a line, arc, circle, point, the origin or an axis';
     const line = first.kind === 'entity' && sketch?.graph?.entities.find(entity => entity.id === first.id)?.kind === 'line';
     if (!dimensionPlan.candidates.length) return first.kind === 'point' ? 'Dimension · Choose a second point, a line, an arc, a circle, the origin or an axis'
-      : first.kind === 'datum' ? `Dimension · Choose a point, an arc${first.id === 'origin' ? ' or a circle' : ', a circle or a line'} to dimension from the ${first.id === 'origin' ? 'origin' : cadSketchDatumLabels[first.id]}`
+      : first.kind === 'datum' ? `Dimension · Choose a point, an arc${first.id === 'origin' ? ' or a circle' : ', a circle or a line'} to dimension from the ${cadSketchDatumName(first.id)}`
         : line ? 'Dimension · Choose a second line, a point, a curve or an axis to dimension from this line'
           : 'Dimension · Choose a point, a line, another curve, the origin or an axis for a distance from its center';
     const blocked = dimensionPlan.candidates.find(candidate => candidate.state === 'blocked');

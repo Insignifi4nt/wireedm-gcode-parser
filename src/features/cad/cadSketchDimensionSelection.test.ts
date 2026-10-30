@@ -50,9 +50,13 @@ describe('sketch dimension selection', () => {
     expect(reconcileCadSketchDimensionSelection(graph, current)).toBe(current);
     const withoutSize = { ...graph, relations: graph.relations.filter(relation => relation.id !== 'size') };
     expect(cadSketchDimensionIds(reconcileCadSketchDimensionSelection(withoutSize, current))).toEqual(['length']);
-    // Positional relations and datum coordinates are not canvas dimensions.
-    expect(cadSketchDimensionPick(graph, 'parallel-free')).toBeNull(); expect(cadSketchDimensionPick(graph, 'x')).toBeNull();
-    expect(reconcileCadSketchDimensionSelection(graph, [{ ...pick('length'), id: 'x' }])).toBe(NO_SKETCH_DIMENSIONS);
+    // Positional relations and a coordinate held on an axis are not canvas dimensions; a coordinate held off an axis is a distance from it,
+    // and a parameter keeps it one even while the parameter is 0.
+    expect(cadSketchDimensionPick(graph, 'parallel-free')).toBeNull(); expect(cadSketchDimensionPick(graph, 'x')).toMatchObject({ id: 'x', form: 'fixed-axis' });
+    const onAxis = withRelation({ id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: '1 - 1' });
+    expect(cadSketchDimensionPick(onAxis, 'x')).toBeNull(); expect(reconcileCadSketchDimensionSelection(onAxis, [pick('x')])).toBe(NO_SKETCH_DIMENSIONS);
+    expect(cadSketchDimensionPick(withRelation({ id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: ' offset ' }), 'x')).toMatchObject({ id: 'x' });
+    expect(reconcileCadSketchDimensionSelection(graph, [{ ...pick('length'), id: 'parallel-free' }])).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(undefined, current)).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(graph, NO_SKETCH_DIMENSIONS)).toBe(NO_SKETCH_DIMENSIONS);
   });
@@ -197,6 +201,7 @@ describe('sketch dimension selection', () => {
   it('describes the selection for the status line without opening the editor', () => {
     expect(cadSketchDimensionSelectionStatus(graph, ['length'])).toBe('Length selected · Double-click or Enter edits · Delete removes');
     expect(cadSketchDimensionSelectionStatus(graph, ['diagonal'])).toBe('Distance selected · Double-click or Enter edits · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(graph, ['x'])).toBe('Distance selected · Double-click or Enter edits · Delete removes');
     expect(cadSketchDimensionSelectionStatus(graph, ['size', 'rise'])).toBe('2 dimensions selected · Delete removes them');
     expect(cadSketchDimensionSelectionStatus(graph, [])).toBeNull();
     expect(cadSketchDimensionSelectionStatus(graph, ['gone'])).toBeNull();
@@ -217,6 +222,10 @@ describe('sketch relation highlight', () => {
   it('names the datum a coordinate is measured from', () => {
     expect(highlight('x')).toEqual({ pointIds: ['o'], entityIds: [], datums: ['y-axis'] });
     expect(highlight('y')).toEqual({ pointIds: ['o'], entityIds: [], datums: ['x-axis'] });
+    // A distance to a line kept upright along the Y axis lights that line too; held on the axis, it is a relation about its point alone.
+    const upright = { ...graph, relations: [...graph.relations, { id: 'v', kind: 'vertical' as const, pointIds: ['c', 'b'] as const }] };
+    expect(cadSketchRelationHighlight(upright, { id: 'sideX', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 })).toEqual({ pointIds: ['b'], entityIds: ['side'], datums: ['y-axis'] });
+    expect(cadSketchRelationHighlight(upright, { id: 'sideX', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 0 })).toEqual({ pointIds: ['b'], entityIds: [], datums: ['y-axis'] });
   });
 });
 
@@ -247,6 +256,7 @@ describe('sketch dimension conversions', () => {
   it('explains why other dimensions cannot become references', () => {
     expect(cadSketchDimensionToReference(graph, relation('angle'))).toEqual({ relation: null, reason: 'Reference dimensions measure lengths, point distances, point to line distances, radii and diameters.' });
     expect(cadSketchDimensionToReference(graph, relation('rise')).reason).toBe('Reference dimensions measure lengths, point distances, point to line distances, radii and diameters.');
+    expect(cadSketchDimensionToReference(graph, relation('x'))).toEqual({ relation: null, reason: 'A distance from the origin or an axis has no reference form yet.' });
     const measured = { ...graph, relations: [...graph.relations, { id: 'measured', kind: 'reference-dimension' as const, measurement: { kind: 'line-length' as const, entityId: 'base' } }] };
     expect(cadSketchDimensionToReference(measured, relation('length')).reason).toBe('A reference dimension already measures this. Delete this dimension instead.');
   });

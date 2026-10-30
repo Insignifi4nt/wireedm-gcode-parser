@@ -4,6 +4,7 @@ import { cadFeatureDependencies } from '@/domain/cad/cadFeatureInputs';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { measureCadCurve } from '@/domain/cad/cadCurveMeasurements';
 import { formatCadLocalizedQuantity } from './cadDisplayQuantity';
+import { cadSketchZeroScalar } from './cadSketchGraphSelection';
 
 /** One read-only line of a Properties summary. */
 export interface CadPropertyRow { readonly label: string; readonly value: string }
@@ -51,7 +52,8 @@ export function cadPropertySummary(document: CadDocument, target: CadPropertyTar
       const kinds = ['line', 'arc', 'circle'] as const;
       const geometry = kinds.map(kind => [kind, graph.entities.filter(entity => entity.kind === kind).length] as const).filter(([, count]) => count > 0);
       rows.push({ label: 'Geometry', value: geometry.length ? geometry.map(([kind, count]) => plural(count, kind)).join(' · ') : 'Empty' });
-      const dimensions = graph.relations.filter(relation => DIMENSIONS.has(relation.kind)).length;
+      // A coordinate held at 0 keeps its point on an axis, a relation; any other value is a distance from the axis.
+      const dimensions = graph.relations.filter(relation => DIMENSIONS.has(relation.kind) && !(relation.kind === 'fixed-axis' && cadSketchZeroScalar(relation.value))).length;
       rows.push({ label: 'Constraints', value: `${plural(dimensions, 'dimension')} · ${plural(graph.relations.length - dimensions, 'relation')}` });
     } else if (feature.profiles.length) rows.push({ label: 'Geometry', value: plural(feature.profiles.length, 'profile') });
     try {

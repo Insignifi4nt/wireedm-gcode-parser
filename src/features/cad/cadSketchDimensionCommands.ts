@@ -25,6 +25,18 @@ export const cadSketchPointLineDistanceFor = (graph: CadSketchGraph, operands: {
   return graph.relations.find((relation): relation is Extract<CadSketchGraphRelation, { kind: 'point-line-distance' }> =>
     relation.kind === 'point-line-distance' && relation.lineId === operands.lineId && identity(relation.pointId) === point);
 };
+/**
+ * The line a distance from an axis measures: one that its point ends, kept along that axis by Horizontal or Vertical, as the Dimension tool
+ * places it for a line. A point that ends no such line is measured itself. `identity` lets one caller resolve the graph's joins once.
+ */
+export function cadSketchAxisDistanceLine(graph: CadSketchGraph, relation: Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }>, identity?: (pointId: string) => string) {
+  try {
+    const of = identity ?? resolveCadSketchPointIdentities(graph), own = of(relation.pointId), along = relation.axis === 'y' ? 'horizontal' : 'vertical';
+    return graph.entities.find((entity): entity is Extract<CadSketchGraph['entities'][number], { kind: 'line' }> => entity.kind === 'line'
+      && (of(entity.startPointId) === own || of(entity.endPointId) === own)
+      && graph.relations.some(item => item.kind === along && cadSketchSameIdentityPair(of, item.pointIds, [entity.startPointId, entity.endPointId]))) ?? null;
+  } catch { return null; }
+}
 /** The radius, diameter or fillet that already drives a curve. */
 export const cadSketchRadialRelationForEntity = (graph: CadSketchGraph, entityId: string) => graph.relations.find(relation => relation.kind === 'radial-size' && relation.entityId === entityId
   || relation.kind === 'fillet-corner' && relation.arcId === entityId);
@@ -69,11 +81,14 @@ export function cadSketchReferenceDrivingLock(graph: CadSketchGraph, relation: C
 /** One dimension command for the canvas menu: the relation to set, or why the command does not apply. */
 export type CadSketchDimensionConversion = { readonly relation: CadSketchGraphRelation; readonly reason: null } | { readonly relation: null; readonly reason: string };
 const unavailable = (reason: string): CadSketchDimensionConversion => ({ relation: null, reason });
+/** Why a distance from the origin or an axis takes no reference form, when placed and once placed. */
+export const CAD_SKETCH_NO_REFERENCE_DATUM = 'A distance from the origin or an axis has no reference form yet.';
 
 /** A driving length, distance, point to line distance, radius or diameter becomes a reference that measures the same thing and keeps its identity. */
 export function cadSketchDimensionToReference(graph: CadSketchGraph, relation: CadSketchGraphRelation): CadSketchDimensionConversion {
   if (relation.kind === 'reference-dimension') return unavailable('This is already a reference dimension.');
   if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return unavailable('A corner treatment owns its fillet or chamfer size. Edit the corner instead.');
+  if (relation.kind === 'fixed-axis') return unavailable(CAD_SKETCH_NO_REFERENCE_DATUM);
   if (relation.kind !== 'distance' && relation.kind !== 'point-line-distance' && relation.kind !== 'radial-size') return unavailable('Reference dimensions measure lengths, point distances, point to line distances, radii and diameters.');
   const line = relation.kind === 'distance' && graph.entities.find(entity => entity.kind === 'line' && cadSketchRelationHasPointPair(relation, [entity.startPointId, entity.endPointId]));
   const measurement: Measurement = relation.kind === 'radial-size' ? { kind: 'radial-size', entityId: relation.entityId, quantity: relation.quantity }

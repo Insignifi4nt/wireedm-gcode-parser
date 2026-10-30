@@ -21,6 +21,8 @@ export type CadSketchGraphPickFilter = Static<typeof CadSketchGraphPickFilterSch
 export const CAD_SKETCH_DATUMS = ['origin', 'x-axis', 'y-axis'] as const;
 export type CadSketchDatum = typeof CAD_SKETCH_DATUMS[number];
 export const cadSketchDatumLabels: Readonly<Record<CadSketchDatum, string>> = { origin: 'Origin', 'x-axis': 'X axis', 'y-axis': 'Y axis' };
+/** A datum named inside a sentence: the origin in lower case, an axis with its capital. */
+export const cadSketchDatumName = (datum: CadSketchDatum): string => datum === 'origin' ? 'origin' : cadSketchDatumLabels[datum];
 
 export interface CadSketchGeometryPick {
   readonly eligibleEntityIds: readonly string[];

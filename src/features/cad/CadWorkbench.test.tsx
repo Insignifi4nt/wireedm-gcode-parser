@@ -2014,13 +2014,16 @@ describe('CAD sketch interaction', () => {
         await hover(label(id).querySelector('rect')!, false);
         expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
       }
-      // A datum coordinate has no canvas annotation; its relation row highlights the point and the axis it is measured from.
+      // A distance from an axis lights the point and the axis it is measured from, on its label and on its relation row.
+      await hover(label('x').querySelector('rect')!);
+      expect([highlighted('point'), highlighted('datum')]).toEqual([['o'], ['y-axis']]);
+      await hover(label('x').querySelector('rect')!, false);
       const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]')!, point = container.querySelector<SVGGElement>('[data-cad-sketch-point="o"]')!;
       vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
       await act(async () => { point.focus(); point.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
       await act(async () => menuItem('Constraints and dimensions').click());
-      const row = [...container.querySelectorAll('ul[aria-label="Sketch relations"] > li')].find(item => item.textContent?.startsWith('Fix X'));
-      if (!row) throw new Error('Datum relation row missing.');
+      const row = [...container.querySelectorAll('ul[aria-label="Sketch relations"] > li')].find(item => item.querySelector('button[aria-label^="Inspect Distance relation 5 · "]'));
+      if (!row) throw new Error('Axis distance row missing.');
       await act(async () => row.dispatchEvent(new FocusEvent('focusin', { bubbles: true })));
       expect([highlighted('point'), highlighted('datum')]).toEqual([['o'], ['y-axis']]);
       await act(async () => row.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
@@ -2044,6 +2047,38 @@ describe('CAD sketch interaction', () => {
       await press('diagonal', 'Enter'); expect(field('Distance').value).toBe('50');
       await act(async () => label('angle').dispatchEvent(new MouseEvent('dblclick', { button: 0, detail: 2, bubbles: true, cancelable: true })));
       expect(field('Angle').value).toBe('90'); expect(currentDocument).toBe(source);
+      expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+    });
+
+    it('draws a distance from an axis as a dimension named Distance, and selects, edits and deletes it as one', async () => {
+      // There is no solver here, so Apply moves the point the way the solver would.
+      const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits.map((item): CadEdit => {
+        const feature = currentDocument.features[0];
+        if (item.kind !== 'set-sketch-relation' || item.relation.kind !== 'fixed-axis' || feature.kind !== 'sketch' || !feature.graph) return item;
+        const relation = item.relation, points = feature.graph.points.map(point => point.id === relation.pointId ? { ...point, position: [Number(relation.value), point.position[1]] as const } : point);
+        return { kind: 'update-feature', feature: { ...feature, graph: { ...feature.graph, points, relations: feature.graph.relations.map(entry => entry.id === relation.id ? relation : entry) } } };
+      })));
+      await open({ build: null, buildState: 'idle', onEditMany });
+      // The hole center's X of 10 is drawn square to the Y axis, with its size alone.
+      expect(label('x').getAttribute('aria-label')).toBe('Dimension distance 10 mm, press Enter to edit');
+      await pick('x');
+      expect(status()).toBe('Distance selected · Double-click or Enter edits · Delete removes'); expect(selectedDimensions()).toEqual(['x']);
+      await press('x', 'ContextMenu');
+      expect(menuItem('Make reference').disabled).toBe(true);
+      expect(menuItem('Make reference').getAttribute('aria-description')).toBe('A distance from the origin or an axis has no reference form yet.');
+      await act(async () => menuItem('Edit value…').click()); expect(field('Distance').value).toBe('10');
+      await input(field('Distance'), '12'); await click('Apply');
+      expect(onEditMany.mock.lastCall?.[0]).toEqual([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 12 } }]);
+      expect(relations().find(relation => relation.id === 'x')).toEqual({ id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 12 });
+      expect(label('x').getAttribute('aria-label')).toBe('Dimension distance 12 mm, press Enter to edit'); expect(selectedDimensions()).toEqual(['x']);
+      await canvasKey('Delete');
+      expect(onEditMany.mock.lastCall?.[0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'x' }]);
+      expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'angle', 'size', 'measured']);
+      // A distance to a side kept upright edits on that side with the Y axis it is measured from, so another row returns the selection to both.
+      await replace(current => [...current, { id: 'up', kind: 'vertical', pointIds: ['b', 'c'] }, { id: 'bx', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 }]);
+      await press('bx', 'Enter'); expect(field('Distance').value).toBe('40'); expect(selectedDimensions()).toEqual(['bx']);
+      await editRow('Vertical'); expect(geometry()).toEqual([{ kind: 'entity', id: 'side' }]);
+      expect(container.querySelector('[data-cad-sketch-datum="y-axis"]')?.getAttribute('aria-pressed')).toBe('true');
       expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
     });
 
@@ -2328,14 +2363,14 @@ describe('CAD sketch interaction', () => {
     });
 
     it('keeps the selection to the dimension being edited alone, and closes its editor once anything else takes the selection', async () => {
-      await open();
+      await open(); await replace(current => [...current, { id: 'pin', kind: 'fixed-point', pointId: 'o', position: [10, 10] }]);
       // Opening one of several selected dimensions selects that dimension alone.
       await pick('length'); await pick('diagonal', true); expect(selectedDimensions()).toEqual(['length', 'diagonal']);
       await press('diagonal', 'Enter'); expect(field('Distance').value).toBe('50');
       expect(selectedDimensions()).toEqual(['diagonal']); expect(geometry()).toEqual([]);
       // A row that is not a canvas dimension returns the selection to the geometry the panel works on; a dimension row takes it back.
       await press('size', 'Enter'); expect(selectedDimensions()).toEqual(['size']);
-      await editRow('Fix X'); expect(relationsPanel()).not.toBeNull();
+      await editRow('Fixed point'); expect(relationsPanel()).not.toBeNull();
       expect(selectedDimensions()).toEqual([]); expect(geometry()).toEqual([{ kind: 'entity', id: 'hole' }]);
       await editRow('Diameter'); expect(field('Diameter').value).toBe('8'); expect(selectedDimensions()).toEqual(['size']); expect(geometry()).toEqual([]);
       // Geometry or another dimension taking the selection closes the editor.
@@ -2358,7 +2393,7 @@ describe('CAD sketch interaction', () => {
     });
 
     it('closes a dimension editor when another document opens under the same sketch and relation IDs', async () => {
-      await open();
+      await open(); await replace(current => [...current, { id: 'pin', kind: 'fixed-point', pointId: 'o', position: [10, 10] }]);
       await press('size', 'Enter'); expect(field('Diameter').value).toBe('8');
       // The editor never renders against the new document, even before the switch clears the selection, so none of its fields takes focus there.
       let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
@@ -2369,7 +2404,7 @@ describe('CAD sketch interaction', () => {
       // The new document's dimension opens its own editor.
       await press('size', 'Enter'); expect(field('Diameter').value).toBe('8'); expect(selectedDimensions()).toEqual(['size']);
       // A row that is not a dimension, open on the geometry the editor measured, never mounts in another part either.
-      await editRow('Fix X'); expect(relationRow('Fix X').getAttribute('aria-pressed')).toBe('true'); expect(geometry()).toEqual([{ kind: 'entity', id: 'hole' }]);
+      await editRow('Fixed point'); expect(relationRow('Fixed point').getAttribute('aria-pressed')).toBe('true'); expect(geometry()).toEqual([{ kind: 'entity', id: 'hole' }]);
       container.addEventListener('focusin', record);
       await act(async () => replaceDocument({ ...currentDocument, id: 'third-document' }));
       container.removeEventListener('focusin', record);
@@ -2812,7 +2847,7 @@ describe('CAD sketch interaction', () => {
       await shortcut(); expect(button('Dimension').getAttribute('aria-pressed')).toBe('false');
       // A selected axis and point are the first picks, in either order.
       await pick(datum('x-axis')); await pick(point('c'), true); await shortcut();
-      expect(pickInstruction()).toBe('Distance from the X axis · Click or press Enter to place · Right-click for more · Escape drops the picks');
+      expect(pickInstruction()).toBe('Distance · Click or press Enter to place · Right-click for more · Escape drops the picks');
       await focusedKey('Enter'); expect(relations()).toMatchObject([{ kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 20 }]);
       await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source);
       // A line, then an axis it runs along, keeps its distance from that axis and stays level with it; one across it has no distance.
@@ -3074,6 +3109,8 @@ describe('CAD sketch interaction', () => {
     await canvasKey('Escape'); expect(button('Constrain').getAttribute('aria-pressed')).toBe('false');
     // Leaving the tool returns the origin to ordinary selection rather than a command operand.
     expect(container.querySelector('[data-cad-sketch-datum="origin"]')?.getAttribute('aria-label')).toBe('Select origin');
+    // An axis keeps its capital in a name, as everywhere else.
+    expect(['x-axis', 'y-axis'].map(datum => container.querySelector(`[data-cad-sketch-datum="${datum}"]`)?.getAttribute('aria-label'))).toEqual(['Select X axis', 'Select Y axis']);
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
@@ -3197,7 +3234,7 @@ describe('CAD sketch interaction', () => {
     const relations = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.relations; };
     await click('Dimension'); expect(container.querySelector('[data-cad-sketch-datum="origin"]')?.getAttribute('role')).toBe('button');
     await pick('[data-cad-sketch-datum="x-axis"]'); expect(pickInstruction()).toBe('Dimension · Choose a point, an arc, a circle or a line to dimension from the X axis · Escape drops the picks');
-    await pick('[data-cad-sketch-point="a"]'); expect(pickInstruction()).toBe('Distance from the X axis · Click or press Enter to place · Right-click for more · Escape drops the picks');
+    await pick('[data-cad-sketch-point="a"]'); expect(pickInstruction()).toBe('Distance · Click or press Enter to place · Right-click for more · Escape drops the picks');
     await focusedKey('Enter');
     expect(relations()).toMatchObject([{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: -7 }]);
     // A selected point starts the tool as its first pick.

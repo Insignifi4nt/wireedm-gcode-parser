@@ -383,3 +383,33 @@ describe('point to line distance layout', () => {
     expect([...reference.label, reference.labelAngle].every(Number.isFinite)).toBe(true);
   });
 });
+
+describe('distance from an axis layout', () => {
+  const span = (layout: ReturnType<typeof linearDimensions>[number], index: 0 | 1) => [layout.line[0][index], layout.line[1][index]].sort((a, b) => a - b);
+  it('draws a coordinate held off an axis square to it, to the point or the middle of the line kept along it, labelled with its size', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'p', position: [-30, 12] }, { id: 's', position: [10, 20] }, { id: 'e', position: [40, 20] }, { id: 'q', position: [5, 0] }],
+      entities: [{ id: 'top', kind: 'line', construction: false, startPointId: 's', endPointId: 'e' }], relations: [
+        { id: 'px', kind: 'fixed-axis', pointId: 'p', axis: 'x', value: -30 },
+        { id: 'level', kind: 'horizontal', pointIds: ['e', 's'] }, { id: 'rise', kind: 'fixed-axis', pointId: 's', axis: 'y', value: ' rise ' },
+        { id: 'onX', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: ' 0.0 ' }] });
+    const layouts = linearDimensions(graph, { rise: 20 }, .1), [left, top] = layouts;
+    // A coordinate held at 0 keeps its point on the axis, a relation with nothing to draw.
+    expect(layouts.map(layout => [layout.kind, layout.relation.id, layout.valueMm])).toEqual([['distance', 'px', 30], ['distance', 'rise', 20]]);
+    // From the Y axis to the point, level with it; from the X axis to the middle of the level line, upright.
+    expect(span(left, 0)).toEqual([-30, 0]); expect(left.line[0][1]).toBeCloseTo(left.line[1][1], 12);
+    expect(span(top, 1)[0]).toBeCloseTo(0, 12); expect(span(top, 1)[1]).toBeCloseTo(20, 12); expect(top.line[0][0]).toBeCloseTo(top.line[1][0], 12);
+    expect(Math.abs(top.line[0][0] - 25)).toBeLessThan(5);
+    expect(cadSketchGraphDimensionLabel(left.valueMm, left.kind).text).toBe('30 mm');
+    // Without Horizontal the line is not kept along the axis, so the distance is drawn to its held end.
+    const loose = linearDimensions(parseCadSketchGraph({ ...graph, relations: graph.relations.filter(relation => relation.id !== 'level') }), { rise: 20 }, .1)[1];
+    expect(span(loose, 1)[1]).toBeCloseTo(20, 12); expect(loose.line[0][0]).toBeCloseTo(loose.line[1][0], 12); expect(Math.abs(loose.line[0][0] - 10)).toBeLessThan(Math.abs(top.line[0][0] - 10));
+  });
+
+  it('draws a point saved with both coordinates held one by one as two distances, one from each axis', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'g', position: [60, 40] }], entities: [], relations: [
+      { id: 'gx', kind: 'fixed-axis', pointId: 'g', axis: 'x', value: 60 }, { id: 'gy', kind: 'fixed-axis', pointId: 'g', axis: 'y', value: 40 }] });
+    const [x, y] = linearDimensions(graph, {}, .1);
+    expect([x.relation.id, x.valueMm, span(x, 0)]).toEqual(['gx', 60, [0, 60]]); expect(x.line[0][1]).toBeCloseTo(x.line[1][1], 12);
+    expect([y.relation.id, y.valueMm, span(y, 1)]).toEqual(['gy', 40, [0, 40]]); expect(y.line[0][0]).toBeCloseTo(y.line[1][0], 12);
+  });
+});

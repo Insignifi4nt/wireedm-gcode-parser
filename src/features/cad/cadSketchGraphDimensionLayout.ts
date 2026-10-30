@@ -12,9 +12,14 @@ import type { Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { cadSketchDimensionAngleSectorAt, type CadSketchDimensionPreviewSource } from './cadSketchDimensionPlacement';
+import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
+import { cadSketchZeroScalar } from './cadSketchGraphSelection';
+import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 
 export type CadSketchDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'distance' }>;
-export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'point-line-distance' | 'axis-distance' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' | 'line-angle' | 'reference-dimension' }>;
+/** A coordinate held from an axis; one that is not 0 is a distance from that axis. */
+export type CadSketchAxisDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }>;
+export type CadSketchDimensionRelation = Extract<CadSketchGraphRelation, { kind: 'distance' | 'point-line-distance' | 'axis-distance' | 'fixed-axis' | 'radial-size' | 'fillet-corner' | 'chamfer-corner' | 'line-angle' | 'reference-dimension' }>;
 type Pair = readonly [SketchPoint, SketchPoint];
 /** Slim screen-pixel arrowheads: 5 px long and 3.5 px wide. */
 const ARROW_LENGTH_PIXELS = 5, ARROW_HALF_WIDTH_PIXELS = 1.75;
@@ -28,7 +33,7 @@ interface DimensionGeometry {
 }
 interface LinearDimensionGeometry extends DimensionGeometry { readonly valueMm: number; readonly line: Pair }
 export type CadSketchGraphDimensionLayout = LinearDimensionGeometry & (
-  { readonly kind: 'distance'; readonly relation: CadSketchDistanceRelation | CadSketchReferenceDimension }
+  { readonly kind: 'distance'; readonly relation: CadSketchDistanceRelation | CadSketchAxisDistanceRelation | CadSketchReferenceDimension }
   | { readonly kind: 'distance-x' | 'distance-y'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'axis-distance' }> }
   /** Perpendicular from the line's support to the point, with an extension of the line when its foot is beyond the segment. */
   | { readonly kind: 'point-line'; readonly relation: Extract<CadSketchDimensionRelation, { kind: 'point-line-distance' | 'reference-dimension' }> }
@@ -257,7 +262,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDime
 
 /** Display-only declared dimensions. Scalar drivers and source IDs remain authoritative. */
 export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner' || relation.kind === 'line-angle' || relation.kind === 'reference-dimension')) return [];
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner' || relation.kind === 'line-angle' || relation.kind === 'reference-dimension')) return [];
   const points = new Map(graph.points.map(point => [point.id, {
     x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters)
   }]));
@@ -279,7 +284,31 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
   const bounds = coordinates.reduce((box, point) => ({ minX: Math.min(box.minX, point.x), minY: Math.min(box.minY, point.y),
     maxX: Math.max(box.maxX, point.x), maxY: Math.max(box.maxY, point.y) }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
   const center: SketchPoint = [bounds.minX / 2 + bounds.maxX / 2, bounds.minY / 2 + bounds.maxY / 2];
+  // An aligned distance stands off on the side away from the middle of the sketch.
+  const aligned = (relation: Extract<CadSketchGraphDimensionLayout, { kind: 'distance' }>['relation'], a: Point2, b: Point2, valueMm: number): CadSketchGraphDimensionLayout[] => {
+    const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
+    if (!Number.isFinite(length) || !Number.isFinite(valueMm) || (relation.kind === 'reference-dimension' ? valueMm < 0 : length === 0 || valueMm <= 0)) return [];
+    const ux = length === 0 ? 1 : dx / length, uy = length === 0 ? 0 : dy / length;
+    const direction = dx < 0 || dx === 0 && dy < 0 ? -1 : 1;
+    let nx = -uy * direction, ny = ux * direction;
+    const midpoint: SketchPoint = [a.x / 2 + b.x / 2, a.y / 2 + b.y / 2];
+    const outward = (midpoint[0] - center[0]) * nx + (midpoint[1] - center[1]) * ny;
+    const tie = Math.abs(outward) <= cadPathClosureTolerance([a, b, { x: center[0], y: center[1] }]);
+    if (tie ? Math.abs(dx) >= Math.abs(dy) ? ny > 0 : nx < 0 : outward < 0) { nx = -nx; ny = -ny; }
+    return [{ kind: 'distance', relation, valueMm, ...alignedGeometry(a, b, nx, ny, mmPerPixel, cadSketchGraphDimensionLabel(valueMm, 'distance', relation.kind === 'reference-dimension')) }];
+  };
+  let identity: ((pointId: string) => string) | undefined;
   const dimensions = graph.relations.flatMap((relation): CadSketchGraphDimensionLayout[] => {
+    if (relation.kind === 'fixed-axis') {
+      // A distance from an axis runs square to the axis, to its point or to the middle of the line Horizontal or Vertical keeps along the
+      // axis, and reads as its size on either side of the axis. One that is 0 is a relation and draws nothing.
+      if (cadSketchZeroScalar(relation.value)) return [];
+      try { identity ??= resolveCadSketchPointIdentities(graph); } catch { return []; }
+      const line = cadSketchAxisDistanceLine(graph, relation, identity), start = line && points.get(line.startPointId), end = line && points.get(line.endPointId);
+      const to = start && end ? { x: start.x / 2 + end.x / 2, y: start.y / 2 + end.y / 2 } : points.get(relation.pointId);
+      if (!to) return [];
+      try { return aligned(relation, relation.axis === 'x' ? { x: 0, y: to.y } : { x: to.x, y: 0 }, to, Math.abs(evaluateCadScalar(relation.value, parameters))); } catch { return []; }
+    }
     if (relation.kind === 'line-angle') return [...angularDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'radial-size' || relation.kind === 'reference-dimension' && relation.measurement.kind === 'radial-size') return [...radialDimension(graph, relation, points, parameters, mmPerPixel)];
     if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return [...cornerDimensions(graph, relation, points, parameters, mmPerPixel)];
@@ -290,7 +319,7 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
     if (descriptor.kind === 'radial-size' || descriptor.kind === 'point-line-distance') return [];
     const a = points.get(descriptor.pointIds[0]), b = points.get(descriptor.pointIds[1]);
     if (!a || !b) return [];
-    const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), valueMm = relation.kind === 'reference-dimension' ? length : evaluateCadScalar(relation.value, parameters);
+    const valueMm = relation.kind === 'reference-dimension' ? Math.hypot(b.x - a.x, b.y - a.y) : evaluateCadScalar(relation.value, parameters);
     if (relation.kind === 'axis-distance') {
       if (!Number.isFinite(valueMm)) return [];
       const horizontal = relation.axis === 'x', outward = horizontal ? a.y / 2 + b.y / 2 - center[1] : a.x / 2 + b.x / 2 - center[0];
@@ -305,15 +334,7 @@ export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters
         extensions: [a, b].map((point, index): Pair => [[point.x + nx * 3 * mmPerPixel, point.y + ny * 3 * mmPerPixel],
           [geometry.line[index][0] + nx * 2 * mmPerPixel, geometry.line[index][1] + ny * 2 * mmPerPixel]]) }];
     }
-    if (!Number.isFinite(length) || !Number.isFinite(valueMm) || (relation.kind === 'reference-dimension' ? valueMm < 0 : length === 0 || valueMm <= 0)) return [];
-    const ux = length === 0 ? 1 : dx / length, uy = length === 0 ? 0 : dy / length;
-    const direction = dx < 0 || dx === 0 && dy < 0 ? -1 : 1;
-    let nx = -uy * direction, ny = ux * direction;
-    const midpoint: SketchPoint = [a.x / 2 + b.x / 2, a.y / 2 + b.y / 2];
-    const outward = (midpoint[0] - center[0]) * nx + (midpoint[1] - center[1]) * ny;
-    const tie = Math.abs(outward) <= cadPathClosureTolerance([a, b, { x: center[0], y: center[1] }]);
-    if (tie ? Math.abs(dx) >= Math.abs(dy) ? ny > 0 : nx < 0 : outward < 0) { nx = -nx; ny = -ny; }
-    return [{ kind: 'distance', relation, valueMm, ...alignedGeometry(a, b, nx, ny, mmPerPixel, cadSketchGraphDimensionLabel(valueMm, 'distance', relation.kind === 'reference-dimension')) }];
+    return aligned(relation, a, b, valueMm);
   });
   return separateAlignedDimensions(dimensions, mmPerPixel);
 }
@@ -355,9 +376,10 @@ export function layoutCadSketchDimensionPreview(source: CadSketchDimensionPrevie
   switch (source.kind) {
     case 'pair': { const mark = linear(source.points[0], source.points[1], source.form, source.value); return mark ? [mark] : []; }
     case 'datum': return source.axes.flatMap(axis => {
-      const from = axis === 'x' ? { x: 0, y: source.point.y } : { x: source.point.x, y: 0 }, value = axis === 'x' ? source.point.x : source.point.y;
-      const mark = Math.abs(value) > 0 ? linear(from, source.point, axis === 'x' ? 'horizontal' : 'vertical', value) : null;
-      return mark ? [mark] : [];
+      // A distance from an axis is labelled with its size, as once placed; the sign of the coordinate only gives the side of the axis.
+      const from = axis === 'x' ? { x: 0, y: source.point.y } : { x: source.point.x, y: 0 }, value = Math.abs(axis === 'x' ? source.point.x : source.point.y);
+      const mark = value > 0 ? linear(from, source.point, axis === 'x' ? 'horizontal' : 'vertical', value) : null;
+      return mark ? [{ ...mark, kind: 'distance' as const }] : [];
     });
     case 'point-line': {
       const [start, end] = source.line, length = Math.hypot(end.x - start.x, end.y - start.y);

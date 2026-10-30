@@ -22,6 +22,12 @@ describe('cadPropertySummary', () => {
     });
   });
 
+  it('counts a coordinate held off an axis as a dimension and one held on it as a relation', () => {
+    const held = { ...sketch, graph: { ...sketch.graph!, relations: [...sketch.graph!.relations,
+      { id: 'onX', kind: 'fixed-axis' as const, pointId: 'a', axis: 'y' as const, value: ' 0 ' }, { id: 'right', kind: 'fixed-axis' as const, pointId: 'b', axis: 'x' as const, value: 40 }] } };
+    expect(rows(cadPropertySummary({ ...document, features: [held, document.features[1]] }, { kind: 'feature', feature: held }, [], planeLabel)).Constraints).toBe('2 dimensions · 2 relations');
+  });
+
   it('names a feature input and reads its solid from the current build', () => {
     const summary = rows(cadPropertySummary(document, { kind: 'feature', feature: document.features[1] }, [mesh('pad', 4000, [0, 0, 0], [40, 20, 5])], planeLabel));
     expect(summary).toEqual({ Input: 'Sketch 1', Volume: `${(4000).toLocaleString()} mm³`, 'Size X × Y × Z': '40 × 20 × 5 mm' });

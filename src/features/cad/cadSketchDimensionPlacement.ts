@@ -8,8 +8,8 @@ import { cadSketchLineAngleSectors, createCadSketchLineAngleRelation, type CadSk
 import type { Point2 } from '@/domain/path-intel/types';
 import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { userFacingMessage } from '@/lib/userMessage';
-import { cadSketchDistanceForPair, cadSketchMatchingReference, cadSketchPointLineDistanceFor, cadSketchRadialRelationForEntity } from './cadSketchDimensionCommands';
-import type { CadSketchDatum, CadSketchGraphSelection } from './cadSketchGraphSelection';
+import { CAD_SKETCH_NO_REFERENCE_DATUM, cadSketchDistanceForPair, cadSketchMatchingReference, cadSketchPointLineDistanceFor, cadSketchRadialRelationForEntity } from './cadSketchDimensionCommands';
+import { cadSketchDatumName, type CadSketchDatum, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 
 /** One pick of the Dimension tool: sketch geometry, or the plane origin or one of its axes. */
 export type CadSketchDimensionOperand = CadSketchGraphSelection | { readonly kind: 'datum'; readonly id: CadSketchDatum };
@@ -142,7 +142,8 @@ const NOTHING: CadSketchDimensionEligibility = Object.freeze({ entityIds: [], po
  * - after an arc or circle: any other edge, the same one again to place its size when it can take one, a point other than its center,
  *   the origin or an axis;
  * Edges outside `sizedEntityIds`, such as linked ones, take no size of their own and pair only with other picks.
- * - after the origin: a point, an arc or a circle; after an axis: a point, an arc, a circle or a line;
+ * - after the origin: a point, an arc or a circle; after an axis: a point, an arc, a circle or a line. A line across the axis, or a point or
+ *   line on it, stays pickable, so the tool can say why it takes no distance;
  * - after two picks: nothing, so a click anywhere places the dimension.
  */
 export function cadSketchDimensionPickEligibility(graph: CadSketchGraph, targets: { readonly entityIds: readonly string[]; readonly sizedEntityIds: readonly string[]; readonly pointIds: readonly string[] },
@@ -176,12 +177,11 @@ export function cadSketchDimensionPreselection(graph: CadSketchGraph, targets: P
 
 const NO_REFERENCE_PAIR ='A horizontal or vertical distance has no reference form yet.';
 const NO_REFERENCE_ANGLE = 'An angle has no reference form yet.';
-const NO_REFERENCE_DATUM = 'A distance from the origin or an axis has no reference form yet.';
+const NO_REFERENCE_DATUM = CAD_SKETCH_NO_REFERENCE_DATUM;
 /** Why placing selects a dimension that already measures the picks instead of adding one. */
 export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension.';
 const EXISTING = CAD_SKETCH_DIMENSION_EXISTING_REASON;
 const REUSED = 'This is already dimensioned. Placing selects that dimension and adds the relation that keeps it measuring these picks.';
-const axisName = (datum: CadSketchDatum) => datum === 'x-axis' ? 'X axis' : datum === 'y-axis' ? 'Y axis' : 'origin';
 
 /**
  * The dimensions `operands` can take, in the Dimension tool's pick rules: one line or sized arc or circle; two points; a point, arc or
@@ -376,22 +376,29 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
         : { form, label, state: 'blocked', reason: 'This point already has its position from a fixed point or an expression.' };
       return { form, label, state: 'available', relations, implied: null, reuses: null, reference: null, referenceReason: NO_REFERENCE_DATUM, preview };
     };
-    if (from !== 'origin') return plan([candidate('datum', [from === 'x-axis' ? 'y' : 'x'], `Distance from the ${axisName(from)}`)], 'datum');
+    if (from !== 'origin') {
+      // An axis is a line: a point on it has no distance from it, and holding it there is Coincident's, not a dimension's.
+      if (!(Math.abs(from === 'x-axis' ? point.y : point.x) > cadSketchDriverTolerance([point])))
+        return plan([{ form: 'datum', label: 'Distance', state: 'blocked', reason: `This point is on the ${cadSketchDatumName(from)}, so it has no distance from it. Use Coincident to keep it there.` }], 'datum');
+      return plan([candidate('datum', [from === 'x-axis' ? 'y' : 'x'], 'Distance')], 'datum');
+    }
     return plan([candidate('datum', ['x', 'y'], 'Position from the origin'), candidate('horizontal', ['x'], 'Horizontal distance from the origin'),
       candidate('vertical', ['y'], 'Vertical distance from the origin')], 'datum', [{ x: 0, y: 0 }, point]);
   }
   /** A line along an axis keeps its distance from it, through one end and Horizontal or Vertical; an angle to an axis has no relation yet. */
   function lineFromDatum(line: Extract<CadSketchGraph['entities'][number], { kind: 'line' }>, from: CadSketchDatum): CadSketchDimensionPlan {
     if (from === 'origin') return plan([{ form: 'datum', label: 'Distance from the origin', state: 'blocked', reason: 'A line has no distance from the origin yet. Dimension a point on it from the origin instead.' }], 'datum');
-    const label = `Distance from the ${axisName(from)}`, a = at(line.startPointId), b = at(line.endPointId), tolerance = cadSketchDriverTolerance([a, b]);
+    const label = 'Distance', a = at(line.startPointId), b = at(line.endPointId), tolerance = cadSketchDriverTolerance([a, b]);
     const along = from === 'x-axis' ? Math.abs(b.y - a.y) <= tolerance : Math.abs(b.x - a.x) <= tolerance;
-    const angle: CadSketchDimensionCandidate = { form: 'angle', label: 'Angle', state: 'blocked', reason: `An angle to the ${axisName(from)} is not available yet. Draw a construction line along the axis and dimension the angle to it.` };
-    if (!along) return plan([{ form: 'datum', label, state: 'blocked', reason: `This line is not parallel to the ${axisName(from)}, so it has no distance from it.` }, angle], 'datum');
+    const angle: CadSketchDimensionCandidate = { form: 'angle', label: 'Angle', state: 'blocked', reason: `An angle to the ${cadSketchDatumName(from)} is not available yet. Draw a construction line along the axis and dimension the angle to it.` };
+    if (!along) return plan([{ form: 'datum', label, state: 'blocked', reason: `This line is not parallel to the ${cadSketchDatumName(from)}, so it has no distance from it.` }, angle], 'datum');
     const axis = from === 'x-axis' ? 'y' : 'x', kind: 'horizontal' | 'vertical' = from === 'x-axis' ? 'horizontal' : 'vertical', identity = identityOf();
     const aliases = (pointId: string) => { const own = identity(pointId); return graph.points.filter(point => identity(point.id) === own); };
     const ends = [...aliases(line.startPointId), ...aliases(line.endPointId)], ids = new Set(ends.map(point => point.id));
     const middle = { x: a.x / 2 + b.x / 2, y: a.y / 2 + b.y / 2 }, value = axis === 'y' ? a.y : a.x;
-    const preview = { kind: 'pair', form: axis === 'y' ? 'vertical' : 'horizontal', points: [axis === 'y' ? { x: middle.x, y: 0 } : { x: 0, y: middle.y }, middle], value: Math.abs(value) } as const;
+    const preview = { kind: 'datum', point: middle, axes: [axis] } as const;
+    if (!(Math.abs(value) > tolerance))
+      return plan([{ form: 'datum', label, state: 'blocked', reason: `This line is on the ${cadSketchDatumName(from)}, so it has no distance from it. Use Coincident to keep it there.` }, angle], 'datum');
     if (graph.relations.some(relation => relation.kind === 'fixed-point' && ids.has(relation.pointId)) || ends.some(point => typeof point.position[axis === 'x' ? 0 : 1] !== 'number'))
       return plan([{ form: 'datum', label, state: 'blocked', reason: 'This line already has its position from a fixed point or an expression.' }, angle], 'datum');
     const startAliases = new Set(aliases(line.startPointId).map(point => point.id)), endAliases = new Set(aliases(line.endPointId).map(point => point.id));
