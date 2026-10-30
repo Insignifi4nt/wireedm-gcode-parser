@@ -2907,11 +2907,11 @@ describe('CAD sketch interaction', () => {
       await focusedKey('Enter'); expect(Number(field('Angle').value)).toBeGreaterThan(0);
     });
 
-    it('selects an existing angle on lines a hair from parallel when it is placed again, drawn across their ends, and Enter edits it', async () => {
+    // At 1e-7 their supports meet about 4e10 mm away, too far to place the corner reliably; at 1e-11 Parallel's own check holds them too.
+    it.each([[1e-7, 'a hair from parallel'], [1e-11, 'that Parallel already holds']])('selects an existing angle between the base and a lid rising %s mm over 40 mm, %s, when it is placed again, drawn across their ends, and Enter edits it', async rise => {
       setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
-      // Their supports meet about 4e10 mm away, too far to place the corner reliably; the angle reads the lines' own directions.
-      const value = Math.atan2(1e-7, 40) * 180 / Math.PI;
-      await open(undefined, { points: [{ id: 'p', position: [0, 100] }, { id: 'q', position: [40, 100.0000001] }], entities: [{ id: 'lid', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
+      const value = Math.atan2(rise, 40) * 180 / Math.PI;
+      await open(undefined, { points: [{ id: 'p', position: [0, 100] }, { id: 'q', position: [40, 100 + rise] }], entities: [{ id: 'lid', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
         relations: [{ id: 'tilt', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'lid', towardPointId: 'q' }], sense: 'ccw', value }] });
       await click('Dimension'); await pick(entity('base')); await pick(entity('lid')); await dimensionMenu('Angle');
       expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
