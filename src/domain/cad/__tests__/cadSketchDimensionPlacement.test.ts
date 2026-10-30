@@ -311,6 +311,10 @@ describe('preview measurement', () => {
       const [inside] = layoutCadSketchDimensionPreview(size.preview, { x: 0, y: 2 }, .1);
       expect(inside.label[0]).toBeCloseTo(0, 12); expect(inside.label[1]).toBeCloseTo(2, 12);
       expect(inside.line?.[1][0]).toBeCloseTo(0, 12); expect(inside.line?.[1][1]).toBeCloseTo(5, 12); expect(inside.arrows[0][1][1]).toBeLessThan(5);
+      // On the center itself the label stays there, as it does a hair away, and the leader keeps its fallback direction to the curve.
+      const [centred] = layoutCadSketchDimensionPreview(size.preview, { x: 0, y: 0 }, .1), [beside] = layoutCadSketchDimensionPreview(size.preview, { x: 1e-9, y: 0 }, .1);
+      expect(centred.label).toEqual([0, 0]); expect(Math.hypot(centred.label[0] - beside.label[0], centred.label[1] - beside.label[1])).toBeLessThan(1e-8);
+      expect(centred.line?.[0]).toEqual([0, 0]); expect(centred.line?.[1][0]).toBeCloseTo(5 * Math.SQRT1_2, 12); expect(centred.line?.[1][1]).toBeCloseTo(5 * Math.SQRT1_2, 12);
     }
   });
 });

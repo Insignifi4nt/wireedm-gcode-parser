@@ -172,7 +172,7 @@ function radialGeometry(center: Point2, radius: number, angle: number, valueMm: 
   const ux = Math.cos(angle), uy = Math.sin(angle), tip: SketchPoint = [center.x + ux * radius, center.y + uy * radius];
   const box = cadSketchGraphDimensionLabel(valueMm, kind, reference);
   const clearance = (Math.abs(ux) * box.width / 2 + Math.abs(uy) * box.height / 2 + 8) * mmPerPixel;
-  const distance = reach !== undefined && Number.isFinite(reach) && reach > 0 ? reach : radius + clearance, outside = distance >= radius ? 1 : -1;
+  const distance = reach !== undefined && Number.isFinite(reach) && reach >= 0 ? reach : radius + clearance, outside = distance >= radius ? 1 : -1;
   const label: SketchPoint = [center.x + ux * distance, center.y + uy * distance];
   const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, radius / 4) * outside, headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, radius / 8);
   return { line: [[center.x, center.y], outside > 0 ? label : tip], extensions: [], label, labelAngle: 0,
