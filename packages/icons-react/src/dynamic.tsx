@@ -16,4 +16,4 @@ export function makeIcon(name: IconName) {
 
 export { iconCatalog } from './catalog.js';
 export type { IconName, IconCategory } from './catalog.js';
-export type { WorkbenchIconComponent, WorkbenchIconProps } from './types.js';
+export type { WorkbenchDrawnIconComponent, WorkbenchIconComponent, WorkbenchIconProps } from './types.js';

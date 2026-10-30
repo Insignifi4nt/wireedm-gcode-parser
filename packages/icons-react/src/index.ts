@@ -1,5 +1,5 @@
 // Generated from scripts/icon-source.mjs. Do not edit.
-export type { WorkbenchIconComponent, WorkbenchIconProps } from './types.js';
+export type { WorkbenchDrawnIconComponent, WorkbenchIconComponent, WorkbenchIconProps } from './types.js';
 export type { IconName, IconCategory } from './catalog.js';
 
 export { NavigateBackIcon, ArrowLeft } from './icons/navigate-back.js';

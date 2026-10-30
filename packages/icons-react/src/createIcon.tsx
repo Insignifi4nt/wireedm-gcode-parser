@@ -1,5 +1,5 @@
 import { forwardRef, type ForwardedRef } from 'react';
-import type { WorkbenchIconComponent, WorkbenchIconProps } from './types.js';
+import type { WorkbenchDrawnIconComponent, WorkbenchIconProps } from './types.js';
 
 export function renderIcon(name: string, paths: readonly string[], {
   size = 24, absoluteStrokeWidth = false, children,
@@ -15,7 +15,7 @@ export function renderIcon(name: string, paths: readonly string[], {
   </svg>;
 }
 
-export function createIcon(name: string, paths: readonly string[]): WorkbenchIconComponent {
+export function createIcon(name: string, paths: readonly string[]): WorkbenchDrawnIconComponent {
   const Icon = forwardRef<SVGSVGElement, WorkbenchIconProps>(function Icon(props, ref) {
     return renderIcon(name, paths, props, ref);
   });

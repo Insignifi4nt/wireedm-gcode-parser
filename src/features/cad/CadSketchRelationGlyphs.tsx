@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { RelationCoincidentIcon, RelationCollinearIcon, RelationConcentricIcon, RelationEqualLengthIcon, RelationEqualRadiusIcon, RelationFixIcon, RelationHorizontalIcon,
   RelationMidpointIcon, RelationParallelIcon, RelationPerpendicularIcon, RelationPointOnCurveIcon, RelationPointOnLineIcon, RelationSymmetricIcon, RelationTangentIcon,
-  RelationVerticalIcon, type WorkbenchIconComponent } from '@wire-edm/icons-react';
+  RelationVerticalIcon, type WorkbenchDrawnIconComponent } from '@wire-edm/icons-react';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchDimensionPickOf, cadSketchHighlightRelationIds, cadSketchPointIdentity, createCadSketchDimensionKeys, isCadSketchGlyphRelation, type CadSketchDimensionPick,
   type CadSketchHighlightSource, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
@@ -11,8 +11,8 @@ import { placedPathData } from './cadSketchRelationGlyphDrawing';
 import type { SketchPoint } from './cadSketchInteraction';
 import './cad-sketch-graph-dimensions.css';
 
-/** One drawing per relation kind, shared with the Constrain menu and the relations list. */
-export const CAD_SKETCH_RELATION_ICONS: Readonly<Record<CadSketchRelationGlyphKind, WorkbenchIconComponent>> = {
+/** One drawing per relation kind, shared with the Constrain menu and the relations list; the canvas layer draws their `paths` itself. */
+export const CAD_SKETCH_RELATION_ICONS: Readonly<Record<CadSketchRelationGlyphKind, WorkbenchDrawnIconComponent>> = {
   horizontal: RelationHorizontalIcon, vertical: RelationVerticalIcon, parallel: RelationParallelIcon, perpendicular: RelationPerpendicularIcon, collinear: RelationCollinearIcon,
   'equal-length': RelationEqualLengthIcon, 'equal-radius': RelationEqualRadiusIcon, tangent: RelationTangentIcon, coincident: RelationCoincidentIcon, concentric: RelationConcentricIcon,
   midpoint: RelationMidpointIcon, symmetric: RelationSymmetricIcon, fix: RelationFixIcon, 'point-on-line': RelationPointOnLineIcon, 'point-on-curve': RelationPointOnCurveIcon
