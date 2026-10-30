@@ -10,8 +10,7 @@ test('places each dimension where the pointer puts it, falls back to a reference
     entities: [{ id: 'base', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }, { id: 'top', kind: 'line', startPointId: 'c', endPointId: 'd', construction: false },
       { id: 'slant', kind: 'line', startPointId: 'e', endPointId: 'f', construction: false }, { id: 'held', kind: 'line', startPointId: 'g', endPointId: 'h', construction: false },
       { id: 'bore', kind: 'circle', centerPointId: 'o', radius: 3, construction: false }],
-    relations: [{ id: 'gx', kind: 'fixed-axis', pointId: 'g', axis: 'x', value: 60 }, { id: 'gy', kind: 'fixed-axis', pointId: 'g', axis: 'y', value: 40 },
-      { id: 'hx', kind: 'fixed-axis', pointId: 'h', axis: 'x', value: 72 }, { id: 'hy', kind: 'fixed-axis', pointId: 'h', axis: 'y', value: 40 }] } };
+    relations: [{ id: 'gp', kind: 'fixed-point', pointId: 'g', position: [60, 40] }, { id: 'hp', kind: 'fixed-point', pointId: 'h', position: [72, 40] }] } };
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
   const initial = await context(page);
   await expect.poll(() => rawCall(page, 'cad_get_viewport', { expectedVersion: initial.version })).toMatchObject({ ok: true, data: { view: { available: true, referenceVersion: initial.version } } });
@@ -99,9 +98,9 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await clickAt(40, 15);
   await placed({ id: expect.any(String), kind: 'axis-distance', axis: 'y', pointIds: ['a', 'o'], value: 10 });
 
-  // A point and an axis, then Enter, hold the point at its distance from that axis.
+  // A point and an axis, then Enter, hold the point at its distance from that axis, a plain Distance.
   await pick('[data-cad-sketch-point="c"]'); await pick('[data-cad-sketch-datum="x-axis"]');
-  await expect(canvas).toHaveAccessibleDescription(/^Distance from the X axis · Click or press Enter to place/);
+  await expect(canvas).toHaveAccessibleDescription(/^Distance · Click or press Enter to place/);
   await page.keyboard.press('Enter');
   await placed({ id: expect.any(String), kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 30 });
 
