@@ -350,6 +350,26 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   const sourceGraph = useMemo(() => sourceSketch.kind === 'sketch' && sourceSketch.graph ? prepareCadSketchGraphInteraction(sourceSketch.graph, graphSourceParameters) : null, [sourceSketch, graphSourceParameters]);
   const geometryPick = graphControls?.geometryPick;
+  const placedByPick = geometryPick?.placed;
+  useLayoutEffect(() => {
+    const canvas = svg.current, focused = document.activeElement;
+    if (placedByPick && canvas && focused instanceof Element && focused !== canvas && canvas.contains(focused)) canvas.focus({ preventScroll: true });
+  }, [placedByPick]);
+  // A pick or lock can take the tab stop from what has focus, as an axis loses it once it takes no more picks. Focus then moves to the
+  // canvas, where the pick's keys still work, instead of staying on an element outside the tab order. Chrome instead drops focus from the
+  // page while the render removes the tab stop, when React dispatches no blur, so a native listener returns it to the canvas.
+  useLayoutEffect(() => {
+    const canvas = svg.current, focused = document.activeElement;
+    if (canvas && focused instanceof SVGElement && focused !== canvas && canvas.contains(focused) && !focused.hasAttribute('tabindex')) canvas.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    const canvas = svg.current; if (!canvas) return;
+    const lost = (event: FocusEvent) => {
+      const target = event.target;
+      if (target !== canvas && event.relatedTarget === null && target instanceof SVGElement && !target.hasAttribute('tabindex')) canvas.focus({ preventScroll: true });
+    };
+    canvas.addEventListener('focusout', lost); return () => canvas.removeEventListener('focusout', lost);
+  }, []);
   const positionPick = graphControls?.positionPick;
   const placement = graphControls?.placement;
   const placementAngle = placement ? `${placement.angleDegrees > 0 ? '+' : ''}${formatCadQuantity(placement.angleDegrees)}°` : '';
@@ -1439,8 +1459,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (!geometryPick && !positionPick && pickFilter === 'auto') onContextMenu?.({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, trigger: 'keyboard', profileId, pointMm: center });
           return;
         }
-        if (event.ctrlKey || event.metaKey || event.altKey || event.target !== event.currentTarget) return;
-        if (event.key.toLowerCase() === 'f') { if (!viewLocked) { event.preventDefault(); fit(); } return; }
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        // A pick leaves focus on the geometry picked, which passes on the keys it has no use for once nothing more can be picked there. The
+        // pick's Enter and its placed dimensions' Delete still belong to the canvas; every other key works only on the canvas itself.
+        const onCanvas = event.target === event.currentTarget;
+        if (!onCanvas && (event.defaultPrevented || !geometryPick || positionPick)) return;
+        if (onCanvas && event.key.toLowerCase() === 'f') { if (!viewLocked) { event.preventDefault(); fit(); } return; }
         if (geometryPick?.onConfirm && !positionPick && !interactionLocked && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); geometryPick.onConfirm('key'); return; }
         if (interactionLocked || geometryPick && !positionPick && !geometryPick.dimensionsInteractive) return;
         if (event.key === 'Delete' && !geometryPick && !positionPick && tool === 'select' && graphControls?.selection.length && graphControls.onDelete) {

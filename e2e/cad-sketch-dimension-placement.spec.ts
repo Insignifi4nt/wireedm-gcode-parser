@@ -53,7 +53,7 @@ test('places each dimension where the pointer puts it, falls back to a reference
   // The tool stays on with the new dimension selected, and Enter opens its editor at the placed value; a cancelled edit changes nothing.
   await expect(tool).toHaveAttribute('aria-pressed', 'true'); await expect(selected).toHaveCount(1);
   await expect(canvas).toHaveAccessibleDescription(/^Dimension placed · Enter or double-click edits it/);
-  await canvas.press('Enter'); await expect(page.getByRole('textbox', { name: 'Length mm', exact: true })).toHaveValue('40');
+  await page.keyboard.press('Enter'); await expect(page.getByRole('textbox', { name: 'Length mm', exact: true })).toHaveValue('40');
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('45'); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect((await context(page)).version).toBe(steps.at(-1)!.version);
 
@@ -70,13 +70,18 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await expect(tool).toHaveAttribute('aria-pressed', 'true'); await expect(preview).toHaveCount(0);
   await expect(canvas).toHaveAccessibleDescription(/^Dimension · Choose a line, arc, circle, point, the origin or an axis/);
 
-  // The same lines now take their distance alone, since Parallel already holds them.
+  // The same lines now take their distance alone, since Parallel already holds them. Focus stays on the top line the pointer picked last, which
+  // takes no more picks, and Enter there places the distance; focus then moves to the canvas, so Enter again edits that distance.
   await clickAt(30, 10); await clickAt(30, 30); await hover(60, 20); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'point-line');
-  await clickAt(60, 20);
+  await expect(page.locator('[data-cad-sketch-entity="top"]')).toBeFocused(); await page.keyboard.press('Enter');
   await placed({ id: expect.any(String), kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: expect.any(String), value: 20 });
+  await expect(canvas).toBeFocused(); await page.keyboard.press('Enter');
+  const gap = page.getByRole('textbox', { name: 'Point to line distance mm', exact: true });
+  await expect(gap).toHaveValue('20'); await gap.fill('25'); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect((await context(page)).version).toBe(steps.at(-1)!.version);
 
-  // Lines that are not parallel take an angle.
-  await clickAt(30, 10); await clickAt(85, 17.5); await hover(65, 20); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'angle');
+  // Lines that are not parallel take an angle; the editor left Dimension, so the tool starts again.
+  await tool.click(); await clickAt(30, 10); await clickAt(85, 17.5); await hover(65, 20); await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'angle');
   await clickAt(65, 20);
   await placed(expect.objectContaining({ kind: 'line-angle' }));
 
@@ -97,7 +102,7 @@ test('places each dimension where the pointer puts it, falls back to a reference
   // A point and an axis, then Enter, hold the point at its distance from that axis.
   await pick('[data-cad-sketch-point="c"]'); await pick('[data-cad-sketch-datum="x-axis"]');
   await expect(canvas).toHaveAccessibleDescription(/^Distance from the X axis · Click or press Enter to place/);
-  await canvas.press('Enter');
+  await page.keyboard.press('Enter');
   await placed({ id: expect.any(String), kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 30 });
 
   // A length the fixed ends already set would over-define the sketch, so it is placed as a reference and the status line says so.
@@ -107,7 +112,7 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await expect(page.getByText('Placed as a reference: a driving dimension would over-define the sketch.').first()).toBeVisible();
 
   // Escape drops the picks and keeps the tool; with nothing picked it returns to Select.
-  await pick('[data-cad-sketch-point="a"]'); await canvas.press('Escape');
+  await pick('[data-cad-sketch-point="a"]'); await page.keyboard.press('Escape');
   await expect(tool).toHaveAttribute('aria-pressed', 'true'); await expect(canvas).toHaveAccessibleDescription(/^Dimension · Choose/);
   await canvas.press('Escape'); await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect((await context(page)).version).toBe(steps.at(-1)!.version);

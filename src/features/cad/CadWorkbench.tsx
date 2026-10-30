@@ -1478,12 +1478,14 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   };
   const dimensionActions = useRef({ pick: pickDimensionOperand, confirm: confirmDimension, escape: escapeDimensionTool, menu: dimensionMenu });
   dimensionActions.current = { pick: pickDimensionOperand, confirm: confirmDimension, escape: escapeDimensionTool, menu: dimensionMenu };
+  /** The last placement while it is the selection and no picks wait, which Enter then edits. */
+  const shownPlacement = currentDimensionTool && !dimensionOperands.length && currentDimensionTool.placed?.pick && graphDimensionPicks.length === 1
+    && sameCadSketchDimensionPick(graphDimensionPicks[0], currentDimensionTool.placed.pick, sketch?.graph) ? currentDimensionTool.placed : undefined;
   /** The status line names the next step: what to pick, what a click or Enter places, and that right-click offers more. */
   const dimensionLabel = (() => {
     if (!currentDimensionTool) return '';
     const first = dimensionOperands[0], usable = dimensionPlan.candidates.filter(candidate => candidate.state !== 'blocked');
-    if (!first) return currentDimensionTool.placed?.pick && graphDimensionPicks.length === 1 && sameCadSketchDimensionPick(graphDimensionPicks[0], currentDimensionTool.placed.pick, sketch?.graph)
-      ? 'Dimension placed · Enter or double-click edits it; choose geometry for the next one' : 'Dimension · Choose a line, arc, circle, point, the origin or an axis';
+    if (!first) return shownPlacement ? 'Dimension placed · Enter or double-click edits it; choose geometry for the next one' : 'Dimension · Choose a line, arc, circle, point, the origin or an axis';
     const line = first.kind === 'entity' && sketch?.graph?.entities.find(entity => entity.id === first.id)?.kind === 'line';
     if (!dimensionPlan.candidates.length) return first.kind === 'point' ? 'Dimension · Choose a second point, a line, an arc, a circle, the origin or an axis'
       : first.kind === 'datum' ? `Dimension · Choose a point, an arc${first.id === 'origin' ? ' or a circle' : ', a circle or a line'} to dimension from the ${first.id === 'origin' ? 'origin' : cadSketchDatumLabels[first.id]}`
@@ -1505,14 +1507,14 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       eligibleEntityIds: dimensionEligibility.entityIds, eligiblePointIds: dimensionEligibility.pointIds, eligibleDatums: dimensionEligibility.datums,
       pickedDatums: dimensionOperands.flatMap(operand => operand.kind === 'datum' ? [operand.id] : []),
       label: dimensionLabel, escapeLabel: dimensionOperands.length ? 'Escape drops the picks' : 'Escape returns to Select',
-      pointer: dimensionPointer, dimensionPreview: dimensionPlan.candidates.length ? dimensionPlan : undefined, dimensionsInteractive: !dimensionOperands.length,
+      pointer: dimensionPointer, dimensionPreview: dimensionPlan.candidates.length ? dimensionPlan : undefined, dimensionsInteractive: !dimensionOperands.length, placed: shownPlacement,
       contextMenu: pointer => dimensionActions.current.menu(pointer ? { x: pointer.x, y: pointer.y } : null),
       onPick: selection => dimensionActions.current.pick(selection),
       onPickDatum: datum => dimensionActions.current.pick({ kind: 'datum', id: datum }),
       onConfirm: source => dimensionActions.current.confirm(source),
       onCancel: () => { if (!dimensionActions.current.escape()) leaveDrawingTool(); }
     };
-  }, [currentDimensionTool, dimensionEligibility, dimensionOperands, dimensionLabel, dimensionPointer, dimensionPlan, leaveDrawingTool]);
+  }, [currentDimensionTool, dimensionEligibility, dimensionOperands, dimensionLabel, dimensionPointer, dimensionPlan, shownPlacement, leaveDrawingTool]);
   const currentConstraintTool = sketch?.graph && constraintToolRequest?.sketchId === sketch.id && tool === 'select' && !currentDimensionTool ? constraintToolRequest : null;
   useLayoutEffect(() => { if (constraintToolRequest && !currentConstraintTool) setConstraintToolRequest(null); }, [constraintToolRequest, currentConstraintTool]);
   // New positional relations first carry a free shape onto their target, as CATIA does, so the solver only has to hold it there.

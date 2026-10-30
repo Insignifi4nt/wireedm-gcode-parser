@@ -23,7 +23,7 @@ test('positions a bore by Dimension-first point picks with private editing, exac
     await first.press('Enter'); await second.press('Enter');
     await canvas.press('Shift+F10'); await page.getByRole('menuitem', { name: form, exact: true }).click();
     await expect(page.locator('[data-cad-sketch-dimension] [role="button"][aria-pressed="true"]')).toHaveCount(1);
-    await canvas.press('Enter'); await page.getByRole('textbox', { name: `${form} mm`, exact: true }).fill(value); await apply();
+    await page.keyboard.press('Enter'); await page.getByRole('textbox', { name: `${form} mm`, exact: true }).fill(value); await apply();
   };
   const finish = async () => { await page.getByRole('button', { name: 'Finish sketch', exact: true }).click(); await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toHaveCount(0); };
   await edit(); await tool.click(); await first.press('Enter');

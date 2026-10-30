@@ -1607,7 +1607,7 @@ test('human sketch drawing and dimensions share undo and active-workflow protect
   await expect.poll(async () => (await context(page)).version).not.toBe(drawn.version);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   const placed = await context(page);
-  await canvas.press('Enter');
+  await page.keyboard.press('Enter');
   await page.getByRole('textbox', { name: 'Length mm', exact: true }).fill('53');
   expect(await context(page)).toMatchObject({ version: placed.version, workflowOpen: true });
   expect(await rawCall(page, 'cad_edit_document', { expectedVersion: placed.version, edits: [{ kind: 'rename-document', name: 'Interrupt dimension' }] }))

@@ -108,7 +108,7 @@ test('locates a bore with signed relative X/Y drivers, preserves cancelled edits
     await canvas.press('Shift+F10'); await page.getByRole('menuitem', { name: form, exact: true }).click();
     await expect(page.locator('[data-cad-sketch-dimension] [role="button"][aria-pressed="true"]')).toHaveCount(1);
     await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
-    await canvas.press('Enter');
+    await page.keyboard.press('Enter');
   };
   const apply = async () => { await page.getByRole('button', { name: 'Apply', exact: true }).click(); await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false }); };
   await place('Horizontal distance'); const placed = await context(page);

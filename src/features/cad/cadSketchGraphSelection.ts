@@ -45,6 +45,11 @@ export interface CadSketchGeometryPick {
   contextMenu?(pointer: { readonly x: number; readonly y: number } | null): { readonly title: string; readonly items: readonly CadContextMenuItem[] } | null;
   /** Placed dimensions stay selectable, editable, deletable and keep their menus while the pick waits for its first geometry. */
   readonly dimensionsInteractive?: boolean;
+  /**
+   * The placement the label offers to edit, a new value each time one becomes the selection. Focus the picks left on sketch geometry then
+   * moves to the canvas, as a click on empty space places, so Enter edits the placed dimension rather than picking that geometry again.
+   */
+  readonly placed?: object;
   /** What Escape does, after the label; `Escape cancels` without it. */
   readonly escapeLabel?: string;
 }
