@@ -46,7 +46,8 @@ const relationLabels = {
   'tangent-joint': 'Tangent', 'point-on-line': 'Point on line', 'point-on-curve': 'Point on curve', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', 'point-line-distance': 'Point to line distance', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
   parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 } satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size' | 'axis-distance'>, string>;
-const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
+// A coordinate held from an axis is a distance from that axis, named like a distance between parallel lines; at 0 the list names the axis it is on.
+const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? 'Distance'
   : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
     : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationLabels[relation.kind];
 /** The point and its declared coincident aliases. */
@@ -363,14 +364,15 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const draftIdentity = useMemo(() => resolveCadSketchPointIdentities(draft), [draft]);
   const draftCentres = useMemo(() => cadSketchCurveCentres(draft), [draft]);
   const labelRelation = (relation: CadSketchGraphRelation) => initialCommand?.kind === 'datum-distance' && relation.kind === 'fixed-axis' && datumDimensions.some(item => item.id === relation.id)
-    ? initialCommand.datum === 'origin' ? `${relation.axis.toUpperCase()} from origin` : relation.axis === 'x' ? 'X from Y axis' : 'Y from X axis'
+    ? initialCommand.datum === 'origin' ? `${relation.axis.toUpperCase()} from origin` : 'Distance'
     : relation.kind === 'distance' && pointPair && sameIdentityPair(draftIdentity, relation.pointIds, pointPair) ? 'Distance'
       : relation.kind === 'distance' && centerPair && sameIdentityPair(draftIdentity, relation.pointIds, centerPair) ? 'Center distance'
         : isCadSketchConcentric(draft, relation, draftCentres) ? 'Concentric' : relationLabel(relation);
   // A row draws the glyph its relation draws on the canvas.
   const relationIcon = (relation: CadSketchGraphRelation) => { const kind = cadSketchRelationGlyphKind(draft, relation, draftCentres); if (!kind) return null; const Icon = CAD_SKETCH_RELATION_ICONS[kind]; return <Icon size={12} />; };
   const relationRowHighlight = (relation: CadSketchGraphRelation): RowHighlight => ({ ...cadSketchRelationHighlight(draft, relation), relationIds: [relation.id] });
-  // A zero coordinate reads as the plane reference it holds the point on; the value editor keeps the coordinate name.
+  // A zero coordinate reads as the plane reference it holds the point on; its value editor is the distance from that reference, so another value
+  // turns it into a distance from the axis.
   const listedRelationLabel = (relation: CadSketchGraphRelation) => datumDimensions.some(item => item.id === relation.id) ? null : cadSketchDatumRelationLabel(relation);
   const acceptedScalars = useMemo(() => {
     const values: Record<string, CadScalar> = {};
@@ -381,6 +383,16 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     }
     return values;
   }, [originalEntity, originalPoint, source.graph]);
+  // A distance from an axis shows its size. A number on the negative side of the axis, as accepted, shows and takes its value with the sign
+  // turned, so editing keeps the side and a negative entry crosses the axis, as with other signed distances; an expression is the coordinate.
+  // The coordinates offered from the origin stay signed, as X and Y from the origin.
+  const axisSide = (relation: Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }>) => {
+    if (initialCommand?.kind === 'datum-distance' && initialCommand.datum === 'origin' && datumDimensions.some(item => item.id === relation.id)) return 1;
+    const accepted = acceptedScalars[`${relation.id}/value`], index = relation.axis === 'x' ? 0 : 1;
+    const position = typeof accepted === 'number' ? accepted : source.graph.points.find(point => point.id === relation.pointId)?.position[index];
+    return typeof position === 'number' && position < 0 ? -1 : 1;
+  };
+  const sized = (relation: CadSketchGraphRelation, value: CadScalar): CadScalar => relation.kind === 'fixed-axis' && typeof value === 'number' && axisSide(relation) < 0 ? -value : value;
   const relevantPoints = new Set(selection.flatMap(atom => atom.kind === 'point' ? [atom.id] : draft.entities.filter(entity => entity.id === atom.id).flatMap(entityPoints)));
   const relations = draft.relations.filter(relation => cadSketchRelationPointIds(draft, relation).some(id => relevantPoints.has(id)));
   // A reused dimension may sit on a coincident alias of the selection, outside the listed relations.
@@ -614,7 +626,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const relationList = <ul className="cad-sketch-constraint-list" aria-label="Sketch relations">{relations.map(relation => <li key={relation.id}
           {...highlightRow(`relation/${relation.id}`, () => relationRowHighlight(relation))}>
           <Button type="button" aria-label={`Inspect ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} aria-pressed={activeRelationId === relation.id} onClick={() => { if(relation.kind === 'linear-pattern') { if (!pending) onEditPattern?.(relation.id); return; } setInspectedFailure(null); setActiveRelationId(current => current === relation.id ? null : relation.id); }}>
-            {relationIcon(relation)}{listedRelationLabel(relation) ?? labelRelation(relation)}{!listedRelationLabel(relation) && (relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(relation.value, parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
+            {relationIcon(relation)}{listedRelationLabel(relation) ?? labelRelation(relation)}{!listedRelationLabel(relation) && (relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'fillet-corner' || relation.kind === 'radial-size' || relation.kind === 'line-angle') && <span>{relationQuantity(sized(relation, relation.value), parameters, relation.kind === 'line-angle' ? 'deg' : 'mm')}</span>}
             {relation.kind === 'reference-dimension' && <span>({referenceValue(relation)})</span>}
             {relation.kind === 'chamfer-corner' && <span>{relation.values.map(value => relationQuantity(value, parameters)).join(' / ')}</span>}
           </Button><Button type="button" aria-label={relation.kind === 'linear-pattern' ? 'Detach pattern' : relation.kind === 'external-reference' ? 'Detach reference' : `Remove ${describeCadSketchConstraintSource(draft, { kind: 'relation', id: relation.id }).label}`} title={relation.kind === 'linear-pattern' ? 'Detach all occurrences and retain their current geometry' : relation.kind === 'external-reference' ? 'Detach this source link and retain the current geometry' : 'Remove this relation and retain the current geometry'} disabled={relation.kind === 'linear-pattern' && (pending || !onEditPattern)} onClick={() => { if (relation.kind === 'linear-pattern') onEditPattern?.(relation.id,true); else removeRelation(relation.id); }}><CloseIcon size={12} /></Button>
@@ -743,9 +755,9 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
         {!corner && !dimensionOnly && relations.length > 0 && (relations.length > 4
           ? <details className="cad-sketch-relations-disclosure" open={Boolean(activeRelation)}><summary>Relations <span>{relations.length}</span></summary>{relationList}</details>
           : relationList)}
-        {activeRelation && (activeRelation.kind === 'distance' || activeRelation.kind === 'point-line-distance' || activeRelation.kind === 'axis-distance' || activeRelation.kind === 'fixed-axis' || activeRelation.kind === 'line-angle') && <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} unit={activeRelation.kind === 'line-angle' ? 'deg' : 'mm'} value={activeRelation.value} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value })} />}
+        {activeRelation && (activeRelation.kind === 'distance' || activeRelation.kind === 'point-line-distance' || activeRelation.kind === 'axis-distance' || activeRelation.kind === 'fixed-axis' || activeRelation.kind === 'line-angle') && <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} unit={activeRelation.kind === 'line-angle' ? 'deg' : 'mm'} value={sized(activeRelation, activeRelation.value)} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value: sized(activeRelation, value) })} />}
         {datumDimensions.flatMap(dimension => draft.relations.find((relation): relation is Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }> => relation.id === dimension.id && relation.kind === 'fixed-axis' && relation.id !== activeRelation?.id) ?? [])
-          .map(relation => <ScalarField key={relation.id} fieldKey={`${relation.id}/value`} label={labelRelation(relation)} unit="mm" value={relation.value} parameters={parameters} onChange={value => changeRelation({ ...relation, value })} />)}
+          .map(relation => <ScalarField key={relation.id} fieldKey={`${relation.id}/value`} label={labelRelation(relation)} unit="mm" value={sized(relation, relation.value)} parameters={parameters} onChange={value => changeRelation({ ...relation, value: sized(relation, value) })} />)}
         {activeRelation?.kind === 'reference-dimension' && <>
           {activeRelation.measurement.kind === 'radial-size' && <SelectField label="Dimension quantity" value={activeRelation.measurement.quantity}
             options={[{value:'radius',label:'Radius'},{value:'diameter',label:'Diameter'}]} onChange={quantity => {

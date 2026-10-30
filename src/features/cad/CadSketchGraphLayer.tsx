@@ -532,7 +532,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     <CadSketchHighlightOverlay store={highlightStore} prepared={displayed} center={center} mmPerPixel={scaleY} selectedRelationIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSION_IDS} />
     {active && controls.showDimensions !== false && <CadSketchGraphDimensions graph={displayed.graph} parameters={displayed.parameters} center={center} mmPerPixel={scaleY}
       selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore} hitLayer={dimensionHits} covered={coversDimensionLine}
-      interactive={interactive && !controls.geometryPick && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
+      interactive={interactive && (!controls.geometryPick || controls.geometryPick.dimensionsInteractive === true) && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
       onSelect={(dimension, additive) => controls.onSelectDimension?.(dimension, additive)} onDelete={(dimension, key) => controls.onDeleteDimension?.(dimension, key)}
       onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} />}
     {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${rejection !== null || candidate.issue ? ' is-invalid' : ''}`}

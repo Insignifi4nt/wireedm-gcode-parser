@@ -15,23 +15,28 @@ test('positions a bore by Dimension-first point picks with private editing, exac
   const read = (version: string) => call(page, 'cad_get_feature', { expectedVersion: version, featureId: 'plate' }).then(r => r.feature);
   const edit = async () => { await (await historyRow(page, 'Located bore')).dblclick(); await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toBeVisible(); };
   const first = page.locator('[data-cad-sketch-point="a"]'), second = page.locator('[data-cad-sketch-point="o"]');
-  const choosePair = async () => {
-    await page.locator('[aria-label="Sketch drawing canvas"]').click({ position: { x: 10, y: 10 } });
-    await page.getByRole('button', { name: 'Dimension', exact: true }).click(); await first.press('Enter'); await second.press('Enter');
-  };
+  const canvas = page.locator('[aria-label="Sketch drawing canvas"]'), tool = page.getByRole('button', { name: 'Dimension', exact: true });
   const apply = async () => { await page.getByRole('button', { name: 'Apply', exact: true }).click(); await expect(page.getByRole('button', { name: 'Apply', exact: true })).toHaveCount(0); };
+  // Dimension places the distance its menu names at the measured value and selects it, or selects the one already there; Enter then opens its editor.
+  const place = async (form: 'Horizontal distance' | 'Vertical distance', value: string) => {
+    if (await tool.getAttribute('aria-pressed') !== 'true') await tool.click();
+    await first.press('Enter'); await second.press('Enter');
+    await canvas.press('Shift+F10'); await page.getByRole('menuitem', { name: form, exact: true }).click();
+    await expect(page.locator('[data-cad-sketch-dimension] [role="button"][aria-pressed="true"]')).toHaveCount(1);
+    await page.keyboard.press('Enter'); await page.getByRole('textbox', { name: `${form} mm`, exact: true }).fill(value); await apply();
+  };
   const finish = async () => { await page.getByRole('button', { name: 'Finish sketch', exact: true }).click(); await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toHaveCount(0); };
-  await edit(); await page.getByRole('button', { name: 'Dimension', exact: true }).click(); await first.press('Enter');
+  await edit(); await tool.click(); await first.press('Enter');
   await first.press('Escape'); expect((await context(page)).version).toBe(base.version); expect(await read(base.version)).toEqual(sketch);
-  await choosePair(); await page.getByRole('button', { name: 'Horizontal distance', exact: true }).click(); await page.getByRole('textbox', { name: 'Horizontal distance mm', exact: true }).fill('30'); await apply();
-  await choosePair(); await page.getByRole('button', { name: 'Vertical distance', exact: true }).click(); await page.getByRole('textbox', { name: 'Vertical distance mm', exact: true }).fill('20'); await apply();
+  await expect(tool).toHaveAttribute('aria-pressed', 'true');
+  await place('Horizontal distance', '30'); await place('Vertical distance', '20');
   expect(await read(base.version)).toEqual(sketch); await finish(); let current = await context(page); const human = await read(current.version);
   expect(human.graph).toEqual({ points: [...sketch.graph.points.slice(0, 4), { id: 'o', position: [30, 20] }], entities: sketch.graph.entities,
     relations: [{ id: expect.any(String), kind: 'axis-distance', axis: 'x', pointIds: ['a', 'o'], value: 30 },
       { id: expect.any(String), kind: 'axis-distance', axis: 'y', pointIds: ['a', 'o'], value: 20 }] });
   let built = await call(page, 'cad_build', { expectedVersion: current.version }); expect(built.diagnostics).toEqual([]);
   expect(built.bodies[0]).toMatchObject({ solidCount: 1, boundsMm: { min: [0, 0, 0], max: [50, 40, 5] } }); expect(built.bodies[0].volumeMm3).toBeCloseTo((2000 - 16 * Math.PI) * 5, 6);
-  await edit(); await choosePair(); await page.getByRole('button', { name: 'Horizontal distance', exact: true }).click(); await page.getByRole('textbox', { name: 'Horizontal distance mm', exact: true }).fill('35'); await apply();
+  await edit(); await place('Horizontal distance', '35');
   await page.getByRole('button', { name: 'Cancel sketch edits', exact: true }).click(); await expect(page.getByRole('button', { name: 'Cancel sketch edits', exact: true })).toHaveCount(0);
   expect(await read(current.version)).toEqual(human);
   await call(page, 'cad_history', { expectedVersion: current.version, direction: 'undo' }); current = await context(page); expect(await read(current.version)).toEqual(sketch);

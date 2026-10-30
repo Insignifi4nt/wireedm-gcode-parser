@@ -1,9 +1,9 @@
 import type { CadDocument, CadFeature, CadMesh } from '@/domain/cad/cadDocument';
-import type { CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadFeatureDependencies } from '@/domain/cad/cadFeatureInputs';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { measureCadCurve } from '@/domain/cad/cadCurveMeasurements';
 import { formatCadLocalizedQuantity } from './cadDisplayQuantity';
+import { isCadSketchDimensionRelation } from './cadSketchDimensionSelection';
 
 /** One read-only line of a Properties summary. */
 export interface CadPropertyRow { readonly label: string; readonly value: string }
@@ -11,7 +11,6 @@ export type CadPropertyTarget = { readonly kind: 'body' } | { readonly kind: 'fe
 
 const length = (value: number) => `${formatCadLocalizedQuantity(value, 3)} mm`;
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
-const DIMENSIONS = new Set<CadSketchGraphRelation['kind']>(['distance', 'point-line-distance', 'axis-distance', 'radial-size', 'line-angle', 'fixed-axis', 'fillet-corner', 'chamfer-corner']);
 
 function sizeOf(meshes: readonly CadMesh[]): string | null {
   if (!meshes.length) return null;
@@ -51,7 +50,8 @@ export function cadPropertySummary(document: CadDocument, target: CadPropertyTar
       const kinds = ['line', 'arc', 'circle'] as const;
       const geometry = kinds.map(kind => [kind, graph.entities.filter(entity => entity.kind === kind).length] as const).filter(([, count]) => count > 0);
       rows.push({ label: 'Geometry', value: geometry.length ? geometry.map(([kind, count]) => plural(count, kind)).join(' · ') : 'Empty' });
-      const dimensions = graph.relations.filter(relation => DIMENSIONS.has(relation.kind)).length;
+      // The dimensions are those the canvas draws: a coordinate held at 0 keeps its point on an axis, a relation, and a reference counts.
+      const dimensions = graph.relations.filter(isCadSketchDimensionRelation).length;
       rows.push({ label: 'Constraints', value: `${plural(dimensions, 'dimension')} · ${plural(graph.relations.length - dimensions, 'relation')}` });
     } else if (feature.profiles.length) rows.push({ label: 'Geometry', value: plural(feature.profiles.length, 'profile') });
     try {

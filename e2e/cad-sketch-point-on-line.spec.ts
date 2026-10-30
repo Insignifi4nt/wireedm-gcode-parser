@@ -25,7 +25,7 @@ test('slides a bore on an angled guide, locates it and follows guide edits throu
   const position=()=>marker.evaluate(el=>{const origin=el.closest('svg')?.querySelector('[data-cad-sketch-point="guide-a"] .cad-sketch-point-mark');if(!origin)throw Error('Missing guide origin');return ['cx','cy'].map(axis=>Number(el.getAttribute(axis))-Number(origin.getAttribute(axis)));});
   await expect.poll(async()=>{const p=await position();return Math.abs(p[1]-p[0]/2);}).toBeLessThan(1e-9);
   const moved=await position();expect(moved[0]).toBeGreaterThan(25);
-  await pick('point','center');await (await relationControl(page, 'checkbox', 'Fix X')).check();await page.getByRole('textbox',{name:'Fix X mm',exact:true}).fill('30');await apply();
+  await pick('point','center');await (await relationControl(page, 'checkbox', 'Fix X')).check();await page.getByRole('textbox',{name:'Distance mm',exact:true}).fill('30');await apply();
   await pick('point','guide-b');await (await relationControl(page, 'textbox', 'Y mm')).fill('24');await apply();expect(await read(base.version)).toEqual(sketch);
   await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);
   let current=await context(page);const human=await read(current.version),finalPoints=[...sketch.graph.points.slice(0,6),{id:'center',position:[expect.closeTo(30,10),expect.closeTo(12,10)]}];expect(human.graph.points).toEqual(finalPoints);

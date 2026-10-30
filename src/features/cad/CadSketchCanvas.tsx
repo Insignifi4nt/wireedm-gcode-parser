@@ -39,9 +39,12 @@ import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { cadArcSvgPath } from './cadSketchSvg';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
-import { cadSketchDimensionPick, cadSketchDimensionSelectionStatus, type CadSketchDimensionPick } from './cadSketchDimensionSelection';
-import { CAD_SKETCH_AXIS_PIXELS, CAD_SKETCH_DATUMS, cadSketchDatumLabels, cadSketchRelationDatum, cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, pickCadSketchDatum, type CadSketchDatum, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
+import { cadSketchDimensionPick, cadSketchDimensionPickOf, cadSketchDimensionSelectionStatus, isCadSketchGlyphRelation, type CadSketchDimensionPick } from './cadSketchDimensionSelection';
+import { cadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
+import { CAD_SKETCH_AXIS_PIXELS, CAD_SKETCH_DATUMS, cadSketchDatumName, cadSketchRelationDatum, cadSketchGeometryPickAllows, cadSketchGraphSelectionsEqual, pickCadSketchDatum, type CadSketchDatum, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
+import { CadSketchDimensionPreview, CadSketchPointerReadout } from './CadSketchDimensionPreview';
+import { CadSketchOverlay, cadSketchViewFrame } from './CadSketchOverlay';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { cadFreshSketchDatumAxes, type CadFreshSketchDrawing, type CadFreshSketchPick } from '@/domain/cad/cadFreshSketchGraph';
 import { CadSketchSplitPreview, prepareCadSketchSplitPreview, type CadSketchSplitPreview as SplitPreview } from './CadSketchSplitPreview';
@@ -85,8 +88,10 @@ type DimensionLineEvent = { readonly clientX: number; readonly clientY: number; 
 interface LineCover { readonly event: Event; readonly grip: CadSketchHandlePick | null; readonly datum: CadSketchDatum | null; readonly covered: boolean }
 /** The relations a glyph's `data-cad-sketch-relation-glyph` names: one relation ID, or several joined by spaces. */
 function relationGlyphPicks(graph: NonNullable<CadSketchFeature['graph']>, value: string): readonly CadSketchDimensionPick[] {
-  const whole = cadSketchDimensionPick(graph, value);
-  return whole ? [whole] : value.split(' ').flatMap(id => { const pick = id ? cadSketchDimensionPick(graph, id) : null; return pick ? [pick] : []; });
+  // The glyph pressed is drawn, so the relations it names are too; the workbench checks them against its own drawn set.
+  const glyph = (id: string) => { const relation = id ? graph.relations.find(item => item.id === id) : undefined; return relation && isCadSketchGlyphRelation(relation) ? cadSketchDimensionPickOf(relation) : null; };
+  const whole = glyph(value);
+  return whole ? [whole] : value.split(' ').flatMap(id => { const pick = glyph(id); return pick ? [pick] : []; });
 }
 interface DrawingCursor { readonly point: SketchPoint; readonly mode: 'pointer' | 'position'; readonly suppressed: boolean }
 /** What the workbench needs to finish or leave a drawing while the canvas is not focused. */
@@ -354,6 +359,26 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   const sourceGraph = useMemo(() => sourceSketch.kind === 'sketch' && sourceSketch.graph ? prepareCadSketchGraphInteraction(sourceSketch.graph, graphSourceParameters) : null, [sourceSketch, graphSourceParameters]);
   const geometryPick = graphControls?.geometryPick;
+  const placedByPick = geometryPick?.placed;
+  useLayoutEffect(() => {
+    const canvas = svg.current, focused = document.activeElement;
+    if (placedByPick && canvas && focused instanceof Element && focused !== canvas && canvas.contains(focused)) canvas.focus({ preventScroll: true });
+  }, [placedByPick]);
+  // A pick or lock can take the tab stop from what has focus, as an axis loses it once it takes no more picks. Focus then moves to the
+  // canvas, where the pick's keys still work, instead of staying on an element outside the tab order. Chrome instead drops focus from the
+  // page while the render removes the tab stop, when React dispatches no blur, so a native listener returns it to the canvas.
+  useLayoutEffect(() => {
+    const canvas = svg.current, focused = document.activeElement;
+    if (canvas && focused instanceof SVGElement && focused !== canvas && canvas.contains(focused) && !focused.hasAttribute('tabindex')) canvas.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    const canvas = svg.current; if (!canvas) return;
+    const lost = (event: FocusEvent) => {
+      const target = event.target;
+      if (target !== canvas && event.relatedTarget === null && target instanceof SVGElement && !target.hasAttribute('tabindex')) canvas.focus({ preventScroll: true });
+    };
+    canvas.addEventListener('focusout', lost); return () => canvas.removeEventListener('focusout', lost);
+  }, []);
   const positionPick = graphControls?.positionPick;
   const placement = graphControls?.placement;
   const placementAngle = placement ? `${placement.angleDegrees > 0 ? '+' : ''}${formatCadQuantity(placement.angleDegrees)}°` : '';
@@ -421,6 +446,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   }, [documentVersion, sketch, profiles, handlePicker]);
   useEffect(() => { edgeSubmission.current = null; chainSave.current = null; submission.cancel(); setHoverHandle(null); setDetailSelection({ kind: 'profile' }); ownedHandleEdit.current = null; setDragPreview(null); }, [sketch.id, tool, cancelSignal, submission.cancel]);
   const width = span * aspect;
+  const overlayFrame = useMemo(() => cadSketchViewFrame(center, width, span, viewportSize.height), [center, width, span, viewportSize.height]);
   const drawingCandidate = (candidate: CadSketchSnapCandidate): DrawingPick => ({ point: candidate.point, candidate });
   const resolveDrawingPick = (raw: SketchPoint, suppressed: boolean, mode: DrawingCursor['mode'], mmPerPixel: SketchPoint = [width / viewportSize.width, span / viewportSize.height]): DrawingPick => {
     if (suppressed || mode === 'position') return { point: raw };
@@ -773,6 +799,18 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       : `${entity?.kind === 'line' ? 'Line' : entity?.kind === 'circle' ? 'Circle' : 'Arc'} ${(index ?? -1) + 1}`;
     return { label, onHighlight: () => setPickHighlight(atom), onSelect: () => selectOverlap(atom) };
   }) ?? []), ...(graphCommandItems.length ? [{ kind: 'separator' } satisfies CadContextMenuItem, ...graphCommandItems] : [])];
+  // A pick's own menu belongs to the pick it opened on and the pointer position it was opened for; another pick, or a lock, closes it.
+  const [pickMenu, setPickMenu] = useState<{ readonly geometryPick: NonNullable<typeof geometryPick>; readonly clientX: number; readonly clientY: number; readonly pointer: { readonly x: number; readonly y: number } | null } | null>(null);
+  const openPickMenu = (event: { clientX: number; clientY: number }) => {
+    if (!geometryPick?.contextMenu || interactionLocked) return false;
+    const pointer = geometryPick.pointer?.get() ?? null;
+    if (!geometryPick.contextMenu(pointer)) return false;
+    setPickMenu({ geometryPick, clientX: event.clientX, clientY: event.clientY, pointer });
+    return true;
+  };
+  const currentPickMenu = pickMenu && pickMenu.geometryPick === geometryPick && !interactionLocked ? pickMenu : null;
+  const pickMenuContent = currentPickMenu ? currentPickMenu.geometryPick.contextMenu?.(currentPickMenu.pointer) ?? null : null;
+  useLayoutEffect(() => { if (pickMenu && !currentPickMenu) setPickMenu(null); }, [pickMenu, currentPickMenu]);
   const getDrawingPick = (event: { clientX: number; clientY: number; ctrlKey: boolean; metaKey: boolean }): DrawingPick => {
     const raw = getRawPoint(event) ?? [0, 0], suppressed = event.ctrlKey || event.metaKey, rect = svg.current?.getBoundingClientRect();
     setCursorInput({ point: raw, suppressed, mode: 'pointer' });
@@ -1035,13 +1073,13 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const datumProps = (datum: CadSketchDatum, className: string, onScreen: boolean) => {
     const eligible = onScreen && Boolean(datumEligible?.includes(datum)) && !interactionLocked, picked = Boolean((geometryPick ? geometryPick.pickedDatums : graphControls?.datumSelection)?.includes(datum));
     const state = `${className}${eligible ? ' is-pick-eligible' : ''}${eligible && datumHover === datum ? ' is-pick-highlighted' : ''}${picked ? ' is-selected' : ''}${relatedDatums.includes(datum) ? ' is-relation-highlighted' : ''}`;
-    return eligible ? { className: state, role: 'button', tabIndex: 0, 'aria-label': `${datumPick ? 'Use' : 'Select'} ${cadSketchDatumLabels[datum].toLowerCase()}`, 'aria-pressed': datumPick ? undefined : picked, 'data-cad-sketch-datum': datum,
+    return eligible ? { className: state, role: 'button', tabIndex: 0, 'aria-label': `${datumPick ? 'Use' : 'Select'} ${cadSketchDatumName(datum)}`, 'aria-pressed': datumPick ? undefined : picked, 'data-cad-sketch-datum': datum,
       onKeyDown: (event: ReactKeyboardEvent<SVGElement>) => {
         if (event.key === 'Escape' && !datumPick && graphControls && (graphControls.selection.length || graphControls.datumSelection?.length)) { event.preventDefault(); event.stopPropagation(); graphControls.onSelect(null); return; }
         if (event.key !== 'Enter' && event.key !== ' ') return; event.preventDefault(); event.stopPropagation(); chooseDatum(datum, event.shiftKey); } }
       : { className: state, 'aria-hidden': true, 'data-cad-sketch-datum': datum };
   };
-  const instruction = positionPick ? `${positionPick.label} · Escape cancels` : geometryPick ? `${geometryPick.label} · Escape cancels`
+  const instruction = positionPick ? `${positionPick.label} · Escape cancels` : geometryPick ? `${geometryPick.label} · ${geometryPick.escapeLabel ?? 'Escape cancels'}`
     : tool === 'trim' ? currentTrim?.kind === 'ready' ? 'Click to remove the red piece · Escape returns to Select' : currentTrim?.reason ?? 'Point at the piece of an edge to remove · Escape returns to Select'
     : pathTool && pathDraft.kind === 'arc-through' ? pathPreview.kind === 'invalid' ? pathPreview.message : 'Click a point on the arc.'
     : tool === 'arc' ? pathDraft.kind === 'idle' ? 'Click the arc start.' : 'Click the arc end.'
@@ -1177,6 +1215,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (datum) { chooseDatum(datum, false); return; }
           acceptDrawingPick(getDrawingPick(event), event); return;
         }
+        if (event.button === 0 && geometryPick?.pointer && !interactionLocked) { const raw = getRawPoint(event); if (raw) geometryPick.pointer.set({ x: raw[0], y: raw[1] }); }
         // A cancelled graph drag can release over empty canvas; its trailing click still belongs to the handle.
         if (event.button === 0 && event.target instanceof Element && event.target.closest('.cad-sketch-graph')) suppressProfileClick.current = true;
       }}
@@ -1197,7 +1236,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const label = target?.closest('[data-cad-sketch-dimension]')?.getAttribute('data-cad-sketch-dimension') ?? null;
           const line = label ? null : target?.closest('[data-cad-sketch-dimension-hit]')?.getAttribute('data-cad-sketch-dimension-hit') ?? null;
           const dimensionId = label ?? (line && !dimensionLineCover.current(event)?.covered ? line : null);
-          const dimension = dimensionId && sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchDimensionPick(sourceSketch.graph, dimensionId) : null;
+          const dimension = dimensionId && sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchDimensionPick(cadSketchDrawnDimensions(sourceSketch.graph, graphSourceParameters), dimensionId) : null;
           // A relation glyph takes the press as a label does, only where no geometry, datum, grip or profile edge lies under it.
           const glyph = label || line ? null : target?.closest('.cad-sketch-relation-glyph.is-interactive')?.getAttribute('data-cad-sketch-relation-glyph') ?? null;
           const relations = glyph && sourceSketch.kind === 'sketch' && sourceSketch.graph && !relationGlyphCover.current(event) ? relationGlyphPicks(sourceSketch.graph, glyph) : null;
@@ -1242,7 +1281,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
             if (geometryPick) {
               // A pick takes the origin or an axis at once, since a press in a pick never drags.
               const datum = datumPick && point && rect.height ? datumUnder(point, span / rect.height, false) : null;
-              if (datum) { chooseDatum(datum, false); suppressProfileClick.current = true; } else geometryPick.onConfirm?.();
+              if (datum) { chooseDatum(datum, false); suppressProfileClick.current = true; } else geometryPick.onConfirm?.('pointer');
               return;
             }
             const grip = pickFilter === 'auto' && onMoveHandle && point && rect.height ? pickGrip(event, point, span / rect.height) : null;
@@ -1331,7 +1370,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (!active || active.pointerId !== event.pointerId) return;
         finishPan(event.pointerId);
         if (active.button !== 2 || event.button !== 2 || active.moved || Math.hypot(event.clientX - active.x, event.clientY - active.y) > 4 || interactionLocked || viewLocked) return;
-        const dimension = active.dimension && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onDimensionMenu ? active.dimension : null;
+        const pickItems = geometryPick?.contextMenu && !positionPick ? openPickMenu(event) : false;
+        if (pickItems) return;
+        const dimension = active.dimension && tool === 'select' && (!geometryPick || geometryPick.dimensionsInteractive) && !positionPick && !isPreview && graphControls?.onDimensionMenu ? active.dimension : null;
         // A label or a relation glyph opens its menu at once; a line or arrow opens its dimension's only where no sketch geometry lies under the release.
         if (dimension && !active.dimensionLine) { graphControls?.onDimensionMenu?.(dimension, { clientX: event.clientX, clientY: event.clientY }); return; }
         if (active.relations && tool === 'select' && !geometryPick && !positionPick && !isPreview && graphControls?.onRelationMenu) {
@@ -1397,7 +1438,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           // A dimension line or arrow keeps the cursor where it was too, but a datum or grip under it still takes the hover, as it takes the press;
           // the line's own cover test already found them for this move.
           const onLine = event.target instanceof Element && event.target.closest('[data-cad-sketch-dimension-hit]') !== null;
-          if (!onLine) getDrawingPick(event);
+          // The Dimension tool's preview follows the pointer through its own store, so the move renders the preview alone.
+          const pointer = geometryPick?.pointer, raw = pointer ? getRawPoint(event) : null;
+          if (pointer && raw) pointer.set({ x: raw[0], y: raw[1] });
+          if (!onLine && !geometryPick?.dimensionPreview) getDrawingPick(event);
           if (tool === 'trim') {
             const preview = interactionLocked || viewLocked ? null : trimAt(event);
             setTrimHover(preview && sourceGraph ? { prepared: sourceGraph, preview } : null);
@@ -1439,6 +1483,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const segment = entityId ? sourceGraph?.geometry.segments.find(segment => segment.id === entityId) : null;
           const at = point ?? (segment ? [segment.start.x, segment.start.y] : center);
           const bounds = event.currentTarget.getBoundingClientRect();
+          const shown = geometryPick?.pointer?.get(), menuAt = shown ? [shown.x, shown.y] : at;
+          if (geometryPick?.contextMenu && !positionPick && openPickMenu({ clientX: bounds.left + bounds.width / 2 + (menuAt[0] - center[0]) / width * bounds.width,
+            clientY: bounds.top + bounds.height / 2 - (menuAt[1] - center[1]) / span * bounds.height })) return;
           if (openOverlap({ clientX: bounds.left + bounds.width / 2 + (at[0] - center[0]) / width * bounds.width,
             clientY: bounds.top + bounds.height / 2 - (at[1] - center[1]) / span * bounds.height }, 'keyboard', pointId ? { kind: 'point', id: pointId } : entityId ? { kind: 'entity', id: entityId } : undefined)) return;
           const profileId = selectedProfileId && profilePicker.hasProfile(selectedProfileId) ? selectedProfileId : null;
@@ -1446,17 +1493,23 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (!geometryPick && !positionPick && pickFilter === 'auto') onContextMenu?.({ clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, trigger: 'keyboard', profileId, pointMm: center });
           return;
         }
-        if (event.ctrlKey || event.metaKey || event.altKey || event.target !== event.currentTarget) return;
-        if (event.key.toLowerCase() === 'f') { if (!viewLocked) { event.preventDefault(); fit(); } return; }
-        if (geometryPick?.onConfirm && !positionPick && !interactionLocked && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); geometryPick.onConfirm(); return; }
-        if (interactionLocked || geometryPick && !positionPick) return;
-        if (event.key === 'Delete' && !positionPick && tool === 'select' && graphControls?.selection.length && graphControls.onDelete) {
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        // A pick leaves focus on the geometry picked, which passes on the keys it has no use for once nothing more can be picked there. The
+        // pick's Enter and its placed dimensions' Delete still belong to the canvas; every other key works only on the canvas itself.
+        const onCanvas = event.target === event.currentTarget;
+        if (!onCanvas && (event.defaultPrevented || !geometryPick || positionPick)) return;
+        if (onCanvas && event.key.toLowerCase() === 'f') { if (!viewLocked) { event.preventDefault(); fit(); } return; }
+        if (geometryPick?.onConfirm && !positionPick && !interactionLocked && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); geometryPick.onConfirm('key'); return; }
+        if (interactionLocked || geometryPick && !positionPick && !geometryPick.dimensionsInteractive) return;
+        if (event.key === 'Delete' && !geometryPick && !positionPick && tool === 'select' && graphControls?.selection.length && graphControls.onDelete) {
           event.preventDefault(); event.stopPropagation(); graphControls.onDelete(graphControls.selection[graphControls.selection.length - 1]); return;
         }
         const dimensions = tool === 'select' && !positionPick ? graphControls?.dimensionSelection ?? [] : [];
         if ((event.key === 'Delete' || event.key === 'Backspace') && dimensions.length && graphControls?.onDeleteDimension) {
           event.preventDefault(); event.stopPropagation(); graphControls.onDeleteDimension(); return;
         }
+        // A pick that keeps placed dimensions interactive takes their Delete and nothing else.
+        if (geometryPick && !positionPick) return;
         const step = gridStep * (event.shiftKey ? 10 : 1);
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
           event.preventDefault();
@@ -1542,37 +1595,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           filter={graphPickFilter} highlighted={graphHighlight} pickAt={pickGraphAt} coversDimensionLine={coversDimensionLine} coversRelationGlyph={coversRelationGlyph}
           locked={externalInteractionLocked || Boolean(positionPick && !geometryPick) || submission.applying || points.length > 0 || pathPending || dragPreview !== null || boxPending || overlapPending || choicePending} cancelSignal={cancelSignal} onPendingChange={publishGraphPending} onError={onError} />}
         {graphControls?.patternInteraction && sourceSketch.kind === 'sketch' && (previewSketch ?? sourceSketch).graph && <CadSketchLinearPatternPreview graph={(previewSketch ?? sourceSketch).graph!} parameters={parameters} interaction={graphControls.patternInteraction} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
-        {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
-        {currentTrim?.kind === 'ready' && <CadSketchTrimPreview preview={currentTrim} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
-        {currentOverlap?.action === 'trim' && currentOverlap.trim?.kind === 'ready' && <CadSketchTrimPreview preview={currentOverlap.trim} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
-        {currentOverlap?.action === 'extend' && activeExtend?.kind === 'ready' && <CadSketchExtendPreview preview={activeExtend} center={center} mmPerPixel={span / (viewportSize.height || 600)} />}
         {inspection?.gear && inspectedGear?.geometry.kind === 'plugin' && <CadGearInspectionOverlay profile={inspectedGear.geometry} parameters={parameters} inputName={inspection.gear.inputName} span={span} viewCenter={center} />}
-        {preview && <g className="cad-profile cad-profile-preview"><CadSketchProfileGeometry geometry={preview} parameters={parameters} viewCenter={center} /></g>}
         {pathTool && pathDraft.kind !== 'idle' && <>
           <CadPathDraftGeometry segments={pathDraft.segments} viewCenter={center} />
-          {(pathPreview.kind === 'line' || pathPreview.kind === 'arc') && <g className="cad-profile cad-profile-preview"><CadPathSegmentGeometry segment={pathPreview.segment} origin={center} /></g>}
-          {pathDraft.kind === 'arc-through' && pathPreview.kind === 'invalid' && <polyline className="cad-path-invalid" points={[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')} />}
           <circle cx={pathDraft.start[0] - center[0]} cy={pathDraft.start[1] - center[1]} r={span / 170} className="cad-sketch-vertex" />
           {pathDraft.kind === 'arc-through' && <circle cx={pathDraft.end[0] - center[0]} cy={pathDraft.end[1] - center[1]} r={span / 170} className="cad-sketch-vertex" />}
         </>}
-        {drawingReadout && viewportSize.height > 0 && <g data-cad-drawing-readout="" pointerEvents="none" aria-hidden="true"
-          transform={`translate(${cursor[0] - center[0]},${cursor[1] - center[1]}) scale(${width / viewportSize.width},${-span / viewportSize.height})`}>
-          <rect className="cad-sketch-snap-label-bg" x="12" y="10" width={drawingReadout.length * 5.6 + 12} height="19" rx="3" />
-          <text className="cad-sketch-snap-label" x="18" y="23">{drawingReadout}</text>
-        </g>}
-        {snapHint && viewportSize.height > 0 && <CadSketchSnapHint candidate={snapHint} center={center} scaleX={width / viewportSize.width} scaleY={span / viewportSize.height} label={snapLabel} />}
-        {placement && <g data-cad-sketch-placement="" pointerEvents="none" aria-hidden="true">
-          {placement.anchor && placement.target && <line className="cad-sketch-snap-target"
-            x1={placement.anchor[0] - center[0]} y1={placement.anchor[1] - center[1]} x2={placement.target[0] - center[0]} y2={placement.target[1] - center[1]} />}
-          {placement.anchor && <g transform={`translate(${placement.anchor[0] - center[0]},${placement.anchor[1] - center[1]}) scale(${width / (viewportSize.width || 800)},${-span / (viewportSize.height || 600)})`}>
-            <path className="cad-sketch-snap-target" d="M -7 0 H 7 M 0 -7 V 7" /><rect className="cad-sketch-snap-target" x="-4" y="-4" width="8" height="8" />
-          </g>}
-          {placement.target && <g transform={`translate(${placement.target[0] - center[0]},${placement.target[1] - center[1]}) scale(${width / (viewportSize.width || 800)},${-span / (viewportSize.height || 600)})`}>
-            <circle className="cad-sketch-snap-target" r="5" />
-            <rect className="cad-sketch-snap-label-bg" x="9" y="-25" width={placementAngle.length * 5.5 + 12} height="19" rx="3" />
-            <text className="cad-sketch-snap-label" x="15" y="-12">{placementAngle}</text>
-          </g>}
-        </g>}
         {currentSnapChoice && choiceHighlight && <g pointerEvents="none" aria-hidden="true">
           {sourceGraph?.geometry.segments.filter(segment => choiceHighlight.entityIds.includes(segment.id)).map(segment => {
             const boundary = cadSketchGraphBoundary(segment);
@@ -1588,10 +1616,40 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         {points.map(([x, y], index) => <circle key={index} cx={x - center[0]} cy={y - center[1]} r={span / 170} className="cad-sketch-vertex" />)}
         {attachmentMarkers}
       </g>
-      {boxSelection.box && <rect className={`cad-sketch-selection-box is-${boxSelection.box.mode}`} pointerEvents="none"
-        x={Math.min(boxSelection.box.start[0], boxSelection.box.end[0]) - center[0]} y={center[1] - Math.max(boxSelection.box.start[1], boxSelection.box.end[1])}
-        width={Math.abs(boxSelection.box.end[0] - boxSelection.box.start[0])} height={Math.abs(boxSelection.box.end[1] - boxSelection.box.start[1])} />}
     </svg>
+    {/* Drawing that follows the pointer paints on its own layer, so a move repaints only it; the canvas keeps every pick. The layer stays for
+        the canvas's life: promoting it when a box, pick or tool starts stalled that first frame, and an empty layer costs nothing measurable. */}
+    <CadSketchOverlay frame={overlayFrame} layer="pointer">
+      {geometryPick?.dimensionPreview && geometryPick.pointer && <CadSketchDimensionPreview plan={geometryPick.dimensionPreview} pointer={geometryPick.pointer} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
+      {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
+      {currentTrim?.kind === 'ready' && <CadSketchTrimPreview preview={currentTrim} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
+      {currentOverlap?.action === 'trim' && currentOverlap.trim?.kind === 'ready' && <CadSketchTrimPreview preview={currentOverlap.trim} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
+      {currentOverlap?.action === 'extend' && activeExtend?.kind === 'ready' && <CadSketchExtendPreview preview={activeExtend} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
+      {preview && <g className="cad-profile cad-profile-preview"><CadSketchProfileGeometry geometry={preview} parameters={parameters} viewCenter={center} /></g>}
+      {pathTool && pathDraft.kind !== 'idle' && (pathPreview.kind === 'line' || pathPreview.kind === 'arc') && <g className="cad-profile cad-profile-preview"><CadPathSegmentGeometry segment={pathPreview.segment} origin={center} /></g>}
+      {pathTool && pathDraft.kind === 'arc-through' && pathPreview.kind === 'invalid' && <polyline className="cad-path-invalid" points={[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')} />}
+      {drawingReadout && viewportSize.height > 0 && <g data-cad-drawing-readout="" pointerEvents="none" aria-hidden="true"
+        transform={`translate(${cursor[0] - center[0]},${cursor[1] - center[1]}) scale(${width / viewportSize.width},${-span / viewportSize.height})`}>
+        <rect className="cad-sketch-snap-label-bg" x="12" y="10" width={drawingReadout.length * 5.6 + 12} height="19" rx="3" />
+        <text className="cad-sketch-snap-label" x="18" y="23">{drawingReadout}</text>
+      </g>}
+      {snapHint && viewportSize.height > 0 && <CadSketchSnapHint candidate={snapHint} center={center} scaleX={width / viewportSize.width} scaleY={span / viewportSize.height} label={snapLabel} />}
+      {placement && <g data-cad-sketch-placement="" pointerEvents="none" aria-hidden="true">
+        {placement.anchor && placement.target && <line className="cad-sketch-snap-target"
+          x1={placement.anchor[0] - center[0]} y1={placement.anchor[1] - center[1]} x2={placement.target[0] - center[0]} y2={placement.target[1] - center[1]} />}
+        {placement.anchor && <g transform={`translate(${placement.anchor[0] - center[0]},${placement.anchor[1] - center[1]}) scale(${width / (viewportSize.width || 800)},${-span / (viewportSize.height || 600)})`}>
+          <path className="cad-sketch-snap-target" d="M -7 0 H 7 M 0 -7 V 7" /><rect className="cad-sketch-snap-target" x="-4" y="-4" width="8" height="8" />
+        </g>}
+        {placement.target && <g transform={`translate(${placement.target[0] - center[0]},${placement.target[1] - center[1]}) scale(${width / (viewportSize.width || 800)},${-span / (viewportSize.height || 600)})`}>
+          <circle className="cad-sketch-snap-target" r="5" />
+          <rect className="cad-sketch-snap-label-bg" x="9" y="-25" width={placementAngle.length * 5.5 + 12} height="19" rx="3" />
+          <text className="cad-sketch-snap-label" x="15" y="-12">{placementAngle}</text>
+        </g>}
+      </g>}
+      {boxSelection.box && <rect className={`cad-sketch-selection-box is-${boxSelection.box.mode}`} pointerEvents="none"
+        x={Math.min(boxSelection.box.start[0], boxSelection.box.end[0]) - center[0]} y={Math.min(boxSelection.box.start[1], boxSelection.box.end[1]) - center[1]}
+        width={Math.abs(boxSelection.box.end[0] - boxSelection.box.start[0])} height={Math.abs(boxSelection.box.end[1] - boxSelection.box.start[1])} />}
+    </CadSketchOverlay>
     {currentSnapChoice && <CadSketchSnapChooser anchor={{ x: currentSnapChoice.clientX, y: currentSnapChoice.clientY }} candidates={currentSnapChoice.candidates} graph={sourceGraph?.graph} profiles={sourceProfiles}
       onClose={closeSnapChoice} onHighlight={candidate => { if (choiceIsCurrent(currentSnapChoice)) setChoiceHighlight(candidate); }}
       onChoose={candidate => { if (choiceIsCurrent(currentSnapChoice)) placeChosen.current(candidate, currentSnapChoice.saveLine); }}
@@ -1601,6 +1659,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         if (chainOpen && event.button === 0) noteClick({ time: event.timeStamp, clientX: event.clientX, clientY: event.clientY, pointerType: event.pointerType }, undefined, event.pointerId);
       }} />}
     {currentOverlap && <CadContextMenu anchor={{ x: currentOverlap.clientX + (currentOverlap.target ? 12 : 0), y: currentOverlap.clientY + (currentOverlap.target ? 12 : 0) }} title={currentOverlap.target ? currentOverlap.target.kind === 'point' ? 'Sketch point' : 'Sketch edge' : 'Select other'} items={overlapItems} onClose={closeOverlap}
+      onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
+    {currentPickMenu && pickMenuContent && <CadContextMenu anchor={{ x: currentPickMenu.clientX, y: currentPickMenu.clientY }} title={pickMenuContent.title} items={pickMenuContent.items} onClose={() => setPickMenu(null)}
       onOutsidePointerDown={event => { event.preventDefault(); event.stopPropagation(); suppressProfileClick.current = true; }} />}
     {dimensionControls && sketch.kind === 'sketch' && dimensionProfile && dimensionAnchor && tool === 'select' && !isPreview && <CadSketchDimensionControls {...dimensionControls} onError={onError} interactionLocked={dimensionControls.interactionLocked || submission.applying || dragPreview !== null} sketch={sketch} profile={dimensionProfile} parameters={parameters} anchor={dimensionAnchor} project={point => ({ x: (point[0] - center[0]) / width * viewportSize.width + viewportSize.width / 2, y: (center[1] - point[1]) / span * viewportSize.height + viewportSize.height / 2 })} cancelSignal={cancelSignal} />}
     {!isPreview && inspection && inspection.profileIds.length > 0 ? <div className="cad-sketch-context" role="status">Highlighted geometry · {inspection.profileIds.length} {inspection.profileIds.length === 1 ? 'profile' : 'profiles'}</div>
@@ -1623,6 +1683,6 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         {pathPending && <>{chainOpen && <Button aria-label="Finish chain" title="Save the completed segments open, without a closing edge (Enter, double-click or Escape)" disabled={chainFinishLocked || !completedCadPathChain(pathDraft)} onClick={() => finishOpenChain()}><ConfirmIcon size={13} /> Finish</Button>}<Button aria-label={sketch.kind === 'curve' ? 'Finish curve' : 'Close profile'} title={sketch.kind === 'curve' ? 'Validate and save the open curve without a closing edge' : pathNeedsClosingLine ? 'Close the profile by adding a straight line to its start' : 'Validate and save the closed profile'} disabled={interactionLocked || pathDraft.kind !== 'ready' || !pathDraft.segments.length} onClick={() => finishPath(true)}><ConfirmIcon size={13} />{sketch.kind === 'curve' ? 'Finish curve' : pathNeedsClosingLine ? 'Close with line' : 'Close profile'}</Button><Button disabled={interactionLocked} onClick={() => changePath({ kind: 'undo-last' }, true)}><UndoIcon size={13} /> Undo last</Button><Button onClick={() => changePath({ kind: 'cancel' }, true)}><CloseIcon size={13} /> Cancel drawing</Button></>}
       </>}
       {(points.length > 0 || singleSegment && pathPending) && <Button onClick={cancelDrawing}><CloseIcon size={13} /> Cancel drawing</Button>}</div></CadDrawingTools>}
-    <div className="cad-view-caption">{formatCadQuantity(Number(cursor[0].toFixed(3)))}, {formatCadQuantity(Number(cursor[1].toFixed(3)))} mm</div>
+    <div className="cad-view-caption">{geometryPick?.dimensionPreview && geometryPick.pointer ? <CadSketchPointerReadout pointer={geometryPick.pointer} fallback={cursor} /> : <>{formatCadQuantity(Number(cursor[0].toFixed(3)))}, {formatCadQuantity(Number(cursor[1].toFixed(3)))} mm</>}</div>
   </div>;
 }

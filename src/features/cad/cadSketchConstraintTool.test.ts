@@ -42,8 +42,20 @@ describe('cadSketchConstraintStep', () => {
     expect(step('equal', 'c1', 'c2')).toMatchObject({ status: 'ready', relations: [{ kind: 'equal-radius', curveIds: ['c1', 'c2'] }] });
     expect(step('concentric', 'c1', 'c2')).toMatchObject({ status: 'ready', relations: [{ kind: 'coincident', pointIds: ['o1', 'o2'] }] });
     expect(step('tangent', 'ab', 'arc')).toMatchObject({ status: 'ready', relations: [{ kind: 'tangent-joint', endpoints: [{ entityId: 'ab', pointId: 'b' }, { entityId: 'arc', pointId: 'b' }] }] });
-    expect(step('fix', 'a')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', axis: 'x', value: 0 }, { kind: 'fixed-axis', axis: 'y', value: 0 }] });
     expect(step('fix', 'free')).toMatchObject({ status: 'ready', relations: [{ kind: 'fixed-axis', axis: 'y', value: 5 }] });
+  });
+
+  it('fixes a point where it is as one fixed point, and holds only what is left free', () => {
+    expect(step('fix', 'b')).toEqual({ status: 'ready', relations: [{ id: expect.any(String), kind: 'fixed-point', pointId: 'b', position: [40, 2] }] });
+    const pinned: CadSketchGraph = { ...graph, relations: [{ id: 'pin', kind: 'fixed-point', pointId: 'c', position: [40, 20] }, { id: 'joint', kind: 'coincident', pointIds: ['e', 'c'] }] };
+    // A fixed point holds every point joined to it, so Fix finds it there and offers nothing more.
+    for (const id of ['c', 'e']) expect(stepIn(pinned, 'fix', id)).toEqual({ status: 'invalid', reason: 'This point is already fixed.', applied: ['pin'] });
+    // A saved sketch may hold both coordinates one by one; that point is fixed as well, and one held coordinate keeps its relation.
+    const pair: CadSketchGraph = { ...graph, relations: [{ id: 'fx', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 }, { id: 'fy', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 2 }] };
+    expect(stepIn(pair, 'fix', 'b')).toEqual({ status: 'invalid', reason: 'This point is already fixed or follows expressions.', applied: ['fx', 'fy'] });
+    const half: CadSketchGraph = { ...graph, relations: [{ id: 'fx', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 }] };
+    expect(stepIn(half, 'fix', 'b')).toEqual({ status: 'ready', relations: [{ id: expect.any(String), kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 2 }] });
+    expect(step('fix', 'free')).toEqual({ status: 'ready', relations: [{ id: expect.any(String), kind: 'fixed-axis', pointId: 'free', axis: 'y', value: 5 }] });
   });
 
   it('explains picks that cannot take the constraint instead of adding a duplicate or conflict', () => {

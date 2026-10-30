@@ -4,7 +4,7 @@ import { cadSketchDatumRelationLabel } from './cadSketchGraphSelection';
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
   'tangent-joint': 'Tangent', 'point-on-line': 'Point on line', 'point-on-curve': 'Point on curve', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'point-line-distance': 'Point to line distance', 'axis-distance': 'Axis distance',
   'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'external-reference': 'Linked reference',
-  'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
+  'fixed-point': 'Fixed point', 'fixed-axis': 'Distance', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
 };
 
 /** The arcs and circles centred on each point; a Coincident between two of these centres is a Concentric relation. */
@@ -20,9 +20,8 @@ export function isCadSketchConcentric(graph: CadSketchGraph, relation: CadSketch
 /** Sentence-case name of a relation, as the relations list, the constraint issues, the canvas and its status line show it. */
 export function cadSketchRelationName(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres?: ReadonlyMap<string, readonly string[]>): string {
   if (isCadSketchConcentric(graph, relation, centres)) return 'Concentric';
-  return cadSketchDatumRelationLabel(relation) ?? (relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
-    : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
-      : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationNames[relation.kind]);
+  return cadSketchDatumRelationLabel(relation) ?? (relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
+    : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationNames[relation.kind]);
 }
 
 /** Ordinal labels of one graph snapshot, built once per snapshot so many relations can be named without rescanning it. */
@@ -54,7 +53,9 @@ export function cadSketchRelationOperandLabels(graph: CadSketchGraph, relation: 
     case 'linear-pattern': return [entity(relation.seed.entityId)];
     case 'reference-dimension': return relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds.map(point)
       : relation.measurement.kind === 'point-line-distance' ? [point(relation.measurement.pointId), entity(relation.measurement.lineId)] : [entity(relation.measurement.entityId)];
-    case 'fixed-point': case 'fixed-axis': case 'fillet-corner': case 'chamfer-corner': return [point(relation.pointId)];
+    // A distance from an axis names the axis among its operands, as a distance between two lines names both.
+    case 'fixed-axis': return cadSketchDatumRelationLabel(relation) ? [point(relation.pointId)] : [point(relation.pointId), relation.axis === 'x' ? 'Y axis' : 'X axis'];
+    case 'fixed-point': case 'fillet-corner': case 'chamfer-corner': return [point(relation.pointId)];
     case 'coincident': case 'horizontal': case 'vertical': case 'distance': case 'axis-distance': return relation.pointIds.map(point);
     default: { const unreachable: never = relation; return unreachable; }
   }

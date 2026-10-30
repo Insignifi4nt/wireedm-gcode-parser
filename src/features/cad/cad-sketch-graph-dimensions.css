@@ -52,3 +52,6 @@
 /* The relations of a hovered glyph or dock row ring every glyph they draw. */
 .cad-sketch-relation-glyph-highlight { fill: none; stroke: var(--warning, #f0bf71); }
 .cad-sketch-relation-glyph-highlight rect { stroke-width: 1.5px; }
+/* The Dimension tool's preview at the pointer takes no pointer events, so the click under it places the dimension. */
+.cad-sketch-dimension-preview { pointer-events: none; }
+.cad-sketch-graph-dimension.is-preview { color: var(--primary); }

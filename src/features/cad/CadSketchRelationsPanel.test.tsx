@@ -647,10 +647,10 @@ describe('selected sketch entity relations', () => {
     }] });
     const h = await mount(source, [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }, { kind: 'point', id: 'c' }]);
     const rows = () => [...container.querySelectorAll('[aria-label="Sketch relations"] li button[aria-pressed]')].map(row => row.textContent?.trim());
-    expect(rows()).toEqual(['On the X axis', 'On the Y axis', 'Fix Y4 mm', 'Fixed at the origin']);
+    expect(rows()).toEqual(['On the X axis', 'On the Y axis', 'Distance4 mm', 'Fixed at the origin']);
     await clickRelation('Inspect', 'On the X axis', 1);
     expect(h.inspect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'onX' }));
-    expect(field('Fix Y mm').value).toBe('0');
+    expect(field('Distance mm').value).toBe('0');
   });
 
   it('releases and restores an owned numeric axis fix without adding a driver over an exact coordinate expression', async () => {
@@ -663,15 +663,15 @@ describe('selected sketch entity relations', () => {
     }] });
     const h = await mount(source, { kind: 'point', id: 'a' });
     expect(field('Fix X').disabled).toBe(true); expect(field('Fix Y').checked).toBe(true);
-    await clickRelation('Inspect', 'Fix Y', 2);
+    await clickRelation('Inspect', 'Distance', 2);
     expect(h.inspect).toHaveBeenLastCalledWith({ id: 'fixY', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: ' height ' });
-    expect(field('Fix Y mm').value).toBe('4');
+    expect(field('Distance mm').value).toBe('4');
     await act(async () => field('Fix Y').click());
     await click('Apply');
     expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'fixY' }], expect.any(AbortSignal));
     expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { points: [{ position: [' origin ', 4] }, { position: [10, 4] }], relations: [{ id: 'level' }] } });
     await act(async () => field('Fix Y').click());
-    expect(field('Fix Y mm').value).toBe('4');
+    expect(field('Distance mm').value).toBe('4');
     await click('Apply');
     expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 4 }) }], expect.any(AbortSignal));
     await act(async () => { h.session.undo(); h.session.undo(); });
@@ -762,13 +762,14 @@ describe('dimensions from the sketch origin and axes', () => {
   it('reuses the coordinate an axis already drives and explains a point that cannot take one', async () => {
     const h = await mount(boreDocument([{ id: 'level', kind: 'fixed-axis', pointId: 'center', axis: 'y', value: -20 }]), { kind: 'point', id: 'center' },
       { initialCommand: { kind: 'datum-distance', datum: 'x-axis' } });
-    expect(field('Y from X axis mm').value).toBe('-20'); expect(container.querySelector('input[aria-label="X from Y axis mm"]')).toBeNull();
-    await input('Y from X axis mm', '-25'); await click('Apply');
+    // A distance shows its size and keeps the side of the axis the point is on; only the one the X axis drives is offered.
+    expect([...container.querySelectorAll('input[aria-label="Distance mm"]')].map(item => (item as HTMLInputElement).value)).toEqual(['20']);
+    await input('Distance mm', '25'); await click('Apply');
     expect(h.edit).toHaveBeenCalledExactlyOnceWith([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'level', kind: 'fixed-axis', pointId: 'center', axis: 'y', value: -25 } }], expect.any(AbortSignal));
     await act(async () => root.unmount()); root = createRoot(container);
     await mount(boreDocument([{ id: 'pin', kind: 'fixed-point', pointId: 'center', position: [30, -20] }]), { kind: 'point', id: 'center' }, { initialCommand: { kind: 'datum-distance', datum: 'y-axis' } });
     expect(container.textContent).toContain('already has its position from a fixed point or an expression');
-    expect(container.querySelector('input[aria-label="X from Y axis mm"]')).toBeNull();
+    expect(container.querySelector('input[aria-label="Distance mm"]')).toBeNull();
   });
 });
 
@@ -1108,8 +1109,8 @@ describe('point to line distance dimensions', () => {
     await remount();
     const fix = { id: 'fix', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 0 } as const;
     const datum = await mount(aliasDocument([fix]), { kind: 'point', id: 'c' }, { initialCommand: { kind: 'datum-distance', datum: 'y-axis' }, dimensionOnly: true });
-    expect(field('X from Y axis mm').value).toBe('0');
-    await input('X from Y axis mm', ' 3 '); await click('Apply');
+    expect(field('Distance mm').value).toBe('0');
+    await input('Distance mm', ' 3 '); await click('Apply');
     expect(datum.edit).toHaveBeenCalledExactlyOnceWith([set({ ...fix, value: 3 })], expect.any(AbortSignal));
     await remount();
     await mount(aliasDocument([{ id: 'pin', kind: 'fixed-point', pointId: 'e', position: [0, 10] }]), { kind: 'point', id: 'c' }, { initialCommand: { kind: 'datum-distance', datum: 'origin' }, dimensionOnly: true });

@@ -2,7 +2,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } fro
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { SketchPoint } from './cadSketchInteraction';
-import { cadSketchPointIdentity, cadSketchRelationHighlight } from './cadSketchDimensionSelection';
+import { CAD_SKETCH_ORIGIN_PAIR_NAME, cadSketchPointIdentity, cadSketchRelationHighlight, isCadSketchGlyphRelation } from './cadSketchDimensionSelection';
 import { cadSketchCurveCentres, cadSketchRelationDescription, cadSketchRelationName, cadSketchRelationOperandLabels, createCadSketchRelationLabels, isCadSketchConcentric } from './cadSketchRelationNames';
 
 /** The drawing a glyph shows, one per relation kind as the user knows it; a Concentric is stored as a Coincident between two centres. */
@@ -11,8 +11,8 @@ export type CadSketchRelationGlyphKind = 'horizontal' | 'vertical' | 'parallel' 
 /** The point or edge a glyph sits on, as `point:<id>` or `entity:<id>`; a point is named by its Coincident identity, so the points of one place share one row of glyphs. */
 export type CadSketchRelationGlyphOperand = `point:${string}` | `entity:${string}`;
 /**
- * One relation glyph on one operand. A relation on several operands draws a glyph on each, its siblings; Fix X and Fix Y on one point
- * draw one Fixed glyph that names both. The anchor is in sketch millimetres and the offset in screen pixels, x right and y down, so the
+ * One relation glyph on one operand. A relation on several operands draws a glyph on each, its siblings; X and Y held at 0 on one point
+ * draw one At the origin glyph that names both. The anchor is in sketch millimetres and the offset in screen pixels, x right and y down, so the
  * glyph keeps its distance from the geometry at every zoom.
  */
 export interface CadSketchRelationGlyph {
@@ -30,13 +30,18 @@ export interface CadSketchRelationGlyph {
   readonly holds: CadSketchRelationGlyphHolds;
 }
 
-/** The drawing of a relation's glyph, shared by the relations list and the Constrain menu, or null for a relation drawn otherwise. */
+/**
+ * The drawing of a relation's glyph, shared by the relations list and the Constrain menu, or null for a relation drawn otherwise. A point
+ * held on an axis or at the origin draws as Coincident, the Constrain tool that puts it there; held away from the axis, the coordinate is
+ * a Distance dimension, and the Fix tool's fixed point draws as Fix.
+ */
 export function cadSketchRelationGlyphKind(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres = cadSketchCurveCentres(graph)): CadSketchRelationGlyphKind | null {
   switch (relation.kind) {
     case 'horizontal': case 'vertical': case 'parallel': case 'perpendicular': case 'collinear': case 'equal-length': case 'equal-radius':
     case 'midpoint': case 'symmetric': case 'point-on-line': case 'point-on-curve': return relation.kind;
     case 'coincident': return isCadSketchConcentric(graph, relation, centres) ? 'concentric' : 'coincident';
-    case 'fixed-point': case 'fixed-axis': return 'fix';
+    case 'fixed-point': return 'fix';
+    case 'fixed-axis': return isCadSketchGlyphRelation(relation) ? 'coincident' : null;
     case 'tangent-joint': return 'tangent';
     case 'distance': case 'point-line-distance': case 'axis-distance': case 'radial-size': case 'fillet-corner': case 'chamfer-corner': case 'line-angle': case 'reference-dimension':
     case 'linear-pattern': case 'external-reference': return null;
@@ -132,22 +137,23 @@ function glyphEntries(graph: CadSketchGraph): readonly Entry[] {
     return Object.freeze({ points: Object.freeze([...points]), entities: Object.freeze([...entities]) });
   };
   const entries: Entry[] = [];
-  // Fix X and Fix Y on one point, or on points that Coincident joins in one place, draw one Fixed glyph; the relations list keeps a row for each.
-  const fixedAxes = new Map<string, Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }>[]>();
-  for (const relation of graph.relations) if (relation.kind === 'fixed-axis') {
+  // The coordinates held at 0 on one point, or on points that Coincident joins in one place, draw one glyph; X and Y together keep the point
+  // at the origin. The relations list keeps a row for each, and a coordinate held away from 0 is a Distance dimension, drawn as one.
+  const onAxes = new Map<string, Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }>[]>();
+  for (const relation of graph.relations) if (relation.kind === 'fixed-axis' && isCadSketchGlyphRelation(relation)) {
     const place = identity(relation.pointId);
-    fixedAxes.set(place, [...fixedAxes.get(place) ?? [], relation]);
+    onAxes.set(place, [...onAxes.get(place) ?? [], relation]);
   }
   for (const relation of graph.relations) {
     let placed: ReturnType<typeof glyphOperands>;
     try { placed = glyphOperands(graph, relation, lines, centres, identity); } catch { continue; } // A relation on missing geometry has nowhere to sit.
     if (!placed) continue;
     if (relation.kind === 'fixed-axis') {
-      const shared = fixedAxes.get(identity(relation.pointId))!;
+      const shared = onAxes.get(identity(relation.pointId))!;
       if (shared[0] !== relation) continue;
       if (shared.length > 1) {
-        const both = shared.some(item => item.axis === 'x') && shared.some(item => item.axis === 'y'), name = both ? 'Fixed' : cadSketchRelationName(graph, relation, centres);
-        entries.push({ relationIds: shared.map(item => item.id), operand: placed.operands[0], kind: 'fix', name,
+        const both = shared.some(item => item.axis === 'x') && shared.some(item => item.axis === 'y'), name = both ? CAD_SKETCH_ORIGIN_PAIR_NAME : cadSketchRelationName(graph, relation, centres);
+        entries.push({ relationIds: shared.map(item => item.id), operand: placed.operands[0], kind: placed.kind, name,
           label: `${name}: ${cadSketchRelationOperandLabels(graph, relation, labels).join(' and ')}`, holds: holdsOf(shared) });
         continue;
       }
