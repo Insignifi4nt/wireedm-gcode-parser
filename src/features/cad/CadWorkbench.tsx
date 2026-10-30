@@ -17,7 +17,7 @@ import {
 } from './cadSketchDimensionSelection';
 import { cadSketchAxisDistanceLine, cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
 import {
-  CAD_SKETCH_DIMENSION_EXISTING_REASON, cadSketchDimensionCandidateAt, cadSketchDimensionPickAllowed, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt, cadSketchDimensionRetry,
+  CAD_SKETCH_DIMENSION_EXISTING_REASON, cadSketchDimensionCandidateAt, cadSketchDimensionOnDatumReason, cadSketchDimensionPickAllowed, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt, cadSketchDimensionRetry,
   NO_SKETCH_DIMENSION_PLAN, planCadSketchDimension, type CadSketchDimensionForm, type CadSketchDimensionOperand
 } from './cadSketchDimensionPlacement';
 import { createCadSketchPointerStore } from './CadSketchDimensionPreview';
@@ -105,12 +105,13 @@ type DimensionEditor = { readonly documentId: string; readonly sketchId: string;
 type GraphRelationCommand = CadSketchRelationCommand & { token: string; dimension?: DimensionEditor };
 /**
  * The Dimension tool from the moment it starts until it ends. `previousGraphPick` and `previousProfileId` come back when it ends without
- * placing anything; `placed` keeps the dimension it placed last, with whether it has been selected yet; `picks` are its pending operands.
+ * placing anything; `placed` keeps the dimensions it placed or reused last that are drawn, with whether they have been selected yet; `picks` are
+ * its pending operands.
  */
 interface DimensionToolSession<GraphPick> {
   readonly id: string; readonly documentId: string; readonly sketchId: string;
   readonly previousGraphPick: GraphPick; readonly previousProfileId: string | null;
-  readonly placed: { readonly pick: CadSketchDimensionPick | null; readonly selected: boolean } | null;
+  readonly placed: { readonly picks: readonly CadSketchDimensionPick[]; readonly selected: boolean } | null;
   readonly picks: { readonly document: CadDocument; readonly version: string; readonly operands: readonly CadSketchDimensionOperand[] } | null;
 }
 const NO_DIMENSION_OPERANDS: readonly CadSketchDimensionOperand[] = Object.freeze([]);
@@ -679,7 +680,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   useLayoutEffect(() => { if (mirrorCommand && !currentMirror) setMirrorCommand(null); }, [mirrorCommand, currentMirror]);
   const dimensionGeometry = profile?.geometry;
   renderedPreferences.current = { navigationMode: preferences.navigationMode, onPartDimensionsVisible: preferences.showOnPartDimensions
-    && tool === 'select' && (Boolean(sketch?.graph?.relations.some(relation => relation.kind === 'distance'))
+    && tool === 'select' && (Boolean(sketch?.graph?.relations.some(isCadSketchDimensionRelation))
       || !profilePreview && !preparedSketch && Boolean(profile && (inspectCadSketchDimensions(profile, document.parameters).length || dimensionGeometry?.kind === 'plugin' && dimensionGeometry.package.id === 'wireedm.spur-gear'))) };
   const parameterInspection = useMemo(() => inspectCadParameters(document), [document]);
   const parameterUsages = parameterInspection.parameters.find(parameter => parameter.name === inspectedParameter)?.usages.filter(usage => usage.active) ?? [];
@@ -1377,16 +1378,19 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     // A blocked driving form whose quantity a reference still measures, such as a zero distance, places only as that reference.
     if (candidate.state === 'blocked' && !(choice.reference && candidate.reference)) { setError(candidate.reason); return; }
     if (candidate.state === 'existing') {
-      const pick = cadSketchDimensionPick(graph, candidate.relationId);
-      settleDimension(session, pick ? { pick, selected: false } : session.placed); props.onStatusMessage?.(candidate.reason, 'info'); return;
+      const picks = candidate.relationIds.flatMap(id => cadSketchDimensionPick(graph, id) ?? []);
+      const onDatum = picks.length ? null : cadSketchDimensionOnDatumReason(graph.relations.filter(relation => candidate.relationIds.includes(relation.id)));
+      settleDimension(session, { picks, selected: false }); props.onStatusMessage?.(onDatum ?? candidate.reason, 'info'); return;
     }
     const resolved = candidate.state === 'available' ? cadSketchDimensionRelationsAt(candidate, pointer) : { relations: NO_SKETCH_RELATIONS, reason: null }, reference = candidate.reference ?? null;
     if (!resolved.relations) { setError(resolved.reason); return; }
     if (choice.reference && !reference) return;
-    // A reused dimension stays and becomes the selection; the placement adds only what keeps it measuring the picks.
+    // A reused relation stays and is selected with what the placement adds, when drawn: the placement adds only the implied relation that
+    // keeps a reused dimension measuring the picks, or the other coordinate of a point from the origin.
     const reused = candidate.state === 'available' && candidate.reuses ? graph.relations.find(relation => relation.id === candidate.reuses) ?? null : null;
     const sourceSketchId = sketch.id, driving = resolved.relations, plannedImplied = candidate.state === 'available' ? candidate.implied : null;
-    let placed: CadSketchGraphRelation | null = null, referenced = false, fellBack = false, added = false;
+    const keepsReused = Boolean(reused) && driving.every(relation => relation.id === plannedImplied);
+    let placed: readonly CadSketchGraphRelation[] = NO_SKETCH_RELATIONS, referenced = false, fellBack = false, added = false;
     submitEdit(async signal => {
       let relations = choice.reference && reference ? [reference] : driving, implied = choice.reference ? null : plannedImplied;
       referenced = Boolean(choice.reference);
@@ -1395,10 +1399,10 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         if (signal.aborted || dimensionToolOwner.current?.id !== session.id || current.document !== picks.document || current.version !== picks.version || current.sketchId !== sourceSketchId)
           throw new Error('The sketch changed before the dimension was placed. Pick the geometry again.');
         // A reused dimension whose implied relation the sketch already holds needs no edit.
-        if (!relations.length) { placed = reused; return; }
+        if (!relations.length) { placed = reused ? [reused] : NO_SKETCH_RELATIONS; return; }
         try {
           await applyCanvasEdits(relations.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation })), signal);
-          placed = referenced ? relations[0] : reused ?? relations[0] ?? null; added = true; return;
+          placed = referenced || !reused ? relations : [reused, ...relations]; added = true; return;
         } catch (cause) {
           if (signal.aborted || !(cause instanceof CadSketchPreparationError)) throw cause;
           // A rejected preparation leaves no history, so the attempt that applies is the only undo step.
@@ -1409,20 +1413,22 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         }
       }
     }, () => {
-      const owner = dimensionToolOwner.current, relation = placed;
-      if (owner?.id !== session.id || !relation) return;
-      settleDimension(owner, { pick: isCadSketchDimensionRelation(relation) ? cadSketchDimensionPickOf(relation) : null, selected: false });
+      const owner = dimensionToolOwner.current, relations = placed;
+      if (owner?.id !== session.id || !relations.length) return;
+      // Only what is drawn is selected: a coordinate of zero keeps its point on an axis as a relation, so with nothing drawn the status says so.
+      const picks = relations.filter(isCadSketchDimensionRelation).map(cadSketchDimensionPickOf), onDatum = picks.length ? null : cadSketchDimensionOnDatumReason(relations);
+      settleDimension(owner, { picks, selected: false });
       if (fellBack) props.onStatusMessage?.(DIMENSION_REFERENCE_STATUS, 'info');
-      else if (reused && !referenced) props.onStatusMessage?.(added ? DIMENSION_REUSED_STATUS : CAD_SKETCH_DIMENSION_EXISTING_REASON, 'info');
+      else if (onDatum) props.onStatusMessage?.(onDatum, 'info');
+      else if (keepsReused && !referenced) props.onStatusMessage?.(added ? DIMENSION_REUSED_STATUS : CAD_SKETCH_DIMENSION_EXISTING_REASON, 'info');
     }, 'The dimension could not be placed.');
   };
-  // A placed dimension becomes the selection once the sketch holds it, so Enter or a double-click opens its editor and Delete removes it.
+  // Placed dimensions become the selection once the sketch holds them, so Enter or a double-click opens an editor and Delete removes them.
   useLayoutEffect(() => {
     const session = currentDimensionTool, placed = session?.placed, graph = sketch?.graph;
-    if (!session || !placed?.pick || placed.selected || !graph || !isCadSketchDimensionPickCurrent(graph, placed.pick)) return;
-    const pick = placed.pick;
-    setGraphPick({ sketchId: session.sketchId, selections: NO_SKETCH_SELECTIONS, datums: NO_SKETCH_DATUMS, dimensions: selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick, null) });
-    setDimensionTool(current => current === session ? { ...current, placed: { pick, selected: true } } : current);
+    if (!session || !placed?.picks.length || placed.selected || !graph || !placed.picks.every(pick => isCadSketchDimensionPickCurrent(graph, pick))) return;
+    setGraphPick({ sketchId: session.sketchId, selections: NO_SKETCH_SELECTIONS, datums: NO_SKETCH_DATUMS, dimensions: Object.freeze([...placed.picks]) });
+    setDimensionTool(current => current === session ? { ...current, placed: { ...placed, selected: true } } : current);
   }, [currentDimensionTool, sketch]);
   /** Picking the same line, or an arc or circle with a size, again places its own dimension; after two picks a click anywhere places. */
   const pickDimensionOperand = (operand: CadSketchDimensionOperand) => {
@@ -1441,7 +1447,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     if (!session || session !== currentDimensionTool) return;
     if (currentDimensionPicks) { if (dimensionPlan.candidates.length) placeDimension(); return; }
     if (source === 'pointer') { setGraphPick(null); return; }
-    const only = graphDimensionPicks.length === 1 && !graphSelections.length && !graphDatums.length ? graphDimensionPicks[0] : null;
+    // The last placement can select both coordinates of a point; Enter edits the first.
+    const only = (graphDimensionPicks.length === 1 || shownPlacement) && !graphSelections.length && !graphDatums.length ? graphDimensionPicks[0] : null;
     const relation = only ? sketch?.graph?.relations.find(item => item.id === only.id) : undefined;
     if (relation && isCadSketchDimensionRelation(relation)) configureGraphRelation(relation);
   };
@@ -1483,13 +1490,16 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const dimensionActions = useRef({ pick: pickDimensionOperand, confirm: confirmDimension, escape: escapeDimensionTool, menu: dimensionMenu });
   dimensionActions.current = { pick: pickDimensionOperand, confirm: confirmDimension, escape: escapeDimensionTool, menu: dimensionMenu };
   /** The last placement while it is the selection and no picks wait, which Enter then edits. */
-  const shownPlacement = currentDimensionTool && !dimensionOperands.length && currentDimensionTool.placed?.pick && graphDimensionPicks.length === 1
-    && sameCadSketchDimensionPick(graphDimensionPicks[0], currentDimensionTool.placed.pick, sketch?.graph) ? currentDimensionTool.placed : undefined;
+  const lastPlacement = currentDimensionTool?.placed;
+  const shownPlacement = lastPlacement && !dimensionOperands.length && lastPlacement.picks.length && graphDimensionPicks.length === lastPlacement.picks.length
+    && lastPlacement.picks.every((pick, index) => sameCadSketchDimensionPick(graphDimensionPicks[index], pick, sketch?.graph)) ? lastPlacement : undefined;
   /** The status line names the next step: what to pick, what a click or Enter places, and that right-click offers more. */
   const dimensionLabel = (() => {
     if (!currentDimensionTool) return '';
     const first = dimensionOperands[0], usable = dimensionPlan.candidates.filter(candidate => candidate.state !== 'blocked');
-    if (!first) return shownPlacement ? 'Dimension placed · Enter or double-click edits it; choose geometry for the next one' : 'Dimension · Choose a line, arc, circle, point, the origin or an axis';
+    if (!first) return !shownPlacement ? 'Dimension · Choose a line, arc, circle, point, the origin or an axis'
+      : shownPlacement.picks.length > 1 ? 'Dimensions placed · Enter edits the first, or double-click one to edit it; choose geometry for the next one'
+        : 'Dimension placed · Enter or double-click edits it; choose geometry for the next one';
     const line = first.kind === 'entity' && sketch?.graph?.entities.find(entity => entity.id === first.id)?.kind === 'line';
     if (!dimensionPlan.candidates.length) return first.kind === 'point' ? 'Dimension · Choose a second point, a line, an arc, a circle, the origin or an axis'
       : first.kind === 'datum' ? `Dimension · Choose a point, an arc${first.id === 'origin' ? ' or a circle' : ', a circle or a line'} to dimension from the ${cadSketchDatumName(first.id)}`

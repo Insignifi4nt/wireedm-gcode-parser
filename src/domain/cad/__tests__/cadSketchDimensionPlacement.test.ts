@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
 import {
   cadSketchDimensionAngleSectorAt, cadSketchDimensionCandidateAt, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt,
-  cadSketchDimensionRetry, cadSketchPointPairDimensionForm,
+  cadSketchDimensionOnDatumReason, cadSketchDimensionRetry, cadSketchPointPairDimensionForm,
   planCadSketchDimension, type CadSketchDimensionCandidate, type CadSketchDimensionOperand, type CadSketchDimensionPlan
 } from '@/features/cad/cadSketchDimensionPlacement';
 import { layoutCadSketchDimensionPreview } from '@/features/cad/cadSketchGraphDimensionLayout';
@@ -103,9 +103,9 @@ describe('dimension plans per pick kind', () => {
 
   it('selects an existing dimension instead of planning a second one', () => {
     const result = plan(sketch([{ id: 'width', kind: 'distance', pointIds: ['b', 'a'], value: 40 }]), [entity('bottom')]);
-    expect(candidate(result, 'aligned')).toMatchObject({ state: 'existing', relationId: 'width' });
+    expect(candidate(result, 'aligned')).toMatchObject({ state: 'existing', relationIds: ['width'] });
     const referenced = plan(sketch([{ id: 'measured', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'slant' } }]), [entity('slant')]);
-    expect(candidate(referenced, 'aligned')).toMatchObject({ state: 'existing', relationId: 'measured' });
+    expect(candidate(referenced, 'aligned')).toMatchObject({ state: 'existing', relationIds: ['measured'] });
   });
 
   it('sizes a circle as a diameter and an arc as a radius, each with its other form and its reference', () => {
@@ -140,10 +140,10 @@ describe('dimension plans per pick kind', () => {
     expect(reused).toMatchObject({ reuses: 'gap', relations: [{ id: reused.implied, kind: 'parallel', lineIds: ['top', 'bottom'] }], reference: null, preview: { value: 20 } });
     // Once Parallel holds the lines, the distance already keeps the gap.
     expect(candidate(plan(sketch([gap, { id: 'p', kind: 'parallel', lineIds: ['bottom', 'top'] }]), [entity('top'), entity('bottom')]), 'point-line'))
-      .toMatchObject({ state: 'existing', relationId: 'gap' });
+      .toMatchObject({ state: 'existing', relationIds: ['gap'] });
     // A reference keeps nothing, so it is only selected.
     expect(candidate(plan(sketch([{ id: 'ref', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'c', lineId: 'bottom' } }]), [entity('bottom'), entity('top')]), 'point-line'))
-      .toMatchObject({ state: 'existing', relationId: 'ref' });
+      .toMatchObject({ state: 'existing', relationIds: ['ref'] });
   });
 
   it('offers the reference of a zero distance that no driving dimension can take', () => {
@@ -166,7 +166,7 @@ describe('dimension plans per pick kind', () => {
     // Joined points are one point, so they take nothing; an existing reference of the zero distance is selected.
     expect(plan(graph, [point('p'), point('joined')]).candidates.every(item => item.state === 'blocked' && !item.reference)).toBe(true);
     const measured = parseCadSketchGraph({ ...graph, relations: [...graph.relations, { id: 'zero', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'on', lineId: 'line' } }] });
-    expect(candidate(plan(measured, [point('on'), entity('line')]), 'point-line')).toMatchObject({ state: 'existing', relationId: 'zero', preview: { value: 0 } });
+    expect(candidate(plan(measured, [point('on'), entity('line')]), 'point-line')).toMatchObject({ state: 'existing', relationIds: ['zero'], preview: { value: 0 } });
   });
 
   it('gives other line pairs an angle in the sector holding the pointer', () => {
@@ -262,8 +262,22 @@ describe('dimensions to the origin and axes', () => {
     expect(cadSketchDimensionCandidateAt(result, { x: 20, y: 40 })?.form).toBe('horizontal');
     expect(cadSketchDimensionCandidateAt(result, { x: 70, y: 10 })?.form).toBe('vertical');
     const held = plan(sketch([{ id: 'x', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }]), [datum('origin'), point('c')]);
-    expect(available(held, 'datum').relations).toEqual([{ id: 'new-1', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }]);
-    expect(candidate(held, 'horizontal')).toMatchObject({ state: 'existing', relationId: 'x' });
+    // The X it keeps already stays, and placing selects it with the Y it adds.
+    expect(available(held, 'datum')).toMatchObject({ reuses: 'x', relations: [{ id: 'new-1', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }] });
+    expect(candidate(held, 'horizontal')).toMatchObject({ state: 'existing', relationIds: ['x'] });
+    const kept = plan(sketch([{ id: 'x', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }, { id: 'y', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }]), [point('c'), datum('origin')]);
+    expect(candidate(kept, 'datum')).toMatchObject({ state: 'existing', relationIds: ['x', 'y'] });
+  });
+
+  it('says a point sits on an axis or the origin when every coordinate placed or kept is zero', () => {
+    const coordinate = (axis: 'x' | 'y', value: number | string) => ({ id: axis, kind: 'fixed-axis' as const, pointId: 'c', axis, value });
+    expect(cadSketchDimensionOnDatumReason([coordinate('x', 0)])).toBe('The point sits on the Y axis, so a relation keeps it there and there is no dimension to select.');
+    expect(cadSketchDimensionOnDatumReason([coordinate('y', ' 0 ')])).toBe('The point sits on the X axis, so a relation keeps it there and there is no dimension to select.');
+    expect(cadSketchDimensionOnDatumReason([coordinate('x', 0), coordinate('y', 0)])).toBe('The point sits at the origin, so relations keep it there and there is no dimension to select.');
+    // A drawn coordinate, or a relation of another kind, says nothing.
+    expect(cadSketchDimensionOnDatumReason([coordinate('x', 0), coordinate('y', 20)])).toBeNull();
+    expect(cadSketchDimensionOnDatumReason([{ id: 'h', kind: 'horizontal', pointIds: ['c', 'd'] }])).toBeNull();
+    expect(cadSketchDimensionOnDatumReason([])).toBeNull();
   });
 
   it('holds a line along an axis at its distance, in either pick order, and defers the angle to an axis', () => {
@@ -288,10 +302,10 @@ describe('dimensions to the origin and axes', () => {
     // A hold on the other end is reused the same way.
     expect(available(plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }]), [datum('x-axis'), entity('line')]), 'datum'))
       .toMatchObject({ reuses: 'held', relations: [{ kind: 'horizontal' }] });
-    // With Horizontal, or both ends held, the hold already keeps the distance, so placing only selects it.
-    for (const kept of [[{ id: 'level', kind: 'horizontal', pointIds: ['q', 'p'] }], [{ id: 'other', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }]])
+    // With Horizontal, or both ends held, the holds already keep the distance, so placing only selects them.
+    for (const [kept, ids] of [[[{ id: 'level', kind: 'horizontal', pointIds: ['q', 'p'] }], ['held']], [[{ id: 'other', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }], ['held', 'other']]] as const)
       expect(candidate(plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }, ...kept]), [entity('line'), datum('x-axis')]), 'datum'))
-        .toMatchObject({ state: 'existing', relationId: 'held' });
+        .toMatchObject({ state: 'existing', relationIds: ids });
   });
 });
 

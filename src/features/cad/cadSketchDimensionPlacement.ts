@@ -9,6 +9,7 @@ import type { Point2 } from '@/domain/path-intel/types';
 import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { userFacingMessage } from '@/lib/userMessage';
 import { CAD_SKETCH_NO_REFERENCE_DATUM, cadSketchDistanceForPair, cadSketchMatchingReference, cadSketchPointLineDistanceFor, cadSketchRadialRelationForEntity } from './cadSketchDimensionCommands';
+import { isCadSketchDimensionRelation } from './cadSketchDimensionSelection';
 import { cadSketchDatumName, type CadSketchDatum, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 
 /** One pick of the Dimension tool: sketch geometry, or the plane origin or one of its axes. */
@@ -37,17 +38,18 @@ interface CandidateBase { readonly form: CadSketchDimensionForm; readonly label:
  * One dimension the picks can take.
  * - `available` carries the driving relations to add, the dimension first. `implied` names a value-free relation added with it, such as the
  *   Parallel that keeps two lines parallel, which is left out when the sketch already holds it. `reference` is the reference form that
- *   measures the same quantity, or null with `referenceReason`. `reuses` names a dimension that already measures this but needs more to keep
- *   measuring the picks, such as one end of a line held from an axis without Horizontal; then `relations` holds only that implied relation,
- *   and placing adds it and selects the reused dimension.
- * - `existing` names a dimension that already measures this.
+ *   measures the same quantity, or null with `referenceReason`. `reuses` names a relation that already measures this, or part of it, and
+ *   stays: one end of a line held from an axis without Horizontal, where `relations` holds only the implied relation that keeps it measuring
+ *   the picks, or the one coordinate a point already keeps from the origin, where `relations` holds the other. Placing selects what it reuses
+ *   and adds that is drawn as a dimension, which leaves out a coordinate of zero: that is the relation that keeps a point on an axis.
+ * - `existing` names the relations that already measure this; placing selects those drawn as dimensions.
  * - `blocked` says why the picks cannot take this form as a driving dimension. When the reference model still measures the quantity, such as
  *   a zero distance, `reference` and `preview` carry its reference form, which the menu can place.
  */
 export type CadSketchDimensionCandidate = CandidateBase & (
   | { readonly state: 'available'; readonly relations: readonly CadSketchGraphRelation[]; readonly implied: string | null; readonly reuses: string | null;
     readonly reference: CadSketchReferenceDimension | null; readonly referenceReason: string | null; readonly preview: CadSketchDimensionPreviewSource }
-  | { readonly state: 'existing'; readonly relationId: string; readonly reason: string; readonly preview: CadSketchDimensionPreviewSource | null }
+  | { readonly state: 'existing'; readonly relationIds: readonly string[]; readonly reason: string; readonly preview: CadSketchDimensionPreviewSource | null }
   | { readonly state: 'blocked'; readonly reason: string; readonly reference?: CadSketchReferenceDimension; readonly preview?: CadSketchDimensionPreviewSource });
 export type CadSketchAvailableDimension = Extract<CadSketchDimensionCandidate, { state: 'available' }>;
 
@@ -182,6 +184,16 @@ const NO_REFERENCE_DATUM = CAD_SKETCH_NO_REFERENCE_DATUM;
 export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension.';
 const EXISTING = CAD_SKETCH_DIMENSION_EXISTING_REASON;
 const REUSED = 'This is already dimensioned. Placing selects that dimension and adds the relation that keeps it measuring these picks.';
+/**
+ * What placing says when none of the relations it placed or reused is drawn as a dimension: each is a coordinate of zero, the relation that
+ * keeps a point on an axis, or at the origin with both. Null when one of them is drawn, or when they are not all such coordinates.
+ */
+export function cadSketchDimensionOnDatumReason(relations: readonly CadSketchGraphRelation[]): string | null {
+  if (!relations.length || relations.some(relation => relation.kind !== 'fixed-axis' || isCadSketchDimensionRelation(relation))) return null;
+  const axes = new Set(relations.flatMap(relation => relation.kind === 'fixed-axis' ? [relation.axis] : []));
+  return axes.size === 2 ? 'The point sits at the origin, so relations keep it there and there is no dimension to select.'
+    : `The point sits on the ${cadSketchDatumName(axes.has('x') ? 'y-axis' : 'x-axis')}, so a relation keeps it there and there is no dimension to select.`;
+}
 
 /**
  * The dimensions `operands` can take, in the Dimension tool's pick rules: one line or sized arc or circle; two points; a point, arc or
@@ -248,7 +260,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
       const reason = context === 'centers' ? 'These curves share a center. Use Concentric to keep them together.' : 'These points share one position, so they have no distance.';
       const preview = { kind: 'pair', form: 'aligned', points: [a, b], value: length } as const, label = pairLabel('aligned', lineId !== null);
       const existing = cadSketchMatchingReference(graph, measurement), reference = existing ? null : measuredReference(newId(), measurement);
-      const aligned: CadSketchDimensionCandidate | null = existing ? { form: 'aligned', label, state: 'existing', relationId: existing.id, reason: EXISTING, preview }
+      const aligned: CadSketchDimensionCandidate | null = existing ? { form: 'aligned', label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview }
         : reference ? { form: 'aligned', label, state: 'blocked', reason, reference, preview } : null;
       const blocked = blockedAll(reason);
       return aligned ? plan([aligned, ...blocked.candidates.slice(1)], 'aligned', lineId ? null : [a, b]) : blocked;
@@ -256,7 +268,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
     const aligned = (): CadSketchDimensionCandidate => {
       const label = pairLabel('aligned', lineId !== null), preview = { kind: 'pair', form: 'aligned', points: [a, b], value: length } as const;
       const existing = cadSketchDistanceForPair(graph, pointIds) ?? cadSketchMatchingReference(graph, measurement);
-      if (existing) return { form: 'aligned', label, state: 'existing', relationId: existing.id, reason: EXISTING, preview };
+      if (existing) return { form: 'aligned', label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview };
       const id = newId();
       return { form: 'aligned', label, state: 'available', relations: [{ id, kind: 'distance', pointIds, value: length }], implied: null, reuses: null,
         reference: { id, kind: 'reference-dimension', measurement }, referenceReason: null, preview };
@@ -265,7 +277,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
       const axis = form === 'horizontal' ? 'x' : 'y', label = pairLabel(form, lineId !== null), delta = axis === 'x' ? b.x - a.x : b.y - a.y;
       if (!(Math.abs(delta) > tolerance)) return { form, label, state: 'blocked', reason: form === 'horizontal' ? 'These points are upright, so they have no horizontal distance.' : 'These points are level, so they have no vertical distance.' };
       const preview = { kind: 'pair', form, points: [a, b], value: Math.abs(delta) } as const, existing = cadSketchDistanceForPair(graph, pointIds, axis);
-      if (existing) return { form, label, state: 'existing', relationId: existing.id, reason: EXISTING, preview };
+      if (existing) return { form, label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview };
       // The distance runs from the left or lower point, so its value reads positive.
       const ordered: readonly [string, string] = delta >= 0 ? pointIds : [pointIds[1], pointIds[0]];
       return { form, label, state: 'available', relations: [{ id: newId(), kind: 'axis-distance', pointIds: ordered, axis, value: Math.abs(delta) }], implied: null, reuses: null,
@@ -284,7 +296,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
       if (!(radius > 0) || !Number.isFinite(radius)) return { form: quantity, label, state: 'blocked', reason: 'This curve has no size to measure.' };
       if (curve.kind === 'circle' && typeof curve.radius === 'string' && !existing) return { form: quantity, label, state: 'blocked', reason: 'The circle radius follows its source expression. Edit that expression instead.' };
       const measurement = { kind: 'radial-size', entityId: curve.id, quantity } as const, reference = cadSketchMatchingReference(graph, measurement);
-      if (existing || reference) return { form: quantity, label, state: 'existing', relationId: (existing ?? reference)!.id,
+      if (existing || reference) return { form: quantity, label, state: 'existing', relationIds: [(existing ?? reference)!.id],
         reason: existing && (existing.kind !== 'radial-size' || existing.quantity === quantity) || reference ? EXISTING : 'An existing dimension already drives this curve. Edit that dimension instead.', preview };
       const id = newId();
       return { form: quantity, label, state: 'available', relations: [{ id, kind: 'radial-size', entityId: curve.id, quantity, value }], implied: null, reuses: null,
@@ -300,7 +312,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
     const existing = cadSketchPointLineDistanceFor(graph, { pointId, lineId }) ?? cadSketchMatchingReference(graph, measurement);
     try {
       const relation = createCadSketchPointLineDistance({ graph, parameters, pointId, lineId, relationId: newId() });
-      if (existing) return { form: 'point-line', label, state: 'existing', relationId: existing.id, reason: EXISTING, preview: { ...preview, value: relation.value as number } };
+      if (existing) return { form: 'point-line', label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview: { ...preview, value: relation.value as number } };
       return { form: 'point-line', label, state: 'available', relations: [relation], implied: null, reuses: null,
         reference: { id: relation.id, kind: 'reference-dimension', measurement }, referenceReason: null, preview: { ...preview, value: relation.value as number } };
     } catch (cause) {
@@ -309,7 +321,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
       const reference = measuredReference(existing?.id ?? newId(), measurement);
       if (!reference) return { form: 'point-line', label, state: 'blocked', reason };
       const measured = { ...preview, value: measureCadSketchReferenceDimension(graph, parameters, reference) };
-      return existing ? { form: 'point-line', label, state: 'existing', relationId: existing.id, reason: EXISTING, preview: measured }
+      return existing ? { form: 'point-line', label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview: measured }
         : { form: 'point-line', label, state: 'blocked', reason, reference, preview: measured };
     }
   }
@@ -336,7 +348,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
         const implied = created.parallel && !oriented && (driver || !existing) ? { id: newId(), kind: 'parallel' as const, lineIds } : null;
         if (driver && implied) distance = { form: 'point-line', label: 'Distance', state: 'available', relations: [implied], implied: implied.id, reuses: driver.id,
           reference: null, referenceReason: REUSED, preview };
-        else if (existing) distance = { form: 'point-line', label: 'Distance', state: 'existing', relationId: existing.id, reason: EXISTING, preview };
+        else if (existing) distance = { form: 'point-line', label: 'Distance', state: 'existing', relationIds: [existing.id], reason: EXISTING, preview };
         else distance = { form: 'point-line', label: 'Distance', state: 'available', relations: implied ? [relation, implied] : [relation], implied: implied?.id ?? null, reuses: null,
           reference: { id: relation.id, kind: 'reference-dimension', measurement }, referenceReason: null, preview };
       }
@@ -353,7 +365,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
         catch (cause) { if (!(cause instanceof CadError && cause.code === 'ambiguous-sketch-angle-sector')) throw cause; }
         const fallback = natural === null ? null : sectors.findIndex(sector => JSON.stringify(sector.relation.rays) === natural);
         const preview = { kind: 'angle', sectors, fallback: fallback === null || fallback < 0 ? null : fallback } as const;
-        angle = existingAngle ? { form: 'angle', label: 'Angle', state: 'existing', relationId: existingAngle.id, reason: EXISTING, preview }
+        angle = existingAngle ? { form: 'angle', label: 'Angle', state: 'existing', relationIds: [existingAngle.id], reason: EXISTING, preview }
           : { form: 'angle', label: 'Angle', state: 'available', relations: [], implied: null, reuses: null, reference: null, referenceReason: NO_REFERENCE_ANGLE, preview };
       } catch (cause) { angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: userFacingMessage(cause, 'These lines cannot take an angle.') }; }
     }
@@ -372,9 +384,10 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
         else if (aliases.every(alias => typeof alias.position[index] === 'number')) relations.push({ id: newId(), kind: 'fixed-axis', pointId, axis, value: axis === 'x' ? point.x : point.y });
       }
       const preview = { kind: 'datum', point, axes } as const;
-      if (!relations.length) return existing.length ? { form, label, state: 'existing', relationId: existing[0], reason: EXISTING, preview }
+      if (!relations.length) return existing.length ? { form, label, state: 'existing', relationIds: existing, reason: EXISTING, preview }
         : { form, label, state: 'blocked', reason: 'This point already has its position from a fixed point or an expression.' };
-      return { form, label, state: 'available', relations, implied: null, reuses: null, reference: null, referenceReason: NO_REFERENCE_DATUM, preview };
+      // Of two coordinates at most one is kept already, and it stays with the one added.
+      return { form, label, state: 'available', relations, implied: null, reuses: existing[0] ?? null, reference: null, referenceReason: NO_REFERENCE_DATUM, preview };
     };
     if (from !== 'origin') {
       // An axis is a line: a point on it has no distance from it, and holding it there is Coincident's, not a dimension's.
@@ -405,8 +418,8 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
     const heldFrom = (end: ReadonlySet<string>) => graph.relations.find(relation => relation.kind === 'fixed-axis' && relation.axis === axis && end.has(relation.pointId));
     const level = graph.relations.some(relation => relation.kind === kind && (startAliases.has(relation.pointIds[0]) && endAliases.has(relation.pointIds[1]) || startAliases.has(relation.pointIds[1]) && endAliases.has(relation.pointIds[0])));
     // One held end keeps the line's distance only while Horizontal or Vertical, or a hold on its other end too, keeps it along the axis.
-    const existing = heldFrom(startAliases) ?? heldFrom(endAliases), kept = level || Boolean(heldFrom(startAliases) && heldFrom(endAliases));
-    if (existing && kept) return plan([{ form: 'datum', label, state: 'existing', relationId: existing.id, reason: EXISTING, preview }, angle], 'datum');
+    const holds = [heldFrom(startAliases), heldFrom(endAliases)].filter(relation => relation !== undefined), existing = holds[0], kept = level || holds.length === 2;
+    if (existing && kept) return plan([{ form: 'datum', label, state: 'existing', relationIds: holds.map(relation => relation.id), reason: EXISTING, preview }, angle], 'datum');
     const implied = level ? null : { id: newId(), kind, pointIds: [line.startPointId, line.endPointId] as const };
     if (existing && implied) return plan([{ form: 'datum', label, state: 'available', relations: [implied], implied: implied.id, reuses: existing.id,
       reference: null, referenceReason: REUSED, preview }, angle], 'datum');

@@ -13,6 +13,7 @@ import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { cadSketchDimensionAngleSectorAt, type CadSketchDimensionPreviewSource } from './cadSketchDimensionPlacement';
 import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
+import { isCadSketchDimensionRelation } from './cadSketchDimensionSelection';
 import { cadSketchZeroScalar } from './cadSketchGraphSelection';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 
@@ -262,7 +263,7 @@ function cornerDimensions(graph: CadSketchGraph, relation: Extract<CadSketchDime
 
 /** Display-only declared dimensions. Scalar drivers and source IDs remain authoritative. */
 export function layoutCadSketchGraphDimensions(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, mmPerPixel: number): readonly CadSketchGraphDimensionLayout[] {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(relation => relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'radial-size' || relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner' || relation.kind === 'line-angle' || relation.kind === 'reference-dimension')) return [];
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !graph.relations.some(isCadSketchDimensionRelation)) return [];
   const points = new Map(graph.points.map(point => [point.id, {
     x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters)
   }]));
