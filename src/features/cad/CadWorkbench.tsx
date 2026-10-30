@@ -25,7 +25,7 @@ import {
 } from './cadSketchDimensionPlacement';
 import { createCadSketchPointerStore } from './CadSketchDimensionPreview';
 import type { Point2 } from '@/domain/path-intel/types';
-import { cadSketchDimensionsPlacedAt, cadSketchDrawnDimensions, type CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
+import { cadSketchDimensionsPlacedAt, cadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
 import { withoutCadSketchDimensionAnnotation } from '@/domain/cad/cadSketchPlacedDimensions';
 import { CadSketchAreaRepairPanel } from './CadSketchAreaRepairPanel';
 import { CadSketchOffsetEditor, cadSketchOffsetSource } from './CadSketchOffsetEditor';
