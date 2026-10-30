@@ -27,7 +27,8 @@ test('recovers registrations across navigation and page resume without discardin
   expect(await rawCadToolCall(page, 'edm_save_project', { draftVersion: before.data.draft.version })).toMatchObject({ ok: false, error: { code: 'STALE_STATE' } });
   expect(await rawCadToolCall(page, 'edm_save_project', { draftVersion: dirty.data.draft.version })).toMatchObject({ ok: true });
   await page.reload();
-  await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
+  // A reload starts the whole app again before the editor opens, which can pass the default wait on a busy two-core runner.
+  await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible({ timeout: 20_000 });
   const reopened = await rawCadToolCall(page, 'edm_get_context');
   expect(reopened.data.draft.dirty).toBe(false);
   expect(await rawCadToolCall(page, 'edm_query_geometry', { target: { kind: 'current-draft', version: reopened.data.draft.version }, kind: 'segments' }))

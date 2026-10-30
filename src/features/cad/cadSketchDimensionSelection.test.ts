@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import {
-  cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionSelectionStatus, cadSketchRelationHighlight, createCadSketchDimensionKeys, createCadSketchHighlightStore,
-  isCadSketchDimensionPickCurrent, NO_SKETCH_DIMENSION_IDS, NO_SKETCH_DIMENSIONS, reconcileCadSketchDimensionSelection, selectCadSketchDimension, type CadSketchDimensionPick
+  cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionSelectionStatus, cadSketchDrawnAnnotations, cadSketchRelationHighlight, createCadSketchDimensionKeys, createCadSketchHighlightStore,
+  isCadSketchDimensionPickCurrent, isCadSketchDimensionRelation, isCadSketchGlyphRelation, keepCadSketchDimensionPicks, NO_SKETCH_DIMENSION_IDS, NO_SKETCH_DIMENSIONS,
+  reconcileCadSketchDimensionSelection, selectCadSketchAnnotations, selectCadSketchDimension, type CadSketchDimensionPick
 } from './cadSketchDimensionSelection';
 import { cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
 import { cadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
@@ -61,6 +62,17 @@ describe('sketch dimension selection', () => {
     expect(cadSketchDimensionPick(drawn(onAxis), 'x')).toBeNull(); expect(reconcileCadSketchDimensionSelection(drawn(onAxis), [pick('x')])).toBe(NO_SKETCH_DIMENSIONS);
     expect(cadSketchDimensionPick(drawn(withRelation({ id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: ' offset ' })), 'x')).toMatchObject({ id: 'x' });
     expect(reconcileCadSketchDimensionSelection(drawn(graph), [{ ...pick('length'), id: 'parallel-free' }])).toBe(NO_SKETCH_DIMENSIONS);
+    // While relation glyphs are drawn, positional relations and a coordinate held on an axis select as glyphs, by their own operands. A pick
+    // under another form drops out, and so does every glyph once the glyphs are hidden; with the dimensions hidden, the glyphs stay.
+    const marked = (source: CadSketchGraph, glyphs = true) => cadSketchDrawnAnnotations(source, drawn(source), glyphs);
+    expect(cadSketchDimensionPick(marked(graph), 'parallel-free')?.form).toBe('horizontal'); expect(cadSketchDimensionPick(marked(onAxis), 'x')?.form).toBe('fixed-axis');
+    expect(cadSketchDimensionPick(marked(graph), 'x')).toEqual(pick('x'));
+    const glyph = Object.freeze([pick('length'), cadSketchDimensionPick(marked(graph), 'parallel-free')!]);
+    expect(reconcileCadSketchDimensionSelection(marked(graph), glyph)).toBe(glyph);
+    expect(reconcileCadSketchDimensionSelection(marked(withRelation({ id: 'parallel-free', kind: 'horizontal', pointIds: ['b', 'c'] })), glyph)).toEqual([pick('length')]);
+    expect(reconcileCadSketchDimensionSelection(marked(graph, false), glyph)).toEqual([pick('length')]);
+    expect(reconcileCadSketchDimensionSelection(cadSketchDrawnAnnotations(graph, undefined, true), glyph)).toEqual([glyph[1]]);
+    expect(reconcileCadSketchDimensionSelection(cadSketchDrawnAnnotations(graph, drawn(onAxis), true), glyph)).toEqual([glyph[1]]);
     expect(reconcileCadSketchDimensionSelection(undefined, current)).toBe(NO_SKETCH_DIMENSIONS);
     expect(reconcileCadSketchDimensionSelection(drawn(graph), NO_SKETCH_DIMENSIONS)).toBe(NO_SKETCH_DIMENSIONS);
   });
@@ -208,7 +220,11 @@ describe('sketch dimension selection', () => {
     expect(replaced).not.toBe(first);
     // Restoring the first dimension replaces the one shown, so it mounts afresh too.
     expect(keys(graph).get('length')).not.toBe(replaced);
-    expect(keys(graph).has('parallel-free')).toBe(false);
+    // The dimensions layer keys only dimensions, the glyph layer only the others, a coordinate held on an axis among them; both share one key rule.
+    expect(keys(graph).has('parallel-free')).toBe(true);
+    expect(createCadSketchDimensionKeys(isCadSketchDimensionRelation)(graph).has('parallel-free')).toBe(false);
+    expect([...createCadSketchDimensionKeys(isCadSketchGlyphRelation)(graph).keys()]).toEqual(['parallel-free']);
+    expect([...createCadSketchDimensionKeys(isCadSketchGlyphRelation)(withRelation({ id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 0 })).keys()]).toEqual(['x', 'parallel-free']);
     expect(isCadSketchDimensionPickCurrent(drawn(graph), pick('length'))).toBe(true);
     expect(isCadSketchDimensionPickCurrent(drawn(withRelation({ id: 'length', kind: 'distance', pointIds: ['a', 'c'], value: 50 })), pick('length'))).toBe(false);
     expect(isCadSketchDimensionPickCurrent(undefined, pick('length'))).toBe(false);
@@ -221,6 +237,42 @@ describe('sketch dimension selection', () => {
     expect(cadSketchDimensionSelectionStatus(graph, ['size', 'rise'])).toBe('2 dimensions selected · Delete removes them');
     expect(cadSketchDimensionSelectionStatus(graph, [])).toBeNull();
     expect(cadSketchDimensionSelectionStatus(graph, ['gone'])).toBeNull();
+  });
+
+  it('describes a relation glyph selection by the relation names, X and Y held at 0 on one place as the point at the origin, and a mixed one by its counts', () => {
+    expect(cadSketchDimensionSelectionStatus(graph, ['parallel-free'])).toBe('Horizontal selected · Delete removes');
+    // Held away from the axes, X and Y are two Distance dimensions.
+    expect(cadSketchDimensionSelectionStatus(graph, ['x'])).toBe('Distance selected · Double-click or Enter edits · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(graph, ['x', 'y'])).toBe('2 dimensions selected · Delete removes them');
+    // Held at 0, each is a relation named after the axis it keeps the point on, and both on one place, or on Coincident points, read as one glyph.
+    const zero = parseCadSketchGraph({ ...graph, points: [...graph.points, { id: 'p', position: [0, 0] }],
+      relations: [...graph.relations.filter(relation => relation.kind !== 'fixed-axis'), { id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 0 },
+        { id: 'y', kind: 'fixed-axis', pointId: 'o', axis: 'y', value: '0 * 2' }, { id: 'join', kind: 'coincident', pointIds: ['p', 'a'] }, { id: 'ay', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 0 },
+        { id: 'ax', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 }, { id: 'away', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 40 }, { id: 'cy', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 0 }] });
+    expect(cadSketchDimensionSelectionStatus(zero, ['x'])).toBe('On the Y axis selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(zero, ['x', 'y'])).toBe('At the origin selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(zero, ['ay', 'ax'])).toBe('At the origin selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(zero, ['x', 'ay'])).toBe('2 relations selected · Delete removes them');
+    // One coordinate at 0 and the other away from it is a relation and a dimension, never one glyph.
+    expect(cadSketchDimensionSelectionStatus(zero, ['away', 'cy'])).toBe('1 dimension and 1 relation selected · Delete removes them');
+    expect(cadSketchDimensionSelectionStatus(graph, ['length', 'x', 'y'])).toBe('3 dimensions selected · Delete removes them');
+    expect(cadSketchDimensionSelectionStatus(zero, ['parallel-free', 'x', 'y'])).toBe('3 relations selected · Delete removes them');
+  });
+
+  it('selects the relations of one glyph together: a click replaces the selection, Shift adds them or, when all are selected, removes them', () => {
+    // X and Y held at 0 on one point draw one At the origin glyph.
+    const origin = parseCadSketchGraph({ ...graph, relations: graph.relations.map(relation => relation.kind === 'fixed-axis' ? { ...relation, value: 0 } : relation) });
+    const glyph = (id: string) => { const found = cadSketchDimensionPick(cadSketchDrawnAnnotations(origin, drawn(origin), true), id); if (!found) throw new Error(`${id} is not drawn`); return found; };
+    const fixed = [glyph('x'), glyph('y')], one = selectCadSketchAnnotations(NO_SKETCH_DIMENSIONS, [pick('length')], origin);
+    expect(cadSketchDimensionIds(selectCadSketchAnnotations(one, fixed, origin))).toEqual(['x', 'y']);
+    const both = selectCadSketchAnnotations(one, fixed, origin, true);
+    expect(cadSketchDimensionIds(both)).toEqual(['length', 'x', 'y']);
+    expect(selectCadSketchAnnotations(both, [glyph('y'), glyph('x')], origin)).not.toBe(both);
+    expect(cadSketchDimensionIds(selectCadSketchAnnotations(both, fixed, origin, true))).toEqual(['length']);
+    expect(selectCadSketchAnnotations(selectCadSketchAnnotations(NO_SKETCH_DIMENSIONS, fixed, origin), fixed, origin, true)).toBe(NO_SKETCH_DIMENSIONS);
+    // Hiding relation glyphs keeps the dimensions selected, and an unchanged set keeps its identity.
+    expect(cadSketchDimensionIds(keepCadSketchDimensionPicks(both, item => item.id === 'length'))).toEqual(['length']);
+    expect(keepCadSketchDimensionPicks(both, () => true)).toBe(both);
   });
 });
 
@@ -242,6 +294,28 @@ describe('sketch relation highlight', () => {
     const upright = { ...graph, relations: [...graph.relations, { id: 'v', kind: 'vertical' as const, pointIds: ['c', 'b'] as const }] };
     expect(cadSketchRelationHighlight(upright, { id: 'sideX', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 })).toEqual({ pointIds: ['b'], entityIds: ['side'], datums: ['y-axis'] });
     expect(cadSketchRelationHighlight(upright, { id: 'sideX', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 0 })).toEqual({ pointIds: ['b'], entityIds: [], datums: ['y-axis'] });
+  });
+  it('names every line between the two points in graph order, whichever way each runs, and each graph from its own geometry', () => {
+    const lines = parseCadSketchGraph({
+      points: [{ id: 'p', position: [0, 0] }, { id: 'q', position: [10, 0] }, { id: 'r', position: [10, 10] }],
+      entities: [{ id: 'z', kind: 'line', startPointId: 'q', endPointId: 'p', construction: false }, { id: 'other', kind: 'line', startPointId: 'q', endPointId: 'r', construction: false },
+        { id: 'a', kind: 'line', startPointId: 'p', endPointId: 'q', construction: true }],
+      relations: [{ id: 'level', kind: 'horizontal', pointIds: ['p', 'q'] }, { id: 'upright', kind: 'vertical', pointIds: ['r', 'q'] }]
+    });
+    expect(cadSketchRelationHighlight(lines, lines.relations[0])).toEqual({ pointIds: ['p', 'q'], entityIds: ['z', 'a'], datums: [] });
+    expect(cadSketchRelationHighlight(lines, lines.relations[1])).toEqual({ pointIds: ['r', 'q'], entityIds: ['other'], datums: [] });
+    const removed = { ...lines, entities: lines.entities.filter(entity => entity.id !== 'z') };
+    expect(cadSketchRelationHighlight(removed, removed.relations[0]).entityIds).toEqual(['a']);
+  });
+  it('names the line between points that Coincident joins to its ends, keeping the named points', () => {
+    const joined = parseCadSketchGraph({
+      points: [{ id: 'p', position: [0, 0] }, { id: 'q', position: [10, 0] }, { id: 'pp', position: [0, 0] }, { id: 'qq', position: [10, 0] }],
+      entities: [{ id: 'base', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }],
+      relations: [{ id: 'jp', kind: 'coincident', pointIds: ['p', 'pp'] }, { id: 'jq', kind: 'coincident', pointIds: ['qq', 'q'] },
+        { id: 'level', kind: 'horizontal', pointIds: ['pp', 'qq'] }, { id: 'span', kind: 'distance', pointIds: ['qq', 'p'], value: 10 }]
+    });
+    expect(cadSketchRelationHighlight(joined, joined.relations[2])).toEqual({ pointIds: ['pp', 'qq'], entityIds: ['base'], datums: [] });
+    expect(cadSketchRelationHighlight(joined, joined.relations[3])).toEqual({ pointIds: ['qq', 'p'], entityIds: ['base'], datums: [] });
   });
 });
 

@@ -41,7 +41,8 @@ assert.equal(AddIcon, Plus); assert.equal(AddIcon, SingleAdd);
 assert.equal(typeof WorkbenchIcon.render, 'function'); assert.equal(iconCatalog, catalog);
 `);
   execFileSync(process.execPath, ['resolve.mjs'], { cwd: consumer, stdio: 'pipe' });
-  writeFileSync(join(consumer, 'types.tsx'), `import { AddIcon, type WorkbenchIconProps, type IconName } from '@wire-edm/icons-react';
+  writeFileSync(join(consumer, 'types.tsx'), `import { forwardRef } from 'react';
+import { AddIcon, type WorkbenchDrawnIconComponent, type WorkbenchIconComponent, type WorkbenchIconProps, type IconName } from '@wire-edm/icons-react';
 import { PadIcon } from '@wire-edm/icons-react/icons/pad';
 import { WorkbenchIcon } from '@wire-edm/icons-react/dynamic';
 const name: IconName = 'pad';
@@ -49,6 +50,11 @@ const name: IconName = 'pad';
 const invalidName: IconName = 'not-an-icon';
 const props: WorkbenchIconProps = { size: 16, absoluteStrokeWidth: true, onClick: event => event.currentTarget.focus() };
 export const examples = [<AddIcon {...props} />, <PadIcon aria-label="Extrude" />, <WorkbenchIcon name={name} />];
+// A component made outside createIcon still satisfies the icon type; generated icons also carry their drawing.
+export const Custom: WorkbenchIconComponent = forwardRef<SVGSVGElement, WorkbenchIconProps>(function Custom(_props, ref) { return <svg ref={ref} />; });
+export const drawn: WorkbenchDrawnIconComponent = PadIcon, plain: WorkbenchIconComponent = AddIcon, paths: readonly string[] = PadIcon.paths;
+// @ts-expect-error A component made outside createIcon carries no drawing.
+export const undrawn: WorkbenchDrawnIconComponent = Custom;
 `);
   execFileSync(process.execPath, [tsc, '--noEmit', '--strict', '--skipLibCheck', '--jsx', 'react-jsx', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', 'types.tsx'], { cwd: consumer, stdio: 'pipe' });
 

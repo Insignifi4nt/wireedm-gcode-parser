@@ -847,6 +847,9 @@ describe('contextual concentric curve centers',()=>{
     expect(sketch.graph.entities).toEqual(original.features[0].kind==='sketch'?original.features[0].graph?.entities:[]);
     expect(sketch.graph.points).toEqual(original.features[0].kind==='sketch'?original.features[0].graph?.points:[]);
     await h.render([...pair].reverse());expect(field('Concentric').checked).toBe(true);
+    // The list names the Coincident between the two centres Concentric, beside the glyph the canvas draws for it.
+    const listed=[...document.querySelectorAll('ul[aria-label="Sketch relations"] > li > button:first-child')];
+    expect(listed.map(item=>item.textContent)).toEqual(['Concentric']);expect(listed[0].querySelector('svg')).not.toBeNull();
     await act(async()=>field('Concentric').click());await act(async()=>field('Concentric').click());
     expect(h.pending).toHaveBeenLastCalledWith(false);expect(h.session.getSnapshot().document).toBe(accepted);
     await act(async()=>h.session.undo());expect(h.session.getSnapshot().document).toBe(original);

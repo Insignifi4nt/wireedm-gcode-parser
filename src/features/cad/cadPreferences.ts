@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from 'react';
 
 export type CadNavigationMode = 'mouse' | 'trackpad';
-export interface CadPreferences { readonly navigationMode: CadNavigationMode; readonly showOnPartDimensions: boolean; readonly showDepthHandles?: boolean }
+export interface CadPreferences { readonly navigationMode: CadNavigationMode; readonly showOnPartDimensions: boolean; readonly showDepthHandles?: boolean; readonly showRelations?: boolean }
 export const CAD_PREFERENCES_KEY = 'wire-edm:cad-preferences:v1';
 /** Depth handles are on unless the device explicitly turned them off; stored bytes are never rewritten. */
 export const cadDepthHandlesShown = (preferences: CadPreferences) => preferences.showDepthHandles !== false;
+/** Relation glyphs on the sketch canvas are on unless the device explicitly turned them off. */
+export const cadRelationsShown = (preferences: CadPreferences) => preferences.showRelations !== false;
 const defaults: CadPreferences = Object.freeze({ navigationMode: 'mouse', showOnPartDimensions: true });
 let current = defaults;
 let lastRaw: string | null | undefined;
@@ -19,9 +21,10 @@ function parse(raw: string | null): CadPreferences {
     const value: unknown = JSON.parse(raw);
     if (value && typeof value === 'object' && 'navigationMode' in value && 'showOnPartDimensions' in value
       && (value.navigationMode === 'mouse' || value.navigationMode === 'trackpad') && typeof value.showOnPartDimensions === 'boolean'
-      && (!('showDepthHandles' in value) || typeof value.showDepthHandles === 'boolean')) {
+      && (!('showDepthHandles' in value) || typeof value.showDepthHandles === 'boolean') && (!('showRelations' in value) || typeof value.showRelations === 'boolean')) {
       return Object.freeze({ navigationMode: value.navigationMode, showOnPartDimensions: value.showOnPartDimensions,
-        ...('showDepthHandles' in value ? { showDepthHandles: value.showDepthHandles as boolean } : {}) });
+        ...('showDepthHandles' in value ? { showDepthHandles: value.showDepthHandles as boolean } : {}),
+        ...('showRelations' in value ? { showRelations: value.showRelations as boolean } : {}) });
     }
   } catch { /* Invalid device preferences never rewrite stored originals. */ }
   return defaults;

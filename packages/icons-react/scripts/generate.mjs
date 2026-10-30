@@ -20,7 +20,7 @@ for (const entry of iconSource) {
   const aliases = entry.aliases.length ? `export { ${entry.aliases.map(name => `${semantic} as ${name}`).join(', ')} };\n` : '';
   expected.set(`src/icons/${entry.id}.tsx`, `${header}import { createIcon } from '../createIcon.js';\n\nexport const ${semantic} = /* @__PURE__ */ createIcon(${JSON.stringify(entry.id)}, ${JSON.stringify(entry.paths)});\n${aliases}`);
 }
-expected.set('src/index.ts', `${header}export type { WorkbenchIconComponent, WorkbenchIconProps } from './types.js';\nexport type { IconName, IconCategory } from './catalog.js';\n\n${iconSource.map(entry => {
+expected.set('src/index.ts', `${header}export type { WorkbenchDrawnIconComponent, WorkbenchIconComponent, WorkbenchIconProps } from './types.js';\nexport type { IconName, IconCategory } from './catalog.js';\n\n${iconSource.map(entry => {
   const semantic = `${entry.id.split('-').map(word => word[0].toUpperCase() + word.slice(1)).join('')}Icon`;
   return `export { ${[semantic, ...entry.aliases].join(', ')} } from './icons/${entry.id}.js';`;
 }).join('\n')}\n`);

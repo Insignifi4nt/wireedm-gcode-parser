@@ -34,6 +34,7 @@ test('attaches DXF beyond script limits and a multi-megabyte UPID through small 
   const context = await rawCadToolCall(page, 'edm_get_context');
   expect(await rawCadToolCall(page, 'edm_get_project', { target: { kind: 'current-draft', version: context.data.draft.version } })).toMatchObject({ ok: true, data: { counts: { segments: count } } });
   await page.reload();
-  await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible();
+  // A reload starts the whole app again before the editor opens, which can pass the default wait on a busy two-core runner.
+  await expect(page.locator('[data-editor-context="path-project"]')).toBeVisible({ timeout: 20_000 });
   expect((await rawCadToolCall(page, 'edm_workflow_context')).data.inputFile).toBeNull();
 });
