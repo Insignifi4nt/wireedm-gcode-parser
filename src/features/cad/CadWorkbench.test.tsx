@@ -1677,7 +1677,7 @@ describe('CAD sketch interaction', () => {
     expect(pending).toHaveLength(1); expect(currentDocument).toBe(original);
     expect(currentSession.getSnapshot().workflowOpen).toBe(true);
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
-    const payload = pending[0].edit.geometry, center = payload.points[0], entity = payload.entities[0];
+    const payload = pending[0].edit.geometry, center = payload.points[0];
     expect(payload.points).toHaveLength(1); expect(center.id).not.toBe('anchor');
     expect(center.position).toEqual([0, 0]);
     expect(payload.relations).toEqual([{ id: expect.any(String), kind: 'coincident', pointIds: [center.id, 'anchor'] }]);
