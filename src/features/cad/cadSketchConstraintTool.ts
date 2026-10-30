@@ -413,13 +413,22 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       if (!points.length) return more('Choose a point to fix', [], allPoints);
       const point = graph.points.find(item => item.id === points[0]);
       if (!point) return invalid('This point is no longer in the sketch.');
+      const joined = joint(point.id);
+      const fixed = matching(relation => relation.kind === 'fixed-point' && joined.has(relation.pointId));
+      if (fixed.length) return invalid('This point is already fixed.', fixed);
+      const held = (axis: 'x' | 'y') => exists(relation => relation.kind === 'fixed-axis' && relation.axis === axis && joined.has(relation.pointId));
+      const [x, y] = point.position;
+      // Fix holds the point where it is, as one fixed point. A coordinate written as an expression already follows it, and one
+      // already held by a coordinate relation keeps it, so only the other numeric coordinate is held, as a distance from its axis.
+      if (typeof x === 'number' && typeof y === 'number' && !held('x') && !held('y'))
+        return { status: 'ready', relations: [{ id: newId(), kind: 'fixed-point', pointId: point.id, position: [x, y] }] };
       const relations = (['x', 'y'] as const).flatMap((axis, index) => {
         const value = point.position[index];
-        return typeof value === 'number' && !exists(relation => relation.kind === 'fixed-axis' && relation.pointId === point.id && relation.axis === axis)
-          ? [{ id: newId(), kind: 'fixed-axis' as const, pointId: point.id, axis, value }] : [];
+        return typeof value === 'number' && !held(axis) ? [{ id: newId(), kind: 'fixed-axis' as const, pointId: point.id, axis, value }] : [];
       });
-      const held = matching(relation => relation.kind === 'fixed-axis' && relation.pointId === point.id);
-      return relations.length ? { status: 'ready', relations } : invalid('This point is already fixed or follows expressions.', held.length === 2 ? held : undefined);
+      // A point saved with both coordinates held one by one is fixed already, as a fixed point is.
+      const pair = held('x') && held('y') ? matching(relation => relation.kind === 'fixed-axis' && joined.has(relation.pointId)) : undefined;
+      return relations.length ? { status: 'ready', relations } : invalid('This point is already fixed or follows expressions.', pair);
     }
   }
 }

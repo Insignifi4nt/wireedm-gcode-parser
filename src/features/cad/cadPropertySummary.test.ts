@@ -22,6 +22,13 @@ describe('cadPropertySummary', () => {
     });
   });
 
+  it('counts the dimensions the canvas draws: a coordinate held off an axis and a reference, not a coordinate held on it', () => {
+    const held = { ...sketch, graph: { ...sketch.graph!, relations: [...sketch.graph!.relations,
+      { id: 'onX', kind: 'fixed-axis' as const, pointId: 'a', axis: 'y' as const, value: ' 0 ' }, { id: 'right', kind: 'fixed-axis' as const, pointId: 'b', axis: 'x' as const, value: 40 },
+      { id: 'measured', kind: 'reference-dimension' as const, measurement: { kind: 'point-distance' as const, pointIds: ['a', 'b'] as const } }] } };
+    expect(rows(cadPropertySummary({ ...document, features: [held, document.features[1]] }, { kind: 'feature', feature: held }, [], planeLabel)).Constraints).toBe('3 dimensions · 2 relations');
+  });
+
   it('names a feature input and reads its solid from the current build', () => {
     const summary = rows(cadPropertySummary(document, { kind: 'feature', feature: document.features[1] }, [mesh('pad', 4000, [0, 0, 0], [40, 20, 5])], planeLabel));
     expect(summary).toEqual({ Input: 'Sketch 1', Volume: `${(4000).toLocaleString()} mm³`, 'Size X × Y × Z': '40 × 20 × 5 mm' });

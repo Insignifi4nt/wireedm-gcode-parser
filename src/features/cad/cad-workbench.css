@@ -253,9 +253,10 @@
 .cad-sketch-graph.is-draggable :is(.cad-sketch-entity:not([aria-disabled]), .cad-sketch-graph-point:not(.is-locked, [aria-disabled])) { cursor: grab; }
 .cad-sketch-graph.is-dragging, .cad-sketch-graph.is-dragging * { cursor: grabbing; }
 .cad-sketch-point-hit { fill: transparent; stroke: none; }
-.cad-sketch-point-mark { fill: var(--card); stroke: var(--cad-sketch-state, var(--primary)); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; transition: opacity 80ms; }
-/* Shared vertices appear on hover, focus or when revealed by selection, relations and picks; hit targets stay in place. */
-.cad-sketch-graph-point[data-cad-sketch-point]:not(.is-revealed, :hover, :focus-visible) .cad-sketch-point-mark { opacity: 0; }
+.cad-sketch-point-mark { fill: var(--card); stroke: var(--cad-sketch-state, var(--primary)); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; }
+/* Shared vertices appear on hover, focus or when revealed by selection, relations and picks; hit targets stay in place. They appear at once,
+   as highlights do in CATIA and SOLIDWORKS, and a hidden one is not painted rather than transparent, so revealing it repaints only itself. */
+.cad-sketch-graph-point[data-cad-sketch-point]:not(.is-revealed, :hover, :focus-visible) .cad-sketch-point-mark { visibility: hidden; }
 .cad-sketch-graph-point:is(:hover, :focus-visible, .is-active) .cad-sketch-point-mark { fill: var(--primary); stroke: var(--foreground); }
 .cad-sketch-graph-point.is-locked .cad-sketch-point-mark { fill: var(--cad-sketch-state, var(--muted-foreground)); stroke: var(--card); }
 .cad-sketch-graph-point.is-locked.is-active .cad-sketch-point-mark { fill: var(--primary); stroke: var(--foreground); }

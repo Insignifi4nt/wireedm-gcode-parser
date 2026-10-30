@@ -79,7 +79,7 @@ const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
   'equal-length': 'Keeps two line lengths equal.', 'equal-radius': 'Keeps two circle or arc radii equal.',
   'line-angle': 'Drives the declared clockwise or counterclockwise sector between two explicit line rays in degrees.',
   'radial-size': 'Drives circle or arc size using the declared radius or diameter.',
-  'fixed-axis': 'Fixes one point coordinate; the other axis can remain free.', distance: 'Keeps the straight-line distance between two points.',
+  'fixed-axis': 'Keeps one point coordinate, X measured from the Y axis or Y from the X axis; the other can remain free. A value that is 0 whatever the parameters are keeps the point on that axis; any other value is a distance from the axis, on the side its sign gives.', distance: 'Keeps the straight-line distance between two points.',
   'point-line-distance': 'Keeps a point at a positive distance from the infinite supporting line of the named line, on the side it starts on. Does not fix the line or make it parallel to anything.',
   'axis-distance': 'Drives the signed second-minus-first point coordinate along the declared sketch axis.',
   'fillet-corner': 'Keeps a tangent minor arc at the original reference corner, with a driving radius and finite trimmed sides.',

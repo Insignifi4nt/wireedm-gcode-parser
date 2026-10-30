@@ -80,7 +80,10 @@ test('mirrors a bore by picking its axis and keeps the copied bore independent t
   // The detached copy acquires its own ordinary diameter, without stealing the source expression.
   await (await historyRow(page, 'Mounting plate')).dblclick();
   await page.locator('[data-cad-sketch-entity="' + copiedId + '"]').press('Enter');
-  await page.getByRole('button', { name: 'Dimension', exact: true }).click();
+  // Dimension starts from the selected copy: Enter places its diameter at the copied size and selects it, and Enter again opens its editor.
+  await page.getByRole('button', { name: 'Dimension', exact: true }).click(); await page.getByLabel('Sketch drawing canvas').press('Enter');
+  await expect(page.locator('[data-cad-sketch-dimension] [role="button"][aria-pressed="true"]')).toHaveCount(1);
+  await page.getByLabel('Sketch drawing canvas').press('Enter');
   await page.getByRole('textbox', { name: 'Diameter mm', exact: true }).fill('8');
   await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Apply', exact: true }).click();

@@ -28,7 +28,7 @@ interface PreparationFailureInput {
 const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
   'tangent-joint': 'Tangent', 'point-on-line': 'Point on line', 'point-on-curve': 'Point on curve', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'point-line-distance': 'Point to line distance', 'axis-distance': 'Axis distance',
   'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'external-reference': 'Linked reference',
-  'fixed-point': 'Fixed point', 'fixed-axis': 'Fixed axis', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
+  'fixed-point': 'Fixed point', 'fixed-axis': 'Distance', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
 };
 const rejectionMessages: Record<Rejection['reason'], string> = {
   conflicting: 'Sketch constraints conflict.', redundant: 'Sketch constraints are redundant.', failed: 'The sketch solver could not solve this edit.',
@@ -65,9 +65,10 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
         : relation.kind === 'reference-dimension' ? relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds.map(pointLabel)
           : relation.measurement.kind === 'point-line-distance' ? [pointLabel(relation.measurement.pointId), describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.measurement.lineId }).label]
           : [describeCadSketchConstraintSource(graph, { kind: 'entity', id: relation.measurement.entityId }).label]
+        // A distance from an axis names the axis among its operands, as a distance between two lines names both.
+        : relation.kind === 'fixed-axis' && !cadSketchDatumRelationLabel(relation) ? [pointLabel(relation.pointId), relation.axis === 'x' ? 'Y axis' : 'X axis']
         : ('pointIds' in relation ? relation.pointIds : [relation.pointId]).map(pointLabel);
-      const name = cadSketchDatumRelationLabel(relation) ?? (relation.kind === 'fixed-axis' ? `Fix ${relation.axis.toUpperCase()}`
-        : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
+      const name = cadSketchDatumRelationLabel(relation) ?? (relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
         : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationNames[relation.kind]);
       label = `${name} relation ${index + 1} · ${operands.join(relation.kind === 'axis-distance' ? ' → ' : ' and ')}`;
     } else label = 'Unavailable relation';
