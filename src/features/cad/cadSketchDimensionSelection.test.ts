@@ -258,6 +258,16 @@ describe('sketch relation highlight', () => {
     const removed = { ...lines, entities: lines.entities.filter(entity => entity.id !== 'z') };
     expect(cadSketchRelationHighlight(removed, removed.relations[0]).entityIds).toEqual(['a']);
   });
+  it('names the line between points that Coincident joins to its ends, keeping the named points', () => {
+    const joined = parseCadSketchGraph({
+      points: [{ id: 'p', position: [0, 0] }, { id: 'q', position: [10, 0] }, { id: 'pp', position: [0, 0] }, { id: 'qq', position: [10, 0] }],
+      entities: [{ id: 'base', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }],
+      relations: [{ id: 'jp', kind: 'coincident', pointIds: ['p', 'pp'] }, { id: 'jq', kind: 'coincident', pointIds: ['qq', 'q'] },
+        { id: 'level', kind: 'horizontal', pointIds: ['pp', 'qq'] }, { id: 'span', kind: 'distance', pointIds: ['qq', 'p'], value: 10 }]
+    });
+    expect(cadSketchRelationHighlight(joined, joined.relations[2])).toEqual({ pointIds: ['pp', 'qq'], entityIds: ['base'], datums: [] });
+    expect(cadSketchRelationHighlight(joined, joined.relations[3])).toEqual({ pointIds: ['qq', 'p'], entityIds: ['base'], datums: [] });
+  });
 });
 
 describe('sketch highlight store', () => {

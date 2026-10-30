@@ -116,7 +116,7 @@ describe('relation glyph layout', () => {
     const graph: CadSketchGraph = { ...base, points: [...base.points, { id: 'a2', position: [0, 0] }, { id: 'b2', position: [40, 0] }] };
     const level = layoutCadSketchRelationGlyphs(graph, {}).filter(glyph => glyph.relationIds[0] === 'level');
     expect(level.map(glyph => [glyph.operand, glyph.anchor, glyph.offset])).toEqual([['entity:bottom', [20, 0], [0, -12]]]);
-    expect(level[0].holds.points).toEqual(['a', 'b']);
+    expect(level[0].holds).toEqual({ points: ['a', 'b'], entities: ['bottom'] });
   });
 
   it('leaves dimensions, linear patterns and linked references to their own controls, and keeps a broken relation\'s glyphs on the operands that remain, so it can be removed', () => {

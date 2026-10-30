@@ -165,8 +165,8 @@ function useRestingReveal(layer: SVGGElement | null, highlight: CadSketchHighlig
       const pointId = geometry?.getAttribute('data-cad-sketch-point'), edge = geometry?.getAttribute('data-cad-sketch-entity');
       if (pointId) point({ kind: 'point', id: pointId });
       else if (edge) point({ kind: 'entity', id: edge });
-      // Reaching a glyph across empty canvas keeps the geometry that revealed it.
-      else if (target?.closest('[data-cad-sketch-relation-glyph]')) { if (!pointed) point(shown.pointed); }
+      // Reaching a glyph keeps the geometry that revealed it, across empty canvas too, and drops a reveal still waiting for its rest.
+      else if (target?.closest('[data-cad-sketch-relation-glyph]')) point(shown.pointed);
       else point(null);
     };
     const leave = () => {

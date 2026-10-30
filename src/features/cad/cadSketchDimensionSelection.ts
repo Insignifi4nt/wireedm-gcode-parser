@@ -227,7 +227,7 @@ export const NO_SKETCH_HIGHLIGHT: CadSketchHighlight = Object.freeze({ pointIds:
 /** A graph's point and edge IDs, its lines by their two end IDs and its curves by centre, built once per graph so naming many relations reads no graph twice. */
 interface GeometryIndex {
   readonly points: ReadonlySet<string>; readonly entities: ReadonlySet<string>;
-  /** Line indices in graph order, by `start end` and `end start`. */
+  /** Line indices in graph order, by the Coincident identities of their ends as `start end` and `end start`. */
   readonly lines: ReadonlyMap<string, readonly number[]>;
   readonly centres: ReadonlyMap<string, readonly string[]>;
 }
@@ -235,10 +235,11 @@ const geometryIndices = new WeakMap<CadSketchGraph, GeometryIndex>();
 function geometryIndex(graph: CadSketchGraph): GeometryIndex {
   let index = geometryIndices.get(graph);
   if (!index) {
-    const lines = new Map<string, number[]>();
+    const lines = new Map<string, number[]>(), identity = cadSketchPointIdentity(graph);
     graph.entities.forEach((entity, at) => {
       if (entity.kind !== 'line') return;
-      for (const key of new Set([`${entity.startPointId} ${entity.endPointId}`, `${entity.endPointId} ${entity.startPointId}`])) lines.set(key, [...lines.get(key) ?? [], at]);
+      const start = identity(entity.startPointId), end = identity(entity.endPointId);
+      for (const key of new Set([`${start} ${end}`, `${end} ${start}`])) lines.set(key, [...lines.get(key) ?? [], at]);
     });
     index = { points: new Set(graph.points.map(point => point.id)), entities: new Set(graph.entities.map(entity => entity.id)), lines, centres: cadSketchCurveCentres(graph) };
     geometryIndices.set(graph, index);
@@ -251,8 +252,9 @@ export function cadSketchRelationHighlight(graph: CadSketchGraph, relation: CadS
     : relation.kind === 'tangent-joint' ? relation.endpoints.map(endpoint => endpoint.pointId)
       : 'pointIds' in relation ? relation.pointIds : 'pointId' in relation ? [relation.pointId] : [];
   const { points, entities, lines, centres } = geometryIndex(graph);
-  // A dimension or relation between a line's own endpoints is about that line, and a Concentric about the curves on its two centres.
-  const [first, second] = named;
+  // A dimension or relation between a line's own endpoints, or points that Coincident joins to them, is about that line, and a Concentric
+  // about the curves on its two centres.
+  const identity = cadSketchPointIdentity(graph), [first, second] = named.map(identity);
   const spanned = relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, centres) ? relation.pointIds.flatMap(id => centres.get(id) ?? [])
     : named.length === 2 ? [...new Set([`${first} ${second}`, `${first} ${first}`, `${second} ${second}`].flatMap(key => lines.get(key) ?? []))].sort((a, b) => a - b).map(at => graph.entities[at].id) : [];
   // A coordinate is measured from the other axis: X from the Y axis, Y from the X axis.

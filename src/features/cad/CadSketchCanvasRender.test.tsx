@@ -260,6 +260,10 @@ describe('sketch canvas cursor rendering', () => {
     await pointerOver(corner('s46a')); await elapse(rest - 1);
     await pointerOver(corner('s47a')); await elapse(rest - 1); expect(shownGlyphs()).toEqual(['s45r0', 's45r3']);
     await elapse(1); expect(shownGlyphs()).toEqual(['s47r0', 's47r3']);
+    // Moving onto a shown glyph before another target has rested drops that reveal and keeps the shown geometry's glyphs.
+    await pointerOver(container.querySelector('[data-cad-sketch-entity="s46e1"]')!); await elapse(rest / 2);
+    await pointerOver(container.querySelector('[data-cad-sketch-relation-glyph="s47r3"]')!); await elapse(rest * 2);
+    expect(shownGlyphs()).toEqual(['s47r0', 's47r3']);
 
     // Leaving the canvas drops what is shown and what is pending.
     await leave(); expect(shownGlyphs()).toEqual([]);
