@@ -158,3 +158,28 @@ test('leaves a dimension line or label that crosses a mark its hover, click, dou
   await page.mouse.click(overlap.x, overlap.y, { button: 'right' }); await expect(reference).toBeVisible(); await expect(listed).toHaveCount(0);
   await page.keyboard.press('Escape');
 });
+
+test('leaves the Dimension tool its picks, preview hover and placement click over a mark', async ({ page }) => {
+  const { glyph } = await openPlate(page);
+  const tool = page.getByRole('button', { name: 'Dimension', exact: true }), preview = page.locator('[data-cad-dimension-preview]');
+  const lit = page.locator('[data-cad-highlight-glyph="upright"]'), length = page.locator('[data-cad-sketch-dimension="length"] [role="button"]');
+  const box = await glyph('upright').boundingBox(); if (!box) throw new Error('Vertical mark unavailable.');
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  // Waiting for its first pick, the tool keeps the placed Length interactive but every mark inert.
+  await tool.click(); await expect(tool).toHaveAttribute('aria-pressed', 'true');
+  await expect(glyph('upright')).toHaveCSS('pointer-events', 'none'); await expect(glyph('upright')).toHaveAttribute('tabindex', '-1'); await expect(length).toHaveAttribute('tabindex', '0');
+  await page.mouse.move(at.x, at.y); await expect(lit).toHaveCount(0);
+  // With the right edge picked, the preview follows the pointer onto the mark, which the pointer passes through to the canvas.
+  await page.locator('[data-cad-sketch-entity="right"]').press('Enter');
+  await page.mouse.move(at.x - 4, at.y); await page.mouse.move(at.x, at.y);
+  await expect(preview).toHaveCount(1); await expect(lit).toHaveCount(0);
+  expect(await page.evaluate(at => document.elementsFromPoint(at.x, at.y).some(element => element.closest('[data-cad-sketch-relation-glyph]')), at)).toBe(false);
+  const before = await context(page);
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(async () => (await context(page)).version).not.toBe(before.version);
+  await expect.poll(async () => { const current = await context(page); return (await call(page, 'cad_get_feature', { expectedVersion: current.version, featureId: 'plate' })).feature.graph.relations.at(-1); })
+    .toMatchObject({ kind: 'distance', pointIds: ['b', 'c'], value: 20 });
+  await expect(glyph('upright')).toHaveAttribute('aria-pressed', 'false'); await expect(tool).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape'); await expect(page.getByRole('button', { name: 'Select', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(glyph('upright')).toHaveAttribute('tabindex', '0');
+});

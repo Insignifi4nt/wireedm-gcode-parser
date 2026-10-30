@@ -2920,6 +2920,61 @@ describe('CAD sketch interaction', () => {
         expect(glyphs('level')).toHaveLength(1); expect(selectedGlyphs()).toEqual([]);
       });
 
+      it('keeps a selected glyph and drops a selected dimension when on-part dimensions are hidden, and shows and selects each without the other', async () => {
+        const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+        await openPlate({ build: null, buildState: 'idle', onEditMany });
+        await clickGlyph('level'); await act(async () => label('length').dispatchEvent(new MouseEvent('click', { button: 0, shiftKey: true, detail: 1, bubbles: true, cancelable: true })));
+        await act(async () => setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: false }));
+        expect(container.querySelector('[data-cad-sketch-dimension]')).toBeNull(); expect(selectedDimensions()).toEqual([]);
+        expect(selectedGlyphs()).toEqual(['level']); expect(status()).toBe('Horizontal selected · Delete removes');
+        // With dimensions hidden, glyphs still select, open their row and delete.
+        await clickGlyph('upright'); expect(selectedGlyphs()).toEqual(['upright']);
+        await glyphKey('upright', 'Enter'); expect(relationRow('Vertical').getAttribute('aria-pressed')).toBe('true'); expect(selectedGlyphs()).toEqual(['upright']);
+        await canvasKey('Escape'); await canvasKey('Escape');
+        await clickGlyph('upright'); await canvasKey('Delete');
+        expect(onEditMany.mock.lastCall?.[0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'upright' }]); expect(glyphs('upright')).toEqual([]);
+        // Both hidden, nothing is drawn or selected; dimensions shown again select without glyphs.
+        await clickGlyph('level');
+        await act(async () => setCadPreferences({ ...getCadPreferences(), showRelations: false }));
+        expect(container.querySelector('[data-cad-sketch-relation-glyph]')).toBeNull(); expect(status()).toBeNull();
+        await act(async () => setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true }));
+        expect(selectedDimensions()).toEqual([]); expect(container.querySelector('[data-cad-sketch-relation-glyph]')).toBeNull();
+        await act(async () => label('length').dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true, cancelable: true })));
+        expect(selectedDimensions()).toEqual(['length']); expect(status()).toBe('Length selected · Double-click or Enter edits · Delete removes');
+        await act(async () => setCadPreferences({ ...getCadPreferences(), showRelations: true }));
+      });
+
+      it('marks a coordinate held at 0 with the Coincident symbol that the relations list and Constrain show, leaves one held away from 0 or by a parameter to its Distance, and marks the point Fix holds as Fixed', async () => {
+        const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+        const axes = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, parameters: { offset: 0 }, features: [{ id: 'sketch', kind: 'sketch', name: 'Plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+          points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 20] }, { id: 'd', position: [0, 20] }, { id: 'a2', position: [0, 0] }, { id: 'e', position: [20, 10] }],
+          entities: [edge('bottom', 'a', 'b'), edge('right', 'b', 'c'), edge('top', 'c', 'd'), edge('left', 'd', 'a')],
+          relations: [{ id: 'level', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }, { id: 'ten', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 40 },
+            { id: 'follows', kind: 'fixed-axis', pointId: 'd', axis: 'x', value: 'offset' }, { id: 'ox', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 },
+            { id: 'join', kind: 'coincident', pointIds: ['a', 'a2'] }, { id: 'oy', kind: 'fixed-axis', pointId: 'a2', axis: 'y', value: 0 }] } }] });
+        await open({ build: null, buildState: 'idle', onEditMany }, axes);
+        const kind = (id: string) => glyph(id).getAttribute('data-cad-relation-glyph-kind'), paths = (element: Element | null | undefined) => [...element?.querySelectorAll('path') ?? []].map(path => path.getAttribute('d'));
+        // X = 40, and X following a parameter that is 0, are Distance dimensions: drawn as labels, with no glyph.
+        expect(label('ten')).not.toBeNull(); expect(label('follows')).not.toBeNull(); expect(glyphs('ten')).toEqual([]); expect(glyphs('follows')).toEqual([]);
+        // Y = 0 keeps b on the X axis; X = 0 and Y = 0 on the joined a and a2 put them at the origin, one glyph for both.
+        expect([...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].map(item => [item.getAttribute('data-cad-sketch-relation-glyph'), item.getAttribute('aria-label')])).toEqual([
+          ['level', 'On the X axis: Point 2'], ['ox oy', 'At the origin: Point 1'], ['join', 'Coincident: Point 1 and Point 5']]);
+        expect([kind('level'), kind('ox')]).toEqual(['coincident', 'coincident']);
+        await clickGlyph('level'); expect(status()).toBe('On the X axis selected · Delete removes');
+        await glyphKey('level', 'Enter'); const row = relationRow('On the X axis'); expect(row.getAttribute('aria-pressed')).toBe('true');
+        // The list row and the Constrain menu's Coincident draw the same symbol.
+        const listed = paths(row.querySelector('svg'));
+        await click('Constrain'); expect(paths(menuItem('Coincident').querySelector('svg'))).toEqual(listed); expect(listed.length).toBeGreaterThan(0);
+        await canvasKey('Escape'); await canvasKey('Escape'); await canvasKey('Escape');
+        // Fix keeps a free point where it is with one fixed point, marked Fixed.
+        await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'e' } }));
+        await click('Constrain');
+        const fix = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(entry => entry.textContent?.trim() === 'Fix'); if (!fix) throw new Error('Fix missing.');
+        await act(async () => fix.click());
+        const fixed = relations().at(-1); expect(fixed).toEqual({ id: expect.any(String), kind: 'fixed-point', pointId: 'e', position: [20, 10] });
+        expect(kind(fixed!.id)).toBe('fix'); expect(glyph(fixed!.id).getAttribute('aria-label')).toBe('Fixed point: Point 6');
+      });
+
       it('takes no pointer events or focus with a drawing tool, a pending line chain or a geometry pick', async () => {
         await openPlate();
         const inert = () => [...container.querySelectorAll('[data-cad-sketch-relation-glyph]')].every(item => item.getAttribute('tabindex') === '-1' && item.getAttribute('pointer-events') === 'none');
@@ -2933,6 +2988,13 @@ describe('CAD sketch interaction', () => {
         if (!parallel) throw new Error('Parallel missing.'); await act(async () => parallel.click());
         expect(inert()).toBe(true); await clickGlyph('level'); expect(selectedGlyphs()).toEqual([]);
         await canvasKey('Escape'); expect(inert()).toBe(false);
+        // Dimension keeps the placed dimensions interactive while it waits for its first pick, but never the glyphs, so its picks, preview
+        // and placement click reach the geometry and canvas under them.
+        await click('Dimension'); expect(inert()).toBe(true); expect(label('length').getAttribute('tabindex')).toBe('0');
+        await clickGlyph('level'); expect(selectedGlyphs()).toEqual([]); expect(status()).toBeNull();
+        await act(async () => keyboardPick(container.querySelector('[data-cad-sketch-entity="right"]')!));
+        expect(inert()).toBe(true); await glyphKey('upright', 'Enter'); expect(selectedGlyphs()).toEqual([]); expect(relationsPanel()).toBeNull();
+        await canvasKey('Escape'); await canvasKey('Escape'); expect(toolButton('Select').getAttribute('aria-pressed')).toBe('true'); expect(inert()).toBe(false);
       });
     });
   });
