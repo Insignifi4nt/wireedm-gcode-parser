@@ -1,0 +1,25 @@
+{
+  "version": "0.0.784",
+  "previousVersion": "0.0.783",
+  "postCompatibility": "preserved-posts-with-unselected-drawing",
+  "summary": "Drawing a shape in a sketch with connected edges no longer leaves one of its edges selected. Rectangle, Circle, Slot, Arc and a saved Line chain used to select their first edge, so Dimension, a constraint, Delete or Move chosen next started from that edge: after drawing a rectangle, Dimension then the Y axis tried to measure the bottom side against the axis. A finished shape now leaves nothing selected, and the drawing tool stays active as before. Offset loop now selects its whole copy, as Mirror copy does, where it selected one edge of it, and Offset loop accepts several edges of one closed outline as well as a single edge, so choosing it again offsets the copy.",
+  "warning": "Potentially breaking for people and automation that drive the sketch canvas: after a drawing tool saves a shape, the viewport selection is empty where it held the shape's first edge, so the Construction check box, Delete, Move selection, Dimension and Constrain no longer act on that edge without a pick. After Offset loop, the selection holds every edge of the copy where it held one, so commands that take a single edge, such as a length Dimension, need a pick first. Offset loop with several selected edges was unavailable and now offsets the one closed outline that contains them all; edges from different outlines still name none.",
+  "checklist": {
+    "schema": "No CAD schema change. No UPID, post, machine package, execution plan, saved revision, storage, journal, worker reply or native buffer protocol change; the Rust solver and committed WebAssembly module are unchanged. Post engine API remains 1 and saved-job engine remains 3.",
+    "events": "No execution event or input-version behavior change. A drawing still saves through the existing append-sketch-entities edit and an offset through its existing edits; only the selection set on acceptance changes. WebMCP tools and their arguments are unchanged; cad_get_viewport reports an empty selection after a drawing tool saves and the whole copy after Offset loop.",
+    "capabilities": "No post or machine capability change.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Selection is not persisted.",
+    "verification": "CadWorkbench.test.tsx checks that a drawn rectangle, a closed line chain, an inferred circle and a drawing accepted after a deferred edit leave nothing selected, also after switching to Select, and that a line chain saved by Escape leaves nothing selected. It checks that Offset loop selects every edge of its copy, offers that copy to a second Offset loop, and names no loop for edges from two outlines. CadSketchOffsetEditor.test.tsx checks the accepted copy's edge list."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Drawing a shape leaves nothing selected, and Offset loop selects its whole copy.",
+    "changes": [
+      "Rectangle, Circle, Slot, Arc and Line leave nothing selected when they save a shape, so Dimension or a constraint chosen next starts from your own picks.",
+      "Offset loop selects the whole copy, and accepts several edges of one closed outline, so choosing it again offsets the copy."
+    ],
+    "compatibility": "No file, schema or tool change. Installed machine packages, posts, saved revisions and controller output are unchanged.",
+    "action": "After drawing, pick the edge you want before choosing a command that acts on a selection. Automation that read the viewport selection after a drawing tool saved should pick the geometry it needs."
+  }
+}

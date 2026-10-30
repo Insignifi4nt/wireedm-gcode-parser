@@ -35,7 +35,7 @@ async function mount(overrides: { edit?(edits: readonly CadEdit[], signal?: Abor
     if (sketch.kind !== 'sketch') throw new Error('Missing sketch');
     return open ? <CadSketchOffsetEditor document={snapshot.document} documentVersion={snapshot.version} sketch={sketch} source={{ kind: 'profile', profileId: 'bore' }}
       interactionLocked={false} onEditMany={edit} onPrepareEdits={prepare} onPreviewDocument={preview} onPendingChange={open => session.setWorkflowOpen(open)}
-      onAccepted={id => { accepted(id); setOpen(false); }} onCancel={() => { cancelled(); setOpen(false); }} /> : null;
+      onAccepted={ids => { accepted(ids); setOpen(false); }} onCancel={() => { cancelled(); setOpen(false); }} /> : null;
   }
   await act(async () => root.render(<Harness />));
   return { source, session, preview, prepare, edit, accepted, cancelled };
@@ -61,7 +61,7 @@ it('reuses preview identities across side/expression edits, treats zero as no-op
   const inside = previewCircle(h.preview); expect(inside.circle.id).toBe(first.circle.id); expect(inside.circle.radius).toBe(8);
   expect(h.session.getSnapshot().document).toBe(h.source); expect(h.edit).not.toHaveBeenCalled();
   await click('Apply');
-  expect(h.accepted).toHaveBeenCalledExactlyOnceWith(first.circle.id); expect(h.cancelled).not.toHaveBeenCalled();
+  expect(h.accepted).toHaveBeenCalledExactlyOnceWith([first.circle.id]); expect(h.cancelled).not.toHaveBeenCalled();
   const result = h.session.getSnapshot().document;
   expect(result).toEqual(inside.document); expect(result.schemaVersion).toBe(2); expect(result.parameters).toEqual(h.source.parameters);
   expect(result.features[0]).toMatchObject({ profiles: h.source.features[0].kind === 'sketch' ? h.source.features[0].profiles : [] });
