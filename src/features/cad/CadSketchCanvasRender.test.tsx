@@ -368,7 +368,7 @@ describe('sketch canvas cursor rendering', () => {
     expect(rows().every((row, index) => row === before[index])).toBe(true);
   });
 
-  it('draws the glyphs at rest as shared paths and a lit, selected or focused glyph on its own, and joins the paths again only when the glyphs they hold or the view change', async () => {
+  it('draws the glyphs at rest as shared paths, a lit glyph as a copy on top and a selected or focused glyph on its own, and joins the paths again only on a selection, a focus or a view change, never on hover', async () => {
     const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
     const { props, show, move } = await mountCanvas({
       points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'c', position: [40, 20] }, { id: 'd', position: [0, 20] }],
@@ -398,12 +398,16 @@ describe('sketch canvas cursor rendering', () => {
     expect(pathJoins).not.toHaveBeenCalled();
     expect([...layer().querySelectorAll(':scope > path')].every((path, index) => path === paths[index] && path.getAttribute('d') === data[index])).toBe(true);
 
-    // Hovering a Parallel glyph lights both of its glyphs: they leave the shared paths, joined again once, and draw on their own with their rings.
-    const across = row('across');
+    // Hovering a Parallel glyph lights both of its glyphs: they keep their place in the shared paths, which are neither joined nor replaced,
+    // and draw lit copies with their rings after the paths and the rows, so on top, each over its own plate in the shared plate path.
+    const across = row('across'), unchanged = () => [...layer().querySelectorAll(':scope > path')].every((path, index) => path === paths[index] && path.getAttribute('d') === data[index]);
     await move(20, 10, across[0]);
-    expect(shared()).toBe(5); expect(lit()).toBe(2); expect(rings()).toBe(2); expect(pathJoins).toHaveBeenCalledTimes(2);
-    pathJoins.mockClear(); await move(20.2, 10.1, across[0]); await move(20.4, 10.2, across[0]); expect(pathJoins).not.toHaveBeenCalled();
-    await leave(across[0]); expect(shared()).toBe(7); expect(lit()).toBe(0); expect(rings()).toBe(0);
+    expect(shared()).toBe(7); expect(lit()).toBe(2); expect(rings()).toBe(2); expect(pathJoins).not.toHaveBeenCalled(); expect(unchanged()).toBe(true);
+    const copies = layer().querySelector('.cad-sketch-relation-glyphs-lit')!, plates = layer().querySelector(':scope > .cad-sketch-relation-glyph-plates')!.getAttribute('d')!;
+    expect([...layer().querySelectorAll(':scope > path'), ...rows()].every(item => item.compareDocumentPosition(copies) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    expect([...copies.querySelectorAll('.cad-sketch-relation-glyph-plates')].every(copy => plates.includes(copy.getAttribute('d')!))).toBe(true);
+    await move(20.2, 10.1, across[0]); await move(20.4, 10.2, across[0]); expect(pathJoins).not.toHaveBeenCalled();
+    await leave(across[0]); expect(shared()).toBe(7); expect(lit()).toBe(0); expect(rings()).toBe(0); expect(pathJoins).not.toHaveBeenCalled(); expect(unchanged()).toBe(true);
     // A dock row naming geometry alone lights no glyph, so it joins nothing.
     pathJoins.mockClear(); await act(async () => store.show('row', { kind: 'geometry', pointIds: ['a'], entityIds: ['bottom'], datums: [] }));
     expect(pathJoins).not.toHaveBeenCalled(); expect(shared()).toBe(7); await act(async () => store.hide('row'));
@@ -411,10 +415,10 @@ describe('sketch canvas cursor rendering', () => {
     // A selected glyph draws in its row, in the selected state, and leaves the shared paths.
     await show({ graphControls: { ...props().graphControls!, dimensionSelection: ['h1'] } });
     expect(own()).toEqual(['h1']); expect(ownIcons()).toEqual(['h1']); expect(row('h1')[0].querySelector('path')?.classList.contains('is-selected')).toBe(true); expect(shared()).toBe(6);
-    // A lit glyph that already draws on its own keeps one drawing and gains only its ring.
-    await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], datums: [], relationIds: ['h1', 'h2'] }));
-    expect(lit()).toBe(1); expect(rings()).toBe(2); expect(shared()).toBe(5); expect(own()).toEqual(['h1']);
-    await act(async () => store.hide('row')); expect(shared()).toBe(6);
+    // A lit glyph that already draws on its own keeps one drawing and gains only its ring; the other draws a copy and joins nothing.
+    pathJoins.mockClear(); await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], datums: [], relationIds: ['h1', 'h2'] }));
+    expect(lit()).toBe(1); expect(rings()).toBe(2); expect(shared()).toBe(6); expect(own()).toEqual(['h1']);
+    await act(async () => store.hide('row')); expect(shared()).toBe(6); expect(lit()).toBe(0); expect(pathJoins).not.toHaveBeenCalled();
     // A focused glyph draws in its row, so its focus ring shows, and returns to the shared paths once focus leaves it.
     await act(async () => row('v1')[0].focus()); expect(own()).toEqual(['h1', 'v1']); expect(shared()).toBe(5);
     await act(async () => row('v1')[0].blur()); expect(own()).toEqual(['h1']); expect(shared()).toBe(6);

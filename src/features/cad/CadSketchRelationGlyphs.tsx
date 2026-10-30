@@ -127,10 +127,6 @@ function litGlyphs(source: CadSketchHighlightSource | null, glyphs: readonly Sho
   const ids = cadSketchHighlightRelationIds(source);
   return ids.length ? glyphs.filter(glyph => glyph.relationIds.some(id => ids.includes(id))) : [];
 }
-const noSubscription = () => () => undefined, noSource = () => null;
-/** The hovered relation or dock row, or nothing without a store. */
-const useHighlightSource = (store: CadSketchHighlightStore | undefined) =>
-  useSyncExternalStore(store?.subscribe ?? noSubscription, store?.getSnapshot ?? noSource, store?.getSnapshot ?? noSource);
 
 /** How long the pointer rests on one target before a sketch above the glyph limit shows the glyphs of its relations. */
 export const CAD_SKETCH_RELATION_GLYPH_REVEAL_MS = 120;
@@ -205,8 +201,8 @@ function useRestingReveal(layer: SVGGElement | null, highlight: CadSketchHighlig
  * leaves it to the canvas too. The glyphs at rest paint as a few paths in one scaled group: their plates as one path per state and their
  * icons as one path per state, so every repaint of the sketch, as each hover move brings, paints a few items whatever the number of glyphs.
  * Each glyph keeps one row, which takes its pointer, focus and accessible name through a plate that paints nothing; a selected or focused
- * glyph draws in its row, a lit one with its ring, and both leave the paths, which are joined again only when the glyphs they hold change
- * or the view does. A drag renders no row: it hides the rows of the glyphs it moves and draws those glyphs as paths of their own beside the
+ * glyph leaves the paths and draws in its row, and a lit one keeps its place in them and draws a copy on top with its ring, so the paths
+ * are joined again only on a selection, a focus, a drag that moves glyphs or a view change, never on a pointer move. A drag renders no row: it hides the rows of the glyphs it moves and draws those glyphs as paths of their own beside the
  * layer, so a frame writes only those paths. Meanwhile the layer, unchanged, has a compositor layer of its own, so the sketch repainting
  * each frame rasters no other glyph again. Rows render again only when their own place, selection, focus or state changes; hover lights
  * up through the shared store. Above the limit, hover changes which glyphs are drawn only once the pointer rests, so moving across a large
@@ -341,7 +337,7 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
   return <>
     <g ref={attachLayer} className={`cad-sketch-relation-glyphs${interactive ? ' is-interactive' : ''}${dragging ? ' is-dragging' : ''}`} role={glyphs.length ? 'group' : undefined}
       aria-label={glyphs.length ? 'Sketch relations on the canvas' : undefined} pointerEvents={interactive ? undefined : 'none'} transform={scale}>
-      <RelationGlyphBatch store={highlight} glyphs={batched} />
+      <RelationGlyphBatch glyphs={batched} />
       <RelationGlyphRows glyphs={rows} hidden={hidden} focusedKey={focusedKey} focusable={focusable} actions={actions} elements={elements.current} />
       {highlight && glyphs.length > 0 && <RelationGlyphHighlight store={highlight} glyphs={glyphs} batched={batched} />}
     </g>
@@ -352,17 +348,12 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
 const drawGlyphPath = (path: GlyphPath) => <path key={path.key} className={`cad-sketch-relation-glyph-${path.part} is-${path.state}`} d={path.data} aria-hidden="true" />;
 
 /**
- * The glyphs at rest that the hovered relation does not light: their plates, then their icons, as one path per state. Each glyph's data
- * is placed once for each view, and the paths are joined again only when the glyphs they hold change, as a selection, a focus, a drag
- * moving them, a hover lighting them or a view change does; a pointer move that changes none of that renders nothing here.
+ * The glyphs at rest, lit or not: their plates, then their icons, as one path per state. Each glyph's data is placed once for each view,
+ * and the paths are joined again only when the glyphs they hold change, as a selection, a focus, a drag moving them or a view change does.
+ * A hover that lights glyphs draws their copies on top, so it renders nothing here.
  */
-const RelationGlyphBatch = memo(function RelationGlyphBatch({ store, glyphs }: { store?: CadSketchHighlightStore; glyphs: readonly Shown[] }) {
-  const litKeys = litGlyphs(useHighlightSource(store), glyphs).map(glyph => glyph.mountKey).join('\n');
-  const paths = useMemo(() => {
-    const lit = new Set(litKeys ? litKeys.split('\n') : []), resting = lit.size ? glyphs.filter(glyph => !lit.has(glyph.mountKey)) : glyphs;
-    return [...glyphPaths(resting, 'plates', false), ...glyphPaths(resting, 'icons', false)];
-  }, [glyphs, litKeys]);
-  return paths.map(drawGlyphPath);
+const RelationGlyphBatch = memo(function RelationGlyphBatch({ glyphs }: { glyphs: readonly Shown[] }) {
+  return [...glyphPaths(glyphs, 'plates', false), ...glyphPaths(glyphs, 'icons', false)].map(drawGlyphPath);
 });
 
 /** The glyph rows in layout order, which a drag leaves as they are apart from hiding the glyphs it moves. */
@@ -406,11 +397,11 @@ const RelationGlyphRow = memo(function RelationGlyphRow({ glyphKey, relationIds,
 });
 
 /**
- * Rings the glyphs of the hovered relation, or of a hovered dock row, and draws the lit glyphs that would otherwise draw in the shared
- * paths, as one of the two subscribers here below the limit with the paths, so hover renders no glyph rows.
+ * Rings the glyphs of the hovered relation, or of a hovered dock row, and draws a copy of each lit glyph that the shared paths draw on top
+ * of them, as the only subscriber here below the limit, so hover neither renders a glyph row nor joins the shared paths.
  */
 const RelationGlyphHighlight = memo(function RelationGlyphHighlight({ store, glyphs, batched }: { store: CadSketchHighlightStore; glyphs: readonly Shown[]; batched: readonly Shown[] }) {
-  const lit = litGlyphs(useHighlightSource(store), glyphs);
+  const lit = litGlyphs(useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot), glyphs);
   if (!lit.length) return null;
   const resting = new Set(batched), drawn = lit.filter(glyph => resting.has(glyph));
   return <>

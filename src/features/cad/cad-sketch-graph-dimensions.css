@@ -29,7 +29,8 @@
 .cad-sketch-highlight .cad-sketch-highlight-point { fill: var(--warning, #f0bf71); stroke: var(--foreground); stroke-width: 1px; }
 
 /* Relation glyphs: small quiet marks in the annotation colour, with a faint plate in the canvas colour so they read over the grid. The marks at
-   rest share one plate path and one icon path per state; a selected, focused or lit mark draws on its own. */
+   rest share one plate path and one icon path per state; a selected or focused mark draws on its own, and a lit one draws a copy over its
+   place in the shared paths. */
 /* Every drag frame repaints the sketch. While a drag runs the glyph layer has a compositor layer of its own, so those frames neither paint nor
    raster the glyphs again; at rest it shares the sketch's layer, so a zoom rasters the glyphs at the new scale. */
 .cad-sketch-relation-glyphs.is-dragging { will-change: transform; }
@@ -51,6 +52,8 @@
 }
 .cad-sketch-relation-glyph-icons.is-related { stroke: var(--foreground); }
 .cad-sketch-relation-glyph-icons.is-selected { stroke: var(--primary); }
+/* A lit copy's plate is opaque, so it covers its mark in the shared paths and reads as one mark under its ring. */
+.cad-sketch-relation-glyphs-lit .cad-sketch-relation-glyph-plates { fill-opacity: 1; }
 /* The relations of a hovered glyph or dock row ring every glyph they draw. */
 .cad-sketch-relation-glyph-highlight { fill: none; stroke: var(--warning, #f0bf71); }
 .cad-sketch-relation-glyph-highlight rect { stroke-width: 1.5px; }
