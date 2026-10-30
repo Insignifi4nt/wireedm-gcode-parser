@@ -174,7 +174,7 @@ describe('Trim between overlapping and touching edges', () => {
     }
   });
 
-  it('keeps a moved chamfer corner canonically ordered with each setback on its own line', () => {
+  it('keeps a moved chamfer corner canonically ordered with each setback, and where it is drawn, on its own line', () => {
     let next = 0;
     const createId = () => `m_${++next}`;
     const base = createCadFreshSketchGraph({ geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 }, construction: false, createId });
@@ -189,18 +189,22 @@ describe('Trim between overlapping and touching edges', () => {
     // Two fences across the corner line's interior leave a middle piece to trim.
     const across = (t: number) => [line.start.x + t * (line.end.x - line.start.x), line.start.y + t * (line.end.y - line.start.y)];
     const [x1, y1] = across(.3), [x2, y2] = across(.6), nx = -(line.end.y - line.start.y) / 4, ny = (line.end.x - line.start.x) / 4;
-    const graph = parseCadSketchGraph({ ...treated, points: [...treated.points, { id: 'f0', position: [x1 - nx, y1 - ny] }, { id: 'f1', position: [x1 + nx, y1 + ny] },
+    // One setback is placed and the other laid out automatically.
+    const annotation = { kind: 'setbacks' as const, sides: [{ offset: 3, along: .25 }, null] as const };
+    const graph = parseCadSketchGraph({ ...treated, relations: treated.relations.map(relation => relation.id === corner.id ? { ...relation, annotation } : relation), points: [...treated.points, { id: 'f0', position: [x1 - nx, y1 - ny] }, { id: 'f1', position: [x1 + nx, y1 + ny] },
       { id: 'g0', position: [x2 - nx, y2 - ny] }, { id: 'g1', position: [x2 + nx, y2 + ny] }], entities: [...treated.entities,
       { id: 'fence', kind: 'line', construction: true, startPointId: 'f0', endPointId: 'f1' }, { id: 'gate', kind: 'line', construction: true, startPointId: 'g0', endPointId: 'g1' }] });
     const preview = prepareCadSketchTrim({ graph, parameters: {}, entityId: source.id, parameter: .45 });
     if (preview.target.kind !== 'middle') throw new Error('Expected middle trim.');
     const setbacks = (relation: typeof corner, rename: (id: string) => string) => Object.fromEntries(relation.lineIds.map((id, index) => [rename(id), relation.values[index]]));
+    const placed = (relation: typeof corner, rename: (id: string) => string) => Object.fromEntries(relation.lineIds.map((id, index) => [rename(id), relation.annotation?.sides[index] ?? null]));
     for (const newEntityId of ['a', 'zz']) {
       const trimmed = trimCadSketchEntity({ graph, parameters: {}, trim: { ...preview.target, cutPointIds: ['c0', 'c1'], newEntityId, supportRelationId: 'support' } }).graph;
       const moved = trimmed.relations.find(relation => relation.id === corner.id);
       if (moved?.kind !== 'chamfer-corner') throw new Error('Expected moved chamfer.');
       expect(moved.lineIds[0] < moved.lineIds[1], newEntityId).toBe(true);
       expect(setbacks(moved, id => id)).toEqual(setbacks(corner, id => id === source.id ? newEntityId : id));
+      expect(placed(moved, id => id)).toEqual(placed({ ...corner, annotation }, id => id === source.id ? newEntityId : id));
       expect(checkCadSketchGraph(trimmed, {})).toEqual([]);
     }
   });

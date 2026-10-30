@@ -12,6 +12,7 @@ import { DRAG_GRID_CATCH_PIXELS, magnetSketchPoint, magnetSketchValue, type Sket
 import { cadArcSvgPath } from './cadSketchSvg';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadSketchGraphDimensions } from './CadSketchGraphDimensions';
+import { cadSketchRelationsEqualButPlacement } from '@/domain/cad/cadSketchPlacedDimensions';
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadContinuousPreview, type CadPrepareEdits } from './useCadPreparedPreview';
@@ -320,6 +321,18 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     else { cancel(); if (event.button === 0 && owned.pick) choose(owned.pick); }
   };
   const interactive = active && !locked && !submission.applying;
+  /**
+   * A released dimension drag stores its placement as one edit. It changes only where the dimension is drawn: a relation that differs
+   * from the accepted one in anything else, as a preview's might, is refused.
+   */
+  const moveDimension = (dimension: CadSketchDimensionPick, relation: CadSketchGraphRelation) => {
+    const accepted = sketch.graph?.relations.find(item => item.id === dimension.id);
+    if (!interactive || controls.geometryPick || drag.current || intent || !accepted || !cadSketchRelationsEqualButPlacement(accepted, relation)) return false;
+    callbacks.current.onPendingChange(true);
+    submission.submit(signal => controls.onEditMany([{ kind: 'set-sketch-relation', sketchId: sketch.id, relation }], signal), () => callbacks.current.onPendingChange(false),
+      error => { callbacks.current.onPendingChange(false); callbacks.current.onError(userFacingMessage(error, 'Unable to move this dimension.')); });
+    return true;
+  };
   const snapCandidate = intent?.kind === 'point' ? intent.snap : null;
   const solvedPoint = preview.kind === 'ready' && !preview.stale && intent?.kind === 'point' ? displayed.points.find(point => point.id === intent.point.id) : null;
   const attained = Boolean(snapCandidate && solvedPoint && Math.hypot(solvedPoint.position[0] - snapCandidate.point[0], solvedPoint.position[1] - snapCandidate.point[1])
@@ -489,7 +502,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore} hitLayer={dimensionHits} covered={coversDimensionLine}
       interactive={interactive && (!controls.geometryPick || controls.geometryPick.dimensionsInteractive === true) && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
       onSelect={(dimension, additive) => controls.onSelectDimension?.(dimension, additive)} onDelete={(dimension, key) => controls.onDeleteDimension?.(dimension, key)}
-      onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} />}
+      onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} onMove={controls.geometryPick ? undefined : moveDimension} />}
     {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${rejection !== null || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.kind === 'translate' ? intent.anchor[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}
       cy={(intent.kind === 'point' ? intent.point.position[1] + intent.translation[1] : intent.kind === 'translate' ? intent.anchor[1] + intent.translation[1] : intent.circle.center[1]) - center[1]} r={5 * scaleY}>

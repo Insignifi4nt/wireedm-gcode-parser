@@ -22,7 +22,8 @@ import {
 } from './cadSketchDimensionPlacement';
 import { createCadSketchPointerStore } from './CadSketchDimensionPreview';
 import type { Point2 } from '@/domain/path-intel/types';
-import { cadSketchDrawnDimensions, type CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
+import { cadSketchDimensionsPlacedAt, cadSketchDrawnDimensions, type CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
+import { withoutCadSketchDimensionAnnotation } from '@/domain/cad/cadSketchPlacedDimensions';
 import { CadSketchAreaRepairPanel } from './CadSketchAreaRepairPanel';
 import { CadSketchOffsetEditor, cadSketchOffsetSource } from './CadSketchOffsetEditor';
 import { CadSketchLinearPatternEditor, type CadSketchLinearPatternRequest, type CadSketchLinearPatternInteraction } from './CadSketchLinearPatternEditor';
@@ -1056,6 +1057,14 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         onSelect: () => { if (current()) configureGraphRelation(relation); } });
       if (reference) canvasMenuItems.push({ label: 'Make driving', disabled: !toDriving?.relation, help: drivingBlocked ?? toDriving?.reason ?? undefined, onSelect: () => { if (toDriving) convert(toDriving); } });
       else if (toReference) canvasMenuItems.push({ label: 'Make reference', disabled: !toReference.relation, help: toReference.reason ?? undefined, onSelect: () => convert(toReference) });
+      // Reset position lays the dimensions the menu acts on out automatically again, in one edit; Delete acts on the same set.
+      const placed = (graphDimensions.includes(relation.id) ? graphDimensions : [relation.id]).flatMap(id => {
+        const item = graph.relations.find(candidate => candidate.id === id);
+        return item && isCadSketchDimensionRelation(item) && 'annotation' in item && item.annotation ? [item] : [];
+      });
+      canvasMenuItems.push({ label: placed.length > 1 ? `Reset ${placed.length} positions` : 'Reset position', disabled: !placed.length,
+        help: placed.length ? undefined : 'This dimension is already laid out automatically.',
+        onSelect: () => { if (current() && placed.length) submitEdit(signal => props.onEditMany(placed.map(item => ({ kind: 'set-sketch-relation', sketchId: source.id, relation: withoutCadSketchDimensionAnnotation(item) })), signal), undefined, SKETCH_RELATION_FAILURE); } });
       canvasMenuItems.push({ kind: 'separator' }, { label: count > 1 ? `Delete ${count} dimensions` : 'Delete', danger: true, onSelect: () => { if (current()) deleteSketchDimensions(menu.pick); } });
     }
   } else if (currentCanvasMenu?.kind === 'sketch') {
@@ -1374,12 +1383,20 @@ export function CadWorkbench(props: CadWorkbenchProps) {
    * Places the dimension the picks preview at the pointer, or the form a menu names, driving or as a reference, in one edit through the
    * prepared edit path, so it is one undo step. A driving dimension that preparation rejects as over-defining is placed as its reference
    * instead when it has one; otherwise the rejection stands in its own words and the picks stay. A quantity that a dimension already measures
-   * selects that dimension. The edit checks the tool, document, version and sketch before each attempt, so a stale placement never applies.
+   * moves that dimension to the pointer and selects it. Each dimension is stored where the preview drew it, its line or arc through the
+   * pointer. The edit checks the tool, document, version and sketch before each attempt, so a stale placement never applies.
    */
   const placeDimension = (choice: { readonly form?: CadSketchDimensionForm; readonly reference?: boolean; readonly pointer?: Point2 | null } = {}) => {
     const session = dimensionToolOwner.current, picks = currentDimensionPicks, graph = sketch?.graph;
     if (!session || !picks || session.picks !== picks || !sketch || !graph || commandSubmission.applying) return;
-    const pointer = choice.pointer === undefined ? dimensionPointer.get() : choice.pointer;
+    const pointer = choice.pointer === undefined ? dimensionPointer.get() : choice.pointer, scale = dimensionPointer.scale(), parameters = document.parameters;
+    // Without a pointer, as from Enter, dimensions take their automatic layout.
+    const placedAt = <Relation extends CadSketchGraphRelation>(relations: readonly Relation[]) => pointer && scale ? cadSketchDimensionsPlacedAt(graph, parameters, relations, pointer, scale) : relations;
+    const sourceSketchId = sketch.id;
+    const current = () => {
+      const state = interactionState.current;
+      return dimensionToolOwner.current?.id === session.id && state.document === picks.document && state.version === picks.version && state.sketchId === sourceSketchId;
+    };
     const candidate = choice.form ? dimensionPlan.candidates.find(item => item.form === choice.form) ?? null : cadSketchDimensionCandidateAt(dimensionPlan, pointer);
     if (!candidate) return;
     // A blocked driving form whose quantity a reference still measures, such as a zero distance, places only as that reference.
@@ -1387,7 +1404,15 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     if (candidate.state === 'existing') {
       const picks = candidate.relationIds.flatMap(id => drawnDimensions ? cadSketchDimensionPick(drawnDimensions, id) ?? [] : []);
       const onDatum = picks.length ? null : cadSketchDimensionOnDatumReason(graph.relations.filter(relation => candidate.relationIds.includes(relation.id)));
-      settleDimension(session, { picks, selected: false }); props.onStatusMessage?.(onDatum ?? candidate.reason, 'info'); return;
+      const settle = () => { const owner = dimensionToolOwner.current; if (owner?.id !== session.id) return; settleDimension(owner, { picks, selected: false }); props.onStatusMessage?.(onDatum ?? candidate.reason, 'info'); };
+      // An existing dimension moves to the pointer as one edit of its placement alone, which solves nothing.
+      const existing = graph.relations.filter(relation => candidate.relationIds.includes(relation.id)), moved = placedAt(existing).filter((relation, index) => relation !== existing[index]);
+      if (!moved.length) { settle(); return; }
+      submitEdit(signal => {
+        if (signal.aborted || !current()) throw new Error('The sketch changed before the dimension was placed. Pick the geometry again.');
+        return applyCanvasEdits(moved.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation })), signal);
+      }, settle, 'The dimension could not be placed.');
+      return;
     }
     const resolved = candidate.state === 'available' ? cadSketchDimensionRelationsAt(candidate, pointer) : { relations: NO_SKETCH_RELATIONS, reason: null }, reference = candidate.reference ?? null;
     if (!resolved.relations) { setError(resolved.reason); return; }
@@ -1395,21 +1420,20 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     // A reused relation stays and is selected with what the placement adds, when it is a dimension: the placement adds only the implied relation that
     // keeps a reused dimension measuring the picks, or the other coordinate of a point from the origin.
     const reused = candidate.state === 'available' && candidate.reuses ? graph.relations.find(relation => relation.id === candidate.reuses) ?? null : null;
-    const sourceSketchId = sketch.id, driving = resolved.relations, plannedImplied = candidate.state === 'available' ? candidate.implied : null;
+    const driving = resolved.relations, plannedImplied = candidate.state === 'available' ? candidate.implied : null;
     const keepsReused = Boolean(reused) && driving.every(relation => relation.id === plannedImplied);
     let placed: readonly CadSketchGraphRelation[] = NO_SKETCH_RELATIONS, referenced = false, fellBack = false, added = false;
     submitEdit(async signal => {
-      let relations = choice.reference && reference ? [reference] : driving, implied = choice.reference ? null : plannedImplied;
+      let relations: readonly CadSketchGraphRelation[] = choice.reference && reference ? [reference] : driving, implied = choice.reference ? null : plannedImplied;
       referenced = Boolean(choice.reference);
       for (;;) {
-        const current = interactionState.current;
-        if (signal.aborted || dimensionToolOwner.current?.id !== session.id || current.document !== picks.document || current.version !== picks.version || current.sketchId !== sourceSketchId)
-          throw new Error('The sketch changed before the dimension was placed. Pick the geometry again.');
-        // A reused dimension whose implied relation the sketch already holds needs no edit.
-        if (!relations.length) { placed = reused ? [reused] : NO_SKETCH_RELATIONS; return; }
+        if (signal.aborted || !current()) throw new Error('The sketch changed before the dimension was placed. Pick the geometry again.');
+        // A reused dimension moves to the click as its preview drew it; one whose implied relation the sketch already holds needs no other edit.
+        const moved = reused && !referenced ? placedAt([reused]).filter(relation => relation !== reused) : NO_SKETCH_RELATIONS;
+        if (!relations.length && !moved.length) { placed = reused ? [reused] : NO_SKETCH_RELATIONS; return; }
         try {
-          await applyCanvasEdits(relations.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation })), signal);
-          placed = referenced || !reused ? relations : coordinatesInOrder([reused, ...relations]); added = true; return;
+          await applyCanvasEdits([...placedAt(relations), ...moved].map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation })), signal);
+          placed = referenced || !reused ? relations : coordinatesInOrder([reused, ...relations]); added = relations.length > 0; return;
         } catch (cause) {
           if (signal.aborted || !(cause instanceof CadSketchPreparationError)) throw cause;
           // A rejected preparation leaves no history, so the attempt that applies is the only undo step.

@@ -1,6 +1,7 @@
 import { placementPart, dPlacement } from '@/domain/cad/__tests__/cadSketchPlacementFixtures';
 import { describe, expect, it, vi } from 'vitest';
 import { Value } from '@sinclair/typebox/value';
+import type { TSchema } from '@sinclair/typebox';
 import { CadDocumentSchema, CadFeatureSchema, createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { applyCadEdits, CadEditSchema } from '@/domain/cad/cadOperations';
 import { CadToolEditDefinitions, CadToolEditEnvelope } from './cadToolSchemas';
@@ -55,6 +56,28 @@ describe('CAD tool argument boundary and discovery', () => {
     for (const invalid of [sideless, { ...relation, side: 'above' }])
       expect(await edit.execute({ expectedVersion: 'current', edits: [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: invalid }] })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
     expect(controller).not.toHaveBeenCalled();
+  });
+
+  it('takes a dimension placement only of its own kind and within bounds, and reads it back', async () => {
+    const session = new CadSession(parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Bar', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }], entities: [{ id: 'bar', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }], relations: [] } }] }));
+    const edits = vi.fn((edits: Parameters<CadSession['edit']>[0], version?: string) => session.edit(edits, version));
+    const controller = { session, edit: edits, isOpen: () => true, isBusy: () => false, buildState: 'idle', buildVersion: null, build: null } as unknown as CadController;
+    const tools = cadSiteTools(() => controller), edit = tools.find(tool => tool.name === 'cad_edit_document'), read = tools.find(tool => tool.name === 'cad_get_feature');
+    if (!edit || !read) throw new Error('Edit or read tool missing.');
+    const width = { id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: 10 };
+    const set = (relation: unknown) => edit.execute({ expectedVersion: session.getSnapshot().version, edits: [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }] });
+    // A placement of another kind, out of range or with other fields never reaches the controller.
+    for (const annotation of [{ kind: 'radial', angle: 0, distance: 5 }, { kind: 'linear', offset: 2e6, along: .5 }, { kind: 'linear', offset: 1, along: .5, side: 0 }, { kind: 'linear', offset: 1 }])
+      expect(await set({ ...width, annotation })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+    expect(edits).not.toHaveBeenCalled();
+    // A reference's placement must fit what it measures.
+    expect(await set({ id: 'measured', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'bar' }, annotation: { kind: 'radial', angle: 0, distance: 5 } }))
+      .toMatchObject({ ok: false, error: { code: 'invalid-sketch-annotation' } });
+    expect(session.getSnapshot().canUndo).toBe(false);
+    const annotation = { kind: 'linear', offset: -4, along: .25 };
+    expect(await set({ ...width, annotation })).toMatchObject({ ok: true });
+    expect(await read.execute({ expectedVersion: session.getSnapshot().version, featureId: 'sketch' })).toMatchObject({ ok: true, data: { feature: { graph: { relations: [{ ...width, annotation }] } } } });
   });
 
   it('discovers the document-level profile copy edit and rejects caller geometry before controller access', async () => {
@@ -275,13 +298,21 @@ describe('CAD tool argument boundary and discovery', () => {
   it('advertises the same complete sketch profile capacity that the shared authoring schema accepts', async () => {
     const tool = cadSiteTools(() => ({} as CadController)).find(entry => entry.name === 'cad_describe_features');
     if (!tool) throw new Error('Missing feature discovery');
-    const reply = await tool.execute({ kind: 'sketch' }) as { readonly ok: boolean; readonly data: { readonly schema: Parameters<typeof Value.Check>[0] } };
+    const reply = await tool.execute({ kind: 'sketch' }) as { readonly ok: boolean; readonly data: { readonly schema: Parameters<typeof Value.Check>[0] & { readonly $defs: Record<string, TSchema> } } };
     if (!reply.ok) throw new Error('Expected discovery');
-    const data = reply.data as { schema: Parameters<typeof Value.Check>[0] };
+    const data = reply.data, references = Object.values(data.schema.$defs);
     const sketch = { kind: 'sketch', id: 'many', name: 'Many contours', suppressed: false, plane: 'XY', offset: 0,
       profiles: Array.from({ length: 257 }, (_, index) => ({ id: `circle_${index}`, name: `Circle ${index}`, construction: false, geometry: { kind: 'circle', x: index * 4, y: 0, radius: 1 } })) };
-    expect(Value.Check(CadFeatureSchema, sketch)).toBe(true); expect(Value.Check(data.schema, sketch)).toBe(true);
-    expect(Value.Check(data.schema, { ...sketch, unknown: true })).toBe(false);
+    expect(Value.Check(CadFeatureSchema, sketch)).toBe(true); expect(Value.Check(data.schema, references, sketch)).toBe(true);
+    expect(Value.Check(data.schema, references, { ...sketch, unknown: true })).toBe(false);
+    // Repeated scalar, identifier and placement schemas are named once, so the definition stays within the reply budget.
+    expect(Object.keys(data.schema.$defs)).toEqual(['CadScalar', 'CadIdentifier', 'CadSketchLinearAnnotation', 'CadSketchAngleAnnotation', 'CadSketchRadialAnnotation', 'CadSketchSetbacksAnnotation']);
+    expect(JSON.stringify(reply).length).toBeLessThan(30 * 1024);
+    const graph = (annotation: unknown) => ({ ...sketch, profiles: [], graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }], entities: [],
+      relations: [{ id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: 10, annotation }] } });
+    expect(Value.Check(data.schema, references, graph({ kind: 'linear', offset: 5, along: 0.25 }))).toBe(true);
+    expect(Value.Check(data.schema, references, graph({ kind: 'radial', angle: 0, distance: 5 }))).toBe(false);
+    expect(Value.Check(data.schema, references, graph({ kind: 'linear', offset: 5e6, along: 0.25 }))).toBe(false);
   });
   it('offers a narrow feature-input build and tokened topology reads without granting editor workflow scope', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Invalid input reached controller'); });

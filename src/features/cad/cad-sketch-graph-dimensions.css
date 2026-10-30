@@ -5,6 +5,9 @@
 .cad-sketch-graph-dimension:not(.is-selected):is(.is-interactive:hover, .is-pointed, :has(.cad-sketch-graph-dimension-label:focus-visible)) { color: var(--foreground); }
 .cad-sketch-graph-dimension.is-selected { color: var(--primary); }
 .cad-sketch-graph-dimension.is-interactive { cursor: pointer; }
+/* A dragged dimension is drawn by its overlay until the drag ends. */
+.cad-sketch-graph-dimension.is-moving { opacity: 0; }
+.cad-sketch-graph-dimension.is-moving-preview { pointer-events: none; }
 .cad-sketch-graph-dimension-lines { fill: none; stroke: currentColor; }
 /* Only the label takes the pointer here; the lines and arrows take it beneath the sketch geometry. */
 .cad-sketch-graph-dimension-lines { pointer-events: none; }

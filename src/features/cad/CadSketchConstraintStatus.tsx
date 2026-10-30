@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { InfoTip } from '@/components/ui/info-tip';
 import { CadContextHelp } from './CadContextHelp';
 import type { CadSketchConstraintAnalysis, CadSketchConstraintInspection } from './cadSketchConstraintInspection';
+import { cadSketchFeaturesEqualButPlacement } from '@/domain/cad/cadSketchPlacedDimensions';
+import { Value } from '@sinclair/typebox/value';
 
 export type CadInspectSketchConstraints = (sketchId: string, expectedVersion?: string, signal?: AbortSignal) => Promise<CadSketchConstraintInspection>;
 /**
@@ -15,7 +17,12 @@ export interface CadSketchConstraintReport {
   readonly document: CadDocument; readonly version: string; readonly sketchId: string;
   readonly analysis: CadSketchConstraintAnalysis; readonly live: boolean;
 }
-const colourLegend = 'Green: fully defined by dimensions and relations. Blue grey: under defined, or not known yet. Red and purple: geometry held by conflicting or redundant relations, shown for a rejected preview or Apply and for a sketch that fails analysis.';
+/** Whether `to` differs from `from` only in where the dimensions of sketch `sketchId` are drawn. */
+function placementOnly(from: CadDocument, to: CadDocument, sketchId: string) {
+  return from !== to && (from.parameters === to.parameters || Value.Equal(from.parameters, to.parameters)) && from.features.length === to.features.length
+    && from.features.every((feature, index) => feature === to.features[index] || feature.id === sketchId && cadSketchFeaturesEqualButPlacement(feature, to.features[index]));
+}
+const colourLegend ='Green: fully defined by dimensions and relations. Blue grey: under defined, or not known yet. Red and purple: geometry held by conflicting or redundant relations, shown for a rejected preview or Apply and for a sketch that fails analysis.';
 
 /** Freedom and definition are observations of the accepted source, never saved state or a preview result. */
 export function CadSketchConstraintStatus({ document, sketch, version, inspect, enabled, onReport }: {
@@ -27,8 +34,18 @@ export function CadSketchConstraintStatus({ document, sketch, version, inspect, 
   const [result, setResult] = useState<{ document: CadDocument; version: string; sketchId: string; inspection: CadSketchConstraintInspection } | null>(null);
   const [failure, setFailure] = useState<{ document: CadDocument; version: string; sketchId: string; message: string } | null>(null);
   const available = Boolean(inspect), hasGraph = Boolean(sketch.graph);
+  const latest = useRef(result); latest.current = result;
+  // The version the analysis last ran for.
+  const analysed = useRef<string | null>(null);
   useEffect(() => {
     if (!enabled || !available || !hasGraph) return;
+    const last = latest.current, previous = analysed.current; analysed.current = version;
+    // Where dimensions are drawn is display data, so the version after an analysed one that changes only that keeps its analysis.
+    // Any other version, including the same document restored by undo after other edits, is analysed again.
+    if (last && last.version === previous && last.version !== version && last.sketchId === sketch.id && placementOnly(last.document, document, sketch.id)) {
+      setResult({ document, version, sketchId: sketch.id, inspection: last.inspection });
+      return;
+    }
     const controller = new AbortController();
     void callback.current?.(sketch.id, version, controller.signal).then(inspection => {
       if (!controller.signal.aborted) { setResult({ document, version, sketchId: sketch.id, inspection }); setFailure(null); }

@@ -645,8 +645,11 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
       if ((relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') && relation.lineIds.includes(source.id) && cornerAt(graph, relation, '', end)) {
         const lineIds = [moved(relation.lineIds[0]), moved(relation.lineIds[1])], swap = lineIds[0] > lineIds[1];
         const ordered: [string, string] = swap ? [lineIds[1], lineIds[0]] : [lineIds[0], lineIds[1]];
+        // A chamfer's setbacks, and where each is drawn, stay with their lines.
+        const sides = relation.kind === 'chamfer-corner' && swap ? relation.annotation?.sides : undefined;
         return relation.kind === 'fillet-corner' ? { ...relation, lineIds: ordered }
-          : { ...relation, lineIds: ordered, values: swap ? [relation.values[1], relation.values[0]] : relation.values };
+          : { ...relation, lineIds: ordered, values: swap ? [relation.values[1], relation.values[0]] : relation.values,
+            ...(sides ? { annotation: { kind: 'setbacks' as const, sides: [sides[1], sides[0]] as const } } : {}) };
       }
       if (relation.kind === 'line-angle') return { ...relation, rays: [relation.rays[0], relation.rays[1]].map(ray =>
         ray.lineId === source.id && ray.towardPointId === end ? { ...ray, lineId: trim.newEntityId } : ray) as [typeof relation.rays[0], typeof relation.rays[1]] };

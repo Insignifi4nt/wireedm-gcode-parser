@@ -181,9 +181,9 @@ const NO_REFERENCE_PAIR ='A horizontal or vertical distance has no reference for
 const NO_REFERENCE_ANGLE = 'An angle has no reference form yet.';
 const NO_REFERENCE_DATUM = CAD_SKETCH_NO_REFERENCE_DATUM;
 /** Why placing selects a dimension that already measures the picks instead of adding one. */
-export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension.';
+export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension, and a click also moves it there.';
 const EXISTING = CAD_SKETCH_DIMENSION_EXISTING_REASON;
-const REUSED = 'This is already dimensioned. Placing selects that dimension and adds the relation that keeps it measuring these picks.';
+const REUSED = 'This is already dimensioned. Placing selects that dimension and adds the relation that keeps it measuring these picks; a click also moves it there.';
 /**
  * What placing says when none of the relations it placed or reused is a dimension: each is a coordinate held at a plain 0, the relation that
  * keeps a point on an axis, or at the origin with both. Null when one of them is a dimension, or when they are not all such coordinates.
@@ -276,7 +276,8 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
     const axisCandidate = (form: 'horizontal' | 'vertical'): CadSketchDimensionCandidate => {
       const axis = form === 'horizontal' ? 'x' : 'y', label = pairLabel(form, lineId !== null), delta = axis === 'x' ? b.x - a.x : b.y - a.y;
       if (!(Math.abs(delta) > tolerance)) return { form, label, state: 'blocked', reason: form === 'horizontal' ? 'These points are upright, so they have no horizontal distance.' : 'These points are level, so they have no vertical distance.' };
-      const preview = { kind: 'pair', form, points: [a, b], value: Math.abs(delta) } as const, existing = cadSketchDistanceForPair(graph, pointIds, axis);
+      // The preview runs between the points in the order the distance takes them, so placing keeps its drawing.
+      const preview = { kind: 'pair', form, points: (delta >= 0 ? [a, b] : [b, a]) as readonly [Point2, Point2], value: Math.abs(delta) } as const, existing = cadSketchDistanceForPair(graph, pointIds, axis);
       if (existing) return { form, label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview };
       // The distance runs from the left or lower point, so its value reads positive.
       const ordered: readonly [string, string] = delta >= 0 ? pointIds : [pointIds[1], pointIds[0]];

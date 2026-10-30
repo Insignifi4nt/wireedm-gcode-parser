@@ -57,3 +57,32 @@ it('names the definition state, keeps the last result while the next version is 
   await render(true, '4'); await act(async () => failures[3](new Error('Solver offline.')));
   expect(status()).toBe('Freedom unavailable'); expect(reports.at(-1)).toBeNull();
 });
+
+it('keeps the analysis for the next version that only moves a dimension, and asks again after any other change', async () => {
+  const document = (value: number, annotation?: object, parameters: Record<string, number> = {}) => parseCadDocument({ ...createCadDocument('Bar', 'status-bar'), schemaVersion: 2, parameters,
+    features: [{ id: 'sketch', kind: 'sketch', name: 'Bar', plane: 'XY', offset: 0, suppressed: false, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [value, 0] }], entities: [{ id: 'bar', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }],
+      relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value, ...annotation ? { annotation } : {} }] } }] });
+  const versions: (string | undefined)[] = [], answers: ((degreesOfFreedom: number) => void)[] = [], reports: (string | null)[] = [];
+  const inspect = (sketchId: string, version?: string) => new Promise<CadSketchConstraintInspection>(resolve => { versions.push(version); answers.push(degreesOfFreedom => resolve({
+    sketchId, pointCount: 2, entityCount: 1, relationCount: 1, legacyProfileCount: 0, legacyDimensionCount: 0, degreesOfFreedomScope: 'graph', graph: null, parameters: {},
+    analysis: { kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } })); });
+  const render = (source: ReturnType<typeof document>, version: string) => act(async () => {
+    const sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Expected sketch.');
+    root.render(<CadSketchConstraintStatus document={source} sketch={sketch} version={version} inspect={inspect} enabled
+      onReport={report => { reports.push(report && `${report.version} ${report.analysis.diagnostics.degreesOfFreedom}`); }} />);
+  });
+  const placed = { kind: 'linear', offset: 3, along: 0.5 };
+  await render(document(10), '1'); await act(async () => answers[0](3));
+  // Moving the dimension, and undoing that, change nothing the analysis reads.
+  await render(document(10, placed), '2');
+  expect(versions).toEqual(['1']); expect(status()).toBe('Under defined · 3 DOF'); expect(reports.at(-1)).toBe('2 3');
+  await render(document(10), '3');
+  expect(versions).toEqual(['1']); expect(reports.at(-1)).toBe('3 3');
+  // A new value is analysed, and so is a move made before that answer arrives, which follows no analysed version.
+  await render(document(12, placed), '4'); expect(versions).toEqual(['1', '4']); expect(status()).toBe('Checking freedom…');
+  await render(document(12, { ...placed, offset: 5 }), '5'); expect(versions).toEqual(['1', '4', '5']);
+  await act(async () => answers[2](1)); expect(status()).toBe('Under defined · 1 DOF');
+  // A parameter change with the move is analysed too.
+  await render(document(12, placed, { spare: 1 }), '6'); expect(versions).toEqual(['1', '4', '5', '6']);
+});

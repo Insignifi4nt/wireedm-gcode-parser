@@ -9,6 +9,7 @@ import { prepareCadSolidImport } from './cadKernelImport';
 import { importCadDxfSketch, parseCadDxfImportInput } from '../../../domain/cad/cadDxfImport';
 import { importCadDxfCurve, parseCadDxfCurveImportInput } from '../../../domain/cad/cadCurveDxf';
 import { inspectCadParameters } from '../../../domain/cad/cadParameters';
+import { cadSketchGraphWithoutPlacement } from '../../../domain/cad/cadSketchPlacedDimensions';
 
 /** Inspections never initialize WASM or reconstruct a missing/stale native snapshot. */
 export function createCadKernelRuntime(initialize: () => Promise<void>) {
@@ -39,11 +40,13 @@ export function createCadKernelRuntime(initialize: () => Promise<void>) {
           return { id: request.id, kind: 'topology-resolved', result: cached.model.resolveTopologyPicks(selection, document.parameters) };
         }
         if (document.features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature))) await initialize();
-        // Document/profile labels, parameter organization and dimension intent
-        // have no native effect. Feature names remain part of the key for mesh
-        // and STEP labels; validation and inspection use the complete document.
+        // Document/profile labels, parameter organization, dimension intent and
+        // where dimensions are drawn have no native effect. Feature names remain
+        // part of the key for mesh and STEP labels; validation and inspection use
+        // the complete document.
         const features = document.features.map(feature => feature.kind === 'sketch' ? {
           ...feature, profiles: feature.profiles.map(({ name: _name, constraints: _constraints, ...profile }) => profile),
+          ...(feature.graph ? { graph: cadSketchGraphWithoutPlacement(feature.graph) } : {}),
         } : feature);
         // Reuse the domain's influence policy: a disabled generic recipe field
         // still drives geometry; only explicitly dormant inputs are inactive.

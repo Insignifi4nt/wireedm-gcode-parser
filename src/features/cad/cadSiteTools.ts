@@ -26,11 +26,11 @@ import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
 import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
 import { CadSketchTangentOwnershipError } from '@/domain/cad/cadSketchTangentRelations';
 import { CadSketchPlacementDependencyError } from '@/domain/cad/cadSketchPlacement';
-import { CadSketchGraphSchema } from '@/domain/cad/cadSketchGraph';
+import { CadSketchDimensionAnnotationSchema, CadSketchGraphSchema } from '@/domain/cad/cadSketchGraph';
 import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile, createCadOpenCurveSegments } from '@/domain/cad/cadPathConstruction';
 import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import { resolveCadCurve } from '@/domain/cad/cadCurve';
-import { CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
+import { CadIdentifierSchema, CadScalarSchema } from '@/domain/cad/cadPrimitives';
 import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from '@/domain/cad/cadLoft';
 import { CadFeatureInputRequestSchema } from './cadFeatureInput';
 
@@ -65,6 +65,28 @@ const regionReferenceDiscovery = Type.Object({ ...regionReferenceCommon, proposa
 }, { additionalProperties: false, description: 'Exactly one of boundaryProfileId or cellIds.' });
 const pathConstructionSchema = object({ start: CadConstructionPointSchema,
   steps: Type.Array(CadPathConstructionStepSchema, { minItems: 1, maxItems: 128 }) });
+/**
+ * `schema` with each copy of a shared schema replaced by a `$ref` to one definition under `$defs`, which carries it once with its
+ * name as `$id`. A sketch definition repeats its scalar, identifier and dimension placement schemas dozens of times; naming them keeps
+ * it within the reply budget. Validate it with `$defs` as references.
+ */
+function withSharedDefinitions(schema: TSchema, shared: Readonly<Record<string, TSchema>>): TSchema {
+  const names = new Map(Object.entries(shared).map(([name, definition]) => [JSON.stringify(definition), name]));
+  const visit = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(visit);
+    if (!node || typeof node !== 'object') return node;
+    const name = names.get(JSON.stringify(node));
+    if (name) return Type.Ref(name);
+    const copy: Record<string | symbol, unknown> = {};
+    for (const key of Reflect.ownKeys(node)) copy[key] = visit((node as Record<string | symbol, unknown>)[key]);
+    return copy;
+  };
+  return { ...visit(schema) as TSchema, $defs: Object.fromEntries(Object.entries(shared).map(([name, definition]) => [name, { ...definition, $id: name }])) };
+}
+const sketchSharedDefinitions: Readonly<Record<string, TSchema>> = {
+  CadScalar: CadScalarSchema, CadIdentifier: CadIdentifierSchema,
+  ...Object.fromEntries(CadSketchDimensionAnnotationSchema.anyOf.map(variant => [`CadSketch${variant.properties.kind.const[0].toUpperCase()}${variant.properties.kind.const.slice(1)}Annotation`, variant])),
+};
 const documentText = new WeakMap<CadDocument, string>();
 function diagnosticSummary(diagnostics: readonly CadDiagnostic[]) {
   const summaries = diagnostics.slice(0, 10).map(summarizeDiagnostic);
@@ -281,7 +303,7 @@ export function cadSiteTools(getController: () => CadController) {
         const authoringSchema = Type.Object({ ...schema.properties,
           profiles: Type.Array(Type.Omit(schema.properties.profiles.items, ['role']))
         }, { additionalProperties: false });
-        return { kind, description: featureDescriptions[kind], schema: authoringSchema };
+        return { kind, description: featureDescriptions[kind], schema: withSharedDefinitions(authoringSchema, sketchSharedDefinitions) };
       }
       return { kind, description: featureDescriptions[kind], schema };
     }),

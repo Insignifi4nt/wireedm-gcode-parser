@@ -11,6 +11,7 @@ import { assertCadSketchExternalReferences, refreshCadSketchExternalReferences }
 import { cadSketchSolutionMatchesInput } from './sketch-solver/cadSketchSolverProtocol';
 import { cadSketchPatternSnapshotNeedsExact, cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { checkCadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { cadSketchFeaturesEqualButPlacement, cadSketchRelationsEqualButPlacement, withoutCadSketchDimensionAnnotation } from '@/domain/cad/cadSketchPlacedDimensions';
 
 /** Exact geometry edits whose re-solved prefix must stay unchanged, with the error shown when constraints move it. */
 const geometryIntentErrors = {
@@ -36,12 +37,17 @@ function changesReferenceDimensions(document: CadDocument, edit: CadEdit): boole
   const sketchId = edit.kind === 'update-feature' ? edit.feature.id : 'sketchId' in edit ? edit.sketchId : null;
   const sketch = document.features.find(feature => feature.id === sketchId);
   const references = sketch?.kind === 'sketch' ? sketch.graph?.relations.filter(relation => relation.kind === 'reference-dimension') ?? [] : [];
-  if (edit.kind === 'set-sketch-relation') return edit.relation.kind === 'reference-dimension' || references.some(relation => relation.id === edit.relation.id);
+  if (edit.kind === 'set-sketch-relation') {
+    const existing = references.find(relation => relation.id === edit.relation.id);
+    // Moving a reference dimension changes only where it is drawn, which the plain path keeps without solving.
+    return existing ? !cadSketchRelationsEqualButPlacement(existing, edit.relation) : edit.relation.kind === 'reference-dimension';
+  }
   if (edit.kind === 'remove-sketch-relation') return references.some(relation => relation.id === edit.relationId);
   if (edit.kind === 'delete-sketch-elements') return references.some(relation => edit.relationIds.includes(relation.id));
   return edit.kind === 'update-feature' && edit.feature.kind === 'sketch'
-    && !Value.Equal(references, edit.feature.graph?.relations.filter(relation => relation.kind === 'reference-dimension') ?? []);
+    && !Value.Equal(references.map(withoutCadSketchDimensionAnnotation), edit.feature.graph?.relations.filter(relation => relation.kind === 'reference-dimension').map(withoutCadSketchDimensionAnnotation) ?? []);
 }
+
 
 /** Comparison only: accepted and candidate records keep every authored descriptor. */
 function withoutReferenceDimensions(document: CadDocument): CadDocument {
@@ -69,12 +75,12 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       const refreshed = refreshCadSketchExternalReferences({ sketch: feature, parameters: target.parameters, previous });
       if (!refreshed.graph) throw new CadError('missing-sketch-graph', 'The prepared sketch graph is unavailable.');
       // An unedited sketch whose refreshed references still match its accepted solution keeps it:
-      // the same graph and parameters with every relation still satisfied. Redundancy and freedom are
+      // the same graph, wherever its dimensions are drawn, and parameters with every relation still satisfied. Redundancy and freedom are
       // only diagnosed for sketches that are solved. The dragged sketch and every sketch of an
       // exact-prefix certificate always solve. A parse that found the sketch's geometry valid under the
       // same values already checked its relations.
       const acceptedSketch = acceptedSketches.get(feature.id);
-      if (!exact && drag?.sketchId !== feature.id && sameParameters && (refreshed === acceptedSketch || Value.Equal(refreshed, acceptedSketch))
+      if (!exact && drag?.sketchId !== feature.id && sameParameters && (refreshed === acceptedSketch || Value.Equal(refreshed, acceptedSketch) || cadSketchFeaturesEqualButPlacement(refreshed, acceptedSketch))
         && (hasValidCadSketchGeometry(refreshed, target.parameters) || !checkCadSketchGraph(refreshed.graph, target.parameters).length)) {
         features.push(refreshed); previous.set(feature.id, refreshed); continue;
       }

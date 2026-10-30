@@ -2417,7 +2417,7 @@ describe('CAD sketch interaction', () => {
       expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'angle', 'size', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
       // The menu's Dimension on a dimensioned circle picks it; placing selects its existing dimension, and Enter edits that one.
       await geometryMenu('hole', 'Dimension'); await focusedKey('Enter');
-      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
       expect(geometry()).toEqual([]); expect(selectedDimensions()).toEqual(['size']); expect(relations()).toHaveLength(5);
       await focusedKey('Enter'); expect(field('Diameter').value).toBe('8');
       expect(geometry()).toEqual([]); expect(selectedDimensions()).toEqual(['size']);
@@ -2643,50 +2643,53 @@ describe('CAD sketch interaction', () => {
       expect(relations()).toBe(before); expect(pressed()).toEqual(['x-axis']); expect(selectedDimensions()).toEqual([]);
     });
 
-    describe('a dimension line or arrow, which takes the pointer only where no geometry or datum lies', () => {
-      const pointerSetup = () => {
-        const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
-        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
-        let captured = false;
-        Object.assign(canvas, { setPointerCapture: () => { captured = true; }, hasPointerCapture: () => captured, releasePointerCapture: () => { captured = false; } });
-        const view = viewport().getState().view; if (!view || view.mode === 'solid') throw new Error('Sketch frame missing.');
-        const viewWidth = Number(canvas.getAttribute('viewBox')?.split(' ')[2]);
-        /** The client position of a point drawn in the graph layer, whose coordinates are relative to the view centre. */
-        const at = (x: number, y: number) => ({ clientX: 300 + x / viewWidth * 600, clientY: 200 - y / view.heightSpanMm * 400 });
-        const hit = (id: string) => {
-          const found = container.querySelector<SVGGElement>(`[data-cad-sketch-dimension-hit="${id}"]`); if (!found) throw new Error(`Dimension line ${id} missing.`);
-          const line = found.querySelector('line')!, value = (name: string) => Number(line.getAttribute(name));
-          return { element: line, start: at(value('x1'), value('y1')), end: at(value('x2'), value('y2')),
-            along: (share: number) => at(value('x1') + (value('x2') - value('x1')) * share, value('y1') + (value('y2') - value('y1')) * share) };
-        };
-        const arrowTip = (id: string) => {
-          const [x, y] = container.querySelector(`[data-cad-sketch-dimension="${id}"] .cad-sketch-graph-dimension-arrow`)!.getAttribute('points')!.split(' ')[0].split(',').map(Number);
-          return at(x, y);
-        };
-        const send = (target: Element, type: string, position: { clientX: number; clientY: number }, init: MouseEventInit = {}) => act(async () => {
-          const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...position, ...init });
-          Object.defineProperties(event, { pointerId: { value: 7 }, isPrimary: { value: true } }); target.dispatchEvent(event);
-        });
-        // Each press goes to the dimension's line as drawn now. A press the canvas takes captures the pointer, and a box it begins
-        // makes the dimensions inert and draws their lines again, so its release and click reach the canvas.
-        const released = (target: Element) => target.isConnected ? target : canvas;
-        const clickAt = async (id: string, position: { clientX: number; clientY: number }, init: MouseEventInit = {}, detail = 1) => {
-          const target = hit(id).element;
-          await send(target, 'pointerdown', position, { button: 0, buttons: 1, ...init }); await send(released(target), 'pointerup', position, { button: 0, buttons: 0, ...init });
-          await send(released(target), 'click', position, { button: 0, detail, ...init });
-        };
-        const doubleClickAt = async (id: string, position: { clientX: number; clientY: number }) => {
-          await clickAt(id, position); await clickAt(id, position, {}, 2); await send(released(hit(id).element), 'dblclick', position, { button: 0, detail: 2 });
-        };
-        const rightClickAt = async (id: string, position: { clientX: number; clientY: number }) => {
-          await send(hit(id).element, 'pointerdown', position, { button: 2, buttons: 2 }); await send(canvas, 'pointerup', position, { button: 2, buttons: 0 });
-        };
-        const datumPressed = () => ['origin', 'x-axis', 'y-axis'].filter(name => container.querySelector(`[data-cad-sketch-datum="${name}"]`)?.getAttribute('aria-pressed') === 'true');
-        const datumHovered = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
-        const menuItems = () => [...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim());
-        return { canvas, hit, arrowTip, send, clickAt, doubleClickAt, rightClickAt, datumPressed, datumHovered, menuItems };
+    const pointerSetup = () => {
+      const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+      vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+      let captured = false;
+      Object.assign(canvas, { setPointerCapture: () => { captured = true; }, hasPointerCapture: () => captured, releasePointerCapture: () => { captured = false; } });
+      const view = viewport().getState().view; if (!view || view.mode === 'solid') throw new Error('Sketch frame missing.');
+      const viewWidth = Number(canvas.getAttribute('viewBox')?.split(' ')[2]);
+      /** The client position of a point drawn in the graph layer, whose coordinates are relative to the view centre. */
+      const at = (x: number, y: number) => ({ clientX: 300 + x / viewWidth * 600, clientY: 200 - y / view.heightSpanMm * 400 });
+      /** The client position of a sketch position, and the sketch position of a client one. */
+      const sketchAt = (x: number, y: number) => at(x - view.centerMm[0], y - view.centerMm[1]);
+      const sketchOf = (position: { clientX: number; clientY: number }) => ({ x: view.centerMm[0] + (position.clientX - 300) / 600 * viewWidth, y: view.centerMm[1] - (position.clientY - 200) / 400 * view.heightSpanMm });
+      const hit = (id: string) => {
+        const found = container.querySelector<SVGGElement>(`[data-cad-sketch-dimension-hit="${id}"]`); if (!found) throw new Error(`Dimension line ${id} missing.`);
+        const line = found.querySelector('line')!, value = (name: string) => Number(line.getAttribute(name));
+        return { element: line, start: at(value('x1'), value('y1')), end: at(value('x2'), value('y2')),
+          along: (share: number) => at(value('x1') + (value('x2') - value('x1')) * share, value('y1') + (value('y2') - value('y1')) * share) };
       };
+      const arrowTip = (id: string) => {
+        const [x, y] = container.querySelector(`[data-cad-sketch-dimension="${id}"] .cad-sketch-graph-dimension-arrow`)!.getAttribute('points')!.split(' ')[0].split(',').map(Number);
+        return at(x, y);
+      };
+      const send = (target: Element, type: string, position: { clientX: number; clientY: number }, init: MouseEventInit = {}) => act(async () => {
+        const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...position, ...init });
+        Object.defineProperties(event, { pointerId: { value: 7 }, isPrimary: { value: true } }); target.dispatchEvent(event);
+      });
+      // Each press goes to the dimension's line as drawn now. A press the canvas takes captures the pointer, and a box it begins
+      // makes the dimensions inert and draws their lines again, so its release and click reach the canvas.
+      const released = (target: Element) => target.isConnected ? target : canvas;
+      const clickAt = async (id: string, position: { clientX: number; clientY: number }, init: MouseEventInit = {}, detail = 1) => {
+        const target = hit(id).element;
+        await send(target, 'pointerdown', position, { button: 0, buttons: 1, ...init }); await send(released(target), 'pointerup', position, { button: 0, buttons: 0, ...init });
+        await send(released(target), 'click', position, { button: 0, detail, ...init });
+      };
+      const doubleClickAt = async (id: string, position: { clientX: number; clientY: number }) => {
+        await clickAt(id, position); await clickAt(id, position, {}, 2); await send(released(hit(id).element), 'dblclick', position, { button: 0, detail: 2 });
+      };
+      const rightClickAt = async (id: string, position: { clientX: number; clientY: number }) => {
+        await send(hit(id).element, 'pointerdown', position, { button: 2, buttons: 2 }); await send(canvas, 'pointerup', position, { button: 2, buttons: 0 });
+      };
+      const datumPressed = () => ['origin', 'x-axis', 'y-axis'].filter(name => container.querySelector(`[data-cad-sketch-datum="${name}"]`)?.getAttribute('aria-pressed') === 'true');
+      const datumHovered = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
+      const menuItems = () => [...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim());
+      return { canvas, hit, arrowTip, send, clickAt, doubleClickAt, rightClickAt, datumPressed, datumHovered, menuItems, sketchAt, sketchOf };
+    };
 
+    describe('a dimension line or arrow, which takes the pointer only where no geometry or datum lies', () => {
       it('lies beneath every sketch point and edge, while the labels lie above them', async () => {
         await open();
         const layer = container.querySelector('.cad-sketch-graph-dimension-hits'), rows = [...container.querySelectorAll('[data-cad-sketch-point], [data-cad-sketch-entity]')];
@@ -2740,6 +2743,103 @@ describe('CAD sketch interaction', () => {
       });
     });
 
+    describe('placed where they are clicked, and moved by their labels and lines', () => {
+      type Linear = { readonly kind: 'linear'; readonly offset: number; readonly along: number };
+      const relation = (id: string) => { const found = relations().find(item => item.id === id); if (!found) throw new Error(`Relation ${id} missing.`); return found; };
+      const annotationOf = (id: string) => { const found = relation(id); return 'annotation' in found ? found.annotation : undefined; };
+      const expectLinear = (id: string, offset: number, along: number) => {
+        const annotation = annotationOf(id) as Linear | undefined;
+        expect(annotation?.kind).toBe('linear'); expect(annotation?.offset).toBeCloseTo(offset, 6); expect(annotation?.along).toBeCloseTo(along, 6);
+      };
+      /** Sketch millimetres per screen pixel, as the labels are drawn. */
+      const scale = () => Number(label('length').getAttribute('transform')?.match(/scale\(([^ ]+) /)?.[1]);
+      /** A press, moves by the client offsets given and a release, each on the element given. */
+      const dragBy = async (send: ReturnType<typeof pointerSetup>['send'], target: () => Element, from: { clientX: number; clientY: number }, ...steps: readonly (readonly [number, number])[]) => {
+        await send(target(), 'pointerdown', from, { button: 0, buttons: 1 });
+        let at = from;
+        for (const [dx, dy] of steps) { at = { clientX: from.clientX + dx, clientY: from.clientY + dy }; await send(target(), 'pointermove', at, { buttons: 1 }); }
+        await send(target(), 'pointerup', at, { button: 0, buttons: 0 }); await send(target(), 'click', at, { button: 0, detail: 1 });
+      };
+      const moving = () => container.querySelector('[data-cad-sketch-dimension-moving]');
+
+      it('places a dimension where it is clicked, and moves one the picks already measure there, each as one undo step', async () => {
+        await open(); await replace(current => current.filter(item => item.id !== 'measured'));
+        const { canvas, hit, send, sketchAt } = pointerSetup(), before = relations();
+        const place = async (entity: string, x: number, y: number) => {
+          await geometryMenu(entity, 'Dimension');
+          await send(canvas, 'pointermove', sketchAt(x, y), { buttons: 0 });
+          await send(canvas, 'pointerdown', sketchAt(x, y), { button: 0, buttons: 1 }); await send(canvas, 'pointerup', sketchAt(x, y), { button: 0, buttons: 0 });
+          await canvasKey('Escape');
+        };
+        // The side runs up from b, so its dimension line 12 mm to the right is 12 mm to the right of the side, its text centred on the click.
+        await place('side', 52, 15);
+        const added = relations().filter(item => !before.some(old => old.id === item.id));
+        expect(added).toMatchObject([{ kind: 'distance', pointIds: ['b', 'c'], value: 30 }]); expectLinear(added[0].id, -12, .5);
+        const drawn = hit(added[0].id).along(.5), click = sketchAt(52, 15);
+        expect(drawn.clientX).toBeCloseTo(click.clientX, 6); expect(drawn.clientY).toBeCloseTo(click.clientY, 6);
+        // The base already has its length, which moves to the click instead.
+        const placed = relations();
+        await place('base', 20, -9);
+        expect(relations().map(item => item.id)).toEqual(placed.map(item => item.id)); expectLinear('length', -9, .5);
+        expect(relation('length')).toMatchObject({ kind: 'distance', pointIds: ['a', 'b'], value: 40 });
+        await act(async () => currentSession.undo()); expect(relations()).toEqual(placed);
+        await act(async () => currentSession.undo()); expect(relations()).toEqual(before);
+        await act(async () => currentSession.redo()); await act(async () => currentSession.redo()); expectLinear('length', -9, .5); expectLinear(added[0].id, -12, .5);
+      });
+
+      it('drags a label along and away from its line, and the line only away from its geometry, each as one undo step selecting it', async () => {
+        const source = await open(); const { hit, send, sketchOf } = pointerSetup(), mm = scale(), original = relation('length');
+        // The length's line runs level with the base, so its offset is the line's height.
+        const height = sketchOf(hit('length').start).y;
+        await dragBy(send, () => hit('length').element, hit('length').along(.3), [0, -10]);
+        expectLinear('length', height + 10 * mm, .5); expect(selectedDimensions()).toEqual(['length']);
+        const lifted = relations();
+        await dragBy(send, () => label('length'), { clientX: 200, clientY: 200 }, [10, 5], [30, 20]);
+        expectLinear('length', height + 10 * mm - 20 * mm, .5 + 30 * mm / 40); expect(selectedDimensions()).toEqual(['length']);
+        // Text dragged beyond an extension line takes the line out to it.
+        await dragBy(send, () => label('length'), { clientX: 200, clientY: 200 }, [-(1 + 30 * mm / 40) * 40 / mm, 0]);
+        expect((annotationOf('length') as Linear).along).toBeLessThan(0);
+        const line = hit('length'); expect(Math.min(sketchOf(line.start).x, sketchOf(line.end).x)).toBeLessThan(-5);
+        await act(async () => currentSession.undo()); await act(async () => currentSession.undo()); expect(relations()).toEqual(lifted);
+        await act(async () => currentSession.undo()); expect(relation('length')).toEqual(original); expect(currentDocument).toEqual(source);
+      });
+
+      it('keeps a still press a click, and cancels a drag on Escape with the selection kept', async () => {
+        const source = await open(); const { send } = pointerSetup();
+        // A press that moves no more than the point drag threshold selects.
+        await dragBy(send, () => label('length'), { clientX: 200, clientY: 200 }, [3, 2]);
+        expect(selectedDimensions()).toEqual(['length']); expect(currentDocument).toBe(source); expect(moving()).toBeNull();
+        await send(label('diagonal'), 'pointerdown', { clientX: 200, clientY: 200 }, { button: 0, buttons: 1 });
+        await send(label('diagonal'), 'pointermove', { clientX: 240, clientY: 230 }, { buttons: 1 });
+        expect(moving()?.getAttribute('data-cad-sketch-dimension-moving')).toBe('diagonal');
+        await act(async () => { label('diagonal').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+        expect(moving()).toBeNull(); expect(selectedDimensions()).toEqual(['length']);
+        // Its release and click change nothing.
+        await send(label('diagonal'), 'pointerup', { clientX: 240, clientY: 230 }, { button: 0, buttons: 0 }); await send(label('diagonal'), 'click', { clientX: 240, clientY: 230 }, { button: 0, detail: 1 });
+        expect(currentDocument).toBe(source); expect(selectedDimensions()).toEqual(['length']); expect(currentSession.getSnapshot().canUndo).toBe(false);
+      });
+
+      it('resets the positions of the dimensions its menu acts on as one undo step, and keeps them through reference and driving', async () => {
+        await open();
+        const length = relation('length'), diagonal = relation('diagonal');
+        await swap({ ...length, annotation: { kind: 'linear', offset: -8, along: .3 } } as typeof length); await swap({ ...diagonal, annotation: { kind: 'linear', offset: 6, along: .7 } } as typeof diagonal);
+        const placed = relations();
+        await press('size', 'ContextMenu');
+        expect(menuItem('Reset position').disabled).toBe(true); expect(menuItem('Reset position').getAttribute('aria-description')).toBe('This dimension is already laid out automatically.');
+        await canvasKey('Escape');
+        await pick('length'); await pick('diagonal', true); await pick('size', true); await press('length', 'ContextMenu');
+        await act(async () => menuItem('Reset 2 positions').click());
+        expect([relation('length'), relation('diagonal')]).toEqual([length, diagonal]);
+        await act(async () => currentSession.undo()); expect(relations()).toEqual(placed);
+        // Becoming a reference and driving again keeps where it is drawn.
+        await canvasKey('Escape'); await press('length', 'ContextMenu'); await act(async () => menuItem('Make reference').click());
+        expect(relation('length')).toEqual({ id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' }, annotation: { kind: 'linear', offset: -8, along: .3 } });
+        await press('length', 'ContextMenu'); await act(async () => menuItem('Make driving').click());
+        expect(relation('length')).toMatchObject({ kind: 'distance', annotation: { kind: 'linear', offset: -8, along: .3 } });
+        await press('length', 'ContextMenu'); await act(async () => menuItem('Reset position').click());
+        expect(annotationOf('length')).toBeUndefined();
+      });
+    });
     it('never replays a cancelled dimension editor when Escape later cancels the relations panel', async () => {
       await open();
       let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
@@ -2922,7 +3022,7 @@ describe('CAD sketch interaction', () => {
       await open(undefined, { points: [{ id: 'p', position: [0, 100] }, { id: 'q', position: [40, 100 + rise] }], entities: [{ id: 'lid', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }],
         relations: [{ id: 'tilt', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'lid', towardPointId: 'q' }], sense: 'ccw', value }] });
       await click('Dimension'); await pick(entity('base')); await pick(entity('lid')); await dimensionMenu('Angle');
-      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+      expect(statusMessage).toHaveBeenCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
       expect(relations().map(relation => relation.id)).toEqual(['tilt']);
       const drawn = container.querySelector('[data-cad-sketch-dimension="tilt"]');
       expect(drawn?.querySelector('path')).toBeNull(); expect(drawn?.classList.contains('is-selected')).toBe(true);
@@ -2975,10 +3075,31 @@ describe('CAD sketch interaction', () => {
       await open(redundant, { relations: [gap] });
       await click('Dimension'); await pick(entity('base')); await pick(entity('top')); await focusedKey('Enter');
       expect(redundant).toHaveBeenCalledTimes(1); expect(relations()).toEqual([gap]); expect(selected()).toEqual(['gap']);
-      expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+      expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
       expect(button('Dimension').getAttribute('aria-pressed')).toBe('true'); expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
     });
 
+    it('moves a dimension it reuses to the click, in the one edit that adds the relation keeping it', async () => {
+      const gap = { id: 'gap', kind: 'point-line-distance', pointId: 'c', lineId: 'base', side: 'left', value: 20 };
+      const edit = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+      const source = await open(edit, { relations: [gap] });
+      const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+      vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+      const view = viewport().getState().view; if (!view || view.mode === 'solid') throw new Error('Sketch frame missing.');
+      const viewWidth = Number(canvas.getAttribute('viewBox')?.split(' ')[2]);
+      await click('Dimension'); await pick(entity('base')); await pick(entity('top'));
+      // The distance from c down to the base slides along the base to the click, 8 mm before c.
+      for (const type of ['pointermove', 'pointerdown', 'pointerup']) await act(async () => {
+        const event = new MouseEvent(type, { button: 0, buttons: type === 'pointerdown' ? 1 : 0, bubbles: true, cancelable: true,
+          clientX: 300 + (2 - view.centerMm[0]) / viewWidth * 600, clientY: 200 - (10 - view.centerMm[1]) / view.heightSpanMm * 400 });
+        Object.defineProperties(event, { pointerId: { value: 3 }, isPrimary: { value: true } }); canvas.dispatchEvent(event);
+      });
+      expect(edit).toHaveBeenCalledTimes(1);
+      expect(relations()).toEqual([{ ...gap, annotation: { kind: 'linear', offset: expect.closeTo(-8, 6), along: .5 } }, { id: expect.any(String), kind: 'parallel', lineIds: ['base', 'top'] }]);
+      const line = container.querySelector('[data-cad-sketch-dimension="gap"] .cad-sketch-graph-dimension-line');
+      expect(Number(line?.getAttribute('x1')) + view.centerMm[0]).toBeCloseTo(2, 6); expect(Number(line?.getAttribute('x2')) + view.centerMm[0]).toBeCloseTo(2, 6);
+      await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source); expect(currentSession.getSnapshot().canUndo).toBe(false);
+    });
     describe('from the origin', () => {
       const one = 'Dimension placed · Enter or double-click edits it; choose geometry for the next one · Escape returns to Select';
       const both = 'Dimensions placed · Enter edits the first, or double-click one to edit it; choose geometry for the next one · Escape returns to Select';
@@ -3013,7 +3134,7 @@ describe('CAD sketch interaction', () => {
         const onAxis = { id: 'onAxis', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 0 }, high = { id: 'high', kind: 'fixed-axis', pointId: 'e', axis: 'y', value: 20 };
         await place([datum('origin'), point('e')], [onAxis, high]);
         expect(relations()).toEqual([onAxis, high]); expect(selected()).toEqual(['high']);
-        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
         await canvasKey('Enter'); expect(field('Distance').value).toBe('20');
         // With only X = 0 kept, placing adds Y = 20 and selects it.
         await place([point('e'), datum('origin')], [onAxis]);
@@ -3045,13 +3166,13 @@ describe('CAD sketch interaction', () => {
         // With both kept, placing finds them and selects them, X first.
         await place([point('e'), datum('origin')], [offset, high], { offset: 0 });
         expect(relations()).toEqual([offset, high]); expect(selected()).toEqual(['offset', 'high']);
-        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
         await canvasKey('Enter'); expect(field('Distance').value).toBe('0');
         // The horizontal distance alone is the kept dimension at 0, not a relation that keeps e on the Y axis.
         await open(undefined, posts([offset], { offset: 0 })); await click('Dimension'); await pick(point('e')); await pick(datum('origin'));
         statusMessage.mockClear(); await dimensionMenu('Horizontal distance from the origin');
         expect(relations()).toEqual([offset]); expect(selected()).toEqual(['offset']);
-        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension.', 'info');
+        expect(statusMessage).toHaveBeenLastCalledWith('This is already dimensioned. Placing selects that dimension, and a click also moves it there.', 'info');
         await canvasKey('Enter'); expect(field('Distance').value).toBe('0');
       });
 

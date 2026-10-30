@@ -6,6 +6,7 @@ import { CloseIcon, ConfirmIcon, LinkIcon, MeasureIcon } from '@wire-edm/icons-r
 import type { CadDocument, CadScalar, CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation, CadSketchReferenceDimension, CadSketchTangentJointRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchReferenceDimensionToDriving, measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
+import { withCadSketchCarriedPlacement } from '@/domain/cad/cadSketchPlacedDimensions';
 import { resolveCadSketchSymmetryOperands } from '@/domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchPointOnLineOperands } from '@/domain/cad/cadSketchPointOnLineRelations';
 import { createCadSketchLinePairDistance, createCadSketchPointLineDistance, resolveCadSketchPointLineDistanceOperands } from '@/domain/cad/cadSketchPointLineDistanceRelations';
@@ -493,9 +494,11 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     if (!passiveMeasurement) return;
     // The dimension driving this measurement, saved or new, becomes it under the same identity, so it stops driving in the same edit.
     const driver = drivingDimensionFor(draft, passiveMeasurement);
+    const built = {id:driver?.id ?? (initialDimension && !source.graph.relations.some(r => r.id === initialDimension.id) ? initialDimension.id : crypto.randomUUID()),
+      kind:'reference-dimension' as const, measurement:passiveMeasurement};
+    // A driver that becomes the reference keeps where it was drawn.
     const relation = matchingReference(draft, passiveMeasurement) ?? matchingReference(source.graph, passiveMeasurement)
-      ?? {id:driver?.id ?? (initialDimension && !source.graph.relations.some(r => r.id === initialDimension.id) ? initialDimension.id : crypto.randomUUID()),
-        kind:'reference-dimension' as const, measurement:passiveMeasurement};
+      ?? (driver?.id === built.id ? withCadSketchCarriedPlacement(draft, driver, built) : built);
     if (driver && driver.id !== relation.id) removeRelation(driver.id);
     if (initialDimension && initialDimension.id !== relation.id && initialDimension.id !== driver?.id && !source.graph.relations.some(r => r.id === initialDimension.id)) removeRelation(initialDimension.id);
     // A measurement drives nothing, so it never holds the lines parallel either.
@@ -504,7 +507,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   };
   const makeDriving = () => {
     if (activeRelation?.kind !== 'reference-dimension' || drivingLock || !measurementDocument || !measurementGraph) return;
-    try { changeRelation(cadSketchReferenceDimensionToDriving(measurementGraph, measurementDocument.parameters, activeRelation)); }
+    try { changeRelation(withCadSketchCarriedPlacement(measurementGraph, activeRelation, cadSketchReferenceDimensionToDriving(measurementGraph, measurementDocument.parameters, activeRelation))); }
     catch (cause) { setError(userFacingMessage(cause, 'Unable to drive this measurement.')); }
   };
   const referenceValue = (relation: CadSketchReferenceDimension) => {

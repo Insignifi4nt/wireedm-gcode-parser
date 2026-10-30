@@ -1189,7 +1189,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (datum) { chooseDatum(datum, false); return; }
           acceptDrawingPick(getDrawingPick(event), event); return;
         }
-        if (event.button === 0 && geometryPick?.pointer && !interactionLocked) { const raw = getRawPoint(event); if (raw) geometryPick.pointer.set({ x: raw[0], y: raw[1] }); }
+        if (event.button === 0 && geometryPick?.pointer && !interactionLocked) { const raw = getRawPoint(event); if (raw) geometryPick.pointer.set({ x: raw[0], y: raw[1] }, overlayFrame.mmPerPixel); }
         // A cancelled graph drag can release over empty canvas; its trailing click still belongs to the handle.
         if (event.button === 0 && event.target instanceof Element && event.target.closest('.cad-sketch-graph')) suppressProfileClick.current = true;
       }}
@@ -1407,7 +1407,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const onLine = event.target instanceof Element && event.target.closest('[data-cad-sketch-dimension-hit]') !== null;
           // The Dimension tool's preview follows the pointer through its own store, so the move renders the preview alone.
           const pointer = geometryPick?.pointer, raw = pointer ? getRawPoint(event) : null;
-          if (pointer && raw) pointer.set({ x: raw[0], y: raw[1] });
+          if (pointer && raw) pointer.set({ x: raw[0], y: raw[1] }, overlayFrame.mmPerPixel);
           if (!onLine && !geometryPick?.dimensionPreview) getDrawingPick(event);
           if (tool === 'trim') {
             const preview = interactionLocked || viewLocked ? null : trimAt(event);
