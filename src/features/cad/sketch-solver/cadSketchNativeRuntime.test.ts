@@ -7,7 +7,8 @@ import { CAD_SKETCH_NATIVE_INCOMPATIBLE, CAD_SKETCH_NATIVE_LOAD_FAILED } from '.
 import type { CadSketchSolveInput } from './cadSketchSolverTypes';
 import { CadSketchNativeProtocolError, loadCadSketchNativeSolver, type CadSketchNativeSolution, type CadSketchNativeSolver } from './native/cadSketchNativeSolver';
 import { createCadSketchNativeModuleLoader } from './native/cadSketchNativeModule';
-import { CAD_SKETCH_EQUATION_CONFLICTING, CAD_SKETCH_EQUATION_REDUNDANT, type CadSketchEquationModel } from './native/cadSketchEquationModel';
+import type { CadSketchEquationModel } from '@/domain/cad/sketch-solver/cadSketchEquationModel';
+import { CAD_SKETCH_EQUATION_CONFLICTING, CAD_SKETCH_EQUATION_REDUNDANT } from './native/cadSketchNativeProtocol';
 import { createCadSketchTestSolver, loadCadSketchTestNativeSolver } from './__tests__/cadSketchTestSolver';
 import { planeGcsCorpusSolution } from './__tests__/planeGcsCorpus';
 

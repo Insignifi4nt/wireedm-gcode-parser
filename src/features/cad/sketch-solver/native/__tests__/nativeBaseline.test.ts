@@ -13,7 +13,7 @@ import type { CadSketchSolveInput } from '../../cadSketchSolverTypes';
 import { createCadSketchFuzzCase } from '../../__tests__/cadSketchFuzz';
 import { loadCadSketchTestNativeSolver } from '../../__tests__/cadSketchTestSolver';
 import { corpusInput, corpusModelHash, readPlaneGcsCorpus } from '../../__tests__/planeGcsCorpus';
-import type { CadSketchEquationModel } from '../cadSketchEquationModel';
+import type { CadSketchEquationModel } from '@/domain/cad/sketch-solver/cadSketchEquationModel';
 import { CadSketchNativeProtocolError, type CadSketchNativeSolution } from '../cadSketchNativeSolver';
 import { answerNatively, loadNativeBaselineSolver, loadPairedWithBaseline, nativeAnswerDifferences, nativeBaselineBytes, nativeBaselineManifest, nativeEliminationDifferences, nativeValueMove, recordNativeCalls, type NativeAnswer } from './nativeBaseline';
 

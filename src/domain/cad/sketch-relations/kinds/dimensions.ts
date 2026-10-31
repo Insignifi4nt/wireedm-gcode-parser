@@ -1,8 +1,12 @@
 import { CadError } from '../../cadError';
 import type { CadSketchGraphEntity, CadSketchGraphPoint } from '../../cadSketchGraph';
-import { cadSketchAngleRaysOnLines } from '../../cadSketchAngleRelations';
-import { assertCadSketchPointLineDistanceIdentities, assertCadSketchPointLineDistanceValue } from '../../cadSketchPointLineDistanceRelations';
+import { evaluateCadScalar } from '../../cadExpression';
+import { cadSketchAngleRaysOnLines, cadSketchDrivingAngle, checkCadSketchAngleRelation, resolveCadSketchAngleRays } from '../../cadSketchAngleRelations';
+import { assertCadSketchPointLineDistanceIdentities, assertCadSketchPointLineDistanceValue, cadSketchPointLineDistanceLength, cadSketchPointLineSideSign,
+  checkCadSketchPointLineDistanceRelation, resolveCadSketchPointLineDistanceOperands } from '../../cadSketchPointLineDistanceRelations';
+import { cadSketchDrivingRadius, checkCadSketchRadialRelation, resolveCadSketchRadialEntity } from '../../cadSketchRadialRelations';
 import { resolveCadSketchReferenceDimension } from '../../cadSketchReferenceDimensions';
+import { checkCadSketchHeldPoint, checkCadSketchPointDistance, checkCadSketchPointPair } from '../cadSketchRelationChecks';
 import { CAD_SKETCH_ANGLE_OPERANDS, CAD_SKETCH_POINT_LINE_DISTANCE_OPERANDS, CAD_SKETCH_RADIAL_OPERANDS } from '../cadSketchOperandSignatures';
 import type { CadSketchOperandSignature, CadSketchRelationDefinition } from '../cadSketchRelationTypes';
 import { CAD_SKETCH_POINT_OPERANDS, CAD_SKETCH_POINT_PAIR_OPERANDS, LINE_SLOT, POINT_SLOT, ROUND_SLOT, sortedIds } from './kindParts';
@@ -14,6 +18,7 @@ type Line = Extract<CadSketchGraphEntity, { kind: 'line' }>;
 type Round = Extract<CadSketchGraphEntity, { kind: 'arc' | 'circle' }>;
 const value = {
   keys: ['value'],
+  quantity: { value: 'length' } as const,
   read: (relation: { readonly value: string | number }) => [relation.value],
   write: <R extends { readonly value: string | number }>(relation: R, [next]: readonly (string | number)[]): R => ({ ...relation, value: next })
 };
@@ -25,7 +30,10 @@ export const distance: CadSketchRelationDefinition<'distance'> = {
   withOperands: (relation, [first, second]) => ({ ...relation, pointIds: [first, second] }),
   scalars: value,
   key: relation => `distance ${sortedIds(relation.pointIds)}`,
-  agent: { exposed: true, summary: 'Two points keep a set distance apart.' }
+  lower: (relation, context) => context.sized(context.span(relation.pointIds[0], relation.pointIds[1]), context.value(relation.id, 'value')),
+  check: (_, relation, points, parameters) => checkCadSketchPointDistance(relation, points, parameters),
+  agent: { exposed: true, summary: 'Two points keep a set distance apart.',
+    meaning: 'Keeps the straight-line distance between two points.' }
 };
 
 export const pointLineDistance: CadSketchRelationDefinition<'point-line-distance'> = {
@@ -40,7 +48,14 @@ export const pointLineDistance: CadSketchRelationDefinition<'point-line-distance
     assertCadSketchPointLineDistanceIdentities(graph, point as CadSketchGraphPoint, line as Line);
     assertCadSketchPointLineDistanceValue(relation);
   },
-  agent: { exposed: true, summary: 'A point keeps a set distance from a line, on one side of it.' }
+  lower: (relation, context) => {
+    const { line } = resolveCadSketchPointLineDistanceOperands(context.graph, relation), length = cadSketchPointLineDistanceLength(context.value(relation.id, 'value'));
+    // The signed distance holds the stored side, whatever moved the point or the line since it was set.
+    context.emit('point-line-distance', [...context.point(relation.pointId), ...context.support(line)], cadSketchPointLineSideSign(relation.side) * length);
+  },
+  check: (graph, relation, points, parameters) => checkCadSketchPointLineDistanceRelation(graph, relation, points, parameters),
+  agent: { exposed: true, summary: 'A point keeps a set distance from a line, on one side of it.',
+    meaning: 'Keeps a point at a positive distance from the infinite supporting line of the named line, on the side it starts on. Does not fix the line or make it parallel to anything.' }
 };
 
 export const axisDistance: CadSketchRelationDefinition<'axis-distance'> = {
@@ -53,7 +68,12 @@ export const axisDistance: CadSketchRelationDefinition<'axis-distance'> = {
   withOperands: (relation, [first, second]) => ({ ...relation, pointIds: [first, second] }),
   scalars: value,
   key: relation => `axis-distance ${relation.axis} ${relation.pointIds.join(' ')}`,
-  agent: { exposed: true, summary: 'One point keeps a set horizontal or vertical distance from another.' }
+  lower: (relation, context) => context.offset(relation.axis === 'x' ? 0 : 1, relation.pointIds[0], relation.pointIds[1], context.value(relation.id, 'value')),
+  // The stored order gives the direction, including negative and zero offsets.
+  check: (_, relation, points, parameters) => checkCadSketchPointPair(relation, points,
+    (a, b) => Math.abs((b[relation.axis] - a[relation.axis]) - evaluateCadScalar(relation.value, parameters))),
+  agent: { exposed: true, summary: 'One point keeps a set horizontal or vertical distance from another.',
+    meaning: 'Drives the signed second-minus-first point coordinate along the declared sketch axis.' }
 };
 
 export const fixedAxis: CadSketchRelationDefinition<'fixed-axis'> = {
@@ -66,7 +86,10 @@ export const fixedAxis: CadSketchRelationDefinition<'fixed-axis'> = {
   // A distance from an axis names the axis among its operands, as a distance between two lines names both. An X coordinate is a
   // distance from the Y axis.
   mentions: (relation, names) => [names.point(relation.pointId), relation.axis === 'x' ? 'Y axis' : 'X axis'],
-  agent: { exposed: true, summary: 'A point keeps a set distance from the X or Y axis; at 0 it lies on that axis.' }
+  lower: (relation, context) => context.hold(relation.pointId, relation.axis === 'x' ? 0 : 1, context.value(relation.id, 'value')),
+  check: (_, relation, points, parameters) => checkCadSketchHeldPoint(relation, points, point => ({ ...point, [relation.axis]: evaluateCadScalar(relation.value, parameters) })),
+  agent: { exposed: true, summary: 'A point keeps a set distance from the X or Y axis; at 0 it lies on that axis.',
+    meaning: 'Keeps one point coordinate, X measured from the Y axis or Y from the X axis; the other can remain free. A value that is 0 whatever the parameters are keeps the point on that axis; any other value is a distance from the axis, on the side its sign gives.' }
 };
 
 export const lineAngle: CadSketchRelationDefinition<'line-angle'> = {
@@ -75,11 +98,19 @@ export const lineAngle: CadSketchRelationDefinition<'line-angle'> = {
   operands: relation => relation.rays.flatMap(ray => [ray.lineId, ray.towardPointId]),
   withOperands: (relation, [first, firstToward, second, secondToward]) => ({ ...relation,
     rays: [{ ...relation.rays[0], lineId: first, towardPointId: firstToward }, { ...relation.rays[1], lineId: second, towardPointId: secondToward }] }),
-  scalars: value,
+  scalars: { ...value, quantity: { value: 'angle' } as const },
   // One angle between two lines, stored from either; its rays and sense choose the sector the value measures.
   key: relation => `line-angle ${sortedIds(relation.rays.map(ray => ray.lineId))}`,
   validate: (_, relation, [first, , second]) => { cadSketchAngleRaysOnLines([first as Line, second as Line], relation.rays); },
-  agent: { exposed: true, summary: 'Two lines keep a set angle between them.' }
+  lower: (relation, context) => {
+    const [a, b] = resolveCadSketchAngleRays(context.graph, relation.rays);
+    for (const { line } of [a, b]) context.direct(line.startPointId, line.endPointId, 'A sketch ray has no numeric endpoints.');
+    context.emit('angle', [...context.through(a.fromPointId, a.towardPointId), ...context.through(b.fromPointId, b.towardPointId)],
+      cadSketchDrivingAngle(context.value(relation.id, 'value'), relation.sense).signedRadians);
+  },
+  check: (graph, relation, points, parameters) => checkCadSketchAngleRelation(graph, relation, points, parameters),
+  agent: { exposed: true, summary: 'Two lines keep a set angle between them.',
+    meaning: 'Drives the declared clockwise or counterclockwise sector between two explicit line rays in degrees.' }
 };
 
 export const radialSize: CadSketchRelationDefinition<'radial-size'> = {
@@ -96,7 +127,13 @@ export const radialSize: CadSketchRelationDefinition<'radial-size'> = {
     if (round.kind === 'circle' && typeof round.radius === 'string')
       throw new CadError('already-driven-sketch-radius', 'Edit or explicitly release the existing circle-radius expression before adding a radial dimension.');
   },
-  agent: { exposed: true, summary: 'An arc or circle keeps a set radius or diameter.' }
+  lower: (relation, context) => {
+    const entity = resolveCadSketchRadialEntity(context.graph, relation.entityId), radius = cadSketchDrivingRadius(context.value(relation.id, 'value'), relation.quantity);
+    context.sized(context.size(entity), radius);
+  },
+  check: (graph, relation, points, parameters) => checkCadSketchRadialRelation(graph, relation, points, parameters),
+  agent: { exposed: true, summary: 'An arc or circle keeps a set radius or diameter.',
+    meaning: 'Drives circle or arc size using the declared radius or diameter.' }
 };
 
 const REFERENCE_LINE_LENGTH = { slots: [LINE_SLOT] } as const satisfies CadSketchOperandSignature;
@@ -117,5 +154,9 @@ export const referenceDimension: CadSketchRelationDefinition<'reference-dimensio
   key: ({ measurement }) => `reference-dimension ${measurement.kind} ${measurement.kind === 'point-distance' ? sortedIds(measurement.pointIds)
     : measurement.kind === 'point-line-distance' ? `${measurement.pointId} ${measurement.lineId}` : measurement.entityId}`,
   validate: (graph, relation) => { resolveCadSketchReferenceDimension(graph, relation); },
-  agent: { exposed: true, summary: 'A measurement shown on the sketch without driving it.' }
+  // It drives nothing, and the geometry's own checks stay authoritative.
+  lower: () => {},
+  check: () => [],
+  agent: { exposed: true, summary: 'A measurement shown on the sketch without driving it.',
+    meaning: 'Measures current geometry without driving it or adding a native equation.' }
 };

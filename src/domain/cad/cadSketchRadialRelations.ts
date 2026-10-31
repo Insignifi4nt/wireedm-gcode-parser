@@ -14,7 +14,11 @@ function validRadius(radius: number): boolean { return Number.isFinite(radius) &
 
 /** Evaluate the displayed quantity without changing its exact source scalar. */
 export function cadSketchRadialTarget(relation: CadSketchRadialRelation, parameters: Readonly<Record<string, number>>): number {
-  const displayed = evaluateCadScalar(relation.value, parameters), radius = relation.quantity === 'diameter' ? displayed / 2 : displayed;
+  return cadSketchDrivingRadius(evaluateCadScalar(relation.value, parameters), relation.quantity);
+}
+/** The radius an evaluated displayed radius or diameter drives, within the supported range. */
+export function cadSketchDrivingRadius(displayed: number, quantity: CadSketchRadialRelation['quantity']): number {
+  const radius = quantity === 'diameter' ? displayed / 2 : displayed;
   if (!validRadius(radius)) throw new CadError('invalid-radius', 'Driving radius must exceed 0.0000001 mm and be at most one million millimeters.');
   return radius;
 }

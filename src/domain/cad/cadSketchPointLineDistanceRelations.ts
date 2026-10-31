@@ -38,7 +38,10 @@ export function assertCadSketchPointLineDistanceValue(relation: Pick<CadSketchPo
 
 /** The driven length, positive and finite. */
 export function cadSketchPointLineDistanceTarget(relation: Pick<CadSketchPointLineDistanceRelation, 'value'>, parameters: Readonly<Record<string, number>>): number {
-  const value = evaluateCadScalar(relation.value, parameters);
+  return cadSketchPointLineDistanceLength(evaluateCadScalar(relation.value, parameters));
+}
+/** An evaluated driving length, which must be positive and finite. */
+export function cadSketchPointLineDistanceLength(value: number): number {
   if (!Number.isFinite(value) || value <= 0) throw new CadError('invalid-distance', positive);
   return value;
 }

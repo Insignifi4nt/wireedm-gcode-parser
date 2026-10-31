@@ -1,4 +1,7 @@
 import type { CadSketchGraphEntity } from '../../cadSketchGraph';
+import { checkCadSketchLineRelation, resolveCadSketchLinePair } from '../../cadSketchLineRelations';
+import type { CadSketchLoweringContext } from '../../sketch-solver/cadSketchLoweringContext';
+import { checkCadSketchPointPair } from '../cadSketchRelationChecks';
 import { CAD_SKETCH_LINE_PAIR_OPERANDS } from '../cadSketchOperandSignatures';
 import type { CadSketchRelationDefinition, CadSketchRelationPlanner } from '../cadSketchRelationTypes';
 import type { CadSketchGraphSelection } from '../../cadSketchGraphSelection';
@@ -26,7 +29,10 @@ export const horizontal: CadSketchRelationDefinition<'horizontal'> = {
     { signature: LINE_EACH, plan: (planner, [line]) => planner.align('horizontal', lineEnds(planner, line)) },
     { signature: POINT_PAIR, plan: (planner, [a, b]) => planner.align('horizontal', [a.id, b.id]) }
   ],
-  agent: { exposed: true, summary: 'Two points, such as the ends of a line, stay level.' }
+  lower: (relation, context) => context.offset(1, relation.pointIds[0], relation.pointIds[1]),
+  check: (_, relation, points) => checkCadSketchPointPair(relation, points, (a, b) => Math.abs(a.y - b.y)),
+  agent: { exposed: true, summary: 'Two points, such as the ends of a line, stay level.',
+    meaning: 'Keeps two points at the same Y coordinate.' }
 };
 export const vertical: CadSketchRelationDefinition<'vertical'> = {
   kind: 'vertical', family: 'orientation', name: 'Vertical',
@@ -38,8 +44,18 @@ export const vertical: CadSketchRelationDefinition<'vertical'> = {
     { signature: LINE_EACH, plan: (planner, [line]) => planner.align('vertical', lineEnds(planner, line)) },
     { signature: POINT_PAIR, plan: (planner, [a, b]) => planner.align('vertical', [a.id, b.id]) }
   ],
-  agent: { exposed: true, summary: 'Two points, such as the ends of a line, stay upright.' }
+  lower: (relation, context) => context.offset(0, relation.pointIds[0], relation.pointIds[1]),
+  check: (_, relation, points) => checkCadSketchPointPair(relation, points, (a, b) => Math.abs(a.x - b.x)),
+  agent: { exposed: true, summary: 'Two points, such as the ends of a line, stay upright.',
+    meaning: 'Keeps two points at the same X coordinate.' }
 };
+
+/** Two lines, each refused unless its ends give it a direction. */
+export function directedLinePair(context: CadSketchLoweringContext, lineIds: readonly [string, string]) {
+  const lines = resolveCadSketchLinePair(context.graph, lineIds);
+  for (const line of lines) context.direct(line.startPointId, line.endPointId, 'A sketch line has no numeric endpoints.');
+  return lines;
+}
 
 // Lines that keep another of these relations, or an angle, cannot take one more.
 const LINE_PAIR = chainedPair(LINE_SLOT);
@@ -50,7 +66,13 @@ export const parallel: CadSketchRelationDefinition<'parallel'> = {
   withOperands: (relation, [first, second]) => ({ ...relation, lineIds: [first, second] }),
   key: relation => `parallel ${sortedIds(relation.lineIds)}`,
   offers: [{ signature: LINE_PAIR, plan: (planner, [a, b]) => planner.orient('parallel', [a.id, b.id]) }],
-  agent: { exposed: true, summary: 'Two lines keep the same direction.' }
+  lower: (relation, context) => {
+    const [a, b] = directedLinePair(context, relation.lineIds);
+    context.emit('parallel', [...context.support(a), ...context.support(b)]);
+  },
+  check: (graph, relation, points) => checkCadSketchLineRelation(graph, relation, points),
+  agent: { exposed: true, summary: 'Two lines keep the same direction.',
+    meaning: 'Keeps two line directions parallel.' }
 };
 export const perpendicular: CadSketchRelationDefinition<'perpendicular'> = {
   kind: 'perpendicular', family: 'orientation', name: 'Perpendicular',
@@ -59,7 +81,13 @@ export const perpendicular: CadSketchRelationDefinition<'perpendicular'> = {
   withOperands: (relation, [first, second]) => ({ ...relation, lineIds: [first, second] }),
   key: relation => `perpendicular ${sortedIds(relation.lineIds)}`,
   offers: [{ signature: LINE_PAIR, plan: (planner, [a, b]) => planner.orient('perpendicular', [a.id, b.id]) }],
-  agent: { exposed: true, summary: 'Two lines meet at a right angle.' }
+  lower: (relation, context) => {
+    const [a, b] = directedLinePair(context, relation.lineIds);
+    context.emit('perpendicular', [...context.support(a), ...context.support(b)]);
+  },
+  check: (graph, relation, points) => checkCadSketchLineRelation(graph, relation, points),
+  agent: { exposed: true, summary: 'Two lines meet at a right angle.',
+    meaning: 'Keeps two line directions at a right angle.' }
 };
 export const collinear: CadSketchRelationDefinition<'collinear'> = {
   kind: 'collinear', family: 'orientation', name: 'Collinear',
@@ -68,5 +96,13 @@ export const collinear: CadSketchRelationDefinition<'collinear'> = {
   withOperands: (relation, [first, second]) => ({ ...relation, lineIds: [first, second] }),
   key: relation => `collinear ${sortedIds(relation.lineIds)}`,
   offers: [{ signature: LINE_PAIR, plan: (planner, [a, b]) => planner.orient('collinear', [a.id, b.id]) }],
-  agent: { exposed: true, summary: 'Two lines lie on one infinite line.' }
+  lower: (relation, context) => {
+    const [a, b] = directedLinePair(context, relation.lineIds);
+    context.emit('parallel', [...context.support(a), ...context.support(b)]);
+    // A shared authored endpoint already supplies incidence; disjoint lines need one more equation.
+    if (![b.startPointId, b.endPointId].some(pointId => pointId === a.startPointId || pointId === a.endPointId)) context.onSupport(b.startPointId, context.support(a));
+  },
+  check: (graph, relation, points) => checkCadSketchLineRelation(graph, relation, points),
+  agent: { exposed: true, summary: 'Two lines lie on one infinite line.',
+    meaning: 'Keeps two lines on the same infinite supporting line without joining endpoints or fixing lengths.' }
 };

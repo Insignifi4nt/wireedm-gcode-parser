@@ -1,6 +1,9 @@
 import type { CadScalar } from '../cadDocument';
-import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphPoint, CadSketchGraphRelation } from '../cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphIssue, CadSketchGraphPoint, CadSketchGraphRelation } from '../cadSketchGraph';
 import type { CadSketchGraphSelection } from '../cadSketchGraphSelection';
+import type { CadSketchQuantity } from '../cadSketchQuantity';
+import type { CadSketchLoweringContext } from '../sketch-solver/cadSketchLoweringContext';
+import type { Point2 } from '@/domain/path-intel/types';
 
 export type CadSketchRelationKind = CadSketchGraphRelation['kind'];
 // The schema stores several kinds with one shape, whose `kind` is their union, so a kind is narrowed rather than extracted.
@@ -97,8 +100,8 @@ export interface CadSketchRelationOffering {
 export type CadSketchRelationFamily = 'incidence' | 'orientation' | 'equality' | 'fix' | 'dimension' | 'composite';
 
 /**
- * Everything a relation kind declares once, so consumers read relations through it instead of switching on kinds. Equations stay with
- * the solver until they move here.
+ * Everything a relation kind declares once, so consumers read relations through it instead of switching on kinds: the solver compiles
+ * its equations through `lower`, and the graph checks accept its geometry through `check`.
  */
 export interface CadSketchRelationDefinition<K extends CadSketchRelationKind> {
   readonly kind: K;
@@ -112,9 +115,10 @@ export interface CadSketchRelationDefinition<K extends CadSketchRelationKind> {
   readonly operands: (relation: CadSketchRelationOf<K>) => readonly string[];
   /** The relation with `ids` in place of its operands, one for each slot. */
   readonly withOperands: (relation: CadSketchRelationOf<K>, ids: readonly string[]) => CadSketchRelationOf<K>;
-  /** Driving values, named by their path in the relation's data. */
+  /** Driving values, named by their path in the relation's data, with what each measures. */
   readonly scalars?: {
     readonly keys: readonly string[];
+    readonly quantity: { readonly [key: string]: CadSketchQuantity };
     readonly read: (relation: CadSketchRelationOf<K>) => readonly CadScalar[];
     readonly write: (relation: CadSketchRelationOf<K>, values: readonly CadScalar[]) => CadSketchRelationOf<K>;
   };
@@ -131,7 +135,21 @@ export interface CadSketchRelationDefinition<K extends CadSketchRelationKind> {
   readonly pointIds?: (graph: CadSketchGraph, relation: CadSketchRelationOf<K>) => readonly string[];
   /** Selections that make this relation, tried in order. A relation that needs a value, or one that tools create, has none. */
   readonly offers?: readonly CadSketchRelationOffering[];
-  /** Whether agent tools may name the kind, and what they are told it does. */
-  readonly agent: { readonly exposed: boolean; readonly summary: string };
+  /**
+   * The relation's scalar equations, emitted through `context` in the order the solver takes them. A relation that drives nothing
+   * emits none. Errors it throws reject the solve with their message.
+   */
+  readonly lower: (relation: CadSketchRelationOf<K>, context: CadSketchLoweringContext) => void;
+  /**
+   * Whether the numeric geometry meets the relation, in world millimetres and independently of the solver: `points` holds the
+   * points whose coordinates are numeric and in range. An error it throws is reported as the relation's invalid expression.
+   */
+  readonly check: (graph: CadSketchGraph, relation: CadSketchRelationOf<K>, points: ReadonlyMap<string, Point2>,
+    parameters: Readonly<Record<string, number>>) => readonly CadSketchGraphIssue[];
+  /**
+   * Whether agent tools may name the kind, what they are told it does, and what an inspection of one relation says it holds and
+   * leaves free.
+   */
+  readonly agent: { readonly exposed: boolean; readonly summary: string; readonly meaning: string };
 }
 export type CadSketchRelationDefinitions = { readonly [K in CadSketchRelationKind]: CadSketchRelationDefinition<K> };

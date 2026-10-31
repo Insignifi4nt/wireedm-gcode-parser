@@ -40,10 +40,14 @@ export function cadSketchAngleRaysOnLines(lines: ReturnType<typeof resolveCadSke
 
 /** Public source values are degrees; native compilation uses a numeric radians copy only. */
 export function cadSketchAngleTarget(relation: CadSketchAngleRelation, parameters: Readonly<Record<string, number>>) {
-  const degrees = evaluateCadScalar(relation.value, parameters), radians = degrees * Math.PI / 180;
+  return cadSketchDrivingAngle(evaluateCadScalar(relation.value, parameters), relation.sense);
+}
+/** An evaluated driving angle in degrees, between zero and 180, with its radians signed by the sector's sense. */
+export function cadSketchDrivingAngle(degrees: number, sense: CadSketchAngleRelation['sense']) {
+  const radians = degrees * Math.PI / 180;
   if (!(degrees > 0 && degrees < 180 && radians > 0 && radians < Math.PI))
     throw new CadError('invalid-sketch-angle', 'Driving angles must remain representably between zero and 180 degrees.');
-  return { degrees, signedRadians: (relation.sense === 'ccw' ? 1 : -1) * radians };
+  return { degrees, signedRadians: (sense === 'ccw' ? 1 : -1) * radians };
 }
 
 function rayDirections(graph: CadSketchGraph, rays: Rays, points: ReadonlyMap<string, Point2>) {

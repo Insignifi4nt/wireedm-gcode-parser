@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { cadSketchGraphWithSolvedValues, cadSketchSolvedValues } from '@/domain/cad/cadSketchGraph';
 import { createCadSketchNativeRuntime, type CadSketchSolveRecord } from '../cadSketchNativeRuntime';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
-import { compileCadSketchEquations } from '../native/compileCadSketchEquations';
+import { compileCadSketchEquations } from '@/domain/cad/sketch-solver/compileCadSketchEquations';
 import {
   corpusDragAllowance, corpusDragDistance, corpusModelHash, corpusSolvedGraph, readPlaneGcsCorpus, type PlaneGcsCorpusOutcome
 } from './planeGcsCorpus';

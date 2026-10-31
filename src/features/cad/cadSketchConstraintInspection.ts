@@ -8,6 +8,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } fro
 import { cadSketchLinearPatternForSelection, cadSketchLinearPatternInstances } from '@/domain/cad/cadSketchLinearPattern';
 import { cadSketchExternalReferenceComponents } from '@/domain/cad/cadSketchExternalReferences';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
+import { cadSketchRelationDefinition } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { page } from '@/features/webmcp/siteTools';
 import { summarizeMessage, summarizeDiagnostic } from '@/features/webmcp/diagnosticSummaries';
 import type { CadSketchSolveDiagnostics, CadSketchSolveResult, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
@@ -63,28 +64,6 @@ export async function inspectCadSketchConstraints(document: CadDocument, sketchI
   freezeData(result); return result;
 }
 
-const relationMeanings: Record<CadSketchGraphRelation['kind'], string> = {
-  'tangent-joint': 'Keeps one line and one arc smoothly opposed at their explicitly joined endpoints. Declared endpoint identity, arc direction and existing size drivers remain authoritative; it adds no coincidence or radius driver.',
-  'point-on-line': 'Keeps a point on the infinite supporting line of the named guide, with sliding freedom unless other dimensions constrain it. Does not join material boundaries, fix the guide or drive a circle radius.',
-  'point-on-curve': 'Keeps a point on the full supporting circle of the named arc or circle, with sliding freedom unless other dimensions constrain it. Does not join material boundaries, trim the arc or fix the curve.',
-  symmetric: 'Keeps two point positions reflected about the infinite supporting line of the named axis. It does not fix that axis, join points or equalize circle radii.',
-  'linear-pattern': 'Owns a row of circles. Copies follow the seed center and radius at the declared signed axis pitch. Edit this owner to change count, direction or exclusions; detach before independent copy edits.',
-  'reference-dimension': 'Measures current geometry without driving it or adding a native equation.',
-  coincident: 'Keeps two distinct source points at the same location.', horizontal: 'Keeps two points at the same Y coordinate.',
-  midpoint: 'Keeps one distinct graph point halfway between a graph line’s endpoints, including construction lines. Does not join material boundaries.',
-  'external-reference': 'Linked construction geometry follows a stable preceding sketch edge along the shared plane normal. Detach explicitly to retain its current numeric shape without the source link.',
-  vertical: 'Keeps two points at the same X coordinate.', 'fixed-point': 'Fixes a point at its driving X and Y coordinates.',
-  parallel: 'Keeps two line directions parallel.', perpendicular: 'Keeps two line directions at a right angle.',
-  collinear: 'Keeps two lines on the same infinite supporting line without joining endpoints or fixing lengths.',
-  'equal-length': 'Keeps two line lengths equal.', 'equal-radius': 'Keeps two circle or arc radii equal.',
-  'line-angle': 'Drives the declared clockwise or counterclockwise sector between two explicit line rays in degrees.',
-  'radial-size': 'Drives circle or arc size using the declared radius or diameter.',
-  'fixed-axis': 'Keeps one point coordinate, X measured from the Y axis or Y from the X axis; the other can remain free. A value that is 0 whatever the parameters are keeps the point on that axis; any other value is a distance from the axis, on the side its sign gives.', distance: 'Keeps the straight-line distance between two points.',
-  'point-line-distance': 'Keeps a point at a positive distance from the infinite supporting line of the named line, on the side it starts on. Does not fix the line or make it parallel to anything.',
-  'axis-distance': 'Drives the signed second-minus-first point coordinate along the declared sketch axis.',
-  'fillet-corner': 'Keeps a tangent minor arc at the original reference corner, with a driving radius and finite trimmed sides.',
-  'chamfer-corner': 'Keeps two driving setbacks along the finite sides of the original reference corner.'
-};
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 
@@ -142,7 +121,19 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
       catch (error) { return { ...row, measurement: null, measurementDiagnostic: summarizeMessage(error instanceof Error ? error.message : 'Unable to measure this edge.') }; }
     });
   }
-  return page(graph?.relations ?? [], input, source => ({ source, meaning: relationMeanings[source.kind], diagnostics: diagnosticState(source.id),
+  // Driving values by their path: `value` is one row, and `position.0` and `position.1` a list of two.
+  const driving = (source: CadSketchGraphRelation) => {
+    const scalars = cadSketchRelationDefinition(source).scalars, rows: Record<string, unknown> = {};
+    if (!scalars) return rows;
+    const values = scalars.read(source);
+    scalars.keys.forEach((key, index) => {
+      const [path, item] = key.split('.'), row = scalar(values[index], true);
+      if (item === undefined) rows[path] = row;
+      else ((rows[path] ??= []) as unknown[])[Number(item)] = row;
+    });
+    return rows;
+  };
+  return page(graph?.relations ?? [], input, source => ({ source, meaning: cadSketchRelationDefinition(source).agent.meaning, diagnostics: diagnosticState(source.id),
     points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
     ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),
     ...(source.kind === 'linear-pattern' ? { pattern: { seed: source.seed, count: source.count, direction: source.direction,
@@ -151,9 +142,7 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
       valueMm: measureCadSketchReferenceDimension(graph, inspection.parameters, source), role: 'reference-measurement' as const } }
       : source.kind === 'line-angle' ? { value: { scalar: source.value, valueDegrees: evaluateCadScalar(source.value, inspection.parameters), unit: 'deg' as const,
       role: typeof source.value === 'string' ? 'expression-driver' as const : 'constant-driver' as const } }
-      : source.kind === 'distance' || source.kind === 'point-line-distance' || source.kind === 'axis-distance' || source.kind === 'fixed-axis' || source.kind === 'fillet-corner' || source.kind === 'radial-size' ? { value: scalar(source.value, true) }
-      : source.kind === 'fixed-point' ? { position: source.position.map(value => scalar(value, true)) }
-      : source.kind === 'chamfer-corner' ? { values: source.values.map(value => scalar(value, true)) } : {}) }));
+      : driving(source)) }));
 }
 
 /**
