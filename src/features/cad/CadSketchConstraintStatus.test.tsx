@@ -1,4 +1,4 @@
-import { act } from 'react';
+import { act, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
@@ -67,10 +67,13 @@ it('keeps the analysis for the next version that only moves a dimension, and ask
   const inspect = (sketchId: string, version?: string) => new Promise<CadSketchConstraintInspection>(resolve => { versions.push(version); answers.push(degreesOfFreedom => resolve({
     sketchId, pointCount: 2, entityCount: 1, relationCount: 1, legacyProfileCount: 0, legacyDimensionCount: 0, degreesOfFreedomScope: 'graph', graph: null, parameters: {},
     analysis: { kind: 'solved', diagnostics: { status: 'success', degreesOfFreedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] } } })); });
+  // What each version shows when it is first drawn, before any effect has run for it.
+  const drawn: (string | null | undefined)[] = [];
+  const FirstFrame = () => { useLayoutEffect(() => { drawn.push(status()); }); return null; };
   const render = (source: ReturnType<typeof document>, version: string) => act(async () => {
     const sketch = source.features[0]; if (sketch.kind !== 'sketch') throw new Error('Expected sketch.');
-    root.render(<CadSketchConstraintStatus document={source} sketch={sketch} version={version} inspect={inspect} enabled
-      onReport={report => { reports.push(report && `${report.version} ${report.analysis.diagnostics.degreesOfFreedom}`); }} />);
+    root.render(<><CadSketchConstraintStatus document={source} sketch={sketch} version={version} inspect={inspect} enabled
+      onReport={report => { reports.push(report && `${report.version} ${report.analysis.diagnostics.degreesOfFreedom}`); }} /><FirstFrame /></>);
   });
   const placed = { kind: 'linear', offset: 3, along: 0.5 };
   await render(document(10), '1'); await act(async () => answers[0](3));
@@ -79,6 +82,8 @@ it('keeps the analysis for the next version that only moves a dimension, and ask
   expect(versions).toEqual(['1']); expect(status()).toBe('Under defined · 3 DOF'); expect(reports.at(-1)).toBe('2 3');
   await render(document(10), '3');
   expect(versions).toEqual(['1']); expect(reports.at(-1)).toBe('3 3');
+  // Each move shows the kept analysis from its first frame, never a check in between.
+  expect(drawn.slice(1, 3)).toEqual(['Under defined · 3 DOF', 'Under defined · 3 DOF']);
   // A new value is analysed, and so is a move made before that answer arrives, which follows no analysed version.
   await render(document(12, placed), '4'); expect(versions).toEqual(['1', '4']); expect(status()).toBe('Checking freedom…');
   await render(document(12, { ...placed, offset: 5 }), '5'); expect(versions).toEqual(['1', '4', '5']);
