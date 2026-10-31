@@ -138,11 +138,22 @@ From 0.0.787 the 3D view stays under an open sketch and draws the part, dimmed b
   - With the lines kept aside, a Dimmed exit after the first recreates no buffer and compiles no program. In one later, busier session, Dimmed entered in 220 ms and exited in 51 ms, against 201 and 55 ms in Hidden and 430 and 63 ms on main.
 - **Memory.** Ten enter and exit cycles, after two warm-up cycles that also switch the cut, left the heap at 17.36 MB after garbage collection. DOM nodes stayed at 435 in Dimmed and 430 in Hidden and on main, with 763 listeners and one canvas, before and after.
 
-From 0.0.789 the model view shows reference geometry, and a section view can cut it. The origin planes, axes and origin point are sized to the part in steps, and the same objects return until the part outgrows a step, so a rebuild keeps their lines installed. A section is one clipping plane, shared by every clipped material and updated in place. Picks skip the removed side by limiting the ray's near and far distances. Caps draw each body twice more into the stencil buffer, then one quad on the plane, and reuse the bodies' geometry.
+From 0.0.789 the model view shows reference geometry, and a section view can cut it. The origin planes, axes and origin point are sized to the part in steps, and the same objects return until the part outgrows a step, so a rebuild keeps their lines installed. A section is one clipping plane, shared by every clipped material and updated in place. Picks skip the removed side by limiting the ray's near and far distances. Edge and outline picks within the pixel tolerance gather segments along the whole ray and measure only the part the section keeps.
+
+Caps are real geometry on the plane (`cadSectionCaps.ts`). For each cut body, the triangles the plane crosses give segments, the segments join into loops, loops inside loops become holes, and the loops are triangulated. Caps are built once for each plane and each mesh upload while a capped section shows, never on a frame or a hover, and draw once for each cut body. The first draft drew each body twice more into a stencil buffer instead; that lost the cap wherever the camera or the near plane was inside the kept material, and it cost more per frame.
 
 Hover still requests one frame per pointer move, coalesced to one per animation frame and doing its raycasts in that frame, as before.
 
-The measurements below are from production builds in Chromium with SwiftShader at 4× CPU throttling:
+**Cap build cost.** Timed in Vitest on one desktop, unthrottled, three runs each:
+
+| Body | Prepare, once per upload | Cap, once per plane |
+|---|---|---|
+| 120 × 80 × 10 mm plate with 40 holes, 5,292 triangles | 1.1 to 4.9 ms, slowest on the first run | 0.8 to 2.2 ms |
+| Box of 480,000 triangles | 62.5 to 71.7 ms | 18.5 to 24.1 ms |
+
+Preparing joins the vertices that faces repeat and checks that every edge joins two triangles. It uses open-addressed typed-array tables: with JavaScript maps the large body took 210 to 320 ms.
+
+The hover measurements below are from production builds in Chromium with SwiftShader at 4× CPU throttling:
 
 - **Workload.** One body: a 120 × 80 × 10 mm plate with 40 holes of 3 mm radius.
 - **Hover run.** 150 pointer moves along a wave across the middle of the view in its default orientation. Every run ended hovering an edge.
@@ -154,25 +165,28 @@ The measurements below are from production builds in Chromium with SwiftShader a
 
 Results:
 
-- **No work outside the page.** No run posted a message to a worker, so hover made no kernel or solver request and started no rebuild. Every run drew 150 frames for its 149 or 150 moves.
-- **Hover latency.** Time runs from the move to the first task after it. Median of three P50s on the final build:
+- **No work outside the page.** No run posted a message to a worker, so hover made no kernel or solver request and started no rebuild. Every run drew 150 or 151 frames for its 149 or 150 moves.
+- **Hover latency.** Time runs from the move to the first task after it. Median of three P50s on the final build, with the first draft's stencil caps for comparison:
 
-  | Mode | P50 | P95 |
-  |---|---|---|
-  | Plain | 42.5 ms | 135.0 ms |
-  | No references | 40.2 ms | 138.8 ms |
-  | Section | 39.0 ms | 131.6 ms |
-  | Caps | 51.8 ms | 154.4 ms |
+  | Mode | P50 | P95 | First draft P50 | First draft P95 |
+  |---|---|---|---|---|
+  | Plain | 50.5 ms | 171.9 ms | 42.5 ms | 135.0 ms |
+  | No references | 36.3 ms | 130.7 ms | 40.2 ms | 138.8 ms |
+  | Section | 42.1 ms | 128.6 ms | 39.0 ms | 131.6 ms |
+  | Caps | 38.4 ms | 136.1 ms | 51.8 ms | 154.4 ms |
 
-  Single runs of one mode differed by up to 6.5 ms in the same session.
-- **Frame gap.** The P50 frame gap was 16.7 ms in every run without caps, and 33.3 ms in every run with caps.
-- **Caps.** Caps measured 10.1, 11.5 and 14.5 ms slower than Section in the same rounds. SwiftShader rasterizes on the CPU, so the extra stencil passes show up here as time. Measure on a hardware GPU before changing how caps draw.
+  Single runs of one mode differed by up to 13.5 ms in the same session, against 6.5 ms in the first draft's session.
+- **Caps.** In the same rounds, Caps measured 2.3 ms faster, 3.7 ms faster and 3.2 ms slower than Section. The stencil caps had measured 10.1, 11.5 and 14.5 ms slower.
+- **Frame gap.** The P50 frame gap was 16.7 or 16.8 ms in every Caps run, and in every other run except one Section run at 33.3 ms. With stencil caps it was 33.3 ms in every Caps run.
 - **Section without caps.** It measured no slower than Plain: it removes about half of the plate from drawing and picking.
+- **Plain against No references.**
+  - On the final build, Plain measured 6.5, 14.2 and 7.1 ms slower in the four-mode rounds, and 5.5, 8.9 and 14.5 ms slower in three more rounds of the two alone. The first draft's final build had measured 1.2, 1.8 and 10.9 ms.
+  - In one profiled run of each, Plain measured 49.7 ms and No references 49.2 ms. Segment distance, which line picks now measure once more for each hit's kept part, took 89 ms over the 150 moves of the profiled Plain run, against 43 to 75 ms in the first draft's Plain profiles: about 0.3 ms more per move.
+  - Every profile, of both builds and both modes, spent 1.0 to 2.1 s of its hover window in shader compile and link logs, and that time varied between runs. No single function accounts for the rest of the gap. Measure on a hardware GPU before acting on it.
 - **Plane patches drawn in one pass.**
   - In the first session, Plain measured 7.5, 8.1 and 12.6 ms slower than No references in the same rounds.
   - A CPU profile of one run of each traced part of that to the translucent plane patches. three.js draws a transparent double-sided material in two passes, back faces then front, and marks it for update before each, so each patch looked up its shader program twice per frame.
   - A flat patch shows one side at each pixel, so `forceSinglePass` draws the same pixels in one pass. In the profiled Plain run, the program lookups fell from 111 to 20 ms and three.js's draw call from 73 to 35 ms.
-  - On the final build Plain measured 1.2, 1.8 and 10.9 ms slower than No references, which is within the spread of single runs.
   - Main had the same three patches at 25 mm, so it gains this too.
 - **Plane hover.** Pointing at an origin plane renders the workbench once when the hovered plane changes, as pointing at a plane did before, so the tree row can highlight. The planes now reach past the part, so a pointer leaving the part meets one more often.
 

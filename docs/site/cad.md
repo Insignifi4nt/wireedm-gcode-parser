@@ -190,14 +190,14 @@ Click a plane, an axis or the origin point in the design area to select it, as y
 A selected plane or axis is what the next command uses:
 
 - With a plane selected, **Sketch** and **Curve** start on it, **Plane** starts a datum plane on it (on an origin plane as its base, or at a datum plane's own placement), **Mirror** mirrors about an origin plane, and **Section view** cuts the view by it. Mirror cannot use a datum plane yet and says so instead of starting.
-- With an axis selected, **Circular pattern** turns about it through the origin, and **Revolve** turns about it when it is one of the sketch's own axes; otherwise Revolve says why instead of starting about another axis.
+- With an axis selected, **Circular pattern** turns about it through the origin, and **Revolve** turns about it when it is the same line as one of the sketch's own axes, not just parallel or close to one; otherwise Revolve says why instead of starting about another axis.
 - No command uses the origin point yet. A command opened from a feature's own menu works on that feature and ignores the selected reference.
 
 **Filter** in **View** chooses what pointing and clicking in the design area can select: **Bodies**, **Faces**, **Edges**, **Planes**, **Axes** and the **Origin point**. Turn a kind off to click past it, for example turn off Bodies to select an origin plane behind the part. A command that asks you to pick something, such as the edges of a Fillet, still accepts what it asks for. The filter is remembered in this browser. Choosing between overlapping candidates under the pointer is not available yet.
 
 ### Section view
 
-Select an origin plane or an active datum plane, then click **Section view** in **View**, or right-click a datum plane in the tree and choose **Section view**. The view cuts the part, its sketches and curves by the plane and removes the side its normal points to: what faces you in the Top view for XY, in the Front view for XZ and in the Right view for YZ. **Flip section** keeps the other side instead. **Caps**, on by default, fills the cut material with a flat colour so solid and hollow read apart; turn it off to look inside. The reference geometry is not cut.
+Select an origin plane or an active datum plane, then click **Section view** in **View**, or right-click a datum plane in the tree and choose **Section view**. The view cuts the part, its sketches and curves by the plane and removes the side its normal points to: what faces you in the Top view for XY, in the Front view for XZ and in the Right view for YZ. **Flip section** keeps the other side instead. **Caps**, on by default, fills the cut material with a flat colour so solid and hollow read apart, from any viewpoint, including from inside the part. Holes through the cut stay open. A body whose surface does not close shows its cut without a cap. Turn **Caps** off to look inside. The reference geometry is not cut.
 
 The section is a view only. It changes nothing in the part, its history, exports or CAM sections, and clicks and pointing reach only what it leaves, so you can click a face behind the cut. The caps cannot be selected. Captures of the view show what it shows, section and caps included.
 
