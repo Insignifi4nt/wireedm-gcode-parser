@@ -4,9 +4,13 @@ import { parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation }
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { createCadFreshSketchGraph } from '@/domain/cad/cadFreshSketchGraph';
 import { cadSketchGraphWithoutPlacement } from '@/domain/cad/cadSketchPlacedDimensions';
-import { cadSketchDimensionCandidateAt, cadSketchDimensionRelationsAt, planCadSketchDimension, type CadSketchDimensionOperand } from './cadSketchDimensionPlacement';
+import { createCadSketchPointLineDistance } from '@/domain/cad/cadSketchPointLineDistanceRelations';
+import type { Point2 } from '@/domain/path-intel/types';
 import {
-  cadSketchDimensionMove, cadSketchDimensionsPlacedAt, cadSketchGraphDimensionLabel, layoutCadSketchDimensionPreview, layoutCadSketchGraphDimensions,
+  cadSketchDimensionAngleSectorAt, cadSketchDimensionBatchAt, cadSketchDimensionCandidateAt, planCadSketchDimension, type CadSketchDimensionForm, type CadSketchDimensionOperand
+} from './cadSketchDimensionPlacement';
+import {
+  cadSketchDimensionMove, cadSketchGraphDimensionLabel, layoutCadSketchGraphDimensions, placeCadSketchDimensions,
   type CadSketchDimensionMove, type CadSketchGraphDimensionLayout
 } from './cadSketchGraphDimensionLayout';
 import { isCadSketchDimensionRelation } from './cadSketchDimensionSelection';
@@ -51,8 +55,36 @@ function sketch() {
   ], relations: [] });
 }
 
+const ids = () => { let next = 0; return () => `new-${++next}`; };
+/**
+ * A click of the Dimension tool at `pointer` as the workbench places it, for the form a menu names or the one the pointer chooses: the
+ * marks its preview draws there, the marks the sketch it leaves draws for what the click placed, and that sketch.
+ */
+function click(graph: CadSketchGraph, operands: readonly CadSketchDimensionOperand[], pointer: Point2, options: { readonly form?: CadSketchDimensionForm; readonly reference?: boolean } = {}) {
+  const plan = planCadSketchDimension(graph, {}, operands, ids());
+  const candidate = options.form ? plan.candidates.find(item => item.form === options.form) : cadSketchDimensionCandidateAt(plan, pointer);
+  if (!candidate) throw new Error('No dimension to place.');
+  const batch = cadSketchDimensionBatchAt(plan, candidate, pointer, options.reference);
+  if (!batch.added) throw new Error(batch.reason);
+  const { relations, marks: preview } = placeCadSketchDimensions(graph, {}, [...batch.added, ...batch.moved], pointer, scale);
+  const next = parseCadSketchGraph({ ...graph, relations: [...graph.relations.map(item => relations.find(placed => placed.id === item.id) ?? item),
+    ...relations.filter(placed => !graph.relations.some(item => item.id === placed.id))] });
+  const layouts = layoutCadSketchGraphDimensions(next, {}, scale);
+  const drawn = relations.filter(isCadSketchDimensionRelation).flatMap(relation => layouts.filter(layout => layout.relation.id === relation.id));
+  return { candidate, batch, relations, next, drawn, preview: preview.map(marks), stored: drawn.map(marks) };
+}
+/** Whether two drawn dimensions' texts, as boxes turned with them, are clear of each other. */
+const apart = (a: CadSketchGraphDimensionLayout, b: CadSketchGraphDimensionLayout) => {
+  const reach = (layout: CadSketchGraphDimensionLayout) => {
+    const { width, height } = cadSketchGraphDimensionLabel(layout.kind === 'angle' ? layout.valueDegrees : layout.valueMm, layout.kind, layout.relation.kind === 'reference-dimension');
+    const cos = Math.abs(Math.cos(layout.labelAngle)), sin = Math.abs(Math.sin(layout.labelAngle));
+    return { x: (cos * width + sin * height) * scale / 2, y: (sin * width + cos * height) * scale / 2 };
+  };
+  const first = reach(a), second = reach(b);
+  return Math.abs(a.label[0] - b.label[0]) >= first.x + second.x || Math.abs(a.label[1] - b.label[1]) >= first.y + second.y;
+};
+
 describe('a dimension placed where the preview drew it', () => {
-  const parameters = {};
   it.each([
     ['an aligned point distance', [point('a'), point('c')], { x: 20, y: 20 }, false],
     ['a horizontal point distance', [point('a'), point('c')], { x: 30, y: 40 }, false],
@@ -69,27 +101,151 @@ describe('a dimension placed where the preview drew it', () => {
     ['a reference diameter outside the circle', [entity('hole')], { x: 60, y: 60 }, true],
     ['an angle', [entity('bottom'), entity('slant')], { x: 80, y: 9 }, false]
   ] as const)('draws %s as previewed and stores that placement', (_name, operands, pointer, reference) => {
-    const graph = sketch(), candidate = cadSketchDimensionCandidateAt(planCadSketchDimension(graph, parameters, operands, (() => { let next = 0; return () => `new-${++next}`; })()), pointer);
-    if (candidate?.state !== 'available') throw new Error('No dimension to place.');
-    const relations = reference ? [candidate.reference!] : cadSketchDimensionRelationsAt(candidate, pointer).relations!;
-    const placed = cadSketchDimensionsPlacedAt(graph, parameters, relations, pointer, scale), dimensions = placed.filter(isCadSketchDimensionRelation);
+    const graph = sketch(), placed = click(graph, operands, pointer, { reference });
+    expect(placed.candidate.state).toBe('available');
+    const dimensions = placed.relations.filter(isCadSketchDimensionRelation);
     expect(dimensions.length).toBeGreaterThan(0);
     for (const relation of dimensions) expect(relation).toMatchObject({ annotation: expect.any(Object) });
     // Implied relations, such as Parallel, are placed as they are.
-    expect(placed.filter(relation => !isCadSketchDimensionRelation(relation))).toEqual(relations.filter(relation => !isCadSketchDimensionRelation(relation)));
-    const next = withRelations(graph, placed), preview = layoutCadSketchDimensionPreview(candidate.preview, pointer, scale);
-    expect(dimensions.map(relation => marks(of(next, relation.id, parameters)))).toEqual(preview.map(marks));
+    expect(placed.relations.filter(relation => !isCadSketchDimensionRelation(relation))).toEqual(placed.batch.added!.filter(relation => !isCadSketchDimensionRelation(relation)));
+    expect(placed.stored).toEqual(placed.preview);
     // Laid out automatically, the same dimension is drawn elsewhere: the placement is what keeps it where it was clicked.
-    const automatic = withRelations(graph, relations);
-    expect(dimensions.map(relation => marks(of(automatic, relation.id, parameters)))).not.toEqual(preview.map(marks));
+    const automatic = withRelations(graph, placed.batch.added!);
+    expect(dimensions.map(relation => marks(of(automatic, relation.id)))).not.toEqual(placed.preview);
   });
 
   it('places nothing without a finite pointer or zoom, and keeps a dimension it cannot resolve laid out automatically', () => {
     const graph = sketch(), relations: readonly CadSketchGraphRelation[] = [{ id: 'new-1', kind: 'distance', pointIds: ['a', 'c'], value: 1 }];
-    expect(cadSketchDimensionsPlacedAt(graph, {}, relations, { x: Number.NaN, y: 0 }, scale)).toBe(relations);
-    expect(cadSketchDimensionsPlacedAt(graph, {}, relations, { x: 0, y: 0 }, 0)).toBe(relations);
+    expect(placeCadSketchDimensions(graph, {}, relations, { x: Number.NaN, y: 0 }, scale)).toEqual({ relations, marks: [] });
+    expect(placeCadSketchDimensions(graph, {}, relations, { x: 0, y: 0 }, 0).relations).toBe(relations);
     const missing: readonly CadSketchGraphRelation[] = [{ id: 'new-1', kind: 'distance', pointIds: ['a', 'missing'], value: 1 }];
-    expect(cadSketchDimensionsPlacedAt(graph, {}, missing, { x: 0, y: 0 }, scale)).toEqual(missing);
+    expect(placeCadSketchDimensions(graph, {}, missing, { x: 0, y: 0 }, scale)).toEqual({ relations: missing, marks: [] });
+  });
+});
+
+describe('a click that moves or reuses a dimension the sketch holds', () => {
+  /** Two lines crossing at the origin, which the angle between them divides into four sectors. */
+  const cross = (relations: readonly unknown[] = []) => parseCadSketchGraph({ points: [{ id: 'w', position: [-20, 0] }, { id: 'e', position: [20, 0] }, { id: 's', position: [0, -20] }, { id: 'n', position: [0, 20] }],
+    entities: [{ id: 'level', kind: 'line', startPointId: 'w', endPointId: 'e', construction: false }, { id: 'upright', kind: 'line', startPointId: 's', endPointId: 'n', construction: false }], relations });
+  const quadrants = [{ x: 10, y: 10 }, { x: -10, y: 10 }, { x: -10, y: -10 }, { x: 10, y: -10 }];
+
+  it('draws an existing angle in the sector it measures, wherever the pointer is, and stores it as drawn', () => {
+    const angle = planCadSketchDimension(cross(), {}, [entity('level'), entity('upright')], ids()).candidates.find(item => item.form === 'angle');
+    if (angle?.state !== 'available' || angle.preview.kind !== 'angle') throw new Error('Expected the angle\'s sectors.');
+    expect(angle.preview.sectors).toHaveLength(4);
+    for (const sector of angle.preview.sectors) {
+      const measured = { kind: 'angle' as const, sectors: [sector], fallback: null }, graph = cross([{ ...sector.relation, id: 'angle' }]);
+      for (const pointer of quadrants) {
+        const placed = click(graph, [entity('level'), entity('upright')], pointer);
+        expect(placed.candidate).toMatchObject({ state: 'existing', relationIds: ['angle'] });
+        expect(placed.preview).toHaveLength(1); expect(placed.stored).toEqual(placed.preview);
+        // Its text stays in the sector it measures, at the pointer's distance from the corner.
+        const [drawn] = placed.drawn;
+        expect(cadSketchDimensionAngleSectorAt(measured, { x: drawn.label[0], y: drawn.label[1] })).toBe(sector);
+        expect(drawn.kind === 'angle' && drawn.arc?.radius).toBeCloseTo(Math.hypot(10, 10), 9);
+      }
+    }
+  });
+
+  it('draws an existing angle between near-parallel lines as its leader, and stores it as drawn', () => {
+    const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [0, 100] }, { id: 'd', position: [10, 100 + 1e-7] }],
+      entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'top', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+      relations: [{ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'b' }, { lineId: 'top', towardPointId: 'd' }], sense: 'ccw', value: Math.atan2(1e-7, 10) * 180 / Math.PI }] });
+    const placed = click(graph, [entity('base'), entity('top')], { x: 20, y: 50 }, { form: 'angle' });
+    expect(placed.candidate).toMatchObject({ state: 'existing', relationIds: ['angle'] });
+    expect(placed.drawn[0].line).toBeDefined(); expect(placed.preview).toHaveLength(1); expect(placed.stored).toEqual(placed.preview);
+  });
+
+  it('draws a distance reused with what keeps it measuring the picks where it is stored, on either side', () => {
+    const graph = sketch(), gap = createCadSketchPointLineDistance({ graph, parameters: {}, pointId: 'd', lineId: 'bottom', relationId: 'gap' });
+    // Between two lines, the distance from one to an end of the other, which Parallel keeps measuring them.
+    const lines = withRelations(graph, [gap]);
+    for (const operands of [[entity('bottom'), entity('top')], [entity('top'), entity('bottom')]] as const)
+      for (const pointer of [{ x: 30, y: 15 }, { x: 0, y: 15 }, { x: 70, y: 30 }, { x: 30, y: -10 }]) {
+        const placed = click(lines, operands, pointer);
+        expect(placed.candidate).toMatchObject({ state: 'available', reuses: 'gap' });
+        expect(placed.batch.moved.map(relation => relation.id)).toEqual(['gap']);
+        expect(placed.preview).toHaveLength(1); expect(placed.stored).toEqual(placed.preview);
+      }
+    // A line held from the X axis at one end, which Horizontal keeps measuring the line.
+    const end = withRelations(graph, [{ id: 'held', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 5 }]);
+    for (const pointer of [{ x: 30, y: -10 }, { x: 60, y: 2 }, { x: 5, y: 3 }]) {
+      const placed = click(end, [datum('x-axis'), entity('bottom')], pointer);
+      expect(placed.candidate).toMatchObject({ state: 'available', reuses: 'held' });
+      expect(placed.preview).toHaveLength(1); expect(placed.stored).toEqual(placed.preview);
+    }
+    // A point that keeps its X from the origin, which the click gives its Y too: both are drawn as stored.
+    const position = withRelations(graph, [{ id: 'x', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }]);
+    for (const pointer of [{ x: 20, y: 10 }, { x: 45, y: 20 }]) {
+      const placed = click(position, [datum('origin'), point('c')], pointer);
+      expect(placed.candidate).toMatchObject({ state: 'available', reuses: 'x' });
+      expect(placed.preview).toHaveLength(2); expect(placed.stored).toEqual(placed.preview);
+    }
+  });
+
+  it('draws an existing size of a curve, another quantity or a fillet, and distances stored the other way round, as they are stored', () => {
+    const graph = sketch(), sized = withRelations(graph, [{ id: 'radius', kind: 'radial-size', entityId: 'hole', quantity: 'radius', value: 4 }]);
+    // The hole's diameter is picked; its radius is what the sketch holds, and what the click moves.
+    for (const pointer of [{ x: 90, y: 50 }, { x: 81, y: 39 }]) {
+      const placed = click(sized, [entity('hole')], pointer, { form: 'diameter' });
+      expect(placed.candidate).toMatchObject({ state: 'existing', relationIds: ['radius'] });
+      expect(placed.drawn.map(layout => layout.kind)).toEqual(['radius']); expect(placed.stored).toEqual(placed.preview);
+    }
+    const rectangle = createCadFreshSketchGraph({ geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 }, construction: false,
+      createId: (() => { let n = 0; return () => `r_${++n}`; })() });
+    const filleted = createCadSketchCornerTreatment({ graph: rectangle, parameters: {}, pointId: 'r_1', treatment: { kind: 'fillet', radius: 2 }, createId: (() => { let n = 0; return () => `f_${++n}`; })() });
+    const arc = filleted.graph.entities.find(item => item.kind === 'arc')!, fillet = click(filleted.graph, [entity(arc.id)], { x: -5, y: -5 });
+    expect(fillet.candidate).toMatchObject({ state: 'existing', relationIds: [filleted.graph.relations.at(-1)!.id] });
+    expect(fillet.preview).toHaveLength(1); expect(fillet.stored).toEqual(fillet.preview);
+    // Distances whose points the sketch holds in the other order from the picks.
+    const reversed = withRelations(graph, [{ id: 'span', kind: 'distance', pointIds: ['c', 'a'], value: Math.hypot(40, 20) },
+      { id: 'across', kind: 'axis-distance', pointIds: ['a', 'c'], axis: 'x', value: 40 }, { id: 'measured', kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['s1', 'o'] } }]);
+    for (const [operands, pointer, id] of [[[point('a'), point('c')], { x: 20, y: 20 }, 'span'], [[point('a'), point('c')], { x: 40, y: 10 }, 'span'],
+      [[point('c'), point('a')], { x: 30, y: 40 }, 'across'], [[point('c'), point('a')], { x: 30, y: -10 }, 'across'], [[point('o'), point('s1')], { x: 72, y: 28 }, 'measured']] as const) {
+      const placed = click(reversed, operands, pointer);
+      expect(placed.candidate).toMatchObject({ state: 'existing', relationIds: [id] });
+      expect(placed.preview).toHaveLength(1); expect(placed.stored).toEqual(placed.preview);
+    }
+  });
+
+  it('keeps a dimension clicked again where it already is as it is, so the click edits nothing', () => {
+    for (const [operands, pointer] of [[[point('a'), point('c')], { x: 20, y: 20 }], [[point('o'), entity('bottom')], { x: 95, y: 30 }], [[entity('bottom'), entity('slant')], { x: 80, y: 9 }],
+      [[entity('hole')], { x: 60, y: 60 }], [[datum('origin'), point('c')], { x: 20, y: 10 }]] as const) {
+      const first = click(sketch(), operands, pointer), again = click(first.next, operands, pointer, { form: first.candidate.form });
+      expect(again.candidate.state).toBe('existing'); expect(again.relations.length).toBeGreaterThan(0);
+      for (const [index, relation] of again.relations.entries()) expect(relation).toBe(again.batch.moved[index]);
+    }
+  });
+
+  it('draws a reference that only a reference can measure, at zero, as it is stored', () => {
+    const graph = withRelations(parseCadSketchGraph({ ...sketch(), points: [...sketch().points, { id: 'twin', position: [50, 25] }, { id: 'on', position: [30, 5] }] }), []);
+    for (const [operands, pointer] of [[[point('c'), point('twin')], { x: 60, y: 30 }], [[point('on'), entity('bottom')], { x: 25, y: 8 }]] as const) {
+      const placed = click(graph, operands, pointer);
+      expect(placed.candidate.state).toBe('blocked'); expect(placed.relations).toMatchObject([{ kind: 'reference-dimension' }]);
+      expect(placed.preview).toHaveLength(1); expect(placed.stored).toEqual(placed.preview);
+    }
+  });
+});
+
+describe('dimensions one click places', () => {
+  it('steps out each one the click would draw over another, and draws the preview as they are stored', () => {
+    // A line whose ends are both held from the X axis: a click with the axis selects both distances and moves them to the pointer.
+    const held = parseCadSketchGraph({ points: [{ id: 'p', position: [0, 10] }, { id: 'q', position: [40, 10] }], entities: [{ id: 'line', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }],
+      relations: [{ id: 'hp', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }, { id: 'hq', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }] });
+    const ends = click(held, [datum('x-axis'), entity('line')], { x: 48.9, y: 5 });
+    expect(ends.candidate).toMatchObject({ state: 'existing', relationIds: ['hp', 'hq'] });
+    expect(ends.preview).toHaveLength(2); expect(ends.stored).toEqual(ends.preview);
+    // The first runs through the pointer; the second steps out beyond it, clear of its text and line.
+    const [first, second] = ends.drawn;
+    expect(first.line![0][0]).toBeCloseTo(48.9, 9); expect(second.line![0][0]).toBeGreaterThan(48.9 + cadSketchGraphDimensionLabel(10, 'distance').height * scale);
+    expect(apart(first, second)).toBe(true);
+    // A point's X and Y from the origin, which would be drawn over each other with the pointer there.
+    const origin = click(sketch(), [datum('origin'), point('c')], { x: 25, y: 11.4 });
+    expect(origin.preview).toHaveLength(2); expect(origin.stored).toEqual(origin.preview);
+    expect(origin.drawn[0].line![0][1]).toBeCloseTo(11.4, 9); expect(apart(origin.drawn[0], origin.drawn[1])).toBe(true);
+    // Clear of each other, both run through the pointer.
+    const clear = click(sketch(), [datum('origin'), point('c')], { x: 20, y: 10 });
+    expect(clear.drawn.map(layout => layout.kind === 'angle' ? null : layout.line[0])).toEqual([[0, expect.closeTo(10, 9)], [expect.closeTo(20, 9), 0]]);
   });
 });
 
@@ -183,6 +339,38 @@ describe('moving a placed dimension', () => {
     const filleted = createCadSketchCornerTreatment({ graph: rectangle, parameters: {}, pointId: 'r_1', treatment: { kind: 'fillet', radius: 2 }, createId: (() => { let n = 0; return () => `f_${++n}`; })() });
     const fillet = mover(filleted.graph, filleted.graph.relations.at(-1)!.id), at = { x: fillet.layout.label[0], y: fillet.layout.label[1] };
     expect(fillet.placementAt('label', at, { x: at.x + 1, y: at.y })).toMatchObject({ kind: 'radial' });
+  });
+
+  it('moves a dimension at 0 along and away from its line, and keeps it where it was put as its length goes through 0', () => {
+    // Points at one position measured by a reference, a coordinate and a horizontal distance a parameter takes to 0, and a point on a line.
+    const zero = (gap: number, annotations: Readonly<Record<string, object>> = {}) => parseCadSketchGraph({
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }, { id: 'p', position: [10, 10] }, { id: 'q', position: [10 + gap, 10] },
+        { id: 'e', position: [gap, 20] }, { id: 'r', position: [20, gap] }],
+      entities: [{ id: 'base', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }],
+      relations: [{ id: 'twin', kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['p', 'q'] } },
+        { id: 'coordinate', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 'gap' }, { id: 'level', kind: 'axis-distance', pointIds: ['p', 'q'], axis: 'x', value: 'gap' },
+        { id: 'onLine', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'r', lineId: 'base' } }]
+        .map(relation => annotations[relation.id] ? { ...relation, annotation: annotations[relation.id] } : relation) });
+    const placements: Record<string, object> = {};
+    for (const id of ['twin', 'coordinate', 'level', 'onLine']) {
+      const move = mover(zero(0), id, 0, { gap: 0 }), from = { x: move.layout.label[0], y: move.layout.label[1] }, to = { x: from.x + 1.5, y: from.y - 2 };
+      const label = move.placementAt('label', from, to);
+      if (label.kind !== 'linear' || move.start.kind !== 'linear') throw new Error('Expected linear placements.');
+      // The text follows the pointer both along the line and away from it.
+      expect(label.offset).not.toBeCloseTo(move.start.offset, 3); expect(label.along).not.toBeCloseTo(move.start.along, 3);
+      expect(move.layoutAt(label).label).toEqual([expect.closeTo(to.x, 9), expect.closeTo(to.y, 9)]);
+      expect(marks(of(dropped(zero(0), move, label), id, { gap: 0 }))).toEqual(marks(move.layoutAt(label)));
+      placements[id] = label;
+    }
+    // Placed, each keeps its text where it was as its length goes through 0. An aligned distance takes its frame from its points, which
+    // turns over as they pass each other, so it is taken to 0 from one side.
+    for (const id of ['twin', 'coordinate', 'level', 'onLine']) {
+      const at = of(zero(0, placements), id, { gap: 0 });
+      for (const gap of id === 'twin' ? [1e-7] : [1e-7, -1e-7]) {
+        const near = of(zero(gap, placements), id, { gap });
+        expect(near.label).toEqual([expect.closeTo(at.label[0], 6), expect.closeTo(at.label[1], 6)]); expect(near.labelAngle).toBeCloseTo(at.labelAngle, 9);
+      }
+    }
   });
 
   it('moves the leader of an angle between near-parallel lines along and past their ends', () => {

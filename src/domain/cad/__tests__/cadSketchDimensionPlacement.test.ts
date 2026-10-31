@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
 import {
-  cadSketchDimensionAngleSectorAt, cadSketchDimensionCandidateAt, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt,
+  cadSketchDimensionAngleSectorAt, cadSketchDimensionBatchAt, cadSketchDimensionCandidateAt, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt,
   cadSketchDimensionOnDatumReason, cadSketchDimensionRetry, cadSketchPointPairDimensionForm,
   planCadSketchDimension, type CadSketchDimensionCandidate, type CadSketchDimensionOperand, type CadSketchDimensionPlan
 } from '@/features/cad/cadSketchDimensionPlacement';
-import { layoutCadSketchDimensionPreview } from '@/features/cad/cadSketchGraphDimensionLayout';
+import { placeCadSketchDimensions } from '@/features/cad/cadSketchGraphDimensionLayout';
+import type { Point2 } from '@/domain/path-intel/types';
 
 const ids = () => { let next = 0; return () => `new-${++next}`; };
 const point = (id: string): CadSketchDimensionOperand => ({ kind: 'point', id });
@@ -17,6 +18,11 @@ const candidate = (result: CadSketchDimensionPlan, form: CadSketchDimensionCandi
   const found = result.candidates.find(item => item.form === form);
   if (!found) throw new Error(`No ${form} candidate.`);
   return found;
+};
+/** What the preview draws for `found` with the pointer at `pointer`: the marks of what a click there places. */
+const previewOf = (result: CadSketchDimensionPlan, found: CadSketchDimensionCandidate, pointer: Point2, mmPerPixel = .1) => {
+  const batch = cadSketchDimensionBatchAt(result, found, pointer);
+  return batch.added && result.graph ? placeCadSketchDimensions(result.graph, result.parameters, [...batch.added, ...batch.moved], pointer, mmPerPixel).marks : [];
 };
 const available = (result: CadSketchDimensionPlan, form: CadSketchDimensionCandidate['form']) => {
   const found = candidate(result, form);
@@ -81,7 +87,7 @@ describe('dimension plans per pick kind', () => {
       const placed = cadSketchDimensionCandidateAt(result, pointer);
       if (placed?.state !== 'available') throw new Error('Expected the length.');
       expect(cadSketchDimensionRelationsAt(placed, pointer).relations).toEqual([{ id: 'new-1', kind: 'distance', pointIds: ['p', 'q'], value: Math.hypot(40, 20) }]);
-      expect(layoutCadSketchDimensionPreview(placed.preview, pointer, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance', Math.hypot(40, 20)]]);
+      expect(previewOf(result, placed, pointer).map(mark => [mark.kind, mark.value])).toEqual([['distance', Math.hypot(40, 20)]]);
     }
     expect(candidate(result, 'horizontal')).toMatchObject({ state: 'available', relations: [{ kind: 'axis-distance', axis: 'x', value: 40 }] });
     expect(candidate(result, 'vertical')).toMatchObject({ state: 'available', relations: [{ kind: 'axis-distance', axis: 'y', value: 20 }] });
@@ -150,11 +156,11 @@ describe('dimension plans per pick kind', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'p', position: [0, 0] }, { id: 'q', position: [40, 0] }, { id: 'on', position: [15, 0] }, { id: 'twin', position: [40, 0] }, { id: 'joined', position: [0, 0] }],
       entities: [{ id: 'line', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }], relations: [{ id: 'join', kind: 'coincident', pointIds: ['p', 'joined'] }] });
     // A distinct point lying on the line.
-    const onLine = candidate(plan(graph, [point('on'), entity('line')]), 'point-line');
+    const onLinePlan = plan(graph, [point('on'), entity('line')]), onLine = candidate(onLinePlan, 'point-line');
     expect(onLine).toMatchObject({ state: 'blocked', reason: 'The point lies on the line. Use Point on line to keep it there.',
       reference: { kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'on', lineId: 'line' } }, preview: { kind: 'point-line', value: 0 } });
     if (onLine.state !== 'blocked' || !onLine.preview) throw new Error('Expected a reference preview.');
-    expect(layoutCadSketchDimensionPreview(onLine.preview, { x: 15, y: 5 }, .1)).toHaveLength(1);
+    expect(previewOf(onLinePlan, onLine, { x: 15, y: 5 })).toHaveLength(1);
     // Two distinct points at one position.
     const twins = plan(graph, [point('q'), point('twin')]), aligned = candidate(twins, 'aligned');
     expect(aligned).toMatchObject({ state: 'blocked', reason: 'These points share one position, so they have no distance.',
@@ -162,7 +168,7 @@ describe('dimension plans per pick kind', () => {
     expect(cadSketchDimensionCandidateAt(twins, { x: 50, y: 10 })).toBe(aligned);
     expect(candidate(twins, 'horizontal')).not.toHaveProperty('reference');
     if (aligned.state !== 'blocked' || !aligned.preview) throw new Error('Expected a reference preview.');
-    expect(layoutCadSketchDimensionPreview(aligned.preview, { x: 40, y: 6 }, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance', 0]]);
+    expect(previewOf(twins, aligned, { x: 40, y: 6 }).map(mark => [mark.kind, mark.value])).toEqual([['distance', 0]]);
     // Joined points are one point, so they take nothing; an existing reference of the zero distance is selected.
     expect(plan(graph, [point('p'), point('joined')]).candidates.every(item => item.state === 'blocked' && !item.reference)).toBe(true);
     const measured = parseCadSketchGraph({ ...graph, relations: [...graph.relations, { id: 'zero', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'on', lineId: 'line' } }] });
@@ -239,9 +245,9 @@ describe('dimensions to the origin and axes', () => {
     }
     expect(available(plan(sketch(), [datum('x-axis'), entity('bend')]), 'datum').relations).toEqual([{ id: 'new-1', kind: 'fixed-axis', pointId: 'arc-center', axis: 'y', value: 60 }]);
     // Its preview is drawn as placed: square to the axis, labelled with its size whichever side of the axis the point is on.
-    const below = available(plan(parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'c' ? { ...item, position: [50, -25] } : item) }), [datum('x-axis'), point('c')]), 'datum');
+    const belowPlan = plan(parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'c' ? { ...item, position: [50, -25] } : item) }), [datum('x-axis'), point('c')]), below = available(belowPlan, 'datum');
     expect(below.relations).toMatchObject([{ kind: 'fixed-axis', axis: 'y', value: -25 }]);
-    expect(layoutCadSketchDimensionPreview(below.preview, { x: 70, y: -10 }, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance', 25]]);
+    expect(previewOf(belowPlan, below, { x: 70, y: -10 }).map(mark => [mark.kind, mark.value])).toEqual([['distance', 25]]);
   });
 
   it('takes no distance from an axis for a point or line on it, and says Coincident keeps it there', () => {
@@ -312,39 +318,39 @@ describe('dimensions to the origin and axes', () => {
 describe('preview measurement', () => {
   it('draws the dimension line through the pointer with the measured value', () => {
     const result = plan(sketch(), [point('a'), point('c')]);
-    const aligned = available(result, 'aligned'), [mark] = layoutCadSketchDimensionPreview(aligned.preview, { x: 20, y: 20 }, .1);
+    const aligned = available(result, 'aligned'), [mark] = previewOf(result, aligned, { x: 20, y: 20 });
     expect(mark).toMatchObject({ kind: 'distance', value: Math.hypot(40, 20) });
-    const horizontal = available(result, 'horizontal'), [level] = layoutCadSketchDimensionPreview(horizontal.preview, { x: 30, y: 40 }, .1);
+    const horizontal = available(result, 'horizontal'), [level] = previewOf(result, horizontal, { x: 30, y: 40 });
     expect(level).toMatchObject({ kind: 'distance-x', value: 40, line: [[10, 40], [50, 40]] });
-    const vertical = available(result, 'vertical'), [upright] = layoutCadSketchDimensionPreview(vertical.preview, { x: 70, y: 15 }, .1);
+    const vertical = available(result, 'vertical'), [upright] = previewOf(result, vertical, { x: 70, y: 15 });
     expect(upright).toMatchObject({ kind: 'distance-y', value: 20, line: [[70, 5], [70, 25]] });
   });
 
   it('draws a datum per axis and a radial size toward the pointer', () => {
     // Each coordinate from the origin previews as the distance from its axis it places, labelled with its size.
-    const position = available(plan(sketch(), [datum('origin'), point('c')]), 'datum');
-    expect(layoutCadSketchDimensionPreview(position.preview, { x: 20, y: 10 }, .1).map(mark => [mark.kind, mark.value])).toEqual([['distance', 50], ['distance', 25]]);
-    const radius = available(plan(sketch(), [entity('bend')]), 'radius'), [mark] = layoutCadSketchDimensionPreview(radius.preview, { x: 0, y: 80 }, .1);
+    const origin = plan(sketch(), [datum('origin'), point('c')]), position = available(origin, 'datum');
+    expect(previewOf(origin, position, { x: 20, y: 10 }).map(mark => [mark.kind, mark.value])).toEqual([['distance', 50], ['distance', 25]]);
+    const bend = plan(sketch(), [entity('bend')]), radius = available(bend, 'radius'), [mark] = previewOf(bend, radius, { x: 0, y: 80 });
     expect(mark).toMatchObject({ kind: 'radius', value: 5 });
-    expect(layoutCadSketchDimensionPreview(radius.preview, { x: Number.NaN, y: 0 }, .1)).toEqual([]);
+    expect(previewOf(bend, radius, { x: Number.NaN, y: 0 })).toEqual([]);
   });
 
   it('puts a radius or diameter label at the pointer\'s distance as well as its direction, inside or outside the curve', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'o', position: [0, 0] }, { id: 's', position: [5, 0] }, { id: 'e', position: [0, 5] }],
       entities: [{ id: 'ring', kind: 'circle', centerPointId: 'o', radius: 5, construction: false }, { id: 'bend', kind: 'arc', centerPointId: 'o', startPointId: 's', endPointId: 'e', direction: 'ccw', construction: false }], relations: [] });
     for (const [id, form] of [['ring', 'diameter'], ['ring', 'radius'], ['bend', 'radius'], ['bend', 'diameter']] as const) {
-      const size = available(plan(graph, [entity(id)]), form);
-      const [near] = layoutCadSketchDimensionPreview(size.preview, { x: 10, y: 0 }, .1), [far] = layoutCadSketchDimensionPreview(size.preview, { x: 50, y: 0 }, .1);
+      const sized = plan(graph, [entity(id)]), size = available(sized, form);
+      const [near] = previewOf(sized, size, { x: 10, y: 0 }), [far] = previewOf(sized, size, { x: 50, y: 0 });
       // Outside the curve the leader runs from the center to the label, with the arrow meeting the curve from outside.
       expect(near.label).toEqual([10, 0]); expect(far.label).toEqual([50, 0]);
       expect(near.line).toEqual([[0, 0], [10, 0]]); expect(far.line).toEqual([[0, 0], [50, 0]]);
       expect(far.arrows[0][0]).toEqual([5, 0]); expect(far.arrows[0][1][0]).toBeGreaterThan(5);
       // Inside it the leader stops at the curve, with the arrow meeting it from the center.
-      const [inside] = layoutCadSketchDimensionPreview(size.preview, { x: 0, y: 2 }, .1);
+      const [inside] = previewOf(sized, size, { x: 0, y: 2 });
       expect(inside.label[0]).toBeCloseTo(0, 12); expect(inside.label[1]).toBeCloseTo(2, 12);
       expect(inside.line?.[1][0]).toBeCloseTo(0, 12); expect(inside.line?.[1][1]).toBeCloseTo(5, 12); expect(inside.arrows[0][1][1]).toBeLessThan(5);
       // On the center itself the label stays there, as it does a hair away, and the leader keeps its fallback direction to the curve.
-      const [centred] = layoutCadSketchDimensionPreview(size.preview, { x: 0, y: 0 }, .1), [beside] = layoutCadSketchDimensionPreview(size.preview, { x: 1e-9, y: 0 }, .1);
+      const [centred] = previewOf(sized, size, { x: 0, y: 0 }), [beside] = previewOf(sized, size, { x: 1e-9, y: 0 });
       expect(centred.label).toEqual([0, 0]); expect(Math.hypot(centred.label[0] - beside.label[0], centred.label[1] - beside.label[1])).toBeLessThan(1e-8);
       expect(centred.line?.[0]).toEqual([0, 0]); expect(centred.line?.[1][0]).toBeCloseTo(5 * Math.SQRT1_2, 12); expect(centred.line?.[1][1]).toBeCloseTo(5 * Math.SQRT1_2, 12);
     }

@@ -20,12 +20,12 @@ import { cadSketchRelationName } from './cadSketchRelationNames';
 import { CAD_SKETCH_RELATION_ICONS } from './CadSketchRelationGlyphs';
 import { cadSketchAxisDistanceLine, cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
 import {
-  CAD_SKETCH_DIMENSION_EXISTING_REASON, cadSketchDimensionCandidateAt, cadSketchDimensionOnDatumReason, cadSketchDimensionPickAllowed, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt, cadSketchDimensionRetry,
+  CAD_SKETCH_DIMENSION_EXISTING_REASON, cadSketchDimensionBatchAt, cadSketchDimensionCandidateAt, cadSketchDimensionOnDatumReason, cadSketchDimensionPickAllowed, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRetry,
   NO_SKETCH_DIMENSION_PLAN, planCadSketchDimension, type CadSketchDimensionForm, type CadSketchDimensionOperand
 } from './cadSketchDimensionPlacement';
 import { createCadSketchPointerStore } from './CadSketchDimensionPreview';
 import type { Point2 } from '@/domain/path-intel/types';
-import { cadSketchDimensionsPlacedAt, cadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
+import { cadSketchDrawnDimensions, placeCadSketchDimensions } from './cadSketchGraphDimensionLayout';
 import { withoutCadSketchDimensionAnnotation } from '@/domain/cad/cadSketchPlacedDimensions';
 import { CadSketchAreaRepairPanel } from './CadSketchAreaRepairPanel';
 import { CadSketchOffsetEditor, cadSketchOffsetSource } from './CadSketchOffsetEditor';
@@ -1433,15 +1433,16 @@ export function CadWorkbench(props: CadWorkbenchProps) {
    * Places the dimension the picks preview at the pointer, or the form a menu names, driving or as a reference, in one edit through the
    * prepared edit path, so it is one undo step. A driving dimension that preparation rejects as over-defining is placed as its reference
    * instead when it has one; otherwise the rejection stands in its own words and the picks stay. A quantity that a dimension already measures
-   * moves that dimension to the pointer and selects it. Each dimension is stored where the preview drew it, its line or arc through the
-   * pointer. The edit checks the tool, document, version and sketch before each attempt, so a stale placement never applies.
+   * moves that dimension to the pointer and selects it. Each dimension is stored where the preview drew it, from the same placement of the
+   * same relations: its line or arc through the pointer, one the click also places stepped clear of it, and an existing or reused one in the
+   * sector or side it measures. The edit checks the tool, document, version and sketch before each attempt, so a stale placement never applies.
    */
   const placeDimension = (choice: { readonly form?: CadSketchDimensionForm; readonly reference?: boolean; readonly pointer?: Point2 | null } = {}) => {
     const session = dimensionToolOwner.current, picks = currentDimensionPicks, graph = sketch?.graph;
     if (!session || !picks || session.picks !== picks || !sketch || !graph || commandSubmission.applying) return;
     const pointer = choice.pointer === undefined ? dimensionPointer.get() : choice.pointer, scale = dimensionPointer.scale(), parameters = document.parameters;
     // What is placed is what the preview shows at the pointer; before the pointer has been over the canvas, Enter places the automatic layout.
-    const placedAt = <Relation extends CadSketchGraphRelation>(relations: readonly Relation[]) => pointer && scale ? cadSketchDimensionsPlacedAt(graph, parameters, relations, pointer, scale) : relations;
+    const place = (relations: readonly CadSketchGraphRelation[]) => pointer && scale ? placeCadSketchDimensions(graph, parameters, relations, pointer, scale).relations : relations;
     const sourceSketchId = sketch.id;
     const current = () => {
       const state = interactionState.current;
@@ -1456,7 +1457,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       const onDatum = picks.length ? null : cadSketchDimensionOnDatumReason(graph.relations.filter(relation => candidate.relationIds.includes(relation.id)));
       const settle = () => { const owner = dimensionToolOwner.current; if (owner?.id !== session.id) return; settleDimension(owner, { picks, selected: false }); props.onStatusMessage?.(onDatum ?? candidate.reason, 'info'); };
       // An existing dimension moves to the pointer as one edit of its placement alone, which solves nothing.
-      const existing = graph.relations.filter(relation => candidate.relationIds.includes(relation.id)), moved = placedAt(existing).filter((relation, index) => relation !== existing[index]);
+      const existing = cadSketchDimensionBatchAt(dimensionPlan, candidate, pointer).moved ?? NO_SKETCH_RELATIONS, moved = place(existing).filter((relation, index) => relation !== existing[index]);
       if (!moved.length) { settle(); return; }
       submitEdit(signal => {
         if (signal.aborted || !current()) throw new Error('The sketch changed before the dimension was placed. Pick the geometry again.');
@@ -1464,25 +1465,27 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       }, settle, 'The dimension could not be placed.');
       return;
     }
-    const resolved = candidate.state === 'available' ? cadSketchDimensionRelationsAt(candidate, pointer) : { relations: NO_SKETCH_RELATIONS, reason: null }, reference = candidate.reference ?? null;
-    if (!resolved.relations) { setError(resolved.reason); return; }
+    const reference = candidate.reference ?? null;
     if (choice.reference && !reference) return;
+    // What a click adds and the relation it reuses are the preview's; an angle measures the sector the pointer is in.
+    const first = cadSketchDimensionBatchAt(dimensionPlan, candidate, pointer, Boolean(choice.reference));
+    if (!first.added) { setError(first.reason); return; }
     // A reused relation stays and is selected with what the placement adds, when it is a dimension: the placement adds only the implied relation that
     // keeps a reused dimension measuring the picks, or the other coordinate of a point from the origin.
-    const reused = candidate.state === 'available' && candidate.reuses ? graph.relations.find(relation => relation.id === candidate.reuses) ?? null : null;
-    const driving = resolved.relations, plannedImplied = candidate.state === 'available' ? candidate.implied : null;
-    const keepsReused = Boolean(reused) && driving.every(relation => relation.id === plannedImplied);
+    const reused = first.moved[0] ?? null, plannedImplied = candidate.state === 'available' ? candidate.implied : null;
+    const keepsReused = Boolean(reused) && first.added.every(relation => relation.id === plannedImplied);
     let placed: readonly CadSketchGraphRelation[] = NO_SKETCH_RELATIONS, referenced = false, fellBack = false, added = false;
     submitEdit(async signal => {
-      let relations: readonly CadSketchGraphRelation[] = choice.reference && reference ? [reference] : driving, implied = choice.reference ? null : plannedImplied;
+      let relations: readonly CadSketchGraphRelation[] = first.added, implied = choice.reference ? null : plannedImplied;
       referenced = Boolean(choice.reference);
       for (;;) {
         if (signal.aborted || !current()) throw new Error('The sketch changed before the dimension was placed. Pick the geometry again.');
-        // A reused dimension moves to the click as its preview drew it; one whose implied relation the sketch already holds needs no other edit.
-        const moved = reused && !referenced ? placedAt([reused]).filter(relation => relation !== reused) : NO_SKETCH_RELATIONS;
+        // The reused dimension moves to the click with what it adds, as one placement; one whose implied relation the sketch already holds needs no other edit.
+        const moving = reused && !referenced ? [reused] : NO_SKETCH_RELATIONS, batch = place([...relations, ...moving]);
+        const moved = batch.slice(relations.length).filter((relation, index) => relation !== moving[index]);
         if (!relations.length && !moved.length) { placed = reused ? [reused] : NO_SKETCH_RELATIONS; return; }
         try {
-          await applyCanvasEdits([...placedAt(relations), ...moved].map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation })), signal);
+          await applyCanvasEdits([...batch.slice(0, relations.length), ...moved].map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation })), signal);
           placed = referenced || !reused ? relations : coordinatesInOrder([reused, ...relations]); added = relations.length > 0; return;
         } catch (cause) {
           if (signal.aborted || !(cause instanceof CadSketchPreparationError)) throw cause;

@@ -116,14 +116,18 @@ describe('signed graph axis dimension layout', () => {
       relations: [{ id: 'zero', kind: 'axis-distance', pointIds: ['from', 'to'], axis, value: ' zero ' }] });
     const layout = linearDimensions(graph, { zero: 0 }, .1)[0];
     expect(layout).toBeDefined(); expect(layout.relation).toBe(graph.relations[0]); expect(layout.valueMm).toBe(0);
-    // With no span, the label continues the leader beyond the line's end, 20 px out and half its height plus 2 px further.
-    expect(layout.label).toEqual(axis === 'x' ? [0, expect.closeTo(-3.1, 12)] : [expect.closeTo(13.1, 12), 0]);
+    // With no span it is drawn as one a hair long is: one leader out to its line, 28 px off as its text faces the points, and the text
+    // above the line, reading along it.
+    expect(layout.label).toEqual(axis === 'x' ? [0, expect.closeTo(-1.7, 12)] : [expect.closeTo(11.7, 12), 0]);
+    expect(layout.labelAngle).toBeCloseTo(axis === 'x' ? 0 : Math.PI / 2, 12);
     expect(layout.line[0]).toEqual(layout.line[1]); expect(layout.extensions).toHaveLength(2); expect(layout.arrows).toEqual([]);
     expect([...layout.label, ...layout.line.flat(), ...layout.extensions.flat(2)].every(Number.isFinite)).toBe(true);
     const tiny = linearDimensions(parseCadSketchGraph({ ...graph,
       points: [graph.points[0], { id: 'to', position: axis === 'x' ? [1e-9, 10] : [10, 1e-9] }],
       relations: [{ id: 'tiny', kind: 'axis-distance', pointIds: ['from', 'to'], axis, value: ' small ' }] }), { small: 1e-9 }, .1)[0];
     expect(tiny.valueMm).toBe(1e-9); expect(tiny.arrows).toHaveLength(2);
+    // So its text stays put as the span goes to 0.
+    expect(tiny.label).toEqual([expect.closeTo(layout.label[0], 8), expect.closeTo(layout.label[1], 8)]); expect(tiny.labelAngle).toBeCloseTo(layout.labelAngle, 12);
     expect(cadSketchGraphDimensionLabel(tiny.valueMm, tiny.kind).quantity).not.toBe('0 mm');
   });
 });
@@ -227,7 +231,7 @@ describe('explicit graph distance layout', () => {
     expect(linearDimensions(graph, { size: 1e-9 }, 0)).toEqual([]);
   });
 
-  it('draws a distance that a parameter takes to 0 as a short leader with its label, without arrows', () => {
+  it('draws a distance that a parameter takes to 0 as a short leader with its label, without arrows, as one a hair long is', () => {
     const graph = parseCadSketchGraph({ points: [{ id: 'a', position: [5, 5] }, { id: 'same', position: [5, 5] }, { id: 'b', position: [30, 5] }], entities: [], relations: [
       { id: 'gap', kind: 'distance', pointIds: ['a', 'same'], value: 'gap' }, { id: 'shift', kind: 'axis-distance', pointIds: ['a', 'same'], axis: 'x', value: 'gap' },
       { id: 'span', kind: 'distance', pointIds: ['a', 'b'], value: 25 }] });
@@ -237,10 +241,16 @@ describe('explicit graph distance layout', () => {
       expect(zero.arrows).toEqual([]); expect(zero.line[0]).toEqual(zero.line[1]);
       expect([...zero.label, zero.labelAngle, ...zero.extensions.flat(2)].every(Number.isFinite)).toBe(true);
     }
-    // The leader runs from 0.3 mm off the point, 3 px at 0.1 mm per pixel, to just past the label's line, and the label sits beyond it.
+    // The leader runs from 0.3 mm off the point, 3 px at 0.1 mm per pixel, to just past the line, 28 px below as its text faces the point,
+    // and the text reads level above the line.
     const [from, to] = gap.extensions[0], out = Math.hypot(to[0] - 5, to[1] - 5);
-    expect(Math.hypot(from[0] - 5, from[1] - 5)).toBeCloseTo(.3, 12); expect(out).toBeCloseTo(2.2, 12);
-    expect(Math.hypot(gap.label[0] - 5, gap.label[1] - 5)).toBeGreaterThan(out);
+    expect(Math.hypot(from[0] - 5, from[1] - 5)).toBeCloseTo(.3, 12); expect(out).toBeCloseTo(3, 12);
+    expect(gap.label).toEqual([expect.closeTo(5, 12), expect.closeTo(3.3, 12)]); expect(gap.labelAngle).toBe(0);
+    // A gap a hair long, either way, draws its text where the gap at 0 does.
+    for (const hair of [1e-9, -1e-9]) {
+      const [short] = linearDimensions(parseCadSketchGraph({ ...graph, points: graph.points.map(item => item.id === 'same' ? { ...item, position: [5 + hair, 5] } : item) }), { gap: Math.abs(hair) }, .1);
+      expect(short.label).toEqual([expect.closeTo(gap.label[0], 8), expect.closeTo(gap.label[1], 8)]); expect(short.labelAngle).toBeCloseTo(gap.labelAngle, 12);
+    }
     expect(cadSketchGraphDimensionLabel(gap.valueMm, gap.kind).text).toBe('0 mm');
   });
 
@@ -436,9 +446,13 @@ describe('point to line distance layout', () => {
       if (zero.kind !== 'point-line') throw new Error('Zero point to line annotation missing.');
       expect(zero).toMatchObject({ relation: graph.relations[index], valueMm: 0, arrows: [], extensions: [] });
       expect(zero.line.flat().map(value => value + 0)).toEqual([5, 0, 5, 0]);
-      // The label sits square to the support, above it, and reads along it.
-      expect(zero.label[0]).toBeCloseTo(5, 12); expect(zero.label[1]).toBeGreaterThan(0);
-      expect([...zero.label, zero.labelAngle].every(Number.isFinite)).toBe(true);
+      // It is drawn as a distance a hair long is: its text beside the point, reading square to the support.
+      expect(zero.label).toEqual([expect.closeTo(3.9, 12), expect.closeTo(0, 12)]); expect(zero.labelAngle).toBeCloseTo(Math.PI / 2, 12);
+    }
+    // So the text stays put as the point crosses the support.
+    for (const hair of [1e-9, -1e-9]) {
+      const near = layoutCadSketchGraphDimensions(parseCadSketchGraph({ ...graph, points: graph.points.map(item => item.id === 'q' ? { ...item, position: [5, hair] } : item) }), { gap: Math.abs(hair) }, .1);
+      near.forEach((item, index) => { expect(item.label).toEqual([expect.closeTo(result[index].label[0], 8), expect.closeTo(result[index].label[1], 8)]); expect(item.labelAngle).toBeCloseTo(result[index].labelAngle, 12); });
     }
   });
 });
@@ -464,21 +478,25 @@ describe('distance from an axis layout', () => {
     expect(span(loose, 1)[1]).toBeCloseTo(20, 12); expect(loose.line[0][0]).toBeCloseTo(loose.line[1][0], 12); expect(Math.abs(loose.line[0][0] - 10)).toBeLessThan(Math.abs(top.line[0][0] - 10));
   });
 
-  it('draws a coordinate that follows a parameter at 0 as a leader square to its axis, and the same coordinate off the axis as usual', () => {
+  it('draws a coordinate that follows a parameter at 0 as the same coordinate a hair off the axis, and off the axis as usual', () => {
     const graph = (offset: number) => parseCadSketchGraph({ points: [{ id: 'e', position: [offset, 20] }, { id: 'q', position: [30, offset] }], entities: [], relations: [
       { id: 'ex', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 'offset' }, { id: 'qy', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 'offset' }] });
     const [x, y] = linearDimensions(graph(0), { offset: 0 }, .1);
     expect([x.relation.id, x.valueMm, y.relation.id, y.valueMm]).toEqual(['ex', 0, 'qy', 0]);
     expect(cadSketchGraphDimensionLabel(x.valueMm, x.kind).text).toBe('0 mm');
-    // e sits on the Y axis: its leader runs level from the point, across the axis, and its label beyond the leader reads along the axis.
-    for (const [guide, index] of [[x.extensions[0], 1], [y.extensions[0], 0]] as const) {
-      expect(guide[0][index]).toBeCloseTo(guide[1][index], 12); expect(Math.hypot(guide[1][0] - guide[0][0], guide[1][1] - guide[0][1])).toBeCloseTo(1.9, 12);
-    }
-    expect(x.extensions[0][0][1]).toBeCloseTo(20, 12); expect(x.label[1]).toBeCloseTo(20, 12); expect(Math.abs(x.label[0])).toBeGreaterThan(2.2);
-    expect(Math.abs(Math.sin(x.labelAngle))).toBeCloseTo(1, 12);
-    // q sits on the X axis: its leader runs upright from the point.
-    expect(y.extensions[0][0][0]).toBeCloseTo(30, 12); expect(y.label[0]).toBeCloseTo(30, 12); expect(Math.abs(y.label[1])).toBeGreaterThan(2.2);
+    // e sits on the Y axis: as for a coordinate a hair off it, its leader runs out from the point along the axis, and its text reads level,
+    // across the axis, as the X distance it is.
+    for (const [guide, index] of [[x.extensions[0], 0], [y.extensions[0], 1]] as const) expect(guide[0][index]).toBeCloseTo(guide[1][index], 12);
+    expect(x.extensions[0][0][0]).toBeCloseTo(0, 12); expect(x.label[0]).toBeCloseTo(0, 12); expect(Math.abs(x.label[1] - 20)).toBeGreaterThan(.3);
+    expect(Math.sin(x.labelAngle)).toBeCloseTo(0, 12);
+    // q sits on the X axis: its leader runs along that axis from the point, and its text reads upright.
+    expect(y.extensions[0][0][1]).toBeCloseTo(0, 12); expect(y.label[1]).toBeCloseTo(0, 12); expect(Math.abs(Math.sin(y.labelAngle))).toBeCloseTo(1, 12);
     expect([x, y].every(layout => layout.arrows.length === 0)).toBe(true);
+    // Taken through 0 by its parameter, each keeps its text where it was.
+    for (const hair of [1e-9, -1e-9]) linearDimensions(graph(hair), { offset: hair }, .1).forEach((near, index) => {
+      const zero = [x, y][index];
+      expect(near.label).toEqual([expect.closeTo(zero.label[0], 8), expect.closeTo(zero.label[1], 8)]); expect(near.labelAngle).toBeCloseTo(zero.labelAngle, 12);
+    });
     // Off the axes, the same coordinates are the usual distances from them.
     const [far] = linearDimensions(graph(5), { offset: 5 }, .1);
     expect([far.valueMm, span(far, 0)]).toEqual([5, [0, 5]]); expect(far.arrows).toHaveLength(2);

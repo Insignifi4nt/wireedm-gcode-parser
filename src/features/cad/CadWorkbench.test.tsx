@@ -4613,7 +4613,7 @@ describe('sketch definition colours and locks', () => {
   });
 
   it('keeps the freedom, colours and locks through each dimension move without a frame that drops them, and asks again after a geometry change', async () => {
-    const span = { id: 'span', kind: 'distance', pointIds: ['a', 'b'], value: 20 };
+    const span = { id: 'span', kind: 'distance', pointIds: ['a', 'b'], value: 20 } as const;
     const source = parseCadDocument({ ...createCadDocument('Bracket', 'definition-placed'), schemaVersion: 2, features: [sketchFeature('sketch', bracketPoints, bracketEdges, [span])] });
     const h = await mountAnalysed(source);
     await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));

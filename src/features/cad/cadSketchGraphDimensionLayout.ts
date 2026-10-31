@@ -13,7 +13,6 @@ import { cadSketchSignedPointLineDistance, resolveCadSketchPointLineDistanceOper
 import type { Point2 } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
-import { cadSketchDimensionAngleSectorAt, type CadSketchDimensionPreviewSource } from './cadSketchDimensionPlacement';
 import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
 import { isCadSketchDimensionRelation } from './cadSketchDimensionSelection';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
@@ -67,13 +66,13 @@ export function cadSketchGraphDimensionLabel(value: number, kind: CadSketchGraph
  * When "above" faces the measured geometry the line moves further out so the text stays clear of the part.
  */
 function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixel: number, box: { readonly height: number }, placedOffset?: number): Omit<LinearDimensionGeometry, 'valueMm'> {
-  const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = length === 0 ? 0 : dx / length, uy = length === 0 ? 0 : dy / length;
-  let readX = length === 0 ? -ny : ux, readY = length === 0 ? nx : uy;
-  if (readX < -1e-12 || Math.abs(readX) <= 1e-12 && readY < 0) { readX = -readX; readY = -readY; }
-  // A dimension being placed sits where the pointer put it, `placedOffset` screen pixels out. With no length, the extensions are one leader
-  // out from the point and the label continues it, beyond the line's end, so it never faces the part.
-  const upX = -readY, upY = readX, lineOffset = placedOffset ?? (length > 0 && upX * nx + upY * ny < -1e-12 ? 20 + isoInwardClearance : 20);
-  const liftX = length === 0 ? nx : upX, liftY = length === 0 ? ny : upY;
+  // With no length the line keeps the direction square to its normal, so a dimension at 0 is drawn as one a hair long is: its extensions
+  // are one leader out from the point to the line, and its text reads along the line above it.
+  const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = length === 0 ? -ny : dx / length, uy = length === 0 ? nx : dy / length;
+  const { x: readX, y: readY } = reading(ux, uy);
+  // A dimension being placed sits where the pointer put it, `placedOffset` screen pixels out.
+  const upX = -readY, upY = readX, lineOffset = placedOffset ?? (upX * nx + upY * ny < -1e-12 ? 20 + isoInwardClearance : 20);
+  const liftX = upX, liftY = upY;
   const offset = (point: Point2, pixels: number): SketchPoint => [point.x + nx * pixels * mmPerPixel, point.y + ny * pixels * mmPerPixel];
   const line: Pair = [offset(a, lineOffset), offset(b, lineOffset)];
   const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, length / 4), headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, length / 8);
@@ -176,6 +175,8 @@ interface Part {
   moved(start: CadSketchDimensionPartPlacement, from: Point2, to: Point2, mmPerPixel: number): CadSketchDimensionPartPlacement;
   /** The placement that draws automatic `marks`, which separation may have moved out. */
   of(marks: Marks, mmPerPixel: number): CadSketchDimensionPartPlacement;
+  /** `placement` taken `distance` millimetres further out from what the dimension measures, as one click steps a dimension clear of another. */
+  outward(placement: CadSketchDimensionPartPlacement, distance: number): CadSketchDimensionPartPlacement;
 }
 const linear = (offset: number, along: number): CadSketchLinearAnnotation => ({ kind: 'linear', offset, along });
 const wrapAngle = (angle: number) => angle - 2 * Math.PI * Math.floor((angle + Math.PI) / (2 * Math.PI));
@@ -184,56 +185,63 @@ function reading(ux: number, uy: number): Point2 {
   return ux < -1e-12 || Math.abs(ux) <= 1e-12 && uy < 0 ? { x: -ux, y: -uy } : { x: ux, y: uy };
 }
 /**
- * Text moved `along` its dimension line. Outside the extension lines the line runs on beneath the whole text; the arrows stay where
- * they were drawn.
+ * A linear placement's `along` is the text's place on its dimension line as a fraction of the line's length from its start, taken of at
+ * least this many millimetres: a dimension at or near 0 still takes a drag along its line, and its text stays put as its length passes
+ * through zero.
  */
-function placeAlong<T extends { readonly line: Pair; readonly label: SketchPoint }>(marks: T, along: number, halfWidth: number): T {
-  const [start, end] = marks.line, dx = end[0] - start[0], dy = end[1] - start[1], length = Math.hypot(dx, dy);
-  if (along === 0.5 || !(length > 0)) return marks;
-  const px = start[0] + dx * along, py = start[1] + dy * along, ux = dx / length, uy = dy / length;
-  const label: SketchPoint = [marks.label[0] - (start[0] / 2 + end[0] / 2) + px, marks.label[1] - (start[1] / 2 + end[1] / 2) + py];
-  const line: Pair = along < 0 ? [[px - ux * halfWidth, py - uy * halfWidth], end] : along > 1 ? [start, [px + ux * halfWidth, py + uy * halfWidth]] : marks.line;
-  return { ...marks, line, label } as T;
+const ALONG_SCALE_MM = 1;
+/** The text's shift from the middle of a dimension line `length` long for `along`, and the `along` of a shift. */
+const alongShift = (along: number, length: number) => (along - 0.5) * Math.max(length, ALONG_SCALE_MM);
+const alongOf = (shift: number, length: number) => 0.5 + shift / Math.max(length, ALONG_SCALE_MM);
+/**
+ * Text moved `shift` millimetres from the middle of its dimension line, along `t`. Past either end the line runs on beneath the whole
+ * text; the arrows stay where they were drawn.
+ */
+function placeAlong<T extends { readonly line: Pair; readonly label: SketchPoint }>(marks: T, shift: number, t: Point2, halfWidth: number): T {
+  if (shift === 0 || !Number.isFinite(shift)) return marks;
+  const [start, end] = marks.line, mx = start[0] / 2 + end[0] / 2, my = start[1] / 2 + end[1] / 2;
+  const label: SketchPoint = [marks.label[0] + t.x * shift, marks.label[1] + t.y * shift];
+  if (Math.abs(shift) <= Math.abs((end[0] - start[0]) * t.x + (end[1] - start[1]) * t.y) / 2) return { ...marks, label };
+  const reach = shift + Math.sign(shift) * halfWidth, beyond: SketchPoint = [mx + t.x * reach, my + t.y * reach];
+  const startPassed = ((start[0] - mx) * t.x + (start[1] - my) * t.y) * shift > 0;
+  return { ...marks, label, line: startPassed ? [beyond, end] : [start, beyond] } as T;
 }
 
 /**
- * A linear dimension from `a` to `b`, its line `offset` out along `normal` and its text `along` the way from a to b. `extensions`
- * redraws the extensions of one whose base is not its measured points. With no length the line is a leader along `normal`.
+ * A linear dimension from `a` to `b`, its line `offset` out along `normal` and its text `along` it in the direction `t`, the frame
+ * that every placement is taken in. `extensions` redraws the extensions of one whose base is not its measured points. With no length
+ * the line keeps `t`.
  */
-function linearPart(kind: LinearKind, value: number, reference: boolean, a: Point2, b: Point2, normal: Point2, auto: (mmPerPixel: number) => LinearMarks,
+function linearPart(kind: LinearKind, value: number, reference: boolean, a: Point2, b: Point2, t: Point2, normal: Point2, auto: (mmPerPixel: number) => LinearMarks,
   extensions?: (line: Pair, mmPerPixel: number) => readonly Pair[], side?: 0 | 1): Part {
-  const box = cadSketchGraphDimensionLabel(value, kind, reference), length = Math.hypot(b.x - a.x, b.y - a.y);
-  const ux = length > 0 ? (b.x - a.x) / length : 0, uy = length > 0 ? (b.y - a.y) / length : 0, read = reading(ux, uy);
+  const box = cadSketchGraphDimensionLabel(value, kind, reference), length = Math.abs((b.x - a.x) * t.x + (b.y - a.y) * t.y), read = reading(t.x, t.y);
+  const mx = a.x / 2 + b.x / 2, my = a.y / 2 + b.y / 2;
   const at = (placement: CadSketchDimensionPartPlacement, mmPerPixel: number): LinearMarks | null => {
     if (placement.kind !== 'linear') return null;
     const sign = placement.offset < 0 ? -1 : 1, geometry = alignedGeometry(a, b, normal.x * sign, normal.y * sign, mmPerPixel, box, Math.abs(placement.offset) / mmPerPixel);
-    return placeAlong(extensions ? { ...geometry, extensions: extensions(geometry.line, mmPerPixel) } : geometry, placement.along, box.width * mmPerPixel / 2);
+    return placeAlong(extensions ? { ...geometry, extensions: extensions(geometry.line, mmPerPixel) } : geometry, alongShift(placement.along, length), t, box.width * mmPerPixel / 2);
   };
+  // The text stands above its line; take that off and the rest is the line's offset and the text's place along it.
   const labelAt = (label: Point2, mmPerPixel: number) => {
-    const lift = (box.height / 2 + isoTextGap) * mmPerPixel;
-    if (!(length > 0)) {
-      const out = (label.x - a.x) * normal.x + (label.y - a.y) * normal.y;
-      return linear(out >= 0 ? Math.max(0, out - lift) : Math.min(0, out + lift), 0.5);
-    }
-    const px = label.x + read.y * lift - a.x, py = label.y - read.x * lift - a.y;
-    return linear(px * normal.x + py * normal.y, (px * ux + py * uy) / length);
+    const lift = (box.height / 2 + isoTextGap) * mmPerPixel, px = label.x + read.y * lift, py = label.y - read.x * lift;
+    return linear((px - a.x) * normal.x + (py - a.y) * normal.y, alongOf((px - mx) * t.x + (py - my) * t.y, length));
   };
   return { kind, value, side, auto, at, labelAt,
     through: pointer => linear((pointer.x - a.x) * normal.x + (pointer.y - a.y) * normal.y, 0.5),
     moved: (start, from, to) => start.kind === 'linear' ? linear(start.offset + (to.x - from.x) * normal.x + (to.y - from.y) * normal.y, start.along) : start,
-    of: (marks, mmPerPixel) => linear((marks.line![0][0] - a.x) * normal.x + (marks.line![0][1] - a.y) * normal.y,
-      length > 0 ? labelAt({ x: marks.label[0], y: marks.label[1] }, mmPerPixel).along : 0.5) };
+    of: (marks, mmPerPixel) => linear((marks.line![0][0] - a.x) * normal.x + (marks.line![0][1] - a.y) * normal.y, labelAt({ x: marks.label[0], y: marks.label[1] }, mmPerPixel).along),
+    outward: (placement, distance) => placement.kind === 'linear' ? linear(placement.offset + (placement.offset < 0 ? -distance : distance), placement.along) : placement };
 }
 type LinearKind = 'distance' | 'distance-x' | 'distance-y' | 'setback' | 'point-line';
 
 /**
- * An aligned distance, standing off automatically along `auto`. Its placement's offset is taken to the left of a to b, or of
- * `along` when the points meet.
+ * An aligned distance, standing off automatically along `auto`. Its placement is taken in the frame from a to b, or in `frame` when given,
+ * which a distance from an axis keeps on either side of the axis; points that meet take the sketch X axis.
  */
-function alignedPart(kind: 'distance' | 'setback', value: number, reference: boolean, a: Point2, b: Point2, auto: Point2, along: Point2 = { x: 1, y: 0 }, side?: 0 | 1): Part {
-  const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = length > 0 ? dx / length : along.x, uy = length > 0 ? dy / length : along.y;
+function alignedPart(kind: 'distance' | 'setback', value: number, reference: boolean, a: Point2, b: Point2, auto: Point2, frame?: Point2, side?: 0 | 1): Part {
+  const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), t = frame ?? (length > 0 ? { x: dx / length, y: dy / length } : { x: 1, y: 0 });
   const box = cadSketchGraphDimensionLabel(value, kind, reference);
-  return linearPart(kind, value, reference, a, b, { x: -uy, y: ux }, mmPerPixel => alignedGeometry(a, b, auto.x, auto.y, mmPerPixel, box), undefined, side);
+  return linearPart(kind, value, reference, a, b, t, { x: -t.y, y: t.x }, mmPerPixel => alignedGeometry(a, b, auto.x, auto.y, mmPerPixel, box), undefined, side);
 }
 
 /**
@@ -257,27 +265,32 @@ function axisPart(value: number, a: Point2, b: Point2, horizontal: boolean, side
     return { ...geometry, extensions: [a, b].map((point, index): Pair => [[point.x + nx * 3 * mmPerPixel, point.y + ny * 3 * mmPerPixel],
       [geometry.line[index][0] + nx * 2 * mmPerPixel, geometry.line[index][1] + ny * 2 * mmPerPixel]]) };
   };
-  return linearPart(kind, value, false, baseA, baseB, horizontal ? { x: 0, y: 1 } : { x: 1, y: 0 }, auto, extensions);
+  return linearPart(kind, value, false, baseA, baseB, horizontal ? { x: 1, y: 0 } : { x: 0, y: 1 }, horizontal ? { x: 0, y: 1 } : { x: 1, y: 0 }, auto, extensions);
 }
 
 type Support = { readonly x: number; readonly y: number; readonly start: Point2; readonly end: Point2; readonly length: number };
-/** A point to line distance; a placement slides its line `offset` along the support and its text `along` the way from the foot to the point. */
+/**
+ * A point to line distance; a placement slides its line `offset` along the support and puts its text `along` it, in the direction to the
+ * left of the support, whichever side the point is on, so the text stays put as a measured point crosses the support.
+ */
 function pointLinePart(point: Point2, axis: Support, value: number, reference: boolean): Part {
   const signed = cadSketchSignedPointLineDistance(point, axis), length = Math.abs(signed), foot = { x: point.x + axis.y * signed, y: point.y - axis.x * signed };
-  const ux = length === 0 ? axis.x : (point.x - foot.x) / length, uy = length === 0 ? axis.y : (point.y - foot.y) / length, read = reading(ux, uy);
+  // The text reads along the dimension line, square to the support, also with the point on the support.
+  const t = { x: -axis.y, y: axis.x }, mx = foot.x + t.x * signed / 2, my = foot.y + t.y * signed / 2, read = reading(t.x, t.y);
   const box = cadSketchGraphDimensionLabel(value, 'point-line', reference);
   const slide = (pointer: Point2) => (pointer.x - foot.x) * axis.x + (pointer.y - foot.y) * axis.y;
   const labelAt = (label: Point2, mmPerPixel: number) => {
     const lift = (box.height / 2 + isoTextGap) * mmPerPixel, px = label.x + read.y * lift, py = label.y - read.x * lift;
-    return linear(slide({ x: px, y: py }), length > 0 ? ((px - foot.x) * ux + (py - foot.y) * uy) / length : 0.5);
+    return linear(slide({ x: px, y: py }), alongOf((px - mx) * t.x + (py - my) * t.y, length));
   };
   return { kind: 'point-line', value, labelAt,
     auto: mmPerPixel => pointLineGeometry(point, axis, value, mmPerPixel, reference),
     at: (placement, mmPerPixel) => placement.kind !== 'linear' ? null
-      : placeAlong(pointLineGeometry(point, axis, value, mmPerPixel, reference, placement.offset), placement.along, box.width * mmPerPixel / 2),
+      : placeAlong(pointLineGeometry(point, axis, value, mmPerPixel, reference, placement.offset), alongShift(placement.along, length), t, box.width * mmPerPixel / 2),
     through: pointer => linear(slide(pointer), 0.5),
     moved: (start, from, to) => start.kind === 'linear' ? linear(start.offset + slide(to) - slide(from), start.along) : start,
-    of: (marks, mmPerPixel) => linear(slide({ x: marks.line![0][0], y: marks.line![0][1] }), labelAt({ x: marks.label[0], y: marks.label[1] }, mmPerPixel).along) };
+    of: (marks, mmPerPixel) => linear(slide({ x: marks.line![0][0], y: marks.line![0][1] }), labelAt({ x: marks.label[0], y: marks.label[1] }, mmPerPixel).along),
+    outward: (placement, distance) => placement.kind === 'linear' ? linear(placement.offset + (placement.offset < 0 ? -distance : distance), placement.along) : placement };
 }
 
 /** A radius or diameter; a placement turns its leader to `angle` and puts its text `distance` from the centre. */
@@ -292,7 +305,8 @@ function radialPart(center: Point2, radius: number, angle: number, value: number
     // The leader turns with the pointer about the centre; the text keeps its distance.
     moved: (start, from, to) => start.kind !== 'radial' ? start
       : { ...start, angle: wrapAngle(start.angle + Math.atan2(to.y - center.y, to.x - center.x) - Math.atan2(from.y - center.y, from.x - center.x)) },
-    of: marks => toward({ x: marks.label[0], y: marks.label[1] }) };
+    of: marks => toward({ x: marks.label[0], y: marks.label[1] }),
+    outward: (placement, distance) => placement.kind === 'radial' ? { ...placement, distance: placement.distance + distance } : placement };
 }
 
 /**
@@ -362,7 +376,8 @@ function anglePart(geometry: CadSketchLineAngleGeometry, sense: 'cw' | 'ccw', va
     },
     moved: (start, from, to, mmPerPixel) => start.kind !== 'angle' ? start
       : { ...start, radius: bounded(Math.max(12 * mmPerPixel, start.radius) + distance(to) - distance(from)) },
-    of: marks => ({ kind: 'angle', radius: bounded(marks.arc ? marks.arc.radius : 40), along: 0.5 }) };
+    of: marks => ({ kind: 'angle', radius: bounded(marks.arc ? marks.arc.radius : 40), along: 0.5 }),
+    outward: (placement, distance) => placement.kind === 'angle' ? { ...placement, radius: bounded(placement.radius + distance) } : placement };
 }
 /**
  * The arc between the two rays, `radiusPixels` out from the corner, with its label beyond the arc `along` the sweep from the first ray;
@@ -402,7 +417,15 @@ function leaderPart(first: AngleRay, second: AngleRay, value: number): Part {
   if (Math.hypot(wx, wy) < 0.5) { wx = 2 * first.direction.x; wy = 2 * first.direction.y; }
   const reach = (pointer: Point2) => 2 * ((pointer.x - middle.x) * wx + (pointer.y - middle.y) * wy) / (wx * wx + wy * wy);
   const box = cadSketchGraphDimensionLabel(value, 'angle');
-  const at = (offset: number, along: number, mmPerPixel: number) => placeAlong(localAngleGeometry(first, second, value, mmPerPixel, offset / mmPerPixel), along, box.width * mmPerPixel / 2);
+  // The leader's own direction is the frame its text moves along; with no length it runs square to the first line.
+  const frame = (line: Pair) => {
+    const dx = line[1][0] - line[0][0], dy = line[1][1] - line[0][1], length = Math.hypot(dx, dy);
+    return { length, t: length > 0 ? { x: dx / length, y: dy / length } : { x: -first.direction.y, y: first.direction.x } };
+  };
+  const at = (offset: number, along: number, mmPerPixel: number) => {
+    const geometry = localAngleGeometry(first, second, value, mmPerPixel, offset / mmPerPixel), { length, t } = frame(geometry.line);
+    return placeAlong(geometry, alongShift(along, length), t, box.width * mmPerPixel / 2);
+  };
   return { kind: 'angle', value,
     auto: mmPerPixel => localAngleGeometry(first, second, value, mmPerPixel),
     at: (placement, mmPerPixel) => placement.kind === 'linear' ? at(placement.offset, placement.along, mmPerPixel) : null,
@@ -411,12 +434,12 @@ function leaderPart(first: AngleRay, second: AngleRay, value: number): Part {
       // The text stands off the leader on the side the rays point to; take that off and find the leader through the rest.
       const guess = localAngleGeometry(first, second, value, mmPerPixel, reach(label) / mmPerPixel);
       const point = { x: label.x - (guess.label[0] - (guess.line[0][0] / 2 + guess.line[1][0] / 2)), y: label.y - (guess.label[1] - (guess.line[0][1] / 2 + guess.line[1][1] / 2)) };
-      const offset = reach(point), line = localAngleGeometry(first, second, value, mmPerPixel, offset / mmPerPixel).line;
-      const dx = line[1][0] - line[0][0], dy = line[1][1] - line[0][1], length = dx * dx + dy * dy;
-      return linear(offset, length > 0 ? ((point.x - line[0][0]) * dx + (point.y - line[0][1]) * dy) / length : 0.5);
+      const offset = reach(point), line = localAngleGeometry(first, second, value, mmPerPixel, offset / mmPerPixel).line, { length, t } = frame(line);
+      return linear(offset, alongOf((point.x - line[0][0] / 2 - line[1][0] / 2) * t.x + (point.y - line[0][1] / 2 - line[1][1] / 2) * t.y, length));
     },
     moved: (start, from, to) => start.kind === 'linear' ? linear(start.offset + reach(to) - reach(from), start.along) : start,
-    of: marks => linear((marks.line![0][0] - first.end.x) * first.direction.x + (marks.line![0][1] - first.end.y) * first.direction.y, 0.5) };
+    of: marks => linear((marks.line![0][0] - first.end.x) * first.direction.x + (marks.line![0][1] - first.end.y) * first.direction.y, 0.5),
+    outward: (placement, distance) => placement.kind === 'linear' ? linear(placement.offset + distance, placement.along) : placement };
 }
 /**
  * Each line runs on 2 px past the leader, which joins them `pixels` past the ends their rays point to, 12 px unless placed, with an arrow at
@@ -503,10 +526,10 @@ function pointLineParts(context: Resolving, relation: Extract<CadSketchDimension
  */
 function pointLineGeometry(point: Point2, axis: Support, valueMm: number, mmPerPixel: number, reference: boolean, shift = 0): Omit<LinearDimensionGeometry, 'valueMm'> {
   const signed = cadSketchSignedPointLineDistance(point, axis), length = Math.abs(signed);
-  // The dimension line runs from the foot on the support to the point; arrows widen along the support. A dimension that
-  // measures zero, its point on the support, keeps its label beside the support, reading along it, without arrows.
+  // The dimension line runs from the foot on the support to the point; arrows widen along the support. A dimension that measures
+  // zero, its point on the support, is drawn as one a hair long is, without arrows: its text reads square to the support beside the point.
   const foot = { x: point.x + axis.y * signed, y: point.y - axis.x * signed };
-  const ux = length === 0 ? axis.x : (point.x - foot.x) / length, uy = length === 0 ? axis.y : (point.y - foot.y) / length;
+  const ux = length === 0 ? -axis.y : (point.x - foot.x) / length, uy = length === 0 ? axis.x : (point.y - foot.y) / length;
   let readX = ux, readY = uy;
   if (readX < -1e-12 || Math.abs(readX) <= 1e-12 && readY < 0) { readX = -readX; readY = -readY; }
   const box = cadSketchGraphDimensionLabel(valueMm, 'point-line', reference), lift = (box.height / 2 + isoTextGap) * mmPerPixel;
@@ -578,32 +601,32 @@ function resolving(graph: CadSketchGraph, parameters: Readonly<Record<string, nu
 
 /**
  * The parts drawn for one dimension relation, which need not be in the graph yet, or null when it has nothing to attach to. An aligned
- * distance stands off on the side away from the middle of the sketch. With no length it has no line of its own: it takes `along` for
- * one, and its extensions are a short leader square to it with the label at its end.
+ * distance stands off on the side away from the middle of the sketch. It is placed in the frame from its first point to its second, or
+ * in `frame` when given; with no length and no frame it takes the sketch X axis, and its extensions are a short leader square to it.
  */
 function resolveParts(context: Resolving, relation: CadSketchDimensionRelation, placing = false): readonly Part[] | null {
   const { graph, points, value, center } = context;
-  const aligned = (a: Point2, b: Point2, valueMm: number, along: Point2 = { x: 1, y: 0 }): readonly Part[] | null => {
+  const aligned = (a: Point2, b: Point2, valueMm: number, frame?: Point2): readonly Part[] | null => {
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
     if (!Number.isFinite(length) || !Number.isFinite(valueMm)) return null;
-    const ux = length === 0 ? along.x : dx / length, uy = length === 0 ? along.y : dy / length;
-    const direction = dx < 0 || dx === 0 && dy < 0 ? -1 : 1;
+    const { x: ux, y: uy } = frame ?? (length === 0 ? { x: 1, y: 0 } : { x: dx / length, y: dy / length });
+    const direction = ux < 0 || ux === 0 && uy < 0 ? -1 : 1;
     let nx = -uy * direction, ny = ux * direction;
     const midpoint: SketchPoint = [a.x / 2 + b.x / 2, a.y / 2 + b.y / 2];
     const outward = (midpoint[0] - center[0]) * nx + (midpoint[1] - center[1]) * ny;
     const tie = Math.abs(outward) <= cadPathClosureTolerance([a, b, { x: center[0], y: center[1] }]);
-    if (tie ? Math.abs(dx) >= Math.abs(dy) ? ny > 0 : nx < 0 : outward < 0) { nx = -nx; ny = -ny; }
-    return [alignedPart('distance', valueMm, relation.kind === 'reference-dimension', a, b, { x: nx, y: ny }, along)];
+    if (tie ? Math.abs(ux) >= Math.abs(uy) ? ny > 0 : nx < 0 : outward < 0) { nx = -nx; ny = -ny; }
+    return [alignedPart('distance', valueMm, relation.kind === 'reference-dimension', a, b, { x: nx, y: ny }, frame)];
   };
   if (relation.kind === 'fixed-axis') {
     // A distance from an axis runs square to the axis, to its point or to the middle of the line Horizontal or Vertical keeps along the
-    // axis, and reads as its size on either side of the axis. One that follows a parameter stays a dimension at 0 too, its line taken
-    // along the axis it is measured from, so its leader stands square to it, clear of it.
+    // axis, and reads as its size on either side of the axis. Its frame is the direction it measures along on both sides of the axis, so
+    // a coordinate a parameter takes through 0 keeps its placement; at 0 its leader runs along the axis it is measured from.
     const line = cadSketchAxisDistanceLine(graph, relation, context.identity), start = line && points.get(line.startPointId), end = line && points.get(line.endPointId);
     const to = start && end ? { x: start.x / 2 + end.x / 2, y: start.y / 2 + end.y / 2 } : points.get(relation.pointId);
     if (!to) return null;
-    const foot = relation.axis === 'x' ? { x: 0, y: to.y } : { x: to.x, y: 0 }, along = relation.axis === 'x' ? { x: 0, y: 1 } : { x: 1, y: 0 };
-    return aligned(foot, to, Math.abs(value(relation.value)), along);
+    const foot = relation.axis === 'x' ? { x: 0, y: to.y } : { x: to.x, y: 0 }, measured = relation.axis === 'x' ? { x: 1, y: 0 } : { x: 0, y: 1 };
+    return aligned(foot, to, Math.abs(value(relation.value)), measured);
   }
   if (relation.kind === 'line-angle') return angularParts(context, relation, placing);
   if (relation.kind === 'radial-size' || relation.kind === 'reference-dimension' && relation.measurement.kind === 'radial-size') return radialParts(context, relation);
@@ -622,6 +645,15 @@ function resolveParts(context: Resolving, relation: CadSketchDimensionRelation, 
     return [axisPart(valueMm, a, b, horizontal, tie ? horizontal ? -1 : 1 : outward < 0 ? -1 : 1)];
   }
   return aligned(a, b, valueMm);
+}
+
+// A graph's numeric frame is resolved once for its parameters, for the dimensions it draws and for each click a pointer previews on it.
+const frames = new WeakMap<CadSketchGraph, WeakMap<Readonly<Record<string, number>>, Resolving | null>>();
+function frameOf(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): Resolving | null {
+  let byParameters = frames.get(graph);
+  if (!byParameters) frames.set(graph, byParameters = new WeakMap());
+  if (!byParameters.has(parameters)) byParameters.set(parameters, resolving(graph, parameters));
+  return byParameters.get(parameters) ?? null;
 }
 
 /** A part's marks as the layout of its relation. */
@@ -658,7 +690,7 @@ function resolved(graph: CadSketchGraph, parameters: Readonly<Record<string, num
  */
 function resolveDimensions(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): Resolution {
   const relations = graph.relations.filter(isCadSketchDimensionRelation);
-  const context = relations.length ? resolving(graph, parameters) : null;
+  const context = relations.length ? frameOf(graph, parameters) : null;
   if (!context) return { dimensions: [], drawn: Object.freeze({ graph, ids: NO_DRAWN_IDS }) };
   const dimensions: ResolvedDimension[] = [], ids = new Set<string>();
   for (const relation of relations) {
@@ -717,11 +749,16 @@ export interface CadSketchDimensionMove {
   relationAt(placement: CadSketchDimensionPartPlacement): CadSketchDimensionRelation;
 }
 
+const placementValues = (placement: CadSketchDimensionPartPlacement) =>
+  placement.kind === 'linear' ? [placement.offset, placement.along] : placement.kind === 'angle' ? [placement.radius, placement.along] : [placement.angle, placement.distance];
+const samePlacement = (a: CadSketchDimensionPartPlacement, b: CadSketchDimensionPartPlacement) => {
+  const first = placementValues(a), second = placementValues(b);
+  return a.kind === b.kind && first.every((value, index) => value === second[index]);
+};
 /** Placements stay within the schema's bounds; one with a value that is not finite is refused. */
 function boundedPlacement(placement: CadSketchDimensionPartPlacement): CadSketchDimensionPartPlacement | null {
   const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
-  const values = placement.kind === 'linear' ? [placement.offset, placement.along] : placement.kind === 'angle' ? [placement.radius, placement.along] : [placement.angle, placement.distance];
-  if (!values.every(Number.isFinite)) return null;
+  if (!placementValues(placement).every(Number.isFinite)) return null;
   if (placement.kind === 'linear') return { kind: 'linear', offset: clamp(placement.offset, -1e6, 1e6), along: clamp(placement.along, -1e4, 1e4) };
   if (placement.kind === 'angle') return { kind: 'angle', radius: clamp(placement.radius, 1e-6, 1e6), along: clamp(placement.along, -1e4, 1e4) };
   return { kind: 'radial', angle: clamp(placement.angle, -Math.PI, Math.PI), distance: clamp(placement.distance, 0, 1e6) };
@@ -748,66 +785,77 @@ export function cadSketchDimensionMove(graph: CadSketchGraph, parameters: Readon
     relationAt: placement => withCadSketchDimensionPlacement(relation, side, placement) };
 }
 
-/**
- * `relations` placed by a click at `pointer`, as the preview drew them: each dimension's line or arc runs through the pointer with
- * its text centred, and a radius or diameter has its text at the pointer. Others, such as an implied Parallel, are returned as they are.
- * They are resolved against `graph` holding them, which they need not be in yet.
- */
-export function cadSketchDimensionsPlacedAt<Relation extends CadSketchGraphRelation>(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>,
-  relations: readonly Relation[], pointer: Point2, mmPerPixel: number): readonly Relation[] {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !Number.isFinite(pointer.x) || !Number.isFinite(pointer.y) || !relations.some(isCadSketchDimensionRelation)) return relations;
-  const ids = new Set(relations.map(relation => relation.id));
-  const context = resolving({ ...graph, relations: [...graph.relations.filter(relation => !ids.has(relation.id)), ...relations] }, parameters);
-  if (!context) return relations;
-  return relations.map(relation => {
-    if (!isCadSketchDimensionRelation(relation)) return relation;
-    let parts: readonly Part[] | null = null;
-    try { parts = resolveParts(context, relation, true); } catch { /* A dimension that cannot resolve keeps its automatic layout. */ }
-    const part = parts?.length === 1 ? parts[0] : null, placement = part && boundedPlacement(part.through(pointer, mmPerPixel));
-    return part && placement && part.at(placement, mmPerPixel) ? withCadSketchDimensionPlacement(relation, part.side ?? 0, placement) as Relation : relation;
-  });
-}
-
 /** One drawn part of a dimension being placed, with the marks a placed dimension of its kind has. */
 export type CadSketchDimensionPreviewMark = DimensionGeometry & { readonly kind: CadSketchGraphDimensionLayout['kind']; readonly value: number }
   & ({ readonly line: Pair; readonly arc?: undefined } | { readonly line?: undefined; readonly arc: CadSketchDimensionAngleArc });
+/** Dimensions one click places: the relations it stores, and the marks its preview draws for their dimensions, part by part in order. */
+export interface CadSketchPlacedDimensions<Relation extends CadSketchGraphRelation> { readonly relations: readonly Relation[]; readonly marks: readonly CadSketchDimensionPreviewMark[] }
+const NO_MARKS: readonly CadSketchDimensionPreviewMark[] = Object.freeze([]);
+/** Label heights a dimension steps out at most to clear the others one click places. */
+const MAX_STAGGER_STEPS = 12;
 
 /**
- * A dimension before it is placed, drawn by the placed layouts with its dimension line through the pointer: an aligned distance
- * parallel to its points, a horizontal or vertical one level or upright at the pointer, a point to line distance square to the line,
- * an angle in the sector holding it, its arc at the pointer's distance, and a radius or diameter with its label at the pointer, inside
- * or outside the curve. Placing it stores that placement, so the dimension stays as previewed.
+ * `relations` placed by a click at `pointer`, with the marks the preview draws for them from this same placement, so a click stores what
+ * its preview drew. Each dimension's line or arc runs through the pointer with its text centred, and a radius or diameter has its text at
+ * the pointer. One that would be drawn over another of the click steps out from what it measures, a label height at a time, until it is
+ * clear. A chamfer's two setbacks, a dimension with no placement through the pointer and one already placed there are returned as they
+ * are, as are other relations such as an implied Parallel. All resolve against `graph` holding them, which they need not be in.
  */
-export function layoutCadSketchDimensionPreview(source: CadSketchDimensionPreviewSource, pointer: Point2, mmPerPixel: number): readonly CadSketchDimensionPreviewMark[] {
-  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !Number.isFinite(pointer.x) || !Number.isFinite(pointer.y)) return [];
-  const mark = (part: Part | null): readonly CadSketchDimensionPreviewMark[] => {
-    const placement = part && boundedPlacement(part.through(pointer, mmPerPixel)), marks = part && placement && part.at(placement, mmPerPixel);
-    return part && marks ? [{ kind: part.kind, value: part.value, ...marks }] : [];
+export function placeCadSketchDimensions<Relation extends CadSketchGraphRelation>(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>,
+  relations: readonly Relation[], pointer: Point2, mmPerPixel: number): CadSketchPlacedDimensions<Relation> {
+  const unplaced: CadSketchPlacedDimensions<Relation> = { relations, marks: NO_MARKS };
+  if (!Number.isFinite(mmPerPixel) || mmPerPixel <= 0 || !Number.isFinite(pointer.x) || !Number.isFinite(pointer.y) || !relations.some(isCadSketchDimensionRelation)) return unplaced;
+  const frame = frameOf(graph, parameters);
+  if (!frame) return unplaced;
+  const ids = new Set(relations.map(relation => relation.id)), held: CadSketchGraph = { ...graph, relations: [...graph.relations.filter(relation => !ids.has(relation.id)), ...relations] };
+  // Point identities follow Coincident relations, which a click does not add, so the graph's own hold unless one is among them.
+  let identity: ((pointId: string) => string) | undefined;
+  const context: Resolving = relations.some(relation => relation.kind === 'coincident')
+    ? { ...frame, graph: held, identity: pointId => (identity ??= resolveCadSketchPointIdentities(held))(pointId) } : { ...frame, graph: held };
+  const marks: CadSketchDimensionPreviewMark[] = [], taken: Footprint[] = [];
+  const draw = (part: Part, reference: boolean, shown: Marks) => {
+    marks.push({ kind: part.kind, value: part.value, ...shown } as CadSketchDimensionPreviewMark);
+    taken.push(footprint(part, reference, shown, mmPerPixel));
   };
-  const pair = (a: Point2, b: Point2, value: number, along?: Point2) => {
-    // Points at one position, which only a reference measures, run level like their placed reference.
-    const length = Math.hypot(b.x - a.x, b.y - a.y);
-    return Number.isFinite(length) ? alignedPart('distance', value, false, a, b, { x: 0, y: 1 }, along) : null;
-  };
-  switch (source.kind) {
-    case 'pair': {
-      const [a, b] = source.points;
-      return mark(source.form === 'aligned' ? pair(a, b, source.value) : axisPart(source.value, a, b, source.form === 'horizontal', 1));
+  const placed = relations.map(relation => {
+    if (!isCadSketchDimensionRelation(relation)) return relation;
+    let parts: readonly Part[] | null = null;
+    try { parts = resolveParts(context, relation, true); } catch { /* A dimension that cannot resolve keeps its automatic layout. */ }
+    if (!parts?.length) return relation;
+    const reference = relation.kind === 'reference-dimension', part = parts.length === 1 ? parts[0] : null;
+    const start = part && boundedPlacement(part.through(pointer, mmPerPixel)), through = part && start && part.at(start, mmPerPixel);
+    if (!part || !start || !through) {
+      for (const each of parts) draw(each, reference, placedMarks(relation, each, mmPerPixel) ?? each.auto(mmPerPixel));
+      return relation;
     }
-    case 'datum': return source.axes.flatMap(axis => {
-      // A distance from an axis is labelled with its size, as once placed; the sign of the coordinate only gives the side of the axis.
-      const from = axis === 'x' ? { x: 0, y: source.point.y } : { x: source.point.x, y: 0 }, value = Math.abs(axis === 'x' ? source.point.x : source.point.y);
-      return value > 0 ? mark(pair(from, source.point, value, axis === 'x' ? { x: 0, y: 1 } : { x: 1, y: 0 })) : [];
-    });
-    case 'point-line': {
-      const [start, end] = source.line, length = Math.hypot(end.x - start.x, end.y - start.y);
-      if (!(length > 0)) return [];
-      return mark(pointLinePart(source.point, { x: (end.x - start.x) / length, y: (end.y - start.y) / length, start, end, length }, source.value, false));
+    let placement = start, shown = through;
+    const pitch = (cadSketchGraphDimensionLabel(part.value, part.kind, reference).height + 8) * mmPerPixel;
+    for (let step = 1; step <= MAX_STAGGER_STEPS; step++) {
+      const at = footprint(part, reference, shown, mmPerPixel);
+      if (!taken.some(other => clashes(at, other, 4 * mmPerPixel))) break;
+      const next = boundedPlacement(part.outward(start, step * pitch)), stepped = next && part.at(next, mmPerPixel);
+      if (!next || !stepped) break;
+      placement = next; shown = stepped;
     }
-    case 'radial': return mark(radialPart(source.center, source.radius, Math.PI / 4, source.value, source.quantity, false));
-    case 'angle': {
-      const sector = cadSketchDimensionAngleSectorAt(source, pointer), value = sector?.relation.value as number;
-      return sector && drawableSweep(sector.geometry.signedSweepRadians) && Number.isFinite(value) ? mark(anglePart(sector.geometry, sector.relation.sense, value)) : [];
-    }
-  }
+    draw(part, reference, shown);
+    // A dimension already where the click puts it is the relation itself, so placing it again edits nothing.
+    const stored = cadSketchDimensionPlacementOf(relation, part.side ?? 0);
+    return stored && samePlacement(stored, placement) ? relation : withCadSketchDimensionPlacement(relation, part.side ?? 0, placement) as Relation;
+  });
+  return { relations: placed, marks };
+}
+
+/** A drawn part's text as a box turned with it, in millimetres about its centre. */
+interface Footprint { readonly x: number; readonly y: number; readonly cos: number; readonly sin: number; readonly halfWidth: number; readonly halfHeight: number }
+function footprint(part: Part, reference: boolean, marks: Marks, mmPerPixel: number): Footprint {
+  const { width, height } = cadSketchGraphDimensionLabel(part.value, part.kind, reference);
+  return { x: marks.label[0], y: marks.label[1], cos: Math.cos(marks.labelAngle), sin: Math.sin(marks.labelAngle),
+    halfWidth: width * mmPerPixel / 2, halfHeight: height * mmPerPixel / 2 };
+}
+/** Whether two parts' texts come within `margin` of each other. */
+function clashes(a: Footprint, b: Footprint, margin: number): boolean {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const reach = (box: Footprint, ax: number, ay: number) => box.halfWidth * Math.abs(box.cos * ax + box.sin * ay) + box.halfHeight * Math.abs(box.cos * ay - box.sin * ax);
+  // Two turned boxes are apart when a side of either separates them.
+  return ![[a.cos, a.sin], [-a.sin, a.cos], [b.cos, b.sin], [-b.sin, b.cos]].some(([ax, ay]) => Math.abs(dx * ax + dy * ay) >= reach(a, ax, ay) + reach(b, ax, ay) + margin);
 }

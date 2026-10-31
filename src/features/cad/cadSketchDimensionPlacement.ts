@@ -23,7 +23,10 @@ export type CadSketchDimensionOperand = CadSketchGraphSelection | { readonly kin
  */
 export type CadSketchDimensionForm = 'aligned' | 'horizontal' | 'vertical' | 'radius' | 'diameter' | 'point-line' | 'angle' | 'datum';
 
-/** Numeric geometry a preview draws at the pointer; nothing in it depends on the pointer, so the plan builds it once per pick. */
+/**
+ * The measurements of a candidate, and an angle's sectors that the pointer chooses among; nothing in it depends on the pointer, so the plan
+ * builds it once per pick. The preview draws the relations a click stores, not this.
+ */
 export type CadSketchDimensionPreviewSource =
   | { readonly kind: 'pair'; readonly form: 'aligned' | 'horizontal' | 'vertical'; readonly points: readonly [Point2, Point2]; readonly value: number }
   | { readonly kind: 'point-line'; readonly point: Point2; readonly line: readonly [Point2, Point2]; readonly value: number }
@@ -61,8 +64,11 @@ export interface CadSketchDimensionPlan {
   readonly pair: readonly [Point2, Point2] | null;
   /** The form placed where the pointer does not choose one. */
   readonly defaultForm: CadSketchDimensionForm | null;
+  /** The sketch and parameters the plan was made for, which a click's dimensions are placed and previewed in. */
+  readonly graph: CadSketchGraph | null;
+  readonly parameters: Readonly<Record<string, number>>;
 }
-export const NO_SKETCH_DIMENSION_PLAN: CadSketchDimensionPlan = Object.freeze({ operands: [], candidates: [], pair: null, defaultForm: null });
+export const NO_SKETCH_DIMENSION_PLAN: CadSketchDimensionPlan = Object.freeze({ operands: [], candidates: [], pair: null, defaultForm: null, graph: null, parameters: Object.freeze({}) });
 
 /**
  * The CATIA and SOLIDWORKS rule for a pair of positions, with the pair's bounding box split by its horizontal and vertical extents:
@@ -110,6 +116,23 @@ export function cadSketchDimensionRelationsAt(candidate: CadSketchAvailableDimen
   if (candidate.preview.kind !== 'angle') return { relations: candidate.relations, reason: null };
   const sector = cadSketchDimensionAngleSectorAt(candidate.preview, pointer);
   return sector ? { relations: [sector.relation], reason: null } : { relations: null, reason: 'Move the pointer into the angle to measure, then place it.' };
+}
+
+/**
+ * What a click with the pointer at `pointer` places for `candidate`, the same for its preview and for placing: `added`, the relations
+ * it adds, and `moved`, those of the sketch it moves where the pointer puts them. An existing dimension moves; an available one adds its
+ * relations and moves the one it reuses; `reference` adds the reference form instead, which a blocked candidate can only place. A
+ * reason says why the click places nothing.
+ */
+export function cadSketchDimensionBatchAt(plan: CadSketchDimensionPlan, candidate: CadSketchDimensionCandidate, pointer: Point2 | null, reference = candidate.state === 'blocked'):
+  { readonly added: readonly CadSketchGraphRelation[]; readonly moved: readonly CadSketchGraphRelation[]; readonly reason: null } | { readonly added: null; readonly moved: null; readonly reason: string } {
+  const relationsOf = (ids: readonly string[]) => ids.flatMap(id => plan.graph?.relations.find(relation => relation.id === id) ?? []);
+  if (candidate.state === 'existing') return { added: [], moved: relationsOf(candidate.relationIds), reason: null };
+  if (reference) return candidate.reference ? { added: [candidate.reference], moved: [], reason: null }
+    : { added: null, moved: null, reason: candidate.state === 'blocked' ? candidate.reason : candidate.referenceReason ?? 'This dimension has no reference form.' };
+  if (candidate.state === 'blocked') return { added: null, moved: null, reason: candidate.reason };
+  const { relations, reason } = cadSketchDimensionRelationsAt(candidate, pointer);
+  return relations ? { added: relations, moved: candidate.reuses ? relationsOf([candidate.reuses]) : [], reason: null } : { added: null, moved: null, reason: reason! };
 }
 
 /** Preparation feedback, as `CadSketchPreparationError` reports it. */
@@ -216,7 +239,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
   const points = geometry.filter(operand => operand.kind === 'point').map(operand => operand.id);
   if (geometry.length !== lines.length + curves.length + points.length) return NO_SKETCH_DIMENSION_PLAN;
   const plan = (candidates: readonly CadSketchDimensionCandidate[], defaultForm: CadSketchDimensionForm, pair: readonly [Point2, Point2] | null = null): CadSketchDimensionPlan =>
-    Object.freeze({ operands, candidates, pair, defaultForm });
+    Object.freeze({ operands, candidates, pair, defaultForm, graph, parameters });
   try {
     if (datum) {
       if (geometry.length !== 1) return NO_SKETCH_DIMENSION_PLAN;
