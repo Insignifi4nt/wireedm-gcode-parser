@@ -99,6 +99,11 @@ export interface CadMesh {
   readonly volume: number;
   /** Native solid components in this validated body; absent in older build DTOs. */
   readonly solidCount?: number;
+  /**
+   * For each of `faceGroups`, the native solid of this body its face bounds, numbered from 0 below `solidCount`. Given for a body of
+   * more than one solid whose faces each bound one solid; absent otherwise and in older build DTOs.
+   */
+  readonly faceSolids?: readonly number[];
   readonly bounds: { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] };
 }
 export interface CadBuildResult {

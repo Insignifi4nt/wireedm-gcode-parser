@@ -6,6 +6,7 @@ import { createCadDocument } from '@/domain/cad/cadSchema';
 import { CadSession } from './cadSession';
 import { CadWorkbench } from './CadWorkbench';
 import type { CadWorkbenchViewportControls } from './cadViewportControls';
+import { getCadPreferences, setCadPreferences } from './cadPreferences';
 
 let planePick: ((plane: CadSketchPlane) => void) | undefined;
 let featurePick: ((id: string | null) => void) | undefined;
@@ -151,6 +152,17 @@ describe('Reference plane hover and pick order', () => {
     expect(session.getSnapshot()).toEqual(before); expect(state()).toMatchObject({ selectedReferencePlane: null, workflowOpen: false });
   });
   it('shows a hidden datum plane while its history row is hovered and marks the row from canvas hover', async () => {
+    // Datum planes show with the reference geometry; with it turned off a datum plane shows only while it is wanted.
+    const preferences = getCadPreferences(); setCadPreferences({ ...preferences, showReferenceGeometry: false });
+    try { await hiddenDatumHover(); } finally { setCadPreferences(preferences); }
+  });
+  it('shows every active datum plane with the reference geometry, and none once suppressed', async () => {
+    await mount({ ...createCadDocument(), features: [datum, outline] });
+    expect(view().references.filter(reference => reference.featureKind === 'datum-plane').map(reference => reference.name)).toEqual(['Mount plane']);
+    await act(async () => session.replace({ ...session.getSnapshot().document, features: [{ ...datum, suppressed: true }, outline] }));
+    expect(view().references.filter(reference => reference.featureKind === 'datum-plane')).toHaveLength(0);
+  });
+  const hiddenDatumHover = async () => {
     await mount({ ...createCadDocument(), features: [datum, outline] });
     const datumReferences = () => view().references.filter(reference => reference.featureKind === 'datum-plane');
     expect(datumReferences()).toHaveLength(0);
@@ -161,7 +173,7 @@ describe('Reference plane hover and pick order', () => {
     expect(button('Select Outline in history').classList.contains('is-hovered')).toBe(false);
     await act(async () => session.replace({ ...session.getSnapshot().document, features: [{ ...datum, suppressed: true }, outline] }));
     expect(view().hoveredReferencePlane).toBeNull(); expect(button('Select Mount plane in history').classList.contains('is-hovered')).toBe(false);
-  });
+  };
 
   type Source = 'tree' | 'canvas';
   const pickPlane = async (plane: CadSketchPlane, source: Source) => {

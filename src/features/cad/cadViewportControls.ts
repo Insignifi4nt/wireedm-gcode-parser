@@ -4,6 +4,8 @@ import { CadSketchPlaneSchema } from '@/domain/cad/cadPrimitives';
 import { CadTopologyPickSetSchema, type CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import type { EditorPreviewCapture } from '@/features/webmcp/previewCapture';
 import type { CadPickMode, CadTopologyHit } from './cadTopologyPicking';
+import type { CadSectionView } from './view/cadViewState';
+import type { CadOriginSelection } from './view/cadReferenceSelection';
 import { CadSketchGraphPickFilterSchema, CadSketchGraphSelectionSchema, CadSketchGraphSelectionSetSchema, type CadSketchGraphPickFilter, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 export { CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 
@@ -28,12 +30,16 @@ export const CadViewportCommandSchema = Type.Union([
   Type.Object({ kind: Type.Literal('finish-curve') }, strict),
   Type.Object({ kind: Type.Literal('set-pick-mode'), mode: CadPickModeSchema }, strict),
   Type.Object({ kind: Type.Literal('select-topology'), selection: CadTopologyPickSetSchema, additive: Type.Boolean() }, strict),
-  Type.Object({ kind: Type.Literal('clear-topology') }, strict)
+  Type.Object({ kind: Type.Literal('clear-topology') }, strict),
+  // The section cuts by the selected reference plane, as the Section view control does, so the plane keeps select-reference-plane's checks.
+  Type.Object({ kind: Type.Literal('set-section'), on: Type.Boolean(), flip: Type.Optional(Type.Boolean()), caps: Type.Optional(Type.Boolean()) }, strict)
 ]);
 export type CadViewportCommand = Static<typeof CadViewportCommandSchema>;
 
 export type CadRenderedViewState = { readonly navigationMode?: 'mouse' | 'trackpad'; readonly onPartDimensionsVisible?: boolean } & (
-  | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null; readonly referenceVersion?: string | null; readonly referenceFeatureIds?: readonly string[]; readonly referencePlanes?: readonly CadPlane[] }
+  | { readonly mode: 'solid'; readonly available: boolean; readonly view: CadNamedView | 'Custom'; readonly gridVisible: boolean; readonly zoom: number; readonly revision: number; readonly hoveredTopology?: CadTopologyHit | null; readonly referenceVersion?: string | null; readonly referenceFeatureIds?: readonly string[]; readonly referencePlanes?: readonly CadPlane[];
+    /** The section the view draws: its clipping plane, which keeps points where normal · p + constant is not negative, and whether caps show. */
+    readonly section?: { readonly caps: boolean; readonly normal: readonly [number, number, number]; readonly constant: number } }
   | { readonly mode: 'sketch' | 'curve'; readonly available: boolean; readonly plane: CadSketchPlane; readonly gridVisible: boolean; readonly snapEnabled: boolean; readonly gridSnapEnabled: boolean; readonly gridStepMm: number; readonly centerMm: readonly [number, number]; readonly heightSpanMm: number; readonly revision: number; readonly sketchPickFilter?: CadSketchGraphPickFilter });
 
 export interface CadRenderedViewControls {
@@ -55,6 +61,10 @@ export interface CadViewportState {
   /** Compatibility projection only; present when exactly one graph item is selected. */
   readonly selectedSketchGeometry?: CadSketchGraphSelection;
   readonly selectedReferencePlane: CadSketchPlane | null;
+  /** An origin axis or the origin point picked in the model view, present only while one is selected. Revolve and Circular pattern start about it. */
+  readonly selectedOrigin?: CadOriginSelection;
+  /** The part view's section, a view choice kept on this device. While a sketch is open it is kept but not drawn. */
+  readonly section?: CadSectionView | null;
   readonly awaitingSketchPlane: boolean;
   readonly sketchId: string | null;
   readonly curveId: string | null;
@@ -72,7 +82,7 @@ export interface CadViewportState {
 /** Capture identity excludes temporary locks and the unrelated solid build while editing in 2D. */
 export function cadViewportVisualIdentity(state: CadViewportState): string {
   return JSON.stringify([state.documentId, state.documentVersion, state.selectedFeatureId, state.selectedProfileId, state.selectedSketchGeometrySet,
-    state.sketchId, state.curveId, state.selectedReferencePlane, state.awaitingSketchPlane,
+    state.sketchId, state.curveId, state.selectedReferencePlane, state.selectedOrigin ?? null, state.section ?? null, state.awaitingSketchPlane,
     state.view?.mode === 'solid' ? [state.buildVersion, state.buildId, state.buildState, state.pickMode, state.topologySelection, state.visibleBodyIds] : null, state.view]);
 }
 

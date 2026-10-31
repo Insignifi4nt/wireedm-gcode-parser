@@ -19,7 +19,7 @@ import { buildCadSweepSolid } from './cadKernelSweep';
 import { resolveCadPocketInputs } from '../../../domain/cad/cadPocket';
 import { buildCadPocketCut } from './cadKernelPocket';
 import { cadKernelSolidEvidence, cutCadKernelConfirmedMaterial } from './cadKernelCutEvidence';
-import { meshCadKernelPreview } from './cadKernelMeshing';
+import { cadKernelFaceSolids, meshCadKernelPreview } from './cadKernelMeshing';
 import { cadKernelConsumeShape, cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 import { exportCadKernelStep } from './cadKernelExport';
 import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
@@ -65,8 +65,11 @@ function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopol
   try {
     const [min, max] = box.bounds;
     const { mesh, edgeMesh } = meshCadKernelPreview(shape, { min, max }, meshOptions);
+    const groups = topology.meshGroups(mesh, edgeMesh);
+    // The face groups that meshGroups keeps, in its order: those with triangles.
+    const faceSolids = solidCount > 1 ? cadKernelFaceSolids(shape, mesh.faceGroups.filter(group => group.count > 0).map(group => group.faceId)) : undefined;
     return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
-      edges: edgeMesh.lines, ...topology.meshGroups(mesh, edgeMesh), volume, solidCount, bounds: { min, max } };
+      edges: edgeMesh.lines, ...groups, volume, solidCount, ...(faceSolids ? { faceSolids } : {}), bounds: { min, max } };
   } finally { box.delete(); }
 }
 

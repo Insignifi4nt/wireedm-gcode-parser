@@ -15,6 +15,8 @@ export function createCadTopologyHighlights() {
   let selectedIdentity = '', hoverIdentity = '';
   let currentMeshes: readonly CadMesh[] | null = null;
   const resolution = new THREE.Vector2(1, 1);
+  // A section view clips the highlights with the bodies, so a face cut by the section never shows its removed part.
+  let clippingPlanes: THREE.Plane[] | null = null;
   function clear(layer: THREE.Group) {
     for (const child of [...layer.children]) {
       if (child instanceof THREE.Mesh) {
@@ -33,7 +35,7 @@ export function createCadTopologyHighlights() {
     if (hit.pick.kind === 'edge') {
       const geometry = new LineSegmentsGeometry();
       geometry.setPositions(cadLocalRenderPositions(mesh.edges, origin, group.start * 3, (group.start + group.count) * 3));
-      const material = new LineMaterial({ color, linewidth: hover ? 3 : 4, depthTest: true, transparent: true, opacity: 1 });
+      const material = new LineMaterial({ color, linewidth: hover ? 3 : 4, depthTest: true, transparent: true, opacity: 1, clippingPlanes });
       material.resolution.copy(resolution);
       const lines = new LineSegments2(geometry, material);
       lines.position.set(...origin); layer.add(lines);
@@ -47,7 +49,7 @@ export function createCadTopologyHighlights() {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.BufferAttribute(points, 3));
       const face = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: hover ? 0.22 : 0.32,
-        side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+        side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1, clippingPlanes }));
       face.position.set(...origin); layer.add(face);
     }
   }
@@ -72,6 +74,13 @@ export function createCadTopologyHighlights() {
         if (hover && !hoverIsSelected) add(hoverLayer, meshes, hover, true);
       }
       return true;
+    },
+    setClippingPlanes(planes: THREE.Plane[] | null) {
+      clippingPlanes = planes;
+      objects.traverse(child => {
+        if (!(child instanceof THREE.Mesh)) return;
+        for (const material of Array.isArray(child.material) ? child.material : [child.material]) material.clippingPlanes = planes;
+      });
     },
     dispose() { clear(selectedLayer); clear(hoverLayer); currentMeshes = null; selectedIdentity = ''; hoverIdentity = ''; },
   };

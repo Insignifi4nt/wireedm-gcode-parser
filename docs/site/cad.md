@@ -181,6 +181,28 @@ While you edit a sketch, the part stays visible behind it, seen square to the sk
 
 Both choices are remembered in this browser for the next sketch you open; they are not saved with the part. Clicks, hovers, drags and keys reach only the open sketch, and nothing behind it can be picked yet. If the 3D view had keyboard focus, the sketch takes it when it opens and gives it back when it closes. Finishing or leaving the sketch returns the 3D view exactly as you left it. The one exception: if the 3D view showed only the reference planes when you opened the sketch and a part was built meanwhile, finishing fits the view to the part once.
 
+### Reference geometry and the selection filter
+
+The design area shows the reference geometry of the part: the XY, XZ and YZ planes, the X, Y and Z axes, the origin point and every active datum plane. The origin planes and axes grow with the part, so they reach a little past it on every side, and keep a small size while the part is empty. Turn **Show reference geometry** off in **View** to hide it; the plane or axis you selected, the planes a command asks you to choose from and a datum plane whose tree row you point at still show. The choice is remembered in this browser. Showing or hiding single planes from the tree is not available yet.
+
+Click a plane, an axis or the origin point in the design area to select it, as you would click its row in Reference. Pointing at one highlights it first. Where the part is in front of a plane, an axis or the origin point, the part is selected. The origin point and the axes are selected before an origin plane they lie in, and an origin plane only where nothing else is under the pointer, so you can click through it to the part behind. A datum plane is selected where it is in front of the part.
+
+A selected plane or axis is what the next command uses:
+
+- With a plane selected, **Sketch** and **Curve** start on it, **Plane** starts a datum plane on it (on an origin plane as its base, or at a datum plane's own placement), **Mirror** mirrors about an origin plane, and **Section view** cuts the view by it. Mirror cannot use a datum plane yet and says so instead of starting.
+- With an axis selected, **Circular pattern** turns about it through the origin, and **Revolve** turns about it when it is the same line as one of the sketch's own axes, not just parallel or close to one; otherwise Revolve says why instead of starting about another axis.
+- No command uses the origin point yet. A command opened from a feature's own menu works on that feature and ignores the selected reference.
+
+**Filter** in **View** chooses what pointing and clicking in the design area can select: **Bodies**, **Faces**, **Edges**, **Planes**, **Axes** and the **Origin point**. Turn a kind off to click past it, for example turn off Bodies to select an origin plane behind the part. A command that asks you to pick something, such as the edges of a Fillet, still accepts what it asks for. The filter is remembered in this browser. Choosing between overlapping candidates under the pointer is not available yet.
+
+### Section view
+
+Select an origin plane or an active datum plane, then click **Section view** in **View**, or right-click a datum plane in the tree and choose **Section view**. The view cuts the part, its sketches and curves by the plane and removes the side its normal points to: what faces you in the Top view for XY, in the Front view for XZ and in the Right view for YZ. **Flip section** keeps the other side instead. **Caps**, on by default, fills the cut material with a flat colour so solid and hollow read apart, from any viewpoint, including from inside the part. Holes through the cut and hollows inside a solid stay open. Solids of one imported body that lie inside or overlap each other are filled as one, however many there are. A body whose surface does not close shows its cut without a cap. On a very large part the caps can appear a moment after the cut. Turn **Caps** off to look inside. The reference geometry is not cut.
+
+The section is a view only. It changes nothing in the part, its history, exports or CAM sections, and clicks and pointing reach only what it leaves, so you can click a face behind the cut. The caps cannot be selected. Captures of the view show what it shows, section and caps included.
+
+The section stays through rebuilds and follows a datum plane you edit. It turns off when its datum plane is deleted or suppressed, and stays off when the plane comes back. While a sketch is open, the sketch's own view takes its place, and the section returns when you finish the sketch. Press Escape in the design area to clear the selection first, then again to turn the section off, or click **Section view** again. The section is remembered in this browser for the part it was made in; opening another part shows that part without it.
+
 ### Choose extrusion areas
 
 Pad / Pocket uses **Whole sketch** by default, including its holes and islands. Click **Areas** to choose individual closed areas on the model. Click replaces the selection; Shift adds or removes an area. You can choose a bore's interior, an overlapping-circle lens or neighboring areas. Shared internal boundaries disappear from the combined material. The sketch and its dimensions remain intact.
