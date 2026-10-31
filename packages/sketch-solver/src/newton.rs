@@ -32,11 +32,11 @@ pub struct Limits {
 }
 /// About 32 MiB of factor and a second or two of rotations.
 pub const LIMITS: Limits = Limits { fill: 2_000_000, work: 400_000_000 };
-/// A solution is accepted when each residual is within `max(ACCEPT_MM, 8 epsilon x scale)`
-/// millimetres, the driver tolerance, and each direction error within `ACCEPT_RADIANS` or the
-/// roundoff its coordinates allow at the far end of its longer line.
+/// Residuals are accepted within `max(ACCEPT_MM, CLOSURE_ULPS epsilon x scale)` millimetres, and
+/// directions within `ACCEPT_RADIANS` or the roundoff at the far end of their longer line.
 pub const ACCEPT_MM: f64 = 1e-10;
 pub const ACCEPT_RADIANS: f64 = 1e-12;
+pub const CLOSURE_ULPS: f64 = 8.0;
 /// Damping drops to near roundoff once each weighted residual is within this times its scale.
 const NEAR: f64 = 1e-10;
 /// Steps continue past acceptance while they improve, down to roundoff at this level.
@@ -213,7 +213,7 @@ impl Row {
     /// Accepted millimetres and direction radians: the driver tolerance, or the roundoff the
     /// coordinates allow, at the far end of the longer line for a direction.
     fn tolerances(&self) -> (f64, f64) {
-        let roundoff = 8.0 * f64::EPSILON * self.scale;
+        let roundoff = CLOSURE_ULPS * f64::EPSILON * self.scale;
         (ACCEPT_MM.max(roundoff), if self.reach > 0.0 { ACCEPT_RADIANS.max(roundoff / self.reach) } else { ACCEPT_RADIANS })
     }
 }
@@ -573,7 +573,7 @@ fn repeated(system: &System, values: &[f64], start: &[f64], limits: Limits, work
     let target = |e: usize| { let equation = &problem.equations[e]; if equation.kind.reads_value() { equation.value } else { 0.0 } };
     let tolerance = |e: usize| {
         let scale = problem.equations[e].operands.iter().fold(target(e).abs().max(1.0), |scale, &p| scale.max(at_start(p).abs()));
-        ACCEPT_MM.max(8.0 * f64::EPSILON * scale)
+        ACCEPT_MM.max(CLOSURE_ULPS * f64::EPSILON * scale)
     };
     let mut witnesses = Vec::new();
     for function in keyed.chunk_by(|a, b| a.0 == b.0) {

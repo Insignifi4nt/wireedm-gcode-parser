@@ -3,6 +3,7 @@ import { cadSketchEntityPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import { resolveCadSketchGraphJoints } from '@/domain/cad/cadSketchGraphJoints';
 import { angleIsOnSweep, pointOnArcAtParameter } from '@/domain/path-intel/segments';
 import type { PathSegment } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 import type { SketchPoint } from './cadSketchInteraction';
 
 export type CadSketchProfileSnapLocation =
@@ -73,9 +74,8 @@ const AXES: readonly Curve[] = Object.freeze([
   { owner: { axis: 'x' }, kind: 'line', start: [0, 0], end: [1, 0], bounded: false },
   { owner: { axis: 'y' }, kind: 'line', start: [0, 0], end: [0, 1], bounded: false }
 ]);
-const LINE_SLACK = 1e-9;
 function onArc(curve: Extract<Curve, { kind: 'circle' }>, point: SketchPoint): boolean {
-  return !curve.arc || angleIsOnSweep(Math.atan2(point[1] - curve.center[1], point[0] - curve.center[0]), curve.arc.start, curve.arc.sweep, 1e-9);
+  return !curve.arc || angleIsOnSweep(Math.atan2(point[1] - curve.center[1], point[0] - curve.center[0]), curve.arc.start, curve.arc.sweep, CAD_PRECISION.snapArcSweepSlackRad);
 }
 /** The nearest point of a curve, or null where the nearest position lies beyond an arc's ends. */
 function nearestOnCurve(curve: Curve, point: SketchPoint): SketchPoint | null {
@@ -98,14 +98,14 @@ function onCurve(curve: Curve, point: SketchPoint): boolean {
   if (curve.kind === 'circle') return onArc(curve, point);
   if (!curve.bounded) return true;
   const t = lineParameter(curve, point);
-  return t >= -LINE_SLACK && t <= 1 + LINE_SLACK;
+  return t >= -CAD_PRECISION.snapLineSpanSlack && t <= 1 + CAD_PRECISION.snapLineSpanSlack;
 }
 /** Exact crossings of two curves; tangency counts once. */
 function intersections(a: Curve, b: Curve): SketchPoint[] {
   const raw: SketchPoint[] = [];
   if (a.kind === 'line' && b.kind === 'line') {
     const r = [a.end[0] - a.start[0], a.end[1] - a.start[1]], q = [b.end[0] - b.start[0], b.end[1] - b.start[1]], cross = r[0] * q[1] - r[1] * q[0];
-    if (Math.abs(cross) <= 1e-12 * Math.hypot(...r) * Math.hypot(...q)) return [];
+    if (Math.abs(cross) <= CAD_PRECISION.snapParallelRelative * Math.hypot(...r) * Math.hypot(...q)) return [];
     const t = ((b.start[0] - a.start[0]) * q[1] - (b.start[1] - a.start[1]) * q[0]) / cross;
     raw.push([a.start[0] + r[0] * t, a.start[1] + r[1] * t]);
   } else if (a.kind === 'line' || b.kind === 'line') {
@@ -115,7 +115,7 @@ function intersections(a: Curve, b: Curve): SketchPoint[] {
     if (!(length > 0)) return [];
     const u = [d[0] / length, d[1] / length], along = f[0] * u[0] + f[1] * u[1], foot = [f[0] - u[0] * along, f[1] - u[1] * along];
     const square = circle.radius * circle.radius - (foot[0] * foot[0] + foot[1] * foot[1]);
-    if (square < -1e-12 * circle.radius * circle.radius) return [];
+    if (square < -CAD_PRECISION.snapTangentRelative * circle.radius * circle.radius) return [];
     const half = Math.sqrt(Math.max(0, square));
     for (const offset of half === 0 ? [0] : [-half, half]) raw.push([circle.center[0] + foot[0] + u[0] * offset, circle.center[1] + foot[1] + u[1] * offset]);
   } else {

@@ -102,7 +102,7 @@ function centerStarts(model: CadSketchCompiledSketch): readonly (readonly number
   for (const { point: x, centre: center, size } of model.radialHolds) {
     if (centered.has(x)) continue;
     const reach = size.kind === 'span' ? Math.hypot(values[size.span[2]] - values[size.span[0]], values[size.span[3]] - values[size.span[1]]) : values[size.index];
-    if (!(reach > 0) || Math.hypot(values[x] - values[center], values[x + 1] - values[center + 1]) > CAD_PRECISION.relativeZero * Math.max(1, reach)) continue;
+    if (!(reach > 0) || Math.hypot(values[x] - values[center], values[x + 1] - values[center + 1]) > CAD_PRECISION.solverCollapsedStartRelative * Math.max(1, reach)) continue;
     const offers = [[1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2]].filter(direction => direction.every((step, axis) => step === 0 || !fixed[x + axis]));
     if (offers.length) centered.set(x, { reach, offers });
   }

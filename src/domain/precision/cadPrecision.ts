@@ -26,12 +26,30 @@ const roles = {
   closureFloorMm: 1e-12,
   /** Ulps of the coordinate magnitude that analytic closure allows above `closureFloorMm`. */
   closureUlps: 8,
-  /** A dimensionless ratio at or below this, relative to its reference magnitude, counts as zero. */
-  relativeZero: 1e-12,
+  /** A radial point within this fraction of its radius (taken as at least 1 mm) from its centre has collapsed onto it, and the solver offers it fresh starts. */
+  solverCollapsedStartRelative: 1e-12,
   /** Cross product of two line directions, in square millimetres, at or below which legacy profile checks treat lines as parallel. */
   parallelCrossFloorMm2: 1e-14,
   /** Smallest size a pointer-drawn sketch shape accepts: circle radius, rectangle side, slot width or distinct arc centre. */
   pointerMinimumSizeMm: 0.001,
+
+  // Sketch snaps and dimension placement. Both write sketch coordinates or saved annotation placements.
+  /** Slack, as a fraction of a line segment's length, for a snapped intersection to count as on that bounded line. */
+  snapLineSpanSlack: 1e-9,
+  /** Angular slack for a snapped intersection to count as on an arc's sweep. */
+  snapArcSweepSlackRad: 1e-9,
+  /** Two lines have no intersection snap when the cross product of their directions is at or below this fraction of the product of their lengths. */
+  snapParallelRelative: 1e-12,
+  /** A line that misses a circle by at most this fraction of the squared radius, in squared distance, touches it: the snap is the foot of the perpendicular. */
+  snapTangentRelative: 1e-12,
+  /** Unit direction components at or below this count as zero when a dimension picks its text reading direction and the side its line sits on. */
+  annotationReadingTie: 1e-12,
+  /** Two dimension lines share a direction, and must step clear of each other, when their cross product is at or below this fraction of the length. */
+  annotationParallelRelative: 1e-12,
+  /** Slack below a full turn, in radians, for an angle dimension's text to sit beyond its sweep. */
+  annotationFullTurnSlackRad: 1e-9,
+  /** Smallest radius an angle dimension's arc is placed at. */
+  annotationMinimumRadiusMm: 1e-6,
 
   // Kernel, model limits and feature inputs.
   /** Kernel confusion: native placement, sewing, thick-solid, section and topology-selector precision. */
@@ -66,6 +84,10 @@ const roles = {
   gearParameterSlackRad: 1e-10,
   /** Largest gap, as a fraction of the module, between the rack envelope and the involute at their join. */
   gearJoinPerModule: 1e-8,
+  /** Slack below the standard rack undercut limit, in profile shift coefficient (a multiple of the module), that a gear still accepts. */
+  gearUndercutShiftSlack: 1e-12,
+  /** Relative reserve added to the certified flank and root envelope error bounds, so floating-point arithmetic never makes a bound optimistic. */
+  gearBoundReserveRelative: 1e-12,
 
   // CAM.
   /** Endpoint join tolerance for the analytic CAD to CAM handoff. */
@@ -114,6 +136,8 @@ const roles = {
   gcodeLineMatchMm: 1e-6,
   /** Coordinate equality when G-code structure analysis matches positions. */
   gcodeStructureMatchMm: 1e-4,
+  /** An R-word arc whose start and end are this close or closer has no defined centre, and block interpretation refuses it. */
+  gcodeArcChordMm: 1e-12,
 
   // Simulation.
   /** Contact tolerance between simulated material, stock and polygon boundaries. Per millimetre of edge length in material topology. */

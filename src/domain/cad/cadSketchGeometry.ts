@@ -10,7 +10,7 @@ import { cadAnalyticSegments, cadPathClosureTolerance, resolveCadPathSegments, t
 import { selectCadSketchRegions, isCadSketchGraphCellSelection, type CadSketchCellReference, type CadSketchRegionSelection } from './cadSketchRegionSelection';
 import { prepareCadSketchGraphCells } from './cadSketchGraphCells';
 import { compileCadSketchGeometry, type CadCompiledSketchProfile } from './compileCadSketchGeometry';
-import { CAD_PRECISION, cadRoundoff } from '@/domain/precision/cadPrecision';
+import { CAD_PRECISION, cadRoundoff, cadSupportedLength } from '@/domain/precision/cadPrecision';
 export { cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 
 export type ResolvedCadProfile =
@@ -19,6 +19,7 @@ export type ResolvedCadProfile =
   | { kind: 'polygon'; points: readonly (readonly [number, number])[] }
   | { kind: 'path'; segments: readonly ResolvedCadPathSegment[] }
   | { kind: 'slot'; x: number; y: number; length: number; width: number; angle: number };
+// Contact and coincidence between boundaries. Size refusals use the minimum length.
 const tolerance = CAD_PRECISION.kernelConfusionMm;
 const tau = Math.PI * 2;
 function polygonDoubleArea(points: readonly (readonly [number, number])[]): number {
@@ -71,7 +72,7 @@ export function cadAnalyticPathMetrics(profile: Extract<ResolvedCadProfile, { ki
 export function cadProfileToEntities(profile: ResolvedCadProfile, layer = 'CAD'): DxfEntity[] {
   const entities: DxfEntity[] = [];
   const line = (start: DxfPoint, end: DxfPoint) => {
-    if (Math.hypot(start.x - end.x, start.y - end.y) > tolerance) entities.push({ type: 'line', layer, start, end });
+    if (Math.hypot(start.x - end.x, start.y - end.y) > CAD_PRECISION.minimumLengthMm) entities.push({ type: 'line', layer, start, end });
   };
   const arc = (center: DxfPoint, radius: number, startAngle: number, endAngle: number) => {
     const point = (angle: number) => ({ x: center.x + radius * Math.cos(angle), y: center.y + radius * Math.sin(angle) });
@@ -103,7 +104,7 @@ export function cadProfileToEntities(profile: ResolvedCadProfile, layer = 'CAD')
       const angle = profile.angle * Math.PI / 180;
       const half = (profile.length - profile.width) / 2;
       const r = profile.width / 2;
-      if (half <= tolerance) return [{ type: 'circle', layer, center: { x: profile.x, y: profile.y }, radius: r }];
+      if (half <= CAD_PRECISION.minimumLengthMm) return [{ type: 'circle', layer, center: { x: profile.x, y: profile.y }, radius: r }];
       const transform = (x: number, y: number) => ({ x: profile.x + x * Math.cos(angle) - y * Math.sin(angle), y: profile.y + x * Math.sin(angle) + y * Math.cos(angle) });
       line(transform(-half, -r), transform(half, -r));
       arc(transform(half, 0), r, angle - Math.PI / 2, angle + Math.PI / 2);
@@ -295,16 +296,15 @@ export function resolveCadSketchContours(sketch: CadSketchFeature, parameters: R
   const prepared = profiles.map(({ profile, geometry }) => {
     let path: AnalyticPath | null = null;
     let edges: Boundary[] | null = null;
-    const positive = (value: number) => value > tolerance && value <= CAD_PRECISION.modelExtentMm;
     switch (geometry.kind) {
-      case 'circle': if (!positive(geometry.radius)) throw new CadError('invalid-profile', `Circle "${profile.name}" needs a positive radius.`); break;
-      case 'rectangle': if (!positive(geometry.width) || !positive(geometry.height) || geometry.cornerRadius < 0 || geometry.cornerRadius > Math.min(geometry.width, geometry.height) / 2) throw new CadError('invalid-profile', `Rectangle "${profile.name}" has invalid dimensions or corner radius.`); break;
-      case 'slot': if (!positive(geometry.width) || !positive(geometry.length) || geometry.length < geometry.width) throw new CadError('invalid-profile', `Slot "${profile.name}" needs length at least its positive width.`); break;
+      case 'circle': if (!cadSupportedLength(geometry.radius)) throw new CadError('invalid-profile', `Circle "${profile.name}" needs a positive radius.`); break;
+      case 'rectangle': if (!cadSupportedLength(geometry.width) || !cadSupportedLength(geometry.height) || geometry.cornerRadius < 0 || geometry.cornerRadius > Math.min(geometry.width, geometry.height) / 2) throw new CadError('invalid-profile', `Rectangle "${profile.name}" has invalid dimensions or corner radius.`); break;
+      case 'slot': if (!cadSupportedLength(geometry.width) || !cadSupportedLength(geometry.length) || geometry.length < geometry.width) throw new CadError('invalid-profile', `Slot "${profile.name}" needs length at least its positive width.`); break;
       case 'polygon': {
         const lines = edges = boundary(cadProfileToEntities(geometry));
         if (lines.length !== geometry.points.length) throw new CadError('invalid-profile', `Polygon "${profile.name}" contains a zero-length edge.`);
         const area = polygonDoubleArea(geometry.points);
-        if (Math.abs(area) <= tolerance ** 2) throw new CadError('invalid-profile', `Polygon "${profile.name}" has zero area.`);
+        if (Math.abs(area) <= CAD_PRECISION.minimumLengthMm ** 2) throw new CadError('invalid-profile', `Polygon "${profile.name}" has zero area.`);
         for (const [i, j] of cadBoundaryCandidatePairs(lines)) {
           if (j === i + 1 || (i === 0 && j === lines.length - 1)) continue;
           if (cadBoundariesIntersect(lines[i], lines[j])) throw new CadError('self-intersection', `Polygon "${profile.name}" intersects itself.`);
@@ -314,14 +314,14 @@ export function resolveCadSketchContours(sketch: CadSketchFeature, parameters: R
       case 'path': {
         path = analyticPath(geometry);
         const segments = path.segments;
-        if (!segments.length || segments.some(segment => segment.length <= tolerance)) throw new CadError('invalid-profile', `Path "${profile.name}" contains a zero-length or unsupported edge.`);
+        if (!segments.length || segments.some(segment => segment.length <= CAD_PRECISION.minimumLengthMm)) throw new CadError('invalid-profile', `Path "${profile.name}" contains a zero-length or unsupported edge.`);
         const endpoints = segments.flatMap(segment => [segment.start, segment.end]);
         const continuity = cadPathClosureTolerance(endpoints);
         segments.forEach((segment, index) => {
           const next = segments[(index + 1) % segments.length];
           if (Math.hypot(segment.end.x - next.start.x, segment.end.y - next.start.y) > continuity) throw new CadError('open-profile', `Path "${profile.name}" must be continuous and closed without repairing gaps.`);
         });
-        if (Math.abs(signedAreaOfPath(path.refs, path.byId)) <= tolerance ** 2) throw new CadError('invalid-profile', `Path "${profile.name}" has zero area.`);
+        if (Math.abs(signedAreaOfPath(path.refs, path.byId)) <= CAD_PRECISION.minimumLengthMm ** 2) throw new CadError('invalid-profile', `Path "${profile.name}" has zero area.`);
         edges = analyticPathToEntities(path, 'CAD');
         for (const [i, j] of cadBoundaryCandidatePairs(edges)) {
           const first = edges[i]; const second = edges[j]; const joins: DxfPoint[] = [];

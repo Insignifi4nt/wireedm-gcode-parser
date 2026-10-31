@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import type { CadProfile } from '@/domain/cad/cadDocument';
+import { cadSketchToCam } from '@/domain/cad/cadCam';
+import { createCadDocument, createCadSketchProfile, parseCadDocument } from '@/domain/cad/cadSchema';
+import { cadSketchToEntities } from '@/domain/cad/cadSketchGeometry';
+import { createPathPlanningDocumentFromDxfEntities } from '@/domain/path-intel/fromDxfEntities';
 import {
   CAD_PRECISION as P,
   CAD_PRECISION_VERSION,
@@ -13,16 +18,18 @@ import {
 /** The values this version shipped with. Changing one means bumping `CAD_PRECISION_VERSION`. */
 const VERSION_1: Readonly<Record<CadPrecisionRole, number>> = {
   solverResidualMm: 1e-10, solverDragReachedMm: 1e-8, angularAccuracyRad: 1e-12, angularRoundoffCapRad: 1e-9,
-  closureFloorMm: 1e-12, closureUlps: 8, relativeZero: 1e-12, parallelCrossFloorMm2: 1e-14, pointerMinimumSizeMm: 0.001,
+  closureFloorMm: 1e-12, closureUlps: 8, solverCollapsedStartRelative: 1e-12, parallelCrossFloorMm2: 1e-14, pointerMinimumSizeMm: 0.001,
+  snapLineSpanSlack: 1e-9, snapArcSweepSlackRad: 1e-9, snapParallelRelative: 1e-12, snapTangentRelative: 1e-12,
+  annotationReadingTie: 1e-12, annotationParallelRelative: 1e-12, annotationFullTurnSlackRad: 1e-9, annotationMinimumRadiusMm: 1e-6,
   kernelConfusionMm: 1e-7, minimumLengthMm: 1e-7, minimumAngleDeg: 1e-7, modelExtentMm: 1e6, sweepTopologyMm: 2e-7,
   kernelMinimumVolumeMm3: 1e-9, kernelBoundsSlackMm: 1e-6, pocketCapMarginFloorMm: 1e-6, kernelDirection: 1e-10,
   frameOrthonormalResidual: 64 * Number.EPSILON, tessellationMm: 0.05, tessellationAngleRad: 0.15,
-  gearAngleMarginRad: 1e-6, gearParameterSlackRad: 1e-10, gearJoinPerModule: 1e-8,
+  gearAngleMarginRad: 1e-6, gearParameterSlackRad: 1e-10, gearJoinPerModule: 1e-8, gearUndercutShiftSlack: 1e-12, gearBoundReserveRelative: 1e-12,
   camHandoffEndpointMm: 1e-7, camHandoffCoincidenceMm: 1e-9, camDefaultEndpointMm: 0.001, camDefaultCoincidenceMm: 1e-5,
   dxfCamCoincidenceMm: 0.000002, camDegenerateAreaMm2: 1e-9, camClosingDuplicateMm: 1e-9, camTieMm: 1e-12,
   camRankRelative: 1e-9, camRankAbsoluteMm: 1e-12, zeroLengthMm: 1e-12, pathInsideSlackMm: 1e-9,
   upidRecordedValueFloorMm: 1e-9, outputRoundingGuardMm: Number.EPSILON, approximationChordMm: 0.001,
-  dxfPlanarNormal: 1e-12, dxfPlanarZMm: 1e-9, gcodePositionMm: 1e-9, gcodeLineMatchMm: 1e-6, gcodeStructureMatchMm: 1e-4,
+  dxfPlanarNormal: 1e-12, dxfPlanarZMm: 1e-9, gcodePositionMm: 1e-9, gcodeLineMatchMm: 1e-6, gcodeStructureMatchMm: 1e-4, gcodeArcChordMm: 1e-12,
   simulationContactMm: 1e-8, simulationDegenerateAreaMm2: 1e-12, simulationObstructionMm: 1e-7, simulationMachineGeometryMm: 1e-7
 };
 
@@ -64,8 +71,14 @@ const ORDERING: readonly Order[] = [
     }) },
   { name: 'every converged solver residual passes structural closure at sketch scales',
     holds: () => [1, 100, 10_000].every(scale => cadClosureTolerance(scale) >= P.solverResidualMm),
-    known: 'Closure is 1e-12 below about 56,000 mm while the solver accepts 1e-10. An arc of radius 10 whose end '
-      + 'radius is off by 5e-11 is converged for the solver but reported as arc-radius-mismatch by checkCadSketchGraph.' },
+    known: 'Closure stays at its 1e-12 floor up to about 563 mm and reaches the solver’s 1e-10 only at about 56,295 mm. '
+      + 'An arc of radius 10 whose end radius is off by 5e-11 is converged for the solver but reported as arc-radius-mismatch '
+      + 'by checkCadSketchGraph.' },
+  { name: 'closure across the model extent stays within the CAD handoff coincidence',
+    holds: () => cadClosureTolerance(P.modelExtentMm) <= P.camHandoffCoincidenceMm,
+    known: 'Closure passes the CAD handoff coincidence (1e-9) above about 562,950 mm, inside the 1e6 mm model extent. '
+      + 'A square near x = 999,000 mm whose closing end lies on its first edge 1.5134e-9 mm from its start is closed for CAD, '
+      + 'but the CAD handoff reports intersecting-topology and refuses it with cam-geometry.' },
   { name: 'closure at the coordinate budget stays within kernel confusion and the CAD handoff endpoint',
     holds: () => cadClosureTolerance(COORDINATE_BUDGET_MM) <= P.kernelConfusionMm,
     known: 'Sketch coordinates are accepted up to 1e9 mm, but closure passes kernel confusion above about 5.6e7 mm. '
@@ -113,7 +126,52 @@ describe('CAD precision policy', () => {
     const constant = (name: string) => Number(new RegExp(`pub const ${name}: f64 = ([0-9.e-]+);`).exec(newton)?.[1]);
     expect(constant('ACCEPT_MM')).toBe(P.solverResidualMm);
     expect(constant('ACCEPT_RADIANS')).toBe(P.angularAccuracyRad);
-    expect(newton).toContain(`ACCEPT_MM.max(${P.closureUlps}.0 * f64::EPSILON * scale)`);
+    expect(constant('CLOSURE_ULPS')).toBe(P.closureUlps);
+    // Both acceptance sites, the row tolerances and the repeated-equation witness, read the constant.
+    expect(newton).toContain('        let roundoff = CLOSURE_ULPS * f64::EPSILON * self.scale;\n'
+      + '        (ACCEPT_MM.max(roundoff), if self.reach > 0.0 { ACCEPT_RADIANS.max(roundoff / self.reach) } else { ACCEPT_RADIANS })\n');
+    expect(newton).toContain('        ACCEPT_MM.max(CLOSURE_ULPS * f64::EPSILON * scale)\n');
+    expect(newton).not.toMatch(/\b\d+(\.\d*)? \* f64::EPSILON \* (self\.)?scale\b/);
     expect(Number(/let reached = ([0-9.e-]+)_f64\.max\(32\.0 \* f64::EPSILON \* scale\);/.exec(drag)?.[1])).toBe(P.solverDragReachedMm);
+  });
+});
+
+describe('closure crossovers', () => {
+  it('stays at its floor up to about 563 mm and reaches the solver residual, handoff coincidence and kernel confusion further out', () => {
+    expect(cadClosureTolerance(562)).toBe(P.closureFloorMm);
+    expect(cadClosureTolerance(563)).toBeGreaterThan(P.closureFloorMm);
+    for (const [below, above, value] of [[56_294, 56_296, P.solverResidualMm], [562_949, 562_951, P.camHandoffCoincidenceMm],
+      [56_294_994, 56_294_996, P.kernelConfusionMm]] as const) {
+      expect(cadClosureTolerance(below)).toBeLessThan(value);
+      expect(cadClosureTolerance(above)).toBeGreaterThan(value);
+    }
+  });
+});
+
+describe('known violation reproducers', () => {
+  const square = (x: number, closingEnd: readonly [number, number]) => parseCadDocument({ ...createCadDocument('Far square', 'cad_far'),
+    features: [{ kind: 'sketch', id: 'far', name: 'Far', suppressed: false, plane: 'XY', offset: 0,
+      profiles: [createCadSketchProfile({ id: 'square', geometry: { kind: 'path', segments: [
+        { kind: 'line', start: [x, 0], end: [x + 1, 0] }, { kind: 'line', start: [x + 1, 0], end: [x + 1, 1] },
+        { kind: 'line', start: [x + 1, 1], end: [x, 1] }, { kind: 'line', start: [x, 1], end: [...closingEnd] }] } as CadProfile })] }] });
+  const handoff = (document: ReturnType<typeof square>) => {
+    const sketch = document.features[0];
+    if (sketch.kind !== 'sketch') throw new Error('expected a sketch');
+    return createPathPlanningDocumentFromDxfEntities(cadSketchToEntities(sketch, document.parameters),
+      { endpointTolerance: P.camHandoffEndpointMm, coincidenceEpsilon: P.camHandoffCoincidenceMm });
+  };
+
+  it('closure above the CAD handoff coincidence: CAD closes a far square that the handoff refuses as intersecting', () => {
+    const document = square(999_000, [999_000 + 1.5134e-9, 0]);
+    expect(handoff(document).diagnostics).toContainEqual(expect.objectContaining({ severity: 'error', code: 'intersecting-topology' }));
+    expect(() => cadSketchToCam(document, 'far')).toThrow(expect.objectContaining({ code: 'cam-geometry' }));
+    // Near the origin the same gap is a physical gap for CAD too.
+    expect(() => square(10, [10 + 1.5134e-9, 0])).toThrow('must be continuous and closed');
+  });
+
+  it('closure above kernel confusion: CAD closes a square at 1e8 mm that the handoff leaves open', () => {
+    const document = square(1e8, [1e8, 1.5e-7]);
+    expect(handoff(document).contours.some(contour => !contour.closed)).toBe(true);
+    expect(() => cadSketchToCam(document, 'far')).toThrow(expect.objectContaining({ code: 'cam-geometry' }));
   });
 });

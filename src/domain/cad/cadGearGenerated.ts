@@ -80,7 +80,7 @@ function resolveRackGeneratedGear(profile: CadGearProfile, parameters: Readonly<
       const tyMax = Amax * (1 + e * (3 * R * R * D * D / qMin ** 2.5 - 2 * D * R / qMin ** 1.5 + 1 / Math.sqrt(qMin)));
       const intervalBound = m * Math.hypot(Math.max(Math.abs(txMin), Math.abs(txMax)), tyMax);
       // Arithmetic reserve includes cancellation in signed interval endpoints.
-      second = Math.min(second, intervalBound + CAD_PRECISION.relativeZero * m * (Math.abs(txMin) + Math.abs(txMax) + tyMax + R + 1));
+      second = Math.min(second, intervalBound + CAD_PRECISION.gearBoundReserveRelative * m * (Math.abs(txMin) + Math.abs(txMax) + tyMax + R + 1));
     }
     return second * (to - from) ** 2 / 8;
   }
@@ -144,7 +144,7 @@ function certifiedFlankParameters(start: number, end: number, baseRadius: number
     const delta = to - from;
     const vectorBound = Math.sqrt(1 + to * to);
     const normalBound = delta < Math.PI / 2 ? Math.sin(delta) + to : vectorBound;
-    return baseRadius * Math.min(vectorBound, normalBound) * delta * delta / 8 * (1 + CAD_PRECISION.relativeZero);
+    return baseRadius * Math.min(vectorBound, normalBound) * delta * delta / 8 * (1 + CAD_PRECISION.gearBoundReserveRelative);
   };
   let from = start;
   while (from < end) {
