@@ -321,7 +321,8 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
       if (curve.kind === 'circle' && typeof curve.radius === 'string' && !existing) return { form: quantity, label, state: 'blocked', reason: 'The circle radius follows its source expression. Edit that expression instead.' };
       const measurement = { kind: 'radial-size', entityId: curve.id, quantity } as const, reference = cadSketchMatchingReference(graph, measurement);
       if (existing || reference) return { form: quantity, label, state: 'existing', relationIds: [(existing ?? reference)!.id],
-        reason: existing && (existing.kind !== 'radial-size' || existing.quantity === quantity) || reference ? EXISTING : 'An existing dimension already drives this curve. Edit that dimension instead.', preview };
+        reason: existing && (existing.kind !== 'radial-size' || existing.quantity === quantity) || reference ? EXISTING
+          : `This curve already has a ${quantity === 'radius' ? 'diameter' : 'radius'} dimension. Placing selects it and moves it where the preview shows it.`, preview };
       const id = newId();
       return { form: quantity, label, state: 'available', relations: [{ id, kind: 'radial-size', entityId: curve.id, quantity, value }], implied: null, reuses: null,
         reference: { id, kind: 'reference-dimension', measurement }, referenceReason: null, preview };

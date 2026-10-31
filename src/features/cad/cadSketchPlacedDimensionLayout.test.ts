@@ -188,7 +188,8 @@ describe('a click that moves or reuses a dimension the sketch holds', () => {
     // The hole's diameter is picked; its radius is what the sketch holds, and what the click moves.
     for (const pointer of [{ x: 90, y: 50 }, { x: 81, y: 39 }]) {
       const placed = click(sized, [entity('hole')], pointer, { form: 'diameter' });
-      expect(placed.candidate).toMatchObject({ state: 'existing', relationIds: ['radius'] });
+      expect(placed.candidate).toMatchObject({ state: 'existing', relationIds: ['radius'],
+        reason: 'This curve already has a radius dimension. Placing selects it and moves it where the preview shows it.' });
       expect(placed.drawn.map(layout => layout.kind)).toEqual(['radius']); expect(placed.stored).toEqual(placed.preview);
     }
     const rectangle = createCadFreshSketchGraph({ geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 }, construction: false,

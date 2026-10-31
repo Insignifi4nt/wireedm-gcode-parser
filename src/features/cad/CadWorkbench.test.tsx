@@ -3597,6 +3597,10 @@ describe('CAD sketch interaction', () => {
     await both(); expect(button('Dimension').disabled).toBe(false); await click('Dimension');
     expect(pickInstruction()).toBe('Angle · Click or press Enter to place; the pointer chooses the angle · Right-click for more · Escape drops the picks');
     await canvasKey('Enter'); placed();
+    // Picking the same lines again finds that angle, which placing moves within its own sector.
+    await canvasKey('Escape'); await canvasKey('Escape'); await both(); await click('Dimension');
+    expect(pickInstruction()).toBe('Angle · Click or press Enter to place; this moves the existing angle within its own sector · Right-click for more · Escape drops the picks');
+    await canvasKey('Escape'); await canvasKey('Escape');
     await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source);
     await canvasKey('Escape'); await both();
     const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'), free = container.querySelector<SVGGElement>('[data-cad-sketch-entity="free"]');

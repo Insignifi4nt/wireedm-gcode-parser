@@ -1595,8 +1595,10 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     if (!usable.length) return `Dimension · ${blocked?.reason ?? 'These picks cannot take a dimension.'}${blocked?.state === 'blocked' && blocked.reference ? ' · Right-click to place it as a reference' : ''}`;
     const shown = usable.find(candidate => candidate.form === dimensionPlan.defaultForm) ?? usable[0];
     const name = dimensionPlan.pair && shown.form !== 'datum' ? 'Distance' : shown.label;
-    // One line places its length wherever the pointer is; its horizontal and vertical distances are in the menu.
-    const how = !dimensionPlan.pair ? shown.form === 'angle' ? '; the pointer chooses the angle' : line && dimensionOperands.length === 1 ? '; right-click for its horizontal or vertical distance' : ''
+    // One line places its length wherever the pointer is; its horizontal and vertical distances are in the menu. Picks that only find
+    // dimensions the sketch has move them, and an angle keeps its own sector.
+    const how = usable.every(candidate => candidate.state === 'existing') ? shown.form === 'angle' ? '; this moves the existing angle within its own sector' : '; this moves the existing dimension'
+      : !dimensionPlan.pair ? shown.form === 'angle' ? '; the pointer chooses the angle' : line && dimensionOperands.length === 1 ? '; right-click for its horizontal or vertical distance' : ''
       : shown.form === 'datum' ? '; the pointer side chooses the position, or the horizontal or vertical distance' : '; the pointer side chooses aligned, horizontal or vertical';
     const next = dimensionOperands.length > 1 ? ' · Right-click for more' : line ? ' · Or choose a second line, a point, a curve or an axis' : ' · Or choose a point, a line, another curve, the origin or an axis';
     return `${name} · Click or press Enter to place${how}${next}`;
