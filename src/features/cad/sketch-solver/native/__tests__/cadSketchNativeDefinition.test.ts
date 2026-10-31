@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchSolveInput } from '../../cadSketchSolverTypes';
 import { attemptCadSketchNativeSolve } from '../cadSketchNativeAttempt';
-import { cadSketchEquationDefinition } from '../cadSketchEquationModel';
-import { compileCadSketchEquations } from '../compileCadSketchEquations';
+import { compileCadSketchEquations } from '@/domain/cad/sketch-solver/compileCadSketchEquations';
+import { cadSketchEquationDefinition } from '../cadSketchNativeProtocol';
 import { loadCadSketchNativeSolver, type CadSketchNativeSolver } from '../cadSketchNativeSolver';
 
 const wasm = readFileSync(new URL('../../../../../../packages/sketch-solver/wasm/sketch_solver.wasm', import.meta.url));

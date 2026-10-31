@@ -7,7 +7,8 @@ import { createCadBenchmarkRuntime } from '../src/features/cad/benchmark/cadSolv
 import { createCadSolverDragTrajectories } from '../src/features/cad/benchmark/cadSolverDragCases';
 import { cadSolverCalibrationDrifted, measureCadSolverDrag, measureCadSolverDragSweep, measureCadSolverEdits } from '../src/features/cad/benchmark/cadSolverWorkloadBenchmark';
 import { createCadSolverWorkloadCases } from '../src/features/cad/benchmark/cadSolverWorkloadCases';
-import { encodeCadSketchEquationModel, type CadSketchEquationModel } from '../src/features/cad/sketch-solver/native/cadSketchEquationModel';
+import type { CadSketchEquationModel } from '../src/domain/cad/sketch-solver/cadSketchEquationModel';
+import { encodeCadSketchEquationModel } from '../src/features/cad/sketch-solver/native/cadSketchNativeProtocol';
 import { loadCadSketchNativeSolver, type CadSketchNativeSolver } from '../src/features/cad/sketch-solver/native/cadSketchNativeSolver';
 import { answerNatively, loadNativeBaselineInstance, nativeAnswerDifferences, nativeBaselineBytes, nativeBaselineManifest, recordNativeCalls } from '../src/features/cad/sketch-solver/native/__tests__/nativeBaseline';
 

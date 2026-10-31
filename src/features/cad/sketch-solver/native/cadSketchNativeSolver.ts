@@ -1,5 +1,6 @@
+import type { CadSketchEquationModel } from '../../../../domain/cad/sketch-solver/cadSketchEquationModel';
 import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, CAD_SKETCH_PARAMETER_DETERMINED, CAD_SKETCH_PARAMETER_FREE, CAD_SKETCH_PARAMETER_NOT_ANALYSED,
-  encodeCadSketchEquationModel, type CadSketchEquationModel, type CadSketchNativeOptions } from './cadSketchEquationModel';
+  encodeCadSketchEquationModel, type CadSketchNativeOptions } from './cadSketchNativeProtocol';
 
 export interface CadSketchNativeSolution {
   /** `too-large`: a connected group needs more factor memory or work than the solver allows. */

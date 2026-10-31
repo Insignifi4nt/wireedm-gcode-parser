@@ -5,25 +5,12 @@ import { isCadImportData } from './cadImportData';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
-import { cadSketchDriverTolerance } from './cadSketchPrecision';
-import { checkCadSketchSymmetricRelation } from './cadSketchSymmetryRelations';
-import { checkCadSketchPointOnLineRelation } from './cadSketchPointOnLineRelations';
-import { checkCadSketchPointOnCurveRelation } from './cadSketchPointOnCurveRelations';
-import { checkCadSketchPointLineDistanceRelation } from './cadSketchPointLineDistanceRelations';
-import { checkCadSketchTangentJoint } from './cadSketchTangentRelations';
-import { checkCadSketchLinearPattern } from './cadSketchLinearPattern';
 import type { Point2 } from '@/domain/path-intel/types';
 import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
-import { checkCadSketchCornerRelation } from './cadSketchCornerGeometry';
-import { checkCadSketchLineRelation } from './cadSketchLineRelations';
-import { checkCadSketchRadialRelation } from './cadSketchRadialRelations';
-import { checkCadSketchEqualRelation } from './cadSketchEqualRelations';
-import { checkCadSketchAngleRelation } from './cadSketchAngleRelations';
-import { resolveCadSketchMidpointOperands } from './cadSketchMidpointRelations';
-import { cadSketchExternalReferenceComponents, validateCadSketchExternalReference } from './cadSketchExternalReferences';
+import { cadSketchExternalReferenceComponents } from './cadSketchExternalReferences';
 import { deepFreezeCadData } from './cadDeepFreeze';
 import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
-import { checkCadSketchRelationOperands } from './sketch-relations/cadSketchRelationRegistry';
+import { cadSketchRelationDefinition, checkCadSketchRelationOperands } from './sketch-relations/cadSketchRelationRegistry';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -318,65 +305,11 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
       }
     } catch (error) { report(source, 'invalid-expression', error instanceof Error ? error.message : 'Invalid entity expression.'); }
   }
+  // Each relation's definition checks it. Cross-feature authority, such as a linked reference's source, is checked by the document parser.
   for (const relation of graph.relations) {
     const source = { kind: 'relation', id: relation.id } as const;
     try {
-      if (relation.kind === 'linear-pattern') { issues.push(...checkCadSketchLinearPattern(graph, parameters, relation)); continue; }
-      if (relation.kind === 'symmetric') { issues.push(...checkCadSketchSymmetricRelation(graph, relation, points)); continue; }
-      if (relation.kind === 'point-on-line') { issues.push(...checkCadSketchPointOnLineRelation(graph, relation, points)); continue; }
-      if (relation.kind === 'point-on-curve') { issues.push(...checkCadSketchPointOnCurveRelation(graph, relation, points, parameters)); continue; }
-      if (relation.kind === 'point-line-distance') { issues.push(...checkCadSketchPointLineDistanceRelation(graph, relation, points, parameters)); continue; }
-      if (relation.kind === 'tangent-joint') { issues.push(...checkCadSketchTangentJoint(graph, relation, points)); continue; }
-      if (relation.kind === 'reference-dimension') continue; // Passive intent; geometry checks above remain authoritative.
-      if (relation.kind === 'external-reference') {
-        try { validateCadSketchExternalReference(graph, relation); }
-        catch (error) { report(source, 'relation-residual', error instanceof Error ? error.message : 'Invalid reference ownership.'); }
-        continue; // Cross-feature cache authority is checked by the document parser.
-      }
-      if (relation.kind === 'line-angle') { issues.push(...checkCadSketchAngleRelation(graph, relation, points, parameters)); continue; }
-      if (relation.kind === 'equal-length' || relation.kind === 'equal-radius') {
-        issues.push(...checkCadSketchEqualRelation(graph, relation, points, parameters)); continue;
-      }
-      if (relation.kind === 'radial-size') {
-        issues.push(...checkCadSketchRadialRelation(graph, relation, points, parameters)); continue;
-      }
-      if (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') {
-        issues.push(...checkCadSketchLineRelation(graph, relation, points)); continue;
-      }
-      if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') {
-        issues.push(...checkCadSketchCornerRelation(graph, relation, points, parameters)); continue;
-      }
-      let residual: number, operands: Point2[];
-      if (relation.kind === 'midpoint') {
-        const { line } = resolveCadSketchMidpointOperands(graph, relation);
-        const a = points.get(line.startPointId), b = points.get(line.endPointId), point = points.get(relation.pointId);
-        if (!a || !b || !point) continue;
-        const target = { x: a.x + (b.x - a.x) / 2, y: a.y + (b.y - a.y) / 2 };
-        operands = [a, b, point, target]; residual = Math.hypot(point.x - target.x, point.y - target.y);
-      } else if ('pointIds' in relation) {
-        const a = points.get(relation.pointIds[0]), b = points.get(relation.pointIds[1]); if (!a || !b) continue;
-        operands = [a, b];
-        switch (relation.kind) {
-          case 'coincident': residual = Math.hypot(a.x - b.x, a.y - b.y); break;
-          case 'horizontal': residual = Math.abs(a.y - b.y); break;
-          case 'vertical': residual = Math.abs(a.x - b.x); break;
-          // The source tuple owns direction, including negative and zero offsets.
-          case 'axis-distance': residual = Math.abs((b[relation.axis] - a[relation.axis]) - scalar(relation.value)); break;
-          case 'distance': {
-            const value = scalar(relation.value);
-            if (value < 0) { report(source, 'invalid-distance', 'Point distance must not be negative.'); continue; }
-            residual = Math.abs(Math.hypot(a.x - b.x, a.y - b.y) - value); break;
-          }
-          default: { const exhaustive: never = relation; throw exhaustive; }
-        }
-      } else {
-        const point = points.get(relation.pointId); if (!point) continue;
-        const target = relation.kind === 'fixed-point' ? { x: scalar(relation.position[0]), y: scalar(relation.position[1]) }
-          : { ...point, [relation.axis]: scalar(relation.value) };
-        operands = [point, target]; residual = Math.hypot(point.x - target.x, point.y - target.y);
-      }
-      const tolerance = relation.kind === 'coincident' ? cadPathClosureTolerance(operands) : cadSketchDriverTolerance(operands);
-      if (residual > tolerance) report(source, 'relation-residual', 'Sketch geometry does not satisfy its driving relation.', residual);
+      issues.push(...cadSketchRelationDefinition(relation).check(graph, relation, points, parameters));
     } catch (error) { report(source, 'invalid-expression', error instanceof Error ? error.message : 'Invalid relation expression.'); }
   }
   deepFreezeCadData(issues);

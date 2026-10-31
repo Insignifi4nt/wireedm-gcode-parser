@@ -7,7 +7,7 @@ import { gunzipSync } from 'node:zlib';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { cadSketchGraphWithSolvedValues, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
-import type { CadSketchEquationModel } from '../native/cadSketchEquationModel';
+import type { CadSketchEquationModel } from '@/domain/cad/sketch-solver/cadSketchEquationModel';
 
 export const PLANEGCS_CORPUS_FORMAT = 1;
 export const planeGcsCorpusDirectory = new URL('./fixtures/planegcs-corpus/', import.meta.url);

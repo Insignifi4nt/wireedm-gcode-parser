@@ -1,9 +1,11 @@
+import { cadPathClosureTolerance } from '../../cadAnalyticSegments';
 import type { CadSketchGraphEntity, CadSketchGraphPoint } from '../../cadSketchGraph';
-import { assertCadSketchMidpointIdentities } from '../../cadSketchMidpointRelations';
-import { assertCadSketchPointOnLineIdentities } from '../../cadSketchPointOnLineRelations';
-import { assertCadSketchPointOnCurveIdentities } from '../../cadSketchPointOnCurveRelations';
-import { assertCadSketchSymmetryIdentities, resolveCadSketchSymmetryOperands } from '../../cadSketchSymmetryRelations';
-import { resolveCadSketchTangentJoint } from '../../cadSketchTangentRelations';
+import { assertCadSketchMidpointIdentities, resolveCadSketchMidpointOperands } from '../../cadSketchMidpointRelations';
+import { assertCadSketchPointOnLineIdentities, checkCadSketchPointOnLineRelation, resolveCadSketchPointOnLineOperands } from '../../cadSketchPointOnLineRelations';
+import { assertCadSketchPointOnCurveIdentities, checkCadSketchPointOnCurveRelation, resolveCadSketchPointOnCurveOperands } from '../../cadSketchPointOnCurveRelations';
+import { assertCadSketchSymmetryIdentities, checkCadSketchSymmetricRelation, resolveCadSketchSymmetryOperands } from '../../cadSketchSymmetryRelations';
+import { checkCadSketchTangentJoint, resolveCadSketchTangentJoint } from '../../cadSketchTangentRelations';
+import { checkCadSketchMidpoint, checkCadSketchPointPair } from '../cadSketchRelationChecks';
 import { CAD_SKETCH_MIDPOINT_OPERANDS, CAD_SKETCH_POINT_ON_CURVE_OPERANDS, CAD_SKETCH_POINT_ON_LINE_OPERANDS, CAD_SKETCH_SYMMETRY_OPERANDS } from '../cadSketchOperandSignatures';
 import type { CadSketchRelationDefinition } from '../cadSketchRelationTypes';
 import { CAD_SKETCH_POINT_PAIR_OPERANDS, LINE_SLOT, POINT_SLOT, ROUND_SLOT, chainedPair, sortedIds } from './kindParts';
@@ -24,7 +26,14 @@ export const coincident: CadSketchRelationDefinition<'coincident'> = {
     // Two arcs or circles share their centre: a Coincident between the centres, which reads as Concentric.
     { signature: chainedPair(ROUND_SLOT), plan: (planner, [a, b]) => planner.concentric(planner.entity(a.id) as Round, planner.entity(b.id) as Round) }
   ],
-  agent: { exposed: true, summary: 'Two points share one position. Between two arc or circle centres it reads as Concentric.' }
+  lower: (relation, context) => context.together(() => {
+    context.offset(0, relation.pointIds[0], relation.pointIds[1]);
+    context.offset(1, relation.pointIds[0], relation.pointIds[1]);
+  }),
+  // Points joined in one place close a path, so they meet within its closure tolerance.
+  check: (_, relation, points) => checkCadSketchPointPair(relation, points, (a, b) => Math.hypot(a.x - b.x, a.y - b.y), cadPathClosureTolerance),
+  agent: { exposed: true, summary: 'Two points share one position. Between two arc or circle centres it reads as Concentric.',
+    meaning: 'Keeps two distinct source points at the same location.' }
 };
 
 export const midpoint: CadSketchRelationDefinition<'midpoint'> = {
@@ -35,7 +44,16 @@ export const midpoint: CadSketchRelationDefinition<'midpoint'> = {
   key: relation => `midpoint ${relation.pointId} ${relation.lineId}`,
   validate: (graph, _, [point, line]) => { assertCadSketchMidpointIdentities(graph, point as CadSketchGraphPoint, line as Line); },
   offers: [{ signature: { slots: [POINT_SLOT, LINE_SLOT] }, plan: (planner, [point, line]) => planner.place({ kind: 'midpoint', pointId: point.id, lineId: line.id }) }],
-  agent: { exposed: true, summary: 'A point stays at the middle of a line.' }
+  lower: (relation, context) => {
+    const { line } = resolveCadSketchMidpointOperands(context.graph, relation);
+    context.together(() => {
+      for (const axis of [0, 1] as const)
+        context.emit('midpoint', [context.point(line.startPointId)[axis], context.point(line.endPointId)[axis], context.point(relation.pointId)[axis]]);
+    });
+  },
+  check: (graph, relation, points) => checkCadSketchMidpoint(graph, relation, points),
+  agent: { exposed: true, summary: 'A point stays at the middle of a line.',
+    meaning: 'Keeps one distinct graph point halfway between a graph line’s endpoints, including construction lines. Does not join material boundaries.' }
 };
 
 export const pointOnLine: CadSketchRelationDefinition<'point-on-line'> = {
@@ -46,7 +64,14 @@ export const pointOnLine: CadSketchRelationDefinition<'point-on-line'> = {
   key: relation => `point-on-line ${relation.pointId} ${relation.lineId}`,
   validate: (graph, _, [point, line]) => { assertCadSketchPointOnLineIdentities(graph, point as CadSketchGraphPoint, line as Line); },
   offers: [{ signature: { slots: [POINT_SLOT, LINE_SLOT] }, plan: (planner, [point, line]) => planner.place({ kind: 'point-on-line', pointId: point.id, lineId: line.id }) }],
-  agent: { exposed: true, summary: 'A point stays on the infinite line through a line.' }
+  lower: (relation, context) => {
+    const { line } = resolveCadSketchPointOnLineOperands(context.graph, relation);
+    context.direct(line.startPointId, line.endPointId, 'A point-on-line guide has no numeric endpoints.');
+    context.onSupport(relation.pointId, context.support(line));
+  },
+  check: (graph, relation, points) => checkCadSketchPointOnLineRelation(graph, relation, points),
+  agent: { exposed: true, summary: 'A point stays on the infinite line through a line.',
+    meaning: 'Keeps a point on the infinite supporting line of the named guide, with sliding freedom unless other dimensions constrain it. Does not join material boundaries, fix the guide or drive a circle radius.' }
 };
 
 export const pointOnCurve: CadSketchRelationDefinition<'point-on-curve'> = {
@@ -57,7 +82,11 @@ export const pointOnCurve: CadSketchRelationDefinition<'point-on-curve'> = {
   key: relation => `point-on-curve ${relation.pointId} ${relation.curveId}`,
   validate: (graph, _, [point, curve]) => { assertCadSketchPointOnCurveIdentities(graph, point as CadSketchGraphPoint, curve as Round); },
   offers: [{ signature: { slots: [POINT_SLOT, ROUND_SLOT] }, plan: (planner, [point, curve]) => planner.place({ kind: 'point-on-curve', pointId: point.id, curveId: curve.id }) }],
-  agent: { exposed: true, summary: 'A point stays on the full circle of an arc or circle.' }
+  // The full supporting circle: the point's spoke matches an arc's start spoke, or a circle's radius.
+  lower: (relation, context) => context.onCircle(relation.pointId, resolveCadSketchPointOnCurveOperands(context.graph, relation).curve),
+  check: (graph, relation, points, parameters) => checkCadSketchPointOnCurveRelation(graph, relation, points, parameters),
+  agent: { exposed: true, summary: 'A point stays on the full circle of an arc or circle.',
+    meaning: 'Keeps a point on the full supporting circle of the named arc or circle, with sliding freedom unless other dimensions constrain it. Does not join material boundaries, trim the arc or fix the curve.' }
 };
 
 const mirrored = { role: 'Point or circle', accepts: ['point', 'circle'] } as const;
@@ -76,7 +105,16 @@ export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
   // A circle stands for its centre.
   offers: [{ signature: { slots: [mirrored, mirrored, { role: 'Axis line', accepts: ['line'] }], unordered: [[0, 1]] },
     plan: (planner, [a, b, line]) => planner.mirror([a, b], planner.entity(line.id) as Line) }],
-  agent: { exposed: true, summary: 'Two points mirror each other about a line.' }
+  // The pair's midpoint lies on the axis and the pair's span is square to it: one constraint of two equations.
+  lower: (relation, context) => {
+    const { line } = resolveCadSketchSymmetryOperands(context.graph, relation);
+    context.direct(line.startPointId, line.endPointId, 'A symmetry axis has no numeric endpoints.');
+    const operands = [...context.point(relation.pointIds[0]), ...context.point(relation.pointIds[1]), ...context.support(line)];
+    context.together(() => { context.emit('symmetric-midpoint', operands); context.emit('symmetric-perpendicular', operands); });
+  },
+  check: (graph, relation, points) => checkCadSketchSymmetricRelation(graph, relation, points),
+  agent: { exposed: true, summary: 'Two points mirror each other about a line.',
+    meaning: 'Keeps two point positions reflected about the infinite supporting line of the named axis. It does not fix that axis, join points or equalize circle radii.' }
 };
 
 const tangentCurve = (role: string) => ({ role, accepts: ['line', 'arc'] }) as const;
@@ -97,5 +135,14 @@ export const tangentJoint: CadSketchRelationDefinition<'tangent-joint'> = {
     const first = planner.entity(a.id)!, second = planner.entity(b.id)!;
     return first.kind === second.kind ? null : planner.tangent(first, second);
   } }],
-  agent: { exposed: true, summary: 'A line and an arc that share an endpoint join smoothly there.' }
+  // The line, from the joint toward its other end, is square to the arc's radius at the joint.
+  lower: (relation, context) => {
+    const { arc, linePointId, arcPointId, otherLineEndId } = resolveCadSketchTangentJoint(context.graph, relation), centre = context.centre(arc);
+    context.direct(linePointId, otherLineEndId, 'A tangent support has no numeric endpoints.');
+    context.direct(centre, arcPointId, 'A tangent support has no numeric endpoints.');
+    context.emit('perpendicular', [...context.through(linePointId, otherLineEndId), ...context.through(centre, arcPointId)]);
+  },
+  check: (graph, relation, points) => checkCadSketchTangentJoint(graph, relation, points),
+  agent: { exposed: true, summary: 'A line and an arc that share an endpoint join smoothly there.',
+    meaning: 'Keeps one line and one arc smoothly opposed at their explicitly joined endpoints. Declared endpoint identity, arc direction and existing size drivers remain authoritative; it adds no coincidence or radius driver.' }
 };
