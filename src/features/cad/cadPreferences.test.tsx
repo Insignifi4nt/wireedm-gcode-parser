@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { CAD_PREFERENCES_KEY, getCadPreferences, setCadPreferences, useCadPreferences } from './cadPreferences';
+import { CAD_PREFERENCES_KEY, cadSketchViewChoices, getCadPreferences, setCadPreferences, useCadPreferences } from './cadPreferences';
 
 let root: Root, container: HTMLDivElement;
 beforeEach(() => { localStorage.clear(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
@@ -49,4 +49,16 @@ it('retains an explicitly changed session preference when browser preference sto
   expect(remembered).toBe(false);
   expect(container.textContent).toBe('trackpad/false');
   expect(getCadPreferences()).toEqual({ navigationMode: 'trackpad', showOnPartDimensions: false });
+});
+
+it('remembers the sketch view choices with the other preferences and ignores a sketch view it cannot read without dropping the rest', () => {
+  setCadPreferences({ navigationMode: 'mouse', showOnPartDimensions: true, sketchView: { background: 'hidden', cutBySketchPlane: true } });
+  expect(JSON.parse(localStorage.getItem(CAD_PREFERENCES_KEY) ?? 'null')).toEqual({ navigationMode: 'mouse', showOnPartDimensions: true, sketchView: { background: 'hidden', cutBySketchPlane: true } });
+  const raw = '{"navigationMode":"trackpad","showOnPartDimensions":false,"sketchView":{"background":"x-ray"}}';
+  localStorage.setItem(CAD_PREFERENCES_KEY, raw);
+  expect(getCadPreferences()).toEqual({ navigationMode: 'trackpad', showOnPartDimensions: false });
+  expect(cadSketchViewChoices(getCadPreferences())).toEqual({ background: 'dimmed', cutBySketchPlane: false });
+  expect(localStorage.getItem(CAD_PREFERENCES_KEY)).toBe(raw);
+  localStorage.setItem(CAD_PREFERENCES_KEY, '{"navigationMode":"mouse","showOnPartDimensions":true,"sketchView":{"cutBySketchPlane":true}}');
+  expect(cadSketchViewChoices(getCadPreferences())).toEqual({ background: 'dimmed', cutBySketchPlane: true });
 });

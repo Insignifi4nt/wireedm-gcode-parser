@@ -1,10 +1,13 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AxesHelper, GridHelper, LineDashedMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, Vector3, type Camera, type Scene } from 'three';
+import { AxesHelper, GridHelper, LineDashedMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, Vector3, type Camera, type Plane, type Scene } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { CadMesh, CadSketchFeature } from '@/domain/cad/cadDocument';
-import { CadViewport } from './CadViewport';
+import { CadViewport, type CadSketchBackgroundView } from './CadViewport';
+import { cadPrincipalFrame } from '@/domain/cad/cadDatumPlanes';
+import { createCadSketchCameraLink } from './view/cadSketchCamera';
+import { CAD_SKETCH_DIM_AMOUNT } from './view/cadSketchBackgroundStyle';
 import type { CadRenderedViewControls } from './cadViewportControls';
 import { prepareCadCurveReferences } from './cadCurveRendering';
 import { CAD_PRINCIPAL_PLANE_REFERENCES, prepareCadViewportReferences, type CadViewportReference } from './cadViewportReferences';
@@ -715,5 +718,135 @@ describe('reference plane hover', () => {
     await move((point.x + 1) * 400, (1 - point.y) * 300); expect(hovered).toHaveBeenLastCalledWith('XZ');
     const calls = hovered.mock.calls.length; act(() => root.unmount()); expect(hovered).toHaveBeenCalledTimes(calls + 1); expect(hovered).toHaveBeenLastCalledWith(null);
     root = createRoot(container);
+  });
+});
+
+describe('model behind an open sketch', () => {
+  const placement = { frame: cadPrincipalFrame('XY'), offsetMm: 10 };
+  const firstView = { center: [0, 0] as const, width: 160 * 800 / 600, span: 160 };
+  // The workbench hands over the same meshes until the model changes.
+  const meshes = [mesh];
+  function show(sketchView: CadSketchBackgroundView | null, hidden = sketchView !== null, onSelect = vi.fn()) {
+    return act(async () => root.render(<CadViewport meshes={meshes} selectedId={null} onSelect={onSelect} hidden={hidden} sketchView={sketchView}
+      onControlsReady={(value, released) => { if (value) controls = value; else if (!released || controls === released) controls = null; }} />));
+  }
+  const drawn = () => renderer().render.mock.calls.length;
+  const lastCamera = () => renderer().render.mock.calls.at(-1)![1] as OrthographicCamera;
+  const lastScene = () => renderer().render.mock.calls.at(-1)![0];
+  const dimAmount = () => {
+    let amount: unknown;
+    lastScene().traverse(child => {
+      if (amount !== undefined || !(child instanceof Mesh) || child.userData.featureId !== 'body') return;
+      const shader = { uniforms: {} as Record<string, { value: unknown }>, fragmentShader: '#include <premultiplied_alpha_fragment>', vertexShader: '' };
+      (child.material as MeshStandardMaterial).onBeforeCompile(shader as never, renderer() as never);
+      amount = shader.uniforms.cadDim.value;
+    });
+    return amount;
+  };
+  const clipping = () => {
+    const planes: (readonly Plane[] | null)[] = [];
+    lastScene().traverse(child => { if ((child instanceof Mesh || child instanceof LineSegments) && child.userData.featureId === 'body') planes.push((child.material as MeshStandardMaterial).clippingPlanes); });
+    return planes;
+  };
+  const helpersVisible = () => { const helpers: boolean[] = []; lastScene().traverse(child => { if (child instanceof GridHelper || child instanceof AxesHelper) helpers.push(child.visible); }); return helpers; };
+
+  it('draws only through the sketch camera, only when that camera or the model changes, and leaves the model camera exactly as it was', async () => {
+    const link = createCadSketchCameraLink();
+    await show(null); await flushFrame();
+    const modelCamera = lastCamera(), framed = { position: modelCamera.position.clone(), quaternion: modelCamera.quaternion.clone(), zoom: modelCamera.zoom, top: modelCamera.top, right: modelCamera.right };
+    expect(controls).not.toBeNull();
+    const host = container.querySelector<HTMLElement>('.cad-webgl')!;
+    const counted = () => Number(host.dataset.cadFramesDrawn);
+    expect(counted()).toBe(drawn());
+    const background: CadSketchBackgroundView = { placement, background: 'dimmed', cutBySketchPlane: false, camera: link };
+    await show(background);
+    // Behind the sketch the view publishes no controls, takes no focus and is not announced.
+    expect(controls).toBeNull();
+    expect(container.querySelector('.cad-viewport.is-sketch-background')?.getAttribute('aria-hidden')).toBe('true');
+    expect(renderer().domElement.tabIndex).toBe(-1);
+    expect(container.querySelector('.cad-webgl canvas')).toBe(renderer().domElement);
+    // Until the sketch canvas publishes its view there is no camera to draw with.
+    let before = drawn(); await flushFrame(); expect(drawn()).toBe(before);
+    await act(async () => link.publish(firstView)); await flushFrame();
+    expect(drawn()).toBe(before + 1); expect(counted()).toBe(drawn());
+    const sketchCamera = lastCamera();
+    expect(sketchCamera).not.toBe(modelCamera);
+    const project = (x: number, y: number) => { const point = new Vector3(x, y, 10).project(sketchCamera); return [(point.x + 1) * 400, (1 - point.y) * 300]; };
+    const [px, py] = project(40, -25);
+    expect(px).toBeCloseTo((40 / firstView.width + 0.5) * 800, 6); expect(py).toBeCloseTo((0.5 + 25 / 160) * 600, 6);
+    expect(helpersVisible()).toEqual([false, false]);
+    expect(dimAmount()).toBe(CAD_SKETCH_DIM_AMOUNT);
+    // A render of the workbench with nothing new for the view, or the same view again, draws nothing.
+    before = drawn();
+    await show(background, true, vi.fn()); await act(async () => link.publish({ ...firstView, center: [0, 0] })); await flushFrame();
+    expect(drawn()).toBe(before);
+    // Each pan or zoom step draws one frame; steps within one animation frame share it.
+    await act(async () => link.publish({ ...firstView, span: 120, width: 120 * 800 / 600 })); await flushFrame();
+    expect(drawn()).toBe(before + 1);
+    await act(async () => { link.publish({ ...firstView, center: [5, 0] }); link.publish({ ...firstView, center: [6, 0] }); link.publish({ ...firstView, center: [7, 0] }); }); await flushFrame();
+    expect(drawn()).toBe(before + 2);
+    expect(lastCamera()).toBe(sketchCamera);
+    expect(project(7, 0)[0]).toBeCloseTo(400, 6);
+    // Normal and the cut redraw once each, with no new camera.
+    await show({ ...background, background: 'normal' }); await flushFrame();
+    expect(dimAmount()).toBe(0); expect(drawn()).toBe(before + 3);
+    const cut = { ...background, cutBySketchPlane: true };
+    await show(cut); await flushFrame();
+    const planes = clipping();
+    // Material planes take effect only with the renderer's local clipping on.
+    expect((renderer() as unknown as { localClippingEnabled?: boolean }).localClippingEnabled).toBe(true);
+    expect(planes).toHaveLength(3);
+    for (const entry of planes) {
+      expect(entry).toHaveLength(1); expect(entry![0].normal.toArray().map(value => value + 0)).toEqual([0, 0, -1]);
+      expect(entry![0].distanceToPoint(new Vector3(0, 0, 12))).toBeLessThan(0); expect(entry![0].distanceToPoint(new Vector3(0, 0, 8))).toBeGreaterThan(0);
+    }
+    await show(background); await flushFrame();
+    expect(clipping().every(entry => entry === null)).toBe(true);
+    // Hidden draws nothing, whatever the sketch canvas does.
+    await show(null, true); before = drawn();
+    await act(async () => link.publish({ ...firstView, center: [-20, 3] })); await flushFrame();
+    expect(drawn()).toBe(before);
+    await show(background); await flushFrame();
+    expect(drawn()).toBe(before + 1); expect(project(-20, 3)[0]).toBeCloseTo(400, 6);
+    // Leaving the sketch brings back the model camera exactly, with its grid and controls.
+    await show(null); await flushFrame();
+    expect(controls).not.toBeNull();
+    expect(lastCamera()).toBe(modelCamera);
+    expect(modelCamera.position.equals(framed.position) && modelCamera.quaternion.equals(framed.quaternion)).toBe(true);
+    expect([modelCamera.zoom, modelCamera.top, modelCamera.right]).toEqual([framed.zoom, framed.top, framed.right]);
+    expect(helpersVisible()).toEqual([true, true]);
+    expect(dimAmount()).toBe(0);
+    expect(renderer().domElement.tabIndex).toBe(0);
+    // After leaving, a sketch view is no longer followed.
+    before = drawn(); await act(async () => link.publish({ ...firstView, span: 300 })); await flushFrame(); expect(drawn()).toBe(before);
+  });
+
+  it('draws a frame for changed background lines but none for a new document version that leaves them the same', async () => {
+    const link = createCadSketchCameraLink(); link.publish(firstView);
+    const outline = (width: number) => prepareCadViewportReferences([{ id: 'base', name: 'Base', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'plate', name: 'Plate', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width, height: 20, cornerRadius: 0 } }] }], {});
+    const background: CadSketchBackgroundView = { placement, background: 'dimmed', cutBySketchPlane: false, camera: link };
+    const lines = outline(30);
+    const showLines = (references: readonly CadViewportReference[], version: string) => act(async () => root.render(<CadViewport meshes={meshes} references={references} referenceVersion={version}
+      selectedId={null} onSelect={vi.fn()} hidden sketchView={background} />));
+    await showLines(lines, 'v1'); await flushFrame();
+    const before = drawn();
+    // A sketch edit commits a new document version; the lines behind the sketch are the same objects, so nothing is drawn.
+    await showLines(lines, 'v2'); await flushFrame();
+    expect(drawn()).toBe(before);
+    await showLines(outline(40), 'v3'); await flushFrame();
+    expect(drawn()).toBe(before + 1);
+  });
+
+  it('opens straight into a sketch without ever publishing model controls', async () => {
+    const link = createCadSketchCameraLink(), published = vi.fn();
+    link.publish(firstView);
+    await act(async () => root.render(<CadViewport meshes={meshes} selectedId={null} onSelect={vi.fn()} hidden sketchView={{ placement, background: 'dimmed', cutBySketchPlane: true, camera: link }} onControlsReady={published} />));
+    await flushFrame();
+    expect(published).not.toHaveBeenCalled();
+    expect(drawn()).toBe(1);
+    expect(clipping().every(entry => entry?.length === 1)).toBe(true);
+    await act(async () => root.render(<CadViewport meshes={meshes} selectedId={null} onSelect={vi.fn()} onControlsReady={published} />));
+    expect(published).toHaveBeenCalledTimes(1);
   });
 });

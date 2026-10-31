@@ -26,6 +26,8 @@ import { readCadFitArea, type CadFitAreaReader } from './cadFitArea';
 import './cad-plane-selection.css';
 import './cad-depth-handle.css';
 import { cadViewBackground } from './cadViewBackground';
+import { cadSketchClipPlane, cadSketchClipTolerance, syncCadSketchCamera, type CadSketchCameraLink, type CadSketchPlacementFrame } from './view/cadSketchCamera';
+import { CAD_SKETCH_DIM_AMOUNT, createCadBackgroundDim } from './view/cadSketchBackgroundStyle';
 const NO_REFERENCES: readonly CadViewportReference[] = Object.freeze([]);
 const NO_SOURCE_PICK_IDS: readonly string[] = Object.freeze([]);
 export interface CadViewportContextMenuRequest {
@@ -35,9 +37,20 @@ export interface CadViewportContextMenuRequest {
   readonly target: { readonly kind: 'feature'; readonly featureId: string } | { readonly kind: 'topology'; readonly hit: CadTopologyHit } | null;
 }
 
+/**
+ * The model drawn behind an open sketch. The sketch canvas lies on top and owns every pointer and key; this view only draws, through a camera
+ * the sketch canvas drives, and only when that camera or the model changes.
+ */
+export interface CadSketchBackgroundView {
+  readonly placement: CadSketchPlacementFrame;
+  readonly background: 'normal' | 'dimmed';
+  readonly cutBySketchPlane: boolean;
+  readonly camera: CadSketchCameraLink;
+}
+
 export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersion = null, selectedId, onSelect, onControlsReady, interactionLocked = false,
   navigationLocked = interactionLocked, navigationMode = 'mouse', onContextMenu, pickMode = 'body', topologySelection = null, onTopologyPick, pickingEnabled = true, getFitArea,
-  selectedReferencePlane = null, hoveredReferencePlane = null, onSelectPlane, onHoverPlane, planePickingOnly = false, sourceReferencePickIds = NO_SOURCE_PICK_IDS, regionSelection = null, depthControl = null, busyInputLocked = false, hidden = false }: {
+  selectedReferencePlane = null, hoveredReferencePlane = null, onSelectPlane, onHoverPlane, planePickingOnly = false, sourceReferencePickIds = NO_SOURCE_PICK_IDS, regionSelection = null, depthControl = null, busyInputLocked = false, hidden = false, sketchView = null }: {
   meshes: readonly CadMesh[];
   references?: readonly CadViewportReference[];
   referenceVersion?: string | null;
@@ -66,8 +79,13 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   onTopologyPick?(hit: CadTopologyHit | null, additive: boolean): void;
   pickingEnabled?: boolean;
   getFitArea?: CadFitAreaReader;
-  /** A sketch surface covers the model. The view stays mounted so leaving the sketch keeps the camera and needs no new graphics context. */
+  /**
+   * A sketch surface covers the model. The view stays mounted so leaving the sketch keeps the camera and needs no new graphics context, and it
+   * publishes no controls and takes no input. With `sketchView` it still draws the model behind the sketch.
+   */
   hidden?: boolean;
+  /** Draws the model behind the covering sketch with the sketch's own camera. The model camera stays untouched, so leaving restores it exactly. */
+  sketchView?: CadSketchBackgroundView | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const planeLabels = useRef<HTMLDivElement>(null);
@@ -89,9 +107,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   const sourceInteraction = ownedRegions?.sketchId ?? sourceReferenceIds;
   const meshInteraction = ownedRegions?.cells ?? meshes;
   const referenceVersionInteraction = ownedRegions?.expectedVersion ?? referenceVersion;
-  const data = useRef({ meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, hoveredReferencePlane, onSelectPlane, onHoverPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked, hidden });
-  data.current = { meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, hoveredReferencePlane, onSelectPlane, onHoverPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked, hidden };
-  const showView = useRef<((visible: boolean) => void) | null>(null);
+  const data = useRef({ meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, hoveredReferencePlane, onSelectPlane, onHoverPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked, hidden, sketchView });
+  data.current = { meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, hoveredReferencePlane, onSelectPlane, onHoverPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked, hidden, sketchView };
+  const present = useRef<((hidden: boolean, sketch: CadSketchBackgroundView | null) => void) | null>(null);
   const redraw = useRef<(() => void) | null>(null);
   const recolor = useRef<(() => void) | null>(null);
   const highlight = useRef<(() => void) | null>(null);
@@ -119,10 +137,13 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
     catch { setGraphicsFailure('unavailable'); return; }
     setGraphicsFailure(null); setGridVisible(true); setViewName('Isometric');
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    renderer.setPixelRatio(pixelRatio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Only materials given clipping planes are clipped: the cut behind an open sketch.
+    renderer.localClippingEnabled = true;
     container.appendChild(renderer.domElement);
-    renderer.domElement.tabIndex = data.current.navigationLocked && data.current.interactionLocked ? -1 : 0;
+    renderer.domElement.tabIndex = data.current.hidden || data.current.navigationLocked && data.current.interactionLocked ? -1 : 0;
     renderer.domElement.setAttribute('aria-label', '3D model canvas');
     const scene = new THREE.Scene();
     const background = cadViewBackground(); scene.background = background;
@@ -165,10 +186,26 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     scene.add(solids);
     scene.add(referenceLines);
     scene.add(highlights.objects);
+    // Behind an open sketch the view draws through the sketch's camera, so the model camera keeps its exact place for the return.
+    const sketchCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const sketchClip = new THREE.Plane(), sketchClipPlanes = [sketchClip];
+    const dim = createCadBackgroundDim();
+    // Covered by a sketch, the view draws only as that sketch's background. Otherwise, while hidden, it neither draws nor sizes itself, and
+    // model uploads wait until it is shown again.
+    let sketch: CadSketchBackgroundView | null = data.current.hidden ? data.current.sketchView : null;
+    let visible = !data.current.hidden || sketch !== null;
+    let releaseSketchCamera: (() => void) | null = null;
+    // Scene bounds set the sketch camera's depth range and the cut tolerance; they change only with the model.
+    const sceneBounds = new THREE.Box3();
+    let sceneBoundsCurrent = false;
+    const currentSceneBounds = () => {
+      if (!sceneBoundsCurrent) { sceneBounds.makeEmpty(); sceneBounds.expandByObject(solids); sceneBounds.expandByObject(referenceLines); sceneBoundsCurrent = true; }
+      return sceneBounds;
+    };
+    /** Every frame drawn, counted on the host so tests can tell that sketch hover and drag draw none. */
+    let framesDrawn = 0;
     let frame: number | null = null;
     let disposed = false;
-    // While hidden the view neither draws nor sizes itself; model uploads wait until it is shown again.
-    let visible = !data.current.hidden;
     let pendingHover: PointerEvent | null = null;
     let hoveredFeatureId: string | null = null;
     let namedDirection = camera.position.clone().sub(controls.target).normalize();
@@ -216,6 +253,17 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       if (frame !== null || !visible) return;
       frame = requestAnimationFrame(() => {
         if (disposed || renderer.getContext().isContextLost()) { frame = null; return; }
+        if (sketch) {
+          // Nothing behind the sketch takes pointer input, so a frame here only follows the sketch camera or the model.
+          frame = null;
+          const view = sketch.camera.current();
+          if (!view) return;
+          const bounds = currentSceneBounds();
+          syncCadSketchCamera(sketchCamera, sketch.placement, view, bounds);
+          cadSketchClipPlane(sketch.placement, cadSketchClipTolerance(bounds), sketchClip);
+          updateReferenceStyles(); renderer.render(scene, sketchCamera); countFrame();
+          return;
+        }
         depth.setView(camera, container.clientWidth, container.clientHeight); updateDepthLabel();
         const event = pendingHover; pendingHover = null;
         if (event && !down && depthPointer === null && !event.buttons && (!data.current.interactionLocked || data.current.depthControl)) {
@@ -232,9 +280,10 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           }
           else if (data.current.pickingEnabled) setHover(hitTopology());
         }
-        updateReferenceStyles(); updatePlaneLabels(); renderer.render(scene, camera); frame = null;
+        updateReferenceStyles(); updatePlaneLabels(); renderer.render(scene, camera); countFrame(); frame = null;
       });
     };
+    const countFrame = () => { framesDrawn++; container.dataset.cadFramesDrawn = String(framesDrawn); };
     let renderedWidth = 0, renderedHeight = 0;
     const resize = () => {
       if (!visible) return;
@@ -249,6 +298,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         camera.bottom = -halfHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(width, height);
+        dim.setHeight(Math.floor(height * pixelRatio));
         highlights.resize(width, height);
         viewState.revision++;
       }
@@ -323,7 +373,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       && (reference.featureKind === 'sketch' || reference.featureKind === 'curve') && reference.featureId !== null && data.current.sourceReferenceIds.has(reference.featureId);
     const updateReferenceStyles = () => {
       referenceLines.visible = !data.current.regionSelection;
-      const worldPerPixel = (camera.top - camera.bottom) / camera.zoom / Math.max(1, container.clientHeight);
+      const drawing = sketch ? sketchCamera : camera;
+      const worldPerPixel = (drawing.top - drawing.bottom) / drawing.zoom / Math.max(1, container.clientHeight);
       for (const { reference, line, patch } of installedReferences.values()) {
         if (patch && patch.material instanceof THREE.MeshBasicMaterial) { patch.material.color.setHex(referenceColor(reference)); patch.material.opacity = referenceSelected(reference) ? .18 : referenceHovered(reference) ? .12 : .075; }
         if (line.material instanceof THREE.LineBasicMaterial) {
@@ -337,8 +388,27 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         if (line.material instanceof THREE.LineDashedMaterial) { line.material.dashSize = worldPerPixel * 6; line.material.gapSize = worldPerPixel * 4; }
       }
     };
+    // Every model material carries the dim, at zero outside a sketch, so switching Normal and Dimmed compiles nothing.
+    const styleMaterial = <T extends THREE.Material>(material: T): T => {
+      dim.install(material);
+      material.clippingPlanes = sketch?.cutBySketchPlane ? sketchClipPlanes : null;
+      return material;
+    };
+    /** Applies the open sketch's background and cut, or the plain model view when no sketch is open. */
+    const applySketchStyle = () => {
+      const clip = sketch?.cutBySketchPlane ? sketchClipPlanes : null;
+      for (const group of [solids, referenceLines]) for (const child of group.children) {
+        if (!(child instanceof THREE.Mesh || child instanceof THREE.LineSegments)) continue;
+        // three.js compiles the cut into the program and recompiles when the number of planes changes.
+        for (const material of Array.isArray(child.material) ? child.material : [child.material]) material.clippingPlanes = clip;
+      }
+      dim.setAmount(sketch?.background === 'dimmed' ? CAD_SKETCH_DIM_AMOUNT : 0);
+      // The grid, axes and pick highlights belong to the model view; the sketch draws its own.
+      grid.visible = !sketch && viewState.gridVisible; axes.visible = !sketch; highlights.objects.visible = !sketch;
+    };
     const updateReferences = () => {
-      if (uploadedReferences.current !== data.current.references) {
+      const changed = uploadedReferences.current !== data.current.references;
+      if (changed) {
         const wanted = new Map(data.current.references.map(reference => [reference.referenceId, reference]));
         for (const [id, installed] of installedReferences) {
           if (wanted.get(id) === installed.reference) continue;
@@ -351,7 +421,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           // in double precision before uploading the model-view matrix.
           const origin = cadRenderOrigin(reference.bounds);
           const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(reference.positions, origin), 3));
-          const material = reference.construction ? new THREE.LineDashedMaterial({ color: referenceColor(reference), depthWrite: false }) : new THREE.LineBasicMaterial({ color: referenceColor(reference) });
+          const material = styleMaterial(reference.construction ? new THREE.LineDashedMaterial({ color: referenceColor(reference), depthWrite: false }) : new THREE.LineBasicMaterial({ color: referenceColor(reference) }));
           const line = new THREE.LineSegments(geometry, material);
           if (reference.construction) line.computeLineDistances();
           line.position.set(origin[0], origin[1], origin[2]);
@@ -359,7 +429,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           let patch: THREE.Mesh | undefined;
           if (reference.planePatch) {
             const patchGeometry = new THREE.BufferGeometry(); patchGeometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(reference.planePatch, origin), 3));
-            patch = new THREE.Mesh(patchGeometry, new THREE.MeshBasicMaterial({ color: referenceColor(reference), transparent: true, opacity: .055, side: THREE.DoubleSide, depthWrite: false }));
+            patch = new THREE.Mesh(patchGeometry, styleMaterial(new THREE.MeshBasicMaterial({ color: referenceColor(reference), transparent: true, opacity: .055, side: THREE.DoubleSide, depthWrite: false })));
             patch.position.set(...origin); patch.userData.featureId = reference.featureId; patch.userData.referenceId = reference.referenceId; referenceLines.add(patch); patch.updateMatrixWorld(true);
           }
           installedReferences.set(reference.referenceId, { reference, line, patch });
@@ -370,6 +440,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         for (const id of wanted.keys()) { const installed = installedReferences.get(id); if (installed) pickableReferences.push(installed.line); }
         pickableReferences.forEach((line, index) => { line.renderOrder = 1 + index / pickableReferences.length; });
         uploadedReferences.current = data.current.references;
+        sceneBoundsCurrent = false;
       }
       installedReferenceVersion = data.current.referenceVersion;
       installedReferenceFeatureIds = cadReferenceFeatureIds(data.current.references);
@@ -379,7 +450,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         fittedReferences = true;
         if (!userFramed) fit(true);
       }
-      render();
+      // Behind a sketch only changed lines need a frame; a new reference version alone, such as a sketch edit, draws nothing new.
+      if (changed || !sketch) render();
     };
     const update = () => {
       uploadedMeshes.current = data.current.meshes;
@@ -392,7 +464,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         geometry.setAttribute('normal', new THREE.Float32BufferAttribute(display.normals, 3));
         geometry.setIndex(new THREE.Uint32BufferAttribute(mesh.indices, 1));
         const selected = mesh.featureId === data.current.selectedId;
-        const material = new THREE.MeshStandardMaterial({ color: selected ? 0x79c8e6 : 0xa3b0bf, roughness: 0.55, metalness: 0.18, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+        const material = styleMaterial(new THREE.MeshStandardMaterial({ color: selected ? 0x79c8e6 : 0xa3b0bf, roughness: 0.55, metalness: 0.18, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
         const body = new THREE.Mesh(geometry, material);
         body.position.set(...origin);
         body.userData.featureId = mesh.featureId;
@@ -401,7 +473,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         meshByObject.set(body, mesh);
         const edges = new THREE.BufferGeometry();
         edges.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(mesh.edges, origin), 3));
-        const lines = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: selected ? 0xb5eafd : 0x344452 }));
+        const lines = new THREE.LineSegments(edges, styleMaterial(new THREE.LineBasicMaterial({ color: selected ? 0xb5eafd : 0x344452 })));
         lines.material.visible = data.current.pickMode === 'edge';
         lines.position.set(...origin);
         lines.userData.featureId = mesh.featureId;
@@ -411,11 +483,12 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         meshByObject.set(lines, mesh);
         const displayEdges = new THREE.BufferGeometry();
         displayEdges.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(display.edges, origin), 3));
-        const outline = new THREE.LineSegments(displayEdges, new THREE.LineBasicMaterial({ color: selected ? 0xb5eafd : 0x344452 }));
+        const outline = new THREE.LineSegments(displayEdges, styleMaterial(new THREE.LineBasicMaterial({ color: selected ? 0xb5eafd : 0x344452 })));
         outline.material.visible = data.current.pickMode !== 'edge';
         outline.position.set(...origin); outline.userData.featureId = mesh.featureId; outline.userData.displayEdges = true;
         solids.add(outline);
       }
+      sceneBoundsCurrent = false;
       if (!fittedSolid && data.current.meshes.length) {
         fittedSolid = true;
         if (!userFramed) fit(true);
@@ -807,10 +880,12 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     window.addEventListener('blur', cancelAllPointers);
     const observer = new ResizeObserver(resize);
     observer.observe(container);
+    if (sketch) releaseSketchCamera = sketch.camera.subscribe(render);
     resize();
     if (visible) { update(); updateReferences(); }
     updateRegionSelection();
     updateDepthSelection();
+    applySketchStyle();
     redraw.current = () => { if (visible) update(); };
     uploadReferences.current = () => { if (visible) updateReferences(); };
     updateRegions.current = updateRegionSelection;
@@ -872,27 +947,41 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       },
     };
     const publishedControls = controller.current;
-    showView.current = (next) => {
-      if (disposed || next === visible) return;
-      visible = next;
-      if (!visible) {
+    // The model view publishes its controls only while it is shown on its own; behind a sketch it only draws.
+    present.current = (covered, nextSketch) => {
+      const nextSketchView = covered ? nextSketch : null, nextVisible = !covered || nextSketchView !== null;
+      if (disposed || nextVisible === visible && nextSketchView === sketch) return;
+      const wasShown = visible, wasPublished = visible && !sketch;
+      if (nextSketchView?.camera !== sketch?.camera) {
+        releaseSketchCamera?.();
+        releaseSketchCamera = nextSketchView ? nextSketchView.camera.subscribe(render) : null;
+      }
+      visible = nextVisible; sketch = nextSketchView;
+      const publishes = visible && !sketch;
+      renderer.domElement.tabIndex = covered || data.current.navigationLocked && data.current.interactionLocked ? -1 : 0;
+      if (wasPublished && !publishes) {
         cancelPointerInteraction();
-        if (frame !== null) { cancelAnimationFrame(frame); frame = null; }
         pendingHover = null;
         publish.current?.(null, publishedControls);
-        return;
       }
-      resize();
-      if (uploadedMeshes.current !== data.current.meshes) update();
-      updateReferences();
-      updateSelection();
-      updateHighlights();
-      publish.current?.(publishedControls);
+      if (!visible && frame !== null) { cancelAnimationFrame(frame); frame = null; }
+      applySketchStyle();
+      if (!visible) return;
+      if (!wasShown) {
+        resize();
+        if (uploadedMeshes.current !== data.current.meshes) update();
+        updateReferences();
+        updateSelection();
+        updateHighlights();
+      }
+      render();
+      if (publishes && !wasPublished) publish.current?.(publishedControls);
     };
-    if (visible) publish.current?.(publishedControls);
+    if (visible && !sketch) publish.current?.(publishedControls);
     return () => {
       disposed = true;
-      showView.current = null;
+      present.current = null;
+      releaseSketchCamera?.(); releaseSketchCamera = null;
       observer.disconnect();
       depth.dispose(); releaseDepthCapture();
       releaseOrbitControls(controls);
@@ -958,12 +1047,14 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     cancelInteraction.current?.(Boolean(ownedDepth) && !navigationLocked && !busyInputLocked, preserveIdleHover.current);
     if (orbit.current) orbit.current.enabled = !navigationLocked && !busyInputLocked && !ownedDepth?.getState()?.gestureActive;
     const canvas = host.current?.querySelector('canvas');
-    if (canvas) canvas.tabIndex = navigationLocked && interactionLocked ? -1 : 0;
+    if (canvas) canvas.tabIndex = hidden || navigationLocked && interactionLocked ? -1 : 0;
   }, [interactionLocked, navigationLocked, navigationMode, pickMode, meshInteraction, referenceInteraction, referenceVersionInteraction, pickingEnabled, sourceInteraction,
     ownedRegions?.owner, ownedRegions?.expectedVersion, ownedRegions?.sketchId, ownedRegions?.cells, regionPlacementKey,
     busyInputLocked, ownedDepth, selectedId, selectedReferencePlane, topologySelection, planePickingOnly]);
   useLayoutEffect(() => { cancelDepth.current?.(); }, [navigationLocked, navigationMode]);
-  useLayoutEffect(() => { showView.current?.(!hidden); }, [hidden]);
+  useLayoutEffect(() => { present.current?.(hidden, sketchView); }, [hidden, sketchView]);
+  // Behind a sketch the same graphics host draws under the sketch canvas and takes no input; the sketch owns every control.
+  if (hidden && sketchView) return <div className="cad-viewport is-sketch-background" aria-hidden="true"><div className="cad-webgl" ref={host} /></div>;
   // Hidden, only the graphics host stays so the sketch surface owns every visible control.
   if (hidden) return <div className="cad-viewport" hidden><div className="cad-webgl" ref={host} aria-label="3D model viewport" /></div>;
   return <div className="cad-viewport">
