@@ -11,15 +11,17 @@ const CAP_RENDER_ORDER = 10;
 const CHECK_EVERY = 8192;
 /**
  * How many solids one count holds. Where k of a body's solids cover a point of the plane, the body's triangles wind k times round it,
- * since each solid's own triangles wind once round its material and not at all elsewhere. The stencil buffer's eight bits count modulo
- * 256, so a body of at most 255 solids counts at once, and its count is zero only where none of them is.
+ * since each solid's own triangles wind once round its material and not at all elsewhere; seen from the other side the count is -k. The
+ * stencil buffer's eight bits count modulo 256, so a body of at most 255 solids counts at once: its count lies between -255 and 255,
+ * which is zero modulo 256 only where none of them is.
  */
 export const CAD_SECTION_CAP_SOLIDS_AT_ONCE = 255;
 /**
  * A body of more solids counts them in groups of at most 127, numbered as the kernel lists them, in the stencil's low seven bits, which
- * count modulo 128. A group's count lies between 0 and 127, so it is zero only where none of its solids is. After each group one pass
- * sets the top bit wherever the group's count is not zero and clears the count, so the next group starts from zero; the fill then
- * colours where the top bit is set. However many solids cover a point, no count goes past what one group holds.
+ * count modulo 128 whatever the top bit holds. A group's count lies between -127 and 127, so it is zero modulo 128 only where none of
+ * its solids is. After each group one pass sets the top bit wherever the group's count is not zero and clears the count, so the next
+ * group starts from zero; the fill then colours where the top bit is set. However many solids cover a point, no count goes past what
+ * one group holds.
  */
 export const CAD_SECTION_CAP_GROUP_SOLIDS = 127;
 const LOW_BITS = 0x7f, UNION_BIT = 0x80;
