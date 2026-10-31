@@ -28,6 +28,11 @@ vi.mock('three', async importOriginal => {
 const slab = (featureId: string, z: number): CadMesh => ({ featureId, name: featureId, positions: [0, 0, z, 10, 0, z, 10, 10, z, 0, 10, z], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
   indices: [0, 1, 2, 0, 2, 3], edges: [], faceGroups: [], edgeGroups: [], volume: 0, bounds: { min: [0, 0, z], max: [10, 10, z] } });
 const upper = slab('upper', 8), lower = slab('lower', 1);
+/** A closed 10 mm square box from `bottom` to `top`, with its eight corners shared by its faces. */
+const box = (featureId: string, bottom: number, top: number): CadMesh => ({ featureId, name: featureId,
+  positions: [0, 0, bottom, 10, 0, bottom, 10, 10, bottom, 0, 10, bottom, 0, 0, top, 10, 0, top, 10, 10, top, 0, 10, top], normals: new Array(24).fill(0),
+  indices: [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7], edges: [], faceGroups: [], edgeGroups: [],
+  volume: 100 * (top - bottom), bounds: { min: [0, 0, bottom], max: [10, 10, top] } });
 const at = (frame: CadResolvedFrame, z: number): CadResolvedFrame => Object.freeze({ ...frame, origin: [0, 0, z] as const });
 const section = (flip = false, caps = true, height = 4): CadViewportSection => Object.freeze({ frame: at(cadPrincipalFrame('XY'), height), flip, caps });
 
@@ -98,25 +103,35 @@ describe('section view', () => {
     expect(clipOf(body())).toBeNull(); expect(clipOf(outline())).toBeNull(); expect(solidState().section).toBeUndefined();
   });
 
-  it('draws caps only while they are on, and never as a pickable or listed body', async () => {
+  it('caps each closed body the section cuts with geometry on the plane, only while caps are on, and never as a pickable or listed body', async () => {
     const capsShown = (scene: Scene) => find(scene, object => object.name === 'cad-section-caps');
-    await show({ section: section(false, true) });
+    const caps = (scene: Scene) => { const found: Mesh[] = []; capsShown(scene)?.traverse(object => { if (object instanceof Mesh) found.push(object); }); return found; };
+    // The tall box crosses the plane at z = 4; the low one lies wholly on the kept side, and the flat slab is open, so neither has a cap.
+    const meshes = [box('tall', 0, 8), box('low', 0, 2), upper];
+    await show({ meshes, section: section(false, true) });
     let { scene } = await drawn();
-    const caps = capsShown(scene);
-    expect(caps?.visible).toBe(true);
-    // One cap on the plane, and a back and a front stencil pass for each body, drawn after the solids.
-    const cap = find(scene, object => object.name === 'cad-section-cap') as Mesh;
-    expect(cap.position.z).toBeCloseTo(4, 3); expect(cap.renderOrder).toBeGreaterThan(2);
-    let counters = 0; caps?.traverse(object => { if (object instanceof Mesh && object !== cap) counters++; });
-    expect(counters).toBe(4);
-    // Nothing in the caps names a feature, so no pick can land on them.
-    caps?.traverse(object => expect(object.userData.featureId).toBeUndefined());
-
-    await show({ section: section(false, false) }); ({ scene } = await drawn());
-    expect(capsShown(scene)).toBeNull(); expect(solidState().section).toMatchObject({ caps: false });
-    await show({ section: section(false, true) }); ({ scene } = await drawn());
     expect(capsShown(scene)?.visible).toBe(true);
-    await show({ section: null }); ({ scene } = await drawn());
+    const [cap, ...others] = caps(scene);
+    expect(others).toHaveLength(0);
+    cap.updateMatrixWorld();
+    const position = cap.geometry.getAttribute('position'), corner = new Vector3();
+    const heights = new Set<number>(), xs: number[] = [];
+    for (let item = 0; item < position.count; item++) { corner.fromBufferAttribute(position, item).applyMatrix4(cap.matrixWorld); heights.add(Number(corner.z.toFixed(6))); xs.push(corner.x); }
+    // The cap lies on the cut the bodies are clipped by, which keeps faces on the plane by a small tolerance.
+    const [cut] = clipOf(find(scene, object => object instanceof Mesh && object.userData.featureId === 'tall')) ?? [];
+    expect(heights.size).toBe(1); expect([...heights][0]).toBeCloseTo(4, 3); expect(Math.abs([...heights][0] - cut.constant)).toBeLessThan(1e-6);
+    expect([Math.min(...xs), Math.max(...xs)]).toEqual([0, 10]);
+    // Nothing in the caps names a feature, so no pick can land on them.
+    capsShown(scene)?.traverse(object => expect(object.userData.featureId).toBeUndefined());
+
+    await show({ meshes, section: section(false, false) }); ({ scene } = await drawn());
+    expect(capsShown(scene)).toBeNull(); expect(solidState().section).toMatchObject({ caps: false });
+    await show({ meshes, section: section(false, true) }); ({ scene } = await drawn());
+    expect(caps(scene)).toEqual([cap]);
+    // A moved plane builds the cap again where the plane now lies.
+    await show({ meshes, section: section(false, true, 6) }); ({ scene } = await drawn());
+    expect(caps(scene)).toHaveLength(1); expect(caps(scene)[0]).not.toBe(cap);
+    await show({ meshes, section: null }); ({ scene } = await drawn());
     expect(capsShown(scene)).toBeNull();
   });
 

@@ -169,8 +169,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const container = host.current;
     if (!container) return;
     let renderer: THREE.WebGLRenderer;
-    // The stencil buffer lets section caps fill cut solids.
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, stencil: true }); }
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
     catch { setGraphicsFailure('unavailable'); return; }
     setGraphicsFailure(null); setGridVisible(true); setViewName('Isometric');
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -473,7 +472,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         for (const material of Array.isArray(child.material) ? child.material : [child.material]) material.clippingPlanes = planes;
       }
       highlights.setClippingPlanes(sketch ? null : clip);
-      caps.setPlane(sectionShown && !sketch && data.current.section?.caps ? sectionClip : null, solidBounds);
+      caps.setPlane(sectionShown && !sketch && data.current.section?.caps ? sectionClip : null);
       if (!caps.group.visible) scene.remove(caps.group); else if (caps.group.parent !== scene) scene.add(caps.group);
       dim.setAmount(sketch?.background === 'dimmed' ? CAD_SKETCH_DIM_AMOUNT : 0);
       // The grid, axes and pick highlights belong to the model view; the sketch draws its own.

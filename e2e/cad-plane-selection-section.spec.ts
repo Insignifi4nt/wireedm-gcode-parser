@@ -262,3 +262,47 @@ test('never picks an edge the section removes from just beside the cut, and pick
   await settled(page);
   expect(await pickedBody()).toBe('sliver');
 });
+
+test('caps a cut round body with a bore while the camera stands inside the kept material, and while the near plane cuts it', async ({ page }, info) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: features.map(feature => ({ kind: 'add-feature', feature })) });
+  expect((await call(page, 'cad_build', { expectedVersion: (await context(page)).version })).bodies).toHaveLength(3);
+  // Fitted to the blocks, the Front view's camera stands 200 mm before them, at y = -200, looking along +Y, its near plane 0.01 mm ahead.
+  // The view does not fit again on a rebuild, so it stays there while the round tunnel below grows around it.
+  const front = await projection(page, 'Front');
+  for (const command of [{ kind: 'select-reference-plane', plane: 'XZ' }, { kind: 'set-section', on: true, flip: true }, { kind: 'select-reference-plane', plane: null }])
+    await call(page, 'cad_set_viewport', { expectedVersion: (await context(page)).version, command });
+  // A 60 mm radius tunnel along Y, from y = 10 back to `back`, with a 4 mm bore through it. The section keeps y <= 0.
+  const tunnel = (back: number) => [
+    { id: 'tunnel-sketch', name: 'tunnel sketch', kind: 'sketch', suppressed: false, plane: 'XZ', offset: -10, profiles: [
+      { id: 'tunnel-outline', name: 'tunnel outline', construction: false, geometry: { kind: 'circle', x: -27.5, y: -25, radius: 60 } }] },
+    { id: 'tunnel', name: 'tunnel', kind: 'extrude', suppressed: false, sketchId: 'tunnel-sketch', distance: 10 - back, symmetric: false, operation: 'new', targetId: null }];
+  const bore = [
+    { id: 'bore-sketch', name: 'bore sketch', kind: 'sketch', suppressed: false, plane: 'XZ', offset: 0, profiles: [
+      { id: 'bore-outline', name: 'bore outline', construction: false, geometry: { kind: 'circle', x: -27.5, y: -12, radius: 4 } }] },
+    { id: 'bore', name: 'bore', kind: 'extrude', suppressed: false, sketchId: 'bore-sketch', distance: 1000, symmetric: true, operation: 'cut', targetId: 'tunnel' }];
+  // Probes on the tunnel's cut away from the blocks inside it, and in the middle of the bore.
+  const probes = { material: front([-27.5, 0, -25]), lower: front([-27.5, 0, -40]), bore: front([-27.5, 0, -12]) };
+  const capped = async (shot: string) => {
+    const document = await context(page);
+    expect((await call(page, 'cad_build', { expectedVersion: document.version })).bodies).toHaveLength(4);
+    await expect.poll(async () => (await viewport(page)).view).toMatchObject({ referenceVersion: document.version, section: { caps: true, normal: [0, -1, 0] } });
+    return colours(page, probes, info, shot);
+  };
+
+  // The camera at y = -200 stands inside the tunnel, which reaches back to y = -400.
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [...tunnel(-400), ...bore].map(feature => ({ kind: 'add-feature', feature })) });
+  const inside = await capped('caps-camera-inside');
+  // The tunnel ends 0.005 mm before the camera, inside the near distance, so the near plane cuts it and its end face is not drawn.
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'update-feature', feature: tunnel(-199.995)[1] }] });
+  const nearCut = await capped('caps-near-plane');
+  await openViewControls(page); await page.getByRole('checkbox', { name: 'Caps', exact: true }).uncheck();
+  await expect.poll(async () => (await viewport(page)).view.section?.caps).toBe(false);
+  const open = await colours(page, probes, info, 'caps-near-plane-open');
+  const report = JSON.stringify({ inside, nearCut, open });
+  for (const probes of [inside, nearCut]) {
+    expect(warmth(probes.material), report).toBeGreaterThan(60); expect(warmth(probes.lower), report).toBeGreaterThan(60);
+    expect(warmth(probes.bore), report).toBeLessThan(20);
+  }
+  expect(warmth(open.material), report).toBeLessThan(20);
+});
