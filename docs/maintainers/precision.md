@@ -2,7 +2,9 @@
 
 Every tolerance that decides whether two lengths, points, angles or areas are the same lives in `src/domain/precision/cadPrecision.ts`. The module names each tolerance by its role, states its unit and meaning, and exports `CAD_PRECISION_VERSION`. Other code reads a role (`CAD_PRECISION.kernelConfusionMm`) or calls a policy function. It does not write the number.
 
-A role is not one shared epsilon. Two places that use the same value for different reasons get two roles, so one can change without moving the other. `kernelConfusionMm`, `minimumLengthMm`, `camHandoffEndpointMm`, `simulationObstructionMm` and `simulationMachineGeometryMm` are all `1e-7` today, and each means something different.
+A role is not one shared epsilon. Two places that use the same value for different reasons get two roles, so one can change without moving the other. `kernelConfusionMm`, `minimumLengthMm`, `camHandoffEndpointMm`, `simulationObstructionMm` and `simulationMachineGeometryMm` are all `1e-7` today, and each means something different. Likewise a contact test reads `kernelConfusionMm` and a size refusal reads `minimumLengthMm`, even in one file.
+
+[The survey](precision-survey.md) lists every literal that was considered, with the role that replaced it or the reason it stays.
 
 ## Roles
 
@@ -16,9 +18,16 @@ Units: `Mm` millimetres, `Mm2` square millimetres, `Mm3` cubic millimetres, `Rad
 | | `angularRoundoffCapRad` | 1e-9 | Upper bound on the roundoff that far-origin tangency may add. |
 | | `closureFloorMm` | 1e-12 | Floor of analytic closure. |
 | | `closureUlps` | 8 | Ulps of the coordinate magnitude that closure allows above the floor. |
-| | `relativeZero` | 1e-12 | A ratio at or below this, relative to its reference, is zero. |
+| | `solverCollapsedStartRelative` | 1e-12 | A radial point this close to its centre, relative to its radius, has collapsed and gets fresh solver starts. |
 | | `parallelCrossFloorMm2` | 1e-14 | Cross product below which legacy profile checks treat lines as parallel. |
 | | `pointerMinimumSizeMm` | 0.001 | Smallest pointer-drawn circle radius, rectangle side, slot width or arc centre separation. |
+| Sketch snaps and dimensions | `snapLineSpanSlack` | 1e-9 | Slack, per segment length, for a snapped intersection on a bounded line. |
+| | `snapArcSweepSlackRad` | 1e-9 | Slack for a snapped intersection on an arc's sweep. |
+| | `snapParallelRelative`, `snapTangentRelative` | 1e-12, 1e-12 | Lines with no intersection snap, and a line that touches a circle. |
+| | `annotationReadingTie` | 1e-12 | Direction components that count as zero for a dimension's text reading and side. |
+| | `annotationParallelRelative` | 1e-12 | Dimension lines that share a direction and step clear of each other. |
+| | `annotationFullTurnSlackRad` | 1e-9 | Slack below a full turn for angle dimension text beyond its sweep. |
+| | `annotationMinimumRadiusMm` | 1e-6 | Smallest angle dimension arc radius a placement gets. |
 | Kernel and model | `kernelConfusionMm` | 1e-7 | OpenCascade `Precision::Confusion()`: placement, sewing, thick solid, section and selector precision. |
 | | `minimumLengthMm` | 1e-7 | Smallest positive length, radius, thickness, spacing or edge a model accepts. |
 | | `minimumAngleDeg` | 1e-7 | Smallest revolve or circular pattern angle. |
@@ -33,6 +42,8 @@ Units: `Mm` millimetres, `Mm2` square millimetres, `Mm3` cubic millimetres, `Rad
 | Gears | `gearAngleMarginRad` | 1e-6 | Keeps tooth half-angles away from pointed tips and overlap. |
 | | `gearParameterSlackRad` | 1e-10 | Allowed slack below zero for the flank's first roll parameter. |
 | | `gearJoinPerModule` | 1e-8 | Largest rack envelope to involute gap, per module. |
+| | `gearUndercutShiftSlack` | 1e-12 | Profile shift below the rack undercut limit that a gear still accepts. |
+| | `gearBoundReserveRelative` | 1e-12 | Relative reserve on certified flank and root envelope error bounds. |
 | CAM | `camHandoffEndpointMm`, `camHandoffCoincidenceMm` | 1e-7, 1e-9 | Planning options for analytic CAD geometry sent to CAM. |
 | | `camDefaultEndpointMm`, `camDefaultCoincidenceMm` | 0.001, 1e-5 | Default planning options for imported path documents. |
 | | `dxfCamCoincidenceMm` | 2e-6 | Coincidence when a DXF drawing becomes a UPID document. |
@@ -49,6 +60,7 @@ Units: `Mm` millimetres, `Mm2` square millimetres, `Mm3` cubic millimetres, `Rad
 | External G-code | `gcodePositionMm` | 1e-9 | Position equality when G-code is parsed, measured and previewed. |
 | | `gcodeLineMatchMm` | 1e-6 | Endpoint match in G-code line operations. |
 | | `gcodeStructureMatchMm` | 1e-4 | Coordinate match in G-code structure analysis. |
+| | `gcodeArcChordMm` | 1e-12 | An R-word arc whose ends are this close has no centre and is refused. |
 | Simulation | `simulationContactMm` | 1e-8 | Contact between material, stock and polygon boundaries. |
 | | `simulationDegenerateAreaMm2` | 1e-12 | Cross product or area at which simulation geometry is degenerate. |
 | | `simulationObstructionMm` | 1e-7 | Wire, guide and material clearance. |
@@ -76,10 +88,13 @@ The module's JSDoc is the source of truth. Update this table when a role changes
 - output fitting never narrows the plan tolerance, and point ≤ length ≤ arc sweep;
 - pointer-drawn sizes are valid model lengths.
 
-Two relations that ought to hold do not. The test marks each `known` and asserts it is still violated, so a fix shows up as a failing test that asks for the marker to go.
+Three relations that ought to hold do not. The test marks each `known` and asserts it is still violated, so a fix shows up as a failing test that asks for the marker to go.
 
-1. The solver accepts residuals of `solverResidualMm` (1e-10), but structural checks hold arc endpoints to closure, which is 1e-12 below about 56,000 mm. An arc of radius 10 whose end radius is 5e-11 off counts as converged for the solver, but `checkCadSketchGraph` reports `arc-radius-mismatch`.
-2. Sketch coordinates are accepted up to 1e9 mm, but above about 5.6e7 mm closure is larger than kernel confusion and the CAD handoff endpoint. At x = 1e8 mm, endpoints 1.5e-7 mm apart are joined for closure (1.8e-7) but not for the handoff (1e-7). Closure across the 1e6 mm model extent is 1.8e-9, which is still within the handoff endpoint.
+Closure is `max(1e-12, 8ε·scale)`. It stays at its 1e-12 floor up to about 563 mm, reaches the solver's 1e-10 at about 56,295 mm, the CAD handoff coincidence of 1e-9 at about 562,950 mm, and kernel confusion of 1e-7 at about 5.6e7 mm. The test pins each crossover.
+
+1. The solver accepts residuals of `solverResidualMm` (1e-10), but structural checks hold arc endpoints to closure, which is 1e-12 up to about 563 mm and stays below 1e-10 up to about 56,295 mm. An arc of radius 10 whose end radius is 5e-11 off counts as converged for the solver, but `checkCadSketchGraph` reports `arc-radius-mismatch`.
+2. Sketch coordinates are accepted up to 1e9 mm, but above about 5.6e7 mm closure is larger than kernel confusion and the CAD handoff endpoint. At x = 1e8 mm, endpoints 1.5e-7 mm apart are joined for closure (1.8e-7) but not for the handoff (1e-7). A test reproduces it: CAD closes a square at x = 1e8 mm with a 1.5e-7 mm gap, and the handoff leaves it open.
+3. Closure passes the CAD handoff coincidence (`camHandoffCoincidenceMm`, 1e-9) above about 562,950 mm, inside the 1e6 mm model extent, where it is 1.8e-9. A test reproduces it: a square near x = 999,000 mm whose closing end lies on its first edge 1.5134e-9 mm from its start is closed for CAD, but the handoff reports `intersecting-topology` and refuses it with `cam-geometry`. Near the origin the same gap is a physical gap for CAD too.
 
 ## Imported tolerances
 
@@ -95,9 +110,16 @@ A tolerance that arrives in a file is checked against the policy, not adopted as
 2. Add the role to `cadPrecision.ts` with JSDoc that gives its meaning and unit, and name its unit in the key (`Mm`, `Mm2`, `Mm3`, `Rad`, `Deg`, or none for a ratio).
 3. Add it to `VERSION_1` in the test, or to a new version record, and add the ordering relations it takes part in. If a relation that should hold fails, record it as `known` and report it. Do not change values to make it pass.
 4. To change a value or meaning, bump `CAD_PRECISION_VERSION`, update the pinned record and this page, and check what rebuild caches key on it.
-5. If the role mirrors a Rust solver constant, extend the Rust agreement test. A Rust change rebuilds the committed module (`npm run solver:build`, then `npm run solver:check`).
+5. If the role mirrors a Rust solver constant, extend the Rust agreement test. `solverResidualMm`, `angularAccuracyRad` and `closureUlps` mirror `ACCEPT_MM`, `ACCEPT_RADIANS` and `CLOSURE_ULPS` in `newton.rs`; the test also pins both expressions that read `CLOSURE_ULPS`. A Rust change rebuilds the committed module (`npm run solver:build`, then `npm run solver:check`).
 6. Prefer a policy function to a formula at the call site when a tolerance scales with size.
 
 ## The literal check
 
-`npm run lint` also runs `scripts/check-precision-literals.ts`. It finds negative-exponent literals (`1e-9`) and `Number.EPSILON` in non-test source outside the policy module, and ignores comments and strings. Literals that stay where they are, such as unit factors, a series switch, benchmark inputs and view-space picking and layout, are listed per file with a reason. A file cannot gain literals beyond its entry, and an entry larger than needed has to shrink. Decimal literals such as `0.001` are not checked, because UI sizes, ratios and product defaults use them everywhere. Review catches those.
+`npm run lint` also runs `scripts/check-precision-literals.ts` over non-test source outside the policy module. It finds:
+
+- negative-exponent literals (`1e-9`), and decimals below 0.001 (`0.00001`);
+- a literal raised to a negative literal power (`10 ** -9`, `Math.pow(10, -9)`);
+- such a number converted from a string (`Number('1e-9')`, `parseFloat('1e-9')`, `+'1e-9'`);
+- `Number.EPSILON` in any spelling, including `Number['EPSILON']`, `(Number).EPSILON` and `const { EPSILON } = Number`.
+
+It ignores comments and other strings, and does not trace aliases of `Number`. Literals that stay where they are, such as unit factors, input ranges, a series switch, benchmark inputs and view-space picking and layout, are listed per file with a reason. View space means the value never ends up in model coordinates, saved placements, CAM or output: snap intersections and dimension placement do, so they read roles. A file cannot gain literals beyond its entry, and an entry larger than needed has to shrink. Decimals of 0.001 and above are not checked, because UI sizes, ratios and product defaults use them everywhere. Review catches those. `src/domain/precision/__tests__/precisionLiteralScan.test.ts` covers each spelling.
