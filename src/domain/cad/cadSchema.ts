@@ -23,6 +23,7 @@ import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from
 import { CadSketchGraphSchema, cadSketchGraphWithPlacements, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
 import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
 import { sameCadSketchGeometryParameters } from './cadSketchParameterReads';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
 export { CadPathSegmentSchema } from './cadPrimitives';
 
@@ -281,10 +282,10 @@ export function parseCadDocument(value: unknown): CadDocument {
         }
         if (feature.kind === 'extrude') {
           const distance = e(feature.distance);
-          if (Math.abs(distance) <= 1e-7 || Math.abs(distance) > 1e6) throw new CadError('invalid-dimension', 'Extrusion distance must be nonzero and within one million millimetres.');
+          if (Math.abs(distance) <= CAD_PRECISION.minimumLengthMm || Math.abs(distance) > CAD_PRECISION.modelExtentMm) throw new CadError('invalid-dimension', 'Extrusion distance must be nonzero and within one million millimetres.');
         } else {
           const angle = e(feature.angle);
-          if (angle <= 1e-7 || angle > 360) throw new CadError('invalid-dimension', 'Revolve angle must be greater than zero and at most 360 degrees.');
+          if (angle <= CAD_PRECISION.minimumAngleDeg || angle > 360) throw new CadError('invalid-dimension', 'Revolve angle must be greater than zero and at most 360 degrees.');
         }
         if (!feature.suppressed) resolveCadExtrudeRevolvePlacement(feature, sketch, document.parameters, datumLookup);
         break;
@@ -301,12 +302,12 @@ export function parseCadDocument(value: unknown): CadDocument {
       }
       case 'pocket': break; // Active region checks already supplied the operand budget.
       case 'fillet': case 'chamfer': {
-        if (e(feature.radius) <= 1e-7 || e(feature.radius) > 1e6) throw new CadError('invalid-dimension', 'Edge radius must be positive and within one million millimetres.');
+        if (e(feature.radius) <= CAD_PRECISION.minimumLengthMm || e(feature.radius) > CAD_PRECISION.modelExtentMm) throw new CadError('invalid-dimension', 'Edge radius must be positive and within one million millimetres.');
         if (feature.selection) resolveCadEdgeSelection(feature.selection, document.parameters);
         break;
       }
       case 'shell': {
-        if (e(feature.thickness) <= 1e-7 || e(feature.thickness) > 1e6) throw new CadError('invalid-dimension', 'Inward shell thickness must be positive and within one million millimetres.');
+        if (e(feature.thickness) <= CAD_PRECISION.minimumLengthMm || e(feature.thickness) > CAD_PRECISION.modelExtentMm) throw new CadError('invalid-dimension', 'Inward shell thickness must be positive and within one million millimetres.');
         validateCadShellOpening(feature.opening, document.parameters);
         break;
       }
@@ -314,7 +315,7 @@ export function parseCadDocument(value: unknown): CadDocument {
       case 'transform': feature.translation.forEach(e); feature.rotation.forEach(e); break;
       case 'linear-pattern': {
         const spacing = feature.spacing.map(e);
-        if (spacing.every(value => Math.abs(value) <= 1e-7)) throw new CadError('invalid-dimension', 'Pattern spacing must be nonzero.');
+        if (spacing.every(value => Math.abs(value) <= CAD_PRECISION.minimumLengthMm)) throw new CadError('invalid-dimension', 'Pattern spacing must be nonzero.');
         break;
       }
       case 'circular-pattern': resolveCadCircularPattern(feature, document.parameters); break;

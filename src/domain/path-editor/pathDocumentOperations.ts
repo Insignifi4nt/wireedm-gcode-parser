@@ -67,6 +67,7 @@ import type {
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
+import { cadRoundoff } from '@/domain/precision/cadPrecision';
 
 type NearestPathPoint = InferredPathPoint;
 
@@ -971,7 +972,7 @@ function remapMachiningSpansAfterSplit(
       const merged: typeof ranges = [];
       for (const range of ranges) {
         const previous = merged.at(-1);
-        if (previous && range.start <= previous.end + Number.EPSILON * 8) previous.end = Math.max(previous.end, range.end);
+        if (previous && range.start <= previous.end + cadRoundoff(8)) previous.end = Math.max(previous.end, range.end);
         else merged.push(range);
       }
       return merged.map((range, rangeIndex) => ({

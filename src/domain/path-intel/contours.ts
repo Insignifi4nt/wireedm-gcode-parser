@@ -25,6 +25,7 @@ import type {
   Point2
 } from './types';
 import { resolvePathPlanningOptions } from './segments';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export function analyzeContours(
   chains: PathChain[],
@@ -381,7 +382,7 @@ function relativeCentroidOrAverage(points: readonly Point2[]): Point2 {
     cy += (currentY + nextY) * factor;
   }
 
-  if (Math.abs(twiceArea) <= 1e-9) return averagePoint(points, origin);
+  if (Math.abs(twiceArea) <= CAD_PRECISION.camDegenerateAreaMm2) return averagePoint(points, origin);
 
   return {
     x: origin.x + cx / (3 * twiceArea),
@@ -422,7 +423,7 @@ function scaledCentroidOrAverage(points: readonly Point2[]): Point2 {
   }
 
   // Logarithms avoid forming a scaled area that could itself overflow or underflow.
-  if (Math.log2(Math.abs(twiceArea)) + x.log2Scale + y.log2Scale <= Math.log2(1e-9)) return average();
+  if (Math.log2(Math.abs(twiceArea)) + x.log2Scale + y.log2Scale <= Math.log2(CAD_PRECISION.camDegenerateAreaMm2)) return average();
   const centroid = { x: x.toWorld(cx / (3 * twiceArea)), y: y.toWorld(cy / (3 * twiceArea)) };
   return isFinitePoint(centroid) ? centroid : average();
 }
@@ -464,7 +465,7 @@ function isFinitePoint(point: Point2) {
   return Number.isFinite(point.x) && Number.isFinite(point.y);
 }
 
-function stripClosingDuplicate(points: Point2[], epsilon = 1e-9) {
+function stripClosingDuplicate(points: Point2[], epsilon = CAD_PRECISION.camClosingDuplicateMm) {
   if (points.length <= 1) return points.slice();
   const first = points[0];
   const last = points[points.length - 1];

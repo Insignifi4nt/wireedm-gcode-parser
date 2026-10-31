@@ -11,6 +11,7 @@ import { cadSketchExternalReferenceComponents } from './cadSketchExternalReferen
 import { deepFreezeCadData } from './cadDeepFreeze';
 import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
 import { cadSketchRelationDefinition, checkCadSketchRelationOperands } from './sketch-relations/cadSketchRelationRegistry';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -24,11 +25,11 @@ const tangentEndpoint = Type.Object({ entityId: id, pointId: id }, strict);
  * [0, 1] beyond the extension lines. An angle's `radius` is its arc's distance from the vertex and `along` the text's fraction of the
  * sweep. A radius or diameter's `angle` is its leader's direction in sketch radians and `distance` its text's distance from the centre.
  */
-const placementOffset = Type.Number({ minimum: -1e6, maximum: 1e6 }), placementAlong = Type.Number({ minimum: -1e4, maximum: 1e4 });
+const placementOffset = Type.Number({ minimum: -CAD_PRECISION.modelExtentMm, maximum: CAD_PRECISION.modelExtentMm }), placementAlong = Type.Number({ minimum: -1e4, maximum: 1e4 });
 const linearPlacement = { offset: placementOffset, along: placementAlong };
 const linearAnnotation = Type.Object({ kind: Type.Literal('linear'), ...linearPlacement }, strict);
-const angleAnnotation = Type.Object({ kind: Type.Literal('angle'), radius: Type.Number({ exclusiveMinimum: 0, maximum: 1e6 }), along: placementAlong }, strict);
-const radialAnnotation = Type.Object({ kind: Type.Literal('radial'), angle: Type.Number({ minimum: -Math.PI, maximum: Math.PI }), distance: Type.Number({ minimum: 0, maximum: 1e6 }) }, strict);
+const angleAnnotation = Type.Object({ kind: Type.Literal('angle'), radius: Type.Number({ exclusiveMinimum: 0, maximum: CAD_PRECISION.modelExtentMm }), along: placementAlong }, strict);
+const radialAnnotation = Type.Object({ kind: Type.Literal('radial'), angle: Type.Number({ minimum: -Math.PI, maximum: Math.PI }), distance: Type.Number({ minimum: 0, maximum: CAD_PRECISION.modelExtentMm }) }, strict);
 /** A chamfer's two setbacks, each placed or, when null, laid out automatically. */
 const setbacksAnnotation = Type.Object({ kind: Type.Literal('setbacks'), sides: Type.Tuple([Type.Union([Type.Object(linearPlacement, strict), Type.Null()]),
   Type.Union([Type.Object(linearPlacement, strict), Type.Null()])]) }, strict);
@@ -288,18 +289,18 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
     try {
       if (item.kind === 'circle') {
         const radius = scalar(item.radius);
-        if (radius <= 1e-7 || radius > 1e6) report(source, 'invalid-radius', 'Circle radius must be positive and within one million millimetres.');
+        if (radius <= CAD_PRECISION.minimumLengthMm || radius > CAD_PRECISION.modelExtentMm) report(source, 'invalid-radius', 'Circle radius must be positive and within one million millimetres.');
         continue;
       }
       const start = points.get(item.startPointId), end = points.get(item.endPointId);
       if (!start || !end) continue;
-      if (Math.hypot(start.x - end.x, start.y - end.y) <= 1e-7) {
+      if (Math.hypot(start.x - end.x, start.y - end.y) <= CAD_PRECISION.minimumLengthMm) {
         report(source, 'degenerate-entity', 'A line or endpoint arc needs distinct endpoints; use a circle for a full turn.'); continue;
       }
       if (item.kind === 'arc') {
         const center = points.get(item.centerPointId); if (!center) continue;
         const radius = Math.hypot(start.x - center.x, start.y - center.y), other = Math.hypot(end.x - center.x, end.y - center.y);
-        if (radius <= 1e-7 || radius > 1e6) report(source, 'invalid-radius', 'Arc radius must be positive and within one million millimetres.');
+        if (radius <= CAD_PRECISION.minimumLengthMm || radius > CAD_PRECISION.modelExtentMm) report(source, 'invalid-radius', 'Arc radius must be positive and within one million millimetres.');
         const residual = Math.abs(radius - other);
         if (residual > cadPathClosureTolerance([center, start, end])) report(source, 'arc-radius-mismatch', 'Arc endpoints must share their declared center and radius.', residual);
       }

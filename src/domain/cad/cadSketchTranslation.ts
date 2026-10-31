@@ -9,6 +9,7 @@ import { signedSweep } from '@/domain/path-intel/segments';
 import type { Point2 } from '@/domain/path-intel/types';
 import { cadSketchExternalReferenceLockReason } from './cadSketchExternalReferences';
 import { cadSketchLinearPatternLockReason, reconcileCadSketchLinearPattern } from './cadSketchLinearPattern';
+import { cadRoundoff } from '@/domain/precision/cadPrecision';
 
 function position(points: ReadonlyMap<string, Point2>, id: string): Point2 {
   const point = points.get(id);
@@ -79,7 +80,7 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
         const angle = (point: Point2) => Math.atan2(point.y - center.y, point.x - center.x);
         const excess = Math.abs(signedSweep(angle(start), angle(end), entity.direction === 'cw')) - Math.PI;
         const radius = Math.hypot(start.x - center.x, start.y - center.y);
-        const roundoff = 8 * Number.EPSILON * Math.max(1, ...[center, start, end].flatMap(point => [Math.abs(point.x), Math.abs(point.y)]));
+        const roundoff = cadRoundoff(8, Math.max(1, ...[center, start, end].flatMap(point => [Math.abs(point.x), Math.abs(point.y)])));
         return { sign: Math.sign(excess), settled: Math.abs(excess) * radius > roundoff };
       };
       // A half circle, such as a slot end, sits on the branch boundary, where coordinate roundoff alone may tip it either

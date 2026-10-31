@@ -14,6 +14,7 @@ import type { Bounds2 } from '@/domain/path-intel/types';
 import { cadPlanePointToWorld, type CadNumericPoint2, type CadNumericPoint3 } from './cadPlanes';
 import { cadFramePointToWorld, cadFrameDirectionToWorld, cadPrincipalFrame, resolveCadSketchPlacement, type CadDatumFrameLookup, type CadResolvedFrame, type CadResolvedPlacement } from './cadDatumPlanes';
 import { cadFrameEntityBounds } from './cadFrameBounds';
+import { CAD_PRECISION, cadRoundoff } from '@/domain/precision/cadPrecision';
 
 export const CadCurveFeatureSchema = Type.Object({ ...CadFeatureBaseSchemaFields, kind: Type.Literal('curve'), plane: CadSketchPlaneSchema, offset: CadScalarSchema,
   segments: Type.Array(CadPathSegmentSchema, { minItems: 1 }), source: Type.Optional(CadDxfImportSourceSchema)
@@ -46,7 +47,7 @@ function curveBounds(entities: readonly CadOrderedCurveEntity[]): Readonly<Bound
     if (entity.type === 'line') continue;
     const sweep = entity.sweepRadians ?? entity.endAngle - entity.startAngle;
     // Bound angle reduction arithmetic, not a caller-controlled geometry tolerance.
-    const rounding = 16 * Number.EPSILON * Math.max(1, Math.abs(entity.startAngle), Math.abs(sweep));
+    const rounding = cadRoundoff(16, Math.max(1, Math.abs(entity.startAngle), Math.abs(sweep)));
     const { x, y } = entity.center; const r = entity.radius;
     if (angleIsOnSweep(0, entity.startAngle, sweep, rounding)) { include(x + r, y); bounds.maxX = Math.max(bounds.maxX, nextUp(nextUp(x + r))); }
     if (angleIsOnSweep(Math.PI / 2, entity.startAngle, sweep, rounding)) { include(x, y + r); bounds.maxY = Math.max(bounds.maxY, nextUp(nextUp(y + r))); }
@@ -63,7 +64,7 @@ export function resolveCadCurveGeometry(curve: CadCurveFeature, parameters: Read
   const offset = evaluateCadScalar(curve.offset, parameters);
   const segments = resolveCadPathSegments(curve.segments, parameters);
   const analytic = cadAnalyticSegments(segments);
-  if (analytic.segments.some(segment => segment.length <= 1e-7)) throw new CadError('invalid-curve', 'Reference curves cannot contain zero-length edges.');
+  if (analytic.segments.some(segment => segment.length <= CAD_PRECISION.minimumLengthMm)) throw new CadError('invalid-curve', 'Reference curves cannot contain zero-length edges.');
   const first = analytic.segments[0]; const last = analytic.segments[analytic.segments.length - 1];
   const continuity = cadPathClosureTolerance(analytic.segments.flatMap(segment => [segment.start, segment.end]));
   for (let index = 1; index < analytic.segments.length; index++) {

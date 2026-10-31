@@ -5,6 +5,7 @@ import { compileCadSketchEquations, type CadSketchCompiledSketch } from '../../.
 import { applyCadSketchEquationSolution, cadSketchEquationResidual, type CadSketchEquationModel } from '../../../../domain/cad/sketch-solver/cadSketchEquationModel';
 import { cadSketchEquationDefinition, cadSketchEquationDiagnostics } from './cadSketchNativeProtocol';
 import type { CadSketchNativeDiagnosis, CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketchNativeSolver';
+import { CAD_PRECISION, cadRoundoff } from '../../../../domain/precision/cadPrecision';
 
 /**
  * Why native's answer is less than certain, or what it rejected: an input it refused to compile, a
@@ -101,7 +102,7 @@ function centerStarts(model: CadSketchCompiledSketch): readonly (readonly number
   for (const { point: x, centre: center, size } of model.radialHolds) {
     if (centered.has(x)) continue;
     const reach = size.kind === 'span' ? Math.hypot(values[size.span[2]] - values[size.span[0]], values[size.span[3]] - values[size.span[1]]) : values[size.index];
-    if (!(reach > 0) || Math.hypot(values[x] - values[center], values[x + 1] - values[center + 1]) > 1e-12 * Math.max(1, reach)) continue;
+    if (!(reach > 0) || Math.hypot(values[x] - values[center], values[x + 1] - values[center + 1]) > CAD_PRECISION.relativeZero * Math.max(1, reach)) continue;
     const offers = [[1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2]].filter(direction => direction.every((step, axis) => step === 0 || !fixed[x + axis]));
     if (offers.length) centered.set(x, { reach, offers });
   }
@@ -159,14 +160,14 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
 function answer(result: CadSketchSolveResult): CadSketchNativeAttempt { return { result, movedGroups: 0, keptGroups: 0 }; }
 
 /** The native solver's absolute tolerance for a driver, in each equation's mm or radians. */
-const DRIVER_TOLERANCE = 1e-10;
+const DRIVER_TOLERANCE = CAD_PRECISION.solverResidualMm;
 
 /**
  * A value that moved by at most the driver tolerance, or about one ulp of its start where that is
  * larger, may have moved only by polishing: sketches saved before 0.0.757, when PlaneGCS could
  * answer, can hold residuals of about 1e-12 mm that native polishes away.
  */
-const polished = (start: number, value: number) => Math.abs(value - start) <= Math.max(DRIVER_TOLERANCE, 2 * Number.EPSILON * Math.abs(start));
+const polished = (start: number, value: number) => Math.abs(value - start) <= Math.max(DRIVER_TOLERANCE, cadRoundoff(2, Math.abs(start)));
 
 /**
  * The solved graph. Native polishing moves values by ulps even where the start already met every
@@ -235,8 +236,8 @@ function shortDecimals(model: CadSketchEquationModel, values: readonly number[],
   }
   const snapped = values.map((value, index) => {
     if (model.fixed[index] || kept(index) || Object.is(value, model.values[index])) return value;
-    const short = Math.abs(value) <= 8 * Number.EPSILON * (Number.isFinite(scale[index]) ? scale[index] : 1) ? 0 : Number(value.toPrecision(12));
-    return short === value || short !== 0 && Math.abs(short - value) > 8 * Number.EPSILON * Math.abs(value) || Math.abs(short - value) > DRIVER_TOLERANCE ? value : short;
+    const short = Math.abs(value) <= cadRoundoff(8, Number.isFinite(scale[index]) ? scale[index] : 1) ? 0 : Number(value.toPrecision(12));
+    return short === value || short !== 0 && Math.abs(short - value) > cadRoundoff(8, Math.abs(value)) || Math.abs(short - value) > DRIVER_TOLERANCE ? value : short;
   });
   // Each pass undoes at least one snap, so this ends.
   for (let worse = true; worse;) {

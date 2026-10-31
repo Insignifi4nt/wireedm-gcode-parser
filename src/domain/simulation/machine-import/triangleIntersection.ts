@@ -1,9 +1,10 @@
 import type { Vec3 } from './model';
+import { CAD_PRECISION, cadRoundoff } from '../../precision/cadPrecision';
 
 export type Triangle3 = readonly [Vec3, Vec3, Vec3];
 export interface Segment3 { readonly start: Vec3; readonly end: Vec3 }
 export interface SegmentTriangleIntersection { readonly point: Vec3; readonly fraction: number }
-export const GEOMETRY_TOLERANCE_MM = 1e-7;
+export const GEOMETRY_TOLERANCE_MM = CAD_PRECISION.simulationMachineGeometryMm;
 
 export const subtract3 = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 export const dot3 = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -27,7 +28,7 @@ function intersectCoplanarSegments(a: Segment3, b: Segment3, tolerance: number):
   const denominator = dot3(cross, cross);
   const uSquared = dot3(u, u);
   const vSquared = dot3(v, v);
-  if (denominator > Number.EPSILON * uSquared * vSquared) {
+  if (denominator > cadRoundoff(1, uSquared) * vSquared) {
     const t = dot3(cross3(delta, v), cross) / denominator;
     const s = dot3(cross3(delta, u), cross) / denominator;
     const slackT = tolerance / Math.max(Math.sqrt(uSquared), tolerance);

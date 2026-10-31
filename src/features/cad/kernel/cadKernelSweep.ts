@@ -6,6 +6,7 @@ import { cadFrameDirectionToWorld, cadFramePointToWorld, requireCadPrincipalPlan
 import { cadKernelPlaneBasis, createCadKernelPlane } from './cadKernelPlane';
 import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
 import { cadKernelDisposeOwned, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
+import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
 
 function validateSweepSolid(shape: Shape3D) {
   const oc = getOC(); const solids = cadKernelSolids(shape);
@@ -13,7 +14,7 @@ function validateSweepSolid(shape: Shape3D) {
     if (solids.length !== 1) throw new CadError('sweep-invalid', 'Sweep must produce one closed solid. Revise the section or curve.');
     if (!cadKernelIsValid(shape)) throw new CadError('sweep-invalid', 'OpenCascade rejected the exact Sweep topology. Revise the section or curve.');
     const volume = measureVolume(shape);
-    if (!Number.isFinite(volume) || volume <= 1e-9) throw new CadError('sweep-volume', 'Sweep must produce positive volume with outward orientation.');
+    if (!Number.isFinite(volume) || volume <= CAD_PRECISION.kernelMinimumVolumeMm3) throw new CadError('sweep-volume', 'Sweep must produce positive volume with outward orientation.');
     const shells = new oc.TopExp_Explorer(shape.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
     try {
       while (shells.More()) {

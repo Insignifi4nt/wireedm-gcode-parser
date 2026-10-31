@@ -3,6 +3,7 @@ import type { CadBounds3 } from './cadCurve';
 import { cadFramePointToWorld, type CadResolvedFrame } from './cadDatumPlanes';
 import { angleIsOnSweep, nextDown, nextUp } from '../path-intel/segments';
 import { CadError } from './cadError';
+import { cadRoundoff } from '../precision/cadPrecision';
 
 /** Analytic extrema in each world component; display tessellation never defines bounds. */
 export function cadFrameEntityBounds(entities: readonly CadAnalyticBoundary[], frame: CadResolvedFrame, offsetMm: number): CadBounds3 {
@@ -26,8 +27,7 @@ export function cadFrameEntityBounds(entities: readonly CadAnalyticBoundary[], f
           const reserve =
             frame.u[index] === 0 && frame.v[index] === 0
               ? 0
-              : 16 *
-                Number.EPSILON *
+              : cadRoundoff(16) *
                 (Math.abs(frame.origin[index]) +
                   Math.abs(frame.normal[index] * offsetMm) +
                   Math.abs(frame.u[index] * endpoint.x) +
@@ -49,7 +49,7 @@ export function cadFrameEntityBounds(entities: readonly CadAnalyticBoundary[], f
       include(cadFramePointToWorld(frame, offsetMm, [entity.start.x, entity.start.y]));
       include(cadFramePointToWorld(frame, offsetMm, [entity.end.x, entity.end.y]));
     }
-    const angularError = 16 * Number.EPSILON * Math.max(1, Math.abs(start), Math.abs(sweep));
+    const angularError = cadRoundoff(16, Math.max(1, Math.abs(start), Math.abs(sweep)));
     for (let index = 0; index < 3; index++) {
       const extent = entity.radius * Math.hypot(frame.u[index], frame.v[index]);
       if (extent === 0) {
@@ -61,8 +61,7 @@ export function cadFrameEntityBounds(entities: readonly CadAnalyticBoundary[], f
       // Final-center ULPs alone are insufficient when origin and local center
       // cancel. Cover the earlier local-point and world-mapping arithmetic.
       const reserve =
-        16 *
-        Number.EPSILON *
+        cadRoundoff(16) *
         (Math.abs(frame.origin[index]) +
           Math.abs(frame.normal[index] * offsetMm) +
           Math.abs(frame.u[index]) * (Math.abs(entity.center.x) + entity.radius) +

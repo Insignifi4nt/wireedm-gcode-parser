@@ -1,0 +1,167 @@
+/**
+ * One named precision policy for CAD, the sketch solver, the kernel bridge, CAM, output, imports and
+ * simulation. Each role states what it compares and in which unit. Roles that share a value keep
+ * separate names when they mean different things, so one can change without moving the other.
+ *
+ * The ordering between roles is enforced by `__tests__/cadPrecision.test.ts`, and the maintainer
+ * page `docs/maintainers/precision.md` explains how to add a role. Rebuild caches key on
+ * `CAD_PRECISION_VERSION`: bump it whenever a role's value or meaning changes.
+ */
+export const CAD_PRECISION_VERSION = 1;
+
+/** OpenCascade's `Precision::Confusion()`, the smallest distance the kernel tells apart. */
+const KERNEL_CONFUSION_MM = 1e-7;
+
+const roles = {
+  // Sketch solver and analytic sketch geometry.
+  /** Sketch driver convergence, in each equation's millimetres (radians for angle drivers). The Rust solver's `ACCEPT_MM`. */
+  solverResidualMm: 1e-10,
+  /** A dragged sketch point counts as reached within this many millimetres, or `32` ulps of the sketch size. Owned by the Rust solver (`newton/drag.rs`). */
+  solverDragReachedMm: 1e-8,
+  /** Largest angle, or transverse error per unit direction, that sketch relations accept. The Rust solver's `ACCEPT_RADIANS`. */
+  angularAccuracyRad: 1e-12,
+  /** Upper bound on the angular roundoff allowance that far-origin tangency checks may add to `angularAccuracyRad`. */
+  angularRoundoffCapRad: 1e-9,
+  /** Floor of the analytic closure tolerance: endpoints that should coincide may differ by this much at unit scale. */
+  closureFloorMm: 1e-12,
+  /** Ulps of the coordinate magnitude that analytic closure allows above `closureFloorMm`. */
+  closureUlps: 8,
+  /** A dimensionless ratio at or below this, relative to its reference magnitude, counts as zero. */
+  relativeZero: 1e-12,
+  /** Cross product of two line directions, in square millimetres, at or below which legacy profile checks treat lines as parallel. */
+  parallelCrossFloorMm2: 1e-14,
+  /** Smallest size a pointer-drawn sketch shape accepts: circle radius, rectangle side, slot width or distinct arc centre. */
+  pointerMinimumSizeMm: 0.001,
+
+  // Kernel, model limits and feature inputs.
+  /** Kernel confusion: native placement, sewing, thick-solid, section and topology-selector precision. */
+  kernelConfusionMm: KERNEL_CONFUSION_MM,
+  /** Smallest positive length, radius, thickness, spacing or edge a model accepts. Equal to kernel confusion, below which the kernel merges geometry. */
+  minimumLengthMm: KERNEL_CONFUSION_MM,
+  /** Smallest nonzero angle a revolve or circular pattern accepts, in degrees. */
+  minimumAngleDeg: 1e-7,
+  /** Largest length a model slot accepts: radius, distance, thickness, span or placement offset. */
+  modelExtentMm: 1e6,
+  /** Sweep clearance band around native topology, above kernel confusion. */
+  sweepTopologyMm: 2e-7,
+  /** Smallest volume, in cubic millimetres, that counts as solid material. */
+  kernelMinimumVolumeMm3: 1e-9,
+  /** Slack when a shell result's bounds are compared with the original solid's bounds. */
+  kernelBoundsSlackMm: 1e-6,
+  /** Smallest cap margin a pocket extent adds beyond its target. */
+  pocketCapMarginFloorMm: 1e-6,
+  /** Dimensionless tolerance on unit topology directions: normalization, parallel test and plane-normal match. */
+  kernelDirection: 1e-10,
+  /** Dimensionless orthonormality residual a datum or placement frame may carry. */
+  frameOrthonormalResidual: 64 * Number.EPSILON,
+  /** Display mesh chord deviation. */
+  tessellationMm: 0.05,
+  /** Display mesh angular deviation. */
+  tessellationAngleRad: 0.15,
+
+  // Gear generation.
+  /** Margin that keeps gear tooth half-angles away from pointed tips and overlap. */
+  gearAngleMarginRad: 1e-6,
+  /** Slack below zero allowed for the generated flank's starting roll parameter. */
+  gearParameterSlackRad: 1e-10,
+  /** Largest gap, as a fraction of the module, between the rack envelope and the involute at their join. */
+  gearJoinPerModule: 1e-8,
+
+  // CAM.
+  /** Endpoint join tolerance for the analytic CAD to CAM handoff. */
+  camHandoffEndpointMm: 1e-7,
+  /** Coincidence for the analytic CAD to CAM handoff. */
+  camHandoffCoincidenceMm: 1e-9,
+  /** Default endpoint join tolerance for imported path planning documents. */
+  camDefaultEndpointMm: 0.001,
+  /** Default coincidence for imported path planning documents. */
+  camDefaultCoincidenceMm: 1e-5,
+  /** Default coincidence when a DXF drawing becomes a UPID document. Its endpoint tolerance is zero. */
+  dxfCamCoincidenceMm: 0.000002,
+  /** Twice a contour's signed area, in square millimetres, at or below which its centroid falls back to the point average. */
+  camDegenerateAreaMm2: 1e-9,
+  /** Distance at which a contour's last point duplicates its first. */
+  camClosingDuplicateMm: 1e-9,
+  /** Distances closer than this rank as equal when CAM orders candidates. */
+  camTieMm: 1e-12,
+  /** Relative margin for rounding between box and exact distances when ranking rapids. */
+  camRankRelative: 1e-9,
+  /** Absolute margin, per millimetre of coordinate magnitude, when ranking rapids. */
+  camRankAbsoluteMm: 1e-12,
+  /** A vector or chord at or below this length has no direction: start equals end. */
+  zeroLengthMm: 1e-12,
+  /** Slack for a path editor source point lying on or inside an arc's radius. */
+  pathInsideSlackMm: 1e-9,
+  /** Floor for comparing UPID recorded lengths and bounds with recomputed values. */
+  upidRecordedValueFloorMm: 1e-9,
+
+  // Output.
+  /** Absolute guard added to the post's coordinate rounding when output motion is audited against the plan. */
+  outputRoundingGuardMm: Number.EPSILON,
+
+  // Imports and approximation.
+  /** Default largest chord deviation when DXF splines and ellipses are approximated. */
+  approximationChordMm: 0.001,
+  /** Dimensionless tolerance for a DXF extrusion direction to count as the world Z axis. */
+  dxfPlanarNormal: 1e-12,
+  /** Largest Z difference for DXF geometry to count as planar. */
+  dxfPlanarZMm: 1e-9,
+
+  // External G-code inspection and editing.
+  /** Position equality when parsing, measuring and previewing G-code. */
+  gcodePositionMm: 1e-9,
+  /** Position equality when G-code line operations match motion endpoints. */
+  gcodeLineMatchMm: 1e-6,
+  /** Coordinate equality when G-code structure analysis matches positions. */
+  gcodeStructureMatchMm: 1e-4,
+
+  // Simulation.
+  /** Contact tolerance between simulated material, stock and polygon boundaries. Per millimetre of edge length in material topology. */
+  simulationContactMm: 1e-8,
+  /** Cross product or polygon area, in square millimetres, at or below which simulation geometry is degenerate. */
+  simulationDegenerateAreaMm2: 1e-12,
+  /** Clearance tolerance between the wire, its guides and released or remaining material. */
+  simulationObstructionMm: 1e-7,
+  /** Machine model triangle intersection tolerance. */
+  simulationMachineGeometryMm: 1e-7
+};
+
+/** Every role, typed as plain numbers so callers can pass any value of the same unit. */
+export const CAD_PRECISION: Readonly<typeof roles> = Object.freeze(roles);
+
+export type CadPrecisionRole = keyof typeof CAD_PRECISION;
+
+/** Floating-point uncertainty: `ulps` units in the last place of `magnitude`. Callers derive `ulps` from their arithmetic. */
+export function cadRoundoff(ulps: number, magnitude = 1): number {
+  return ulps * Number.EPSILON * magnitude;
+}
+
+/** Analytic closure at a coordinate magnitude: arithmetic roundoff only, never a physical gap repair. */
+export function cadClosureTolerance(scale: number): number {
+  return Math.max(CAD_PRECISION.closureFloorMm, cadRoundoff(CAD_PRECISION.closureUlps, scale));
+}
+
+/** A positive length above the minimum length and within the model extent. NaN fails. */
+export function cadSupportedLength(value: number): boolean {
+  return value > CAD_PRECISION.minimumLengthMm && value <= CAD_PRECISION.modelExtentMm;
+}
+
+/** Output fitting: how far audited controller motion may differ from planned motion. */
+export interface CadOutputFitting {
+  /** Rounded endpoints and centres. */
+  readonly pointMm: number;
+  /** Lengths and arc endpoint radii, whose two rounded ends both contribute. */
+  readonly lengthMm: number;
+  /** Arc sweep, compared from rounded start, end and centre at both ends. */
+  readonly arcSweepMm: number;
+}
+
+/** The plan's endpoint tolerance, or the post's coordinate rounding plus the guard, whichever is larger. */
+export function cadOutputFitting(sourceToleranceMm: number, coordinateQuantumMm: number): CadOutputFitting {
+  const guard = CAD_PRECISION.outputRoundingGuardMm;
+  return {
+    pointMm: Math.max(sourceToleranceMm, coordinateQuantumMm / Math.SQRT2 + guard),
+    lengthMm: Math.max(sourceToleranceMm, coordinateQuantumMm * Math.SQRT2 + guard),
+    arcSweepMm: Math.max(sourceToleranceMm, coordinateQuantumMm * 4 + guard)
+  };
+}

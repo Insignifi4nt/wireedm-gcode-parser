@@ -1,0 +1,24 @@
+{
+  "version": "0.0.791",
+  "previousVersion": "0.0.790",
+  "postCompatibility": "preserved-posts-with-precision-policy",
+  "summary": "Internal refactor: CAD, the sketch solver bridge, the kernel bridge, CAM, the output audit, DXF and G-code imports and simulation now read every tolerance from one named precision policy in src/domain/precision/cadPrecision.ts. The policy names each tolerance by its role, states its unit and meaning, and exports CAD_PRECISION_VERSION = 1. Places that used the same value for different reasons get separate roles: kernel confusion, the smallest model length, the CAD to CAM endpoint, simulation clearance and machine geometry are all 1e-7 and stay separate. Size-based tolerances become policy functions: cadRoundoff for ulps of a magnitude, cadClosureTolerance for analytic closure, cadSupportedLength for a length within kernel confusion and the 1e6 mm model extent, and cadOutputFitting for the output audit's allowances. Each replaces an expression of the same form and gives the same bits. The survey found 434 candidate literals in non-test source; 227 moved behind 47 roles and the policy functions, and 207 stay, each with its reason: view and pointer space, unit factors, the 1e9 coordinate budget, product limits and defaults, help text, comments, fixtures and benchmarks. A new test checks the ordering between roles, pins this version's values, checks each policy function against the expression it replaces, and checks that the Rust solver's acceptance and drag constants agree with the policy. Two relations that ought to hold do not, and are recorded as known rather than changed: the solver accepts residuals of 1e-10 mm while structural checks hold arc endpoints to closure, 1e-12 mm at sketch scales, and closure grows past kernel confusion and the CAD to CAM endpoint above about 5.6e7 mm although sketch coordinates are accepted up to 1e9 mm. Imported STEP shape tolerances and UPID planning tolerances are still adopted as they were, and are now documented. npm run lint also runs a check that flags new negative-exponent literals and Number.EPSILON outside the policy module, with a per-file list of the literals that stay. A maintainer page, docs/maintainers/precision.md, lists the roles, the ordering and how to add a role.",
+  "warning": "No breaking change for installed posts, machine packages, saved revisions, CAD files, agents or controller output. Every moved tolerance keeps its value and its comparison, so geometry, CAM plans and controller output are bit-identical. No new refusal is added, and NaN handling is unchanged: cadSupportedLength replaces only checks that already had its exact form. The worker protocol, the Rust solver and the committed WebAssembly module are unchanged.",
+  "checklist": {
+    "schema": "No CAD, sketch graph, UPID, post, machine package, execution plan, saved revision, storage, journal, worker reply or native buffer protocol schema change. Sketch annotation placement ranges read the model extent (1e6) where they wrote 1e6, with the same values. The native protocol stays version 7. The Rust solver and the committed WebAssembly module are unchanged. Post engine API remains 1 and saved-job engine remains 3. CAD_PRECISION_VERSION is new and is not yet stored anywhere.",
+    "events": "No execution event, input-version, cancellation or WebMCP behaviour change. Reading a role is a property read on a frozen object, and the policy functions are the expressions they replace.",
+    "capabilities": "No post or machine capability change, and no WebMCP tool added, removed or changed. No UI control or user-visible text changes.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. The output audit's point, length and arc sweep allowances come from cadOutputFitting with the same values; UPID planning tolerances from documents are still used as before.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change.",
+    "verification": "TBD"
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Internal refactor of CAD and CAM tolerances; geometry and output are unchanged.",
+    "changes": [
+      "Gathers CAD, CAM and output tolerances into one named policy, with no visible change."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, CAD files and controller output are unchanged.",
+    "action": "No action needed."
+  }
+}

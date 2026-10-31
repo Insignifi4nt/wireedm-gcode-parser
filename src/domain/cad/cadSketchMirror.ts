@@ -16,6 +16,7 @@ import { classifyPathSegmentIntersection } from '@/domain/path-intel/intersectio
 import { createArcSegment, createCircleSegment, createLineSegment, cross, dot } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export const CadSketchMirrorRequestSchema = Type.Object({
   entityIds: Type.Array(CadIdentifierSchema, { minItems: 1, maxItems: 64, uniqueItems: true }),
@@ -131,7 +132,7 @@ export function prepareCadSketchMirror({ sketch, parameters, ...request }: CadSk
       const c = vector(entity.centerPointId, entity.startPointId, reflected), d = vector(entity.centerPointId, entity.endPointId, reflected);
       const sourceSide = Math.sign(Math.abs(old.sweepRadians) - Math.PI);
       const angleError = Math.abs(old.sweepRadians + next.sweepRadians), tolerance = cadPathClosureTolerance([a, b, c, d]);
-      if (angleError > 1e-12 || angleError * old.radius > tolerance || Math.abs(old.radius - next.radius) > tolerance
+      if (angleError > CAD_PRECISION.angularAccuracyRad || angleError * old.radius > tolerance || Math.abs(old.radius - next.radius) > tolerance
         || Math.abs(Math.hypot(b.x, b.y) - Math.hypot(d.x, d.y)) > tolerance
         || sourceSide !== 0 && sourceSide !== Math.sign(Math.abs(next.sweepRadians) - Math.PI)
         || cross(a, b) !== 0 && Math.sign(cross(c, d)) !== -Math.sign(cross(a, b))) throw precision();

@@ -1,6 +1,7 @@
 import type { CadFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export const MIN_CAD_PATTERN_COUNT = 2;
 export const MAX_CAD_PATTERN_COUNT = 100;
@@ -14,7 +15,7 @@ export function resolveCadCircularPattern(feature: Pick<CadCircularPatternFeatur
   }
   // Do not reduce modulo 360: a full turn is an extent, not a zero rotation.
   const angle = evaluateCadScalar(feature.angle, parameters);
-  if (Math.abs(angle) <= 1e-7 || Math.abs(angle) > 360) {
+  if (Math.abs(angle) <= CAD_PRECISION.minimumAngleDeg || Math.abs(angle) > 360) {
     throw new CadError('invalid-dimension', 'Circular pattern extent must be nonzero and at most 360 degrees in either direction.');
   }
   const center: readonly [number, number, number] = Object.freeze([

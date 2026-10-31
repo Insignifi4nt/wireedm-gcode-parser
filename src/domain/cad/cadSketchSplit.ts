@@ -8,6 +8,7 @@ import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { cadSketchRelationEntityIds } from './cadSketchGraphReferences';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { pointOnArcAtParameter } from '@/domain/path-intel/segments';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 const fields = { entityId: CadIdentifierSchema, parameter: Type.Number({ exclusiveMinimum: 0, exclusiveMaximum: 1 }),
   splitPointId: CadIdentifierSchema, newEntityId: CadIdentifierSchema };
@@ -48,7 +49,7 @@ export function splitCadSketchEntity({ graph: input, parameters, split }: {
   const point = segment.kind === 'line' ? { x: segment.start.x + (segment.end.x - segment.start.x) * split.parameter,
     y: segment.start.y + (segment.end.y - segment.start.y) * split.parameter }
     : pointOnArcAtParameter(segment, { segmentId: entity.id, reversed: false }, split.parameter);
-  const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, point, segment.end]));
+  const minimum = Math.max(CAD_PRECISION.minimumLengthMm, cadPathClosureTolerance([segment.start, point, segment.end]));
   if (Math.hypot(point.x - segment.start.x, point.y - segment.start.y) <= minimum
     || Math.hypot(segment.end.x - point.x, segment.end.y - point.y) <= minimum)
     throw new CadError('sketch-split-precision', 'The cut must leave two pieces long enough to keep. Cut farther from the ends.');

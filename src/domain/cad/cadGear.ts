@@ -2,6 +2,7 @@ import type { CadScalar } from './cadDocument';
 import type { ResolvedCadPathSegment } from './cadAnalyticSegments';
 import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';
 import { CadError } from './cadError';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export interface CadGearProfile { readonly x: CadScalar; readonly y: CadScalar; readonly module: CadScalar; readonly teeth: CadScalar; readonly pressureAngle: CadScalar; readonly profileShift: CadScalar; readonly backlash: CadScalar; readonly angle: CadScalar; readonly tolerance: CadScalar }
 export const DEFAULT_CAD_GEAR: CadGearProfile = { x: 0, y: 0, module: 3, teeth: 18, pressureAngle: 20, profileShift: 0, backlash: 0, angle: 0, tolerance: 0.005 };
@@ -26,7 +27,7 @@ function resolveCadGearSpec(profile: CadGearProfile, parameters: Readonly<Record
   if (tolerance < 0.00001 || tolerance > Math.min(0.1, m / 20)) fail('Gear flank tolerance must be at least 0.00001 mm and at most min(0.1 mm, module / 20).');
   const alpha = alphaDegrees * Math.PI / 180;
   const minimumShift = 1 - z * Math.sin(alpha) ** 2 / 2;
-  if (shift < minimumShift - 1e-12) fail(`This gear needs profile shift at least ${minimumShift.toFixed(4)} to avoid standard rack undercut. Increase tooth count, pressure angle or profile shift.`);
+  if (shift < minimumShift - CAD_PRECISION.relativeZero) fail(`This gear needs profile shift at least ${minimumShift.toFixed(4)} to avoid standard rack undercut. Increase tooth count, pressure angle or profile shift.`);
   const pitchRadius = m * z / 2, baseRadius = pitchRadius * Math.cos(alpha);
   const tipRadius = m * (z / 2 + 1 + shift), rootRadius = m * (z / 2 - 1.25 + shift);
   const toothHalfAngle = (Math.PI / 2 + 2 * shift * Math.tan(alpha) - backlash / m) / z;
@@ -35,7 +36,7 @@ function resolveCadGearSpec(profile: CadGearProfile, parameters: Readonly<Record
   const endT = Math.sqrt((tipRadius / baseRadius) ** 2 - 1);
   const inv = (t: number) => t - Math.atan(t);
   const rootHalfAngle = baseHalfAngle - inv(startT), tipHalfAngle = baseHalfAngle - inv(endT);
-  if (!(rootRadius > 0 && endT > startT && tipHalfAngle > 1e-6 && rootHalfAngle < Math.PI / z - 1e-6)) fail('Gear teeth overlap or have pointed tips. Adjust profile shift, backlash, pressure angle or tooth count.');
+  if (!(rootRadius > 0 && endT > startT && tipHalfAngle > CAD_PRECISION.gearAngleMarginRad && rootHalfAngle < Math.PI / z - CAD_PRECISION.gearAngleMarginRad)) fail('Gear teeth overlap or have pointed tips. Adjust profile shift, backlash, pressure angle or tooth count.');
   return { m, z, x, y, rotation, tolerance, pitchRadius, baseRadius, tipRadius, rootRadius, toothHalfAngle, baseHalfAngle,
     startT, endT, rootHalfAngle, tipHalfAngle };
 }
@@ -56,7 +57,7 @@ export function resolveCadGear(profile: CadGearProfile, parameters: Readonly<Rec
   // Linear interpolation error <= max|r''(t)| * dt² / 8.
   // For the involute r(t), |r''(t)| = rb * sqrt(1+t²).
   const steps = Math.max(2, Math.ceil((endT - startT) / Math.sqrt(8 * tolerance / (baseRadius * Math.sqrt(1 + endT ** 2)))));
-  const radialRoot = rootRadius < baseRadius - 1e-7;
+  const radialRoot = rootRadius < baseRadius - CAD_PRECISION.kernelConfusionMm;
   const edgeCount = z * (2 * steps + 2 + (radialRoot ? 2 : 0));
   if (edgeCount > 8192) fail('Gear exceeds the 8192-edge modeling budget. Increase flank tolerance or reduce tooth count/module.');
   const segments: ResolvedCadPathSegment[] = [];

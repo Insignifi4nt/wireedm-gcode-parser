@@ -21,6 +21,7 @@ import type {
   Point2,
   SegmentId
 } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export type PathPointInferenceMode =
   | 'endpoint'
@@ -424,7 +425,7 @@ function perpendicularFoot(
     x: sourcePoint.x - segment.center.x,
     y: sourcePoint.y - segment.center.y
   };
-  if (Math.hypot(radial.x, radial.y) <= 1e-12) return null;
+  if (Math.hypot(radial.x, radial.y) <= CAD_PRECISION.zeroLengthMm) return null;
   const unitRadial = normalize(radial);
   const point = {
     x: segment.center.x + segment.radius * unitRadial.x,
@@ -502,7 +503,7 @@ function tangentCandidate(
     y: sourcePoint.y - segment.center.y
   };
   const sourceDistance = Math.hypot(centerToSource.x, centerToSource.y);
-  if (!Number.isFinite(sourceDistance) || sourceDistance <= segment.radius + 1e-9) {
+  if (!Number.isFinite(sourceDistance) || sourceDistance <= segment.radius + CAD_PRECISION.pathInsideSlackMm) {
     return {
       ...nearestPointOnSegment(segment, ref, hintPoint),
       relation: 'nearest-fallback'

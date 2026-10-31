@@ -10,6 +10,7 @@ import {
   type CadVector3, type CadEdgeQuery, type CadFaceQuery, type ResolvedCadEdgePredicate, type ResolvedCadFacePredicate,
   type CadEdgeSelection,
 } from '../../../domain/cad/cadTopology';
+import { CAD_PRECISION, cadRoundoff } from '../../../domain/precision/cadPrecision';
 type EdgeDescriptor = Extract<CadTopologyDescriptor, { kind: 'edge' }>;
 type FaceDescriptor = Extract<CadTopologyDescriptor, { kind: 'face' }>;
 type Entry = { kind: 'edge'; key: string; shape: Edge; descriptor?: EdgeDescriptor }
@@ -18,8 +19,8 @@ const dot = (a: CadVector3, b: CadVector3) => a[0] * b[0] + a[1] * b[1] + a[2] *
 const subtract = (a: CadVector3, b: CadVector3): CadVector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const cross = (a: CadVector3, b: CadVector3): CadVector3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const norm = (a: CadVector3) => Math.hypot(...a);
-const parallel = (a: CadVector3, b: CadVector3) => norm(cross(a, b)) <= 1e-10;
-const tolerance = (...values: number[]) => Math.max(1e-7, 8 * Number.EPSILON * Math.max(1, ...values.map(Math.abs)));
+const parallel = (a: CadVector3, b: CadVector3) => norm(cross(a, b)) <= CAD_PRECISION.kernelDirection;
+const tolerance = (...values: number[]) => Math.max(CAD_PRECISION.kernelConfusionMm, cadRoundoff(8, Math.max(1, ...values.map(Math.abs))));
 const sameNumber = (a: number, b: number) => Math.abs(a - b) <= tolerance(a, b);
 const samePoint = (a: CadVector3, b: CadVector3) => norm(subtract(a, b)) <= tolerance(...a, ...b);
 const tuple = (point: gp_Pnt | gp_Dir): CadVector3 => [point.X(), point.Y(), point.Z()];
@@ -75,7 +76,7 @@ function describeFace(entry: Extract<Entry, { kind: 'face' }>): FaceDescriptor {
           // BRepGProp evaluates the oriented surface normal in world coordinates.
           const rawNormal = vectorTuple(entry.shape.normalAt());
           const magnitude = norm(rawNormal);
-          if (!Number.isFinite(magnitude) || magnitude <= Number.EPSILON) throw new CadError('unsupported-selection', 'The planar face has no reliable oriented normal.');
+          if (!Number.isFinite(magnitude) || magnitude <= cadRoundoff(1)) throw new CadError('unsupported-selection', 'The planar face has no reliable oriented normal.');
           const normal: CadVector3 = [rawNormal[0] / magnitude, rawNormal[1] / magnitude, rawNormal[2] / magnitude];
           return { ...base, surfaceType: 'plane', normal, offset: dot(normal, tuple(origin)) };
         } finally { origin.delete(); plane.delete(); }
@@ -96,7 +97,7 @@ function edgeMatches(edge: EdgeDescriptor, predicate: ResolvedCadEdgePredicate):
     case 'parallel': {
       if (edge.curveType !== 'line') return false;
       const direction = subtract(edge.end, edge.start); const length = norm(direction);
-      return length > 1e-7 && parallel([direction[0] / length, direction[1] / length, direction[2] / length], predicate.direction);
+      return length > CAD_PRECISION.minimumLengthMm && parallel([direction[0] / length, direction[1] / length, direction[2] / length], predicate.direction);
     }
     case 'circle': return edge.curveType === 'circle' && samePoint(edge.center, predicate.center) && parallel(edge.axis, predicate.axis) && sameNumber(edge.radius, predicate.radius);
     case 'arc-points': return edge.curveType === 'circle' && !edge.closed && samePoint(edge.midpoint, predicate.midpoint) &&
@@ -114,8 +115,8 @@ function faceMatches(face: FaceDescriptor, predicate: ResolvedCadFacePredicate):
   switch (predicate.kind) {
     case 'surface-type': return face.surfaceType === predicate.value;
     case 'centroid': return samePoint(face.centroid, predicate.point);
-    case 'area': return Math.abs(face.area - predicate.value) <= Math.max(1e-7, 1e-7 * Math.sqrt(Math.max(face.area, predicate.value)), tolerance(face.area, predicate.value));
-    case 'plane': return face.surfaceType === 'plane' && norm(subtract(face.normal, predicate.normal)) <= 1e-10 && sameNumber(face.offset, predicate.offset);
+    case 'area': return Math.abs(face.area - predicate.value) <= Math.max(CAD_PRECISION.kernelConfusionMm, CAD_PRECISION.kernelConfusionMm * Math.sqrt(Math.max(face.area, predicate.value)), tolerance(face.area, predicate.value));
+    case 'plane': return face.surfaceType === 'plane' && norm(subtract(face.normal, predicate.normal)) <= CAD_PRECISION.kernelDirection && sameNumber(face.offset, predicate.offset);
     case 'cylinder': return face.surfaceType === 'cylinder' && parallel(face.axis, predicate.axis) && sameNumber(face.radius, predicate.radius)
       && norm(cross(subtract(face.origin, predicate.origin), predicate.axis)) <= tolerance(...face.origin, ...predicate.origin);
     default: { const exhaustive: never = predicate; return exhaustive; }
@@ -199,7 +200,7 @@ export class CadKernelTopology {
       exactCount(found.length, query.expectedCount);
       for (const entry of found) {
         const descriptor = this.descriptor(entry);
-        if (descriptor.kind !== 'edge' || descriptor.curveType === 'other' || descriptor.length <= 1e-7) throw new CadError('unsupported-selection', 'Selected edge operations currently require non-degenerate lines or circular arcs.');
+        if (descriptor.kind !== 'edge' || descriptor.curveType === 'other' || descriptor.length <= CAD_PRECISION.minimumLengthMm) throw new CadError('unsupported-selection', 'Selected edge operations currently require non-degenerate lines or circular arcs.');
         matches.set(entry.key, entry.shape);
       }
     }
@@ -230,7 +231,7 @@ export class CadKernelTopology {
     }
     const queries: CadEdgeQuery[] = entries.map(entry => {
       const descriptor = this.descriptor(entry);
-      if (descriptor.kind !== 'edge' || descriptor.curveType === 'other' || descriptor.length <= 1e-7) throw new CadError('unsupported-selection', 'Select non-degenerate line or circular edges for fillet/chamfer.');
+      if (descriptor.kind !== 'edge' || descriptor.curveType === 'other' || descriptor.length <= CAD_PRECISION.minimumLengthMm) throw new CadError('unsupported-selection', 'Select non-degenerate line or circular edges for fillet/chamfer.');
       if (descriptor.curveType === 'line') return { kind: 'edges', expectedCount: 1, predicates: [{ kind: 'line-endpoints', start: descriptor.start, end: descriptor.end }, { kind: 'length', value: descriptor.length }] };
       return { kind: 'edges', expectedCount: 1, predicates: [{ kind: 'circle', center: descriptor.center, axis: descriptor.axis, radius: descriptor.radius },
         { kind: 'length', value: descriptor.length }, ...(!descriptor.closed ? [{ kind: 'arc-points' as const, start: descriptor.start, end: descriptor.end, midpoint: descriptor.midpoint }] : [])] };

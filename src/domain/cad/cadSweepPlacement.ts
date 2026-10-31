@@ -5,6 +5,7 @@ import { CAD_DATUM_ORTHONORMAL_RESIDUAL, cadFramePointToWorld } from './cadDatum
 import { cadPlaneBasis, type CadNumericPoint2, type CadNumericPoint3 } from './cadPlanes';
 import { cadSweepProfileRadius } from './cadSweepClearance';
 import { nextUp } from '../path-intel/segments';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export interface CadSweepPlacement {
   readonly legacyPrincipal: boolean;
@@ -44,7 +45,7 @@ export function resolveCadSweepPlacement(section: CadLoftSection, curve: CadReso
   const angularResidual = Math.hypot(...cross(sectionFrame.normal, curve.startTangentWorld));
   const localRadius = cadSweepProfileRadius(section.geometry, { x: anchor[0], y: anchor[1] });
   const profileRadius = nextUp(Math.hypot(localRadius, planeResidual));
-  if (angularResidual > CAD_DATUM_ORTHONORMAL_RESIDUAL || profileRadius * angularResidual > 1e-7 || planeResidual > 1e-7) {
+  if (angularResidual > CAD_DATUM_ORTHONORMAL_RESIDUAL || profileRadius * angularResidual > CAD_PRECISION.kernelConfusionMm || planeResidual > CAD_PRECISION.kernelConfusionMm) {
     const advice = legacyPrincipal ? principalAdvice(curve) : `The Curve starts at (${curve.startWorld.join(', ')}) mm with tangent (${curve.startTangentWorld.join(', ')}). Place the section there with parallel or antiparallel normal; preserve its authored local position and roll.`;
     throw new CadError('unsupported-sweep-placement', `The sketch plane must contain the actual curve start and be perpendicular to its first tangent. ${advice}`);
   }

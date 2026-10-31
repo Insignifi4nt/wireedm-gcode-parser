@@ -10,6 +10,7 @@ import { cadAnalyticSegments, cadPathClosureTolerance, resolveCadPathSegments, t
 import { selectCadSketchRegions, isCadSketchGraphCellSelection, type CadSketchCellReference, type CadSketchRegionSelection } from './cadSketchRegionSelection';
 import { prepareCadSketchGraphCells } from './cadSketchGraphCells';
 import { compileCadSketchGeometry, type CadCompiledSketchProfile } from './compileCadSketchGeometry';
+import { CAD_PRECISION, cadRoundoff } from '@/domain/precision/cadPrecision';
 export { cadPathClosureTolerance, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 
 export type ResolvedCadProfile =
@@ -18,7 +19,7 @@ export type ResolvedCadProfile =
   | { kind: 'polygon'; points: readonly (readonly [number, number])[] }
   | { kind: 'path'; segments: readonly ResolvedCadPathSegment[] }
   | { kind: 'slot'; x: number; y: number; length: number; width: number; angle: number };
-const tolerance = 1e-7;
+const tolerance = CAD_PRECISION.kernelConfusionMm;
 const tau = Math.PI * 2;
 function polygonDoubleArea(points: readonly (readonly [number, number])[]): number {
   const origin = points[0];
@@ -157,7 +158,7 @@ function boundaryBounds(entity: Boundary): BoundaryBounds {
       : { minX: Math.min(entity.start.x, entity.end.x), minY: Math.min(entity.start.y, entity.end.y), maxX: Math.max(entity.start.x, entity.end.x), maxY: Math.max(entity.start.y, entity.end.y) };
   if (entity.type === 'arc') {
     const sweep = boundaryArcSweep(entity);
-    const rounding = 16 * Number.EPSILON * Math.max(1, Math.abs(entity.startAngle), Math.abs(sweep));
+    const rounding = cadRoundoff(16, Math.max(1, Math.abs(entity.startAngle), Math.abs(sweep)));
     // Exact endpoints and any cardinal extrema on the signed sweep bound the
     // complete arc. Keep the same contact/arithmetic reserve as other edges.
     for (const [angle, x, y] of [[0, entity.center.x + entity.radius, entity.center.y], [Math.PI / 2, entity.center.x, entity.center.y + entity.radius],
@@ -167,7 +168,7 @@ function boundaryBounds(entity: Boundary): BoundaryBounds {
       bounds.minY = Math.min(bounds.minY, y); bounds.maxY = Math.max(bounds.maxY, y);
     }
   }
-  const padding = 2 * tolerance + 64 * Number.EPSILON * Math.max(1, ...Object.values(bounds).map(Math.abs));
+  const padding = 2 * tolerance + cadRoundoff(64, Math.max(1, ...Object.values(bounds).map(Math.abs)));
   return { minX: bounds.minX - padding, minY: bounds.minY - padding, maxX: bounds.maxX + padding, maxY: bounds.maxY + padding };
 }
 
@@ -217,7 +218,7 @@ export function cadBoundariesIntersect(first: Boundary, second: Boundary, allowe
   if (first.type === 'line' && second.type === 'line') {
     const a = subtract(first.end, first.start); const b = subtract(second.end, second.start);
     const denominator = cross(a, b); const delta = subtract(second.start, first.start);
-    if (Math.abs(denominator) < 1e-14) return [first.start, first.end, second.start, second.end,
+    if (Math.abs(denominator) < CAD_PRECISION.parallelCrossFloorMm2) return [first.start, first.end, second.start, second.end,
       { x: (first.start.x + first.end.x) / 2, y: (first.start.y + first.end.y) / 2 },
       { x: (second.start.x + second.end.x) / 2, y: (second.start.y + second.end.y) / 2 }].some(intersects);
     const t = cross(delta, b) / denominator;
@@ -294,7 +295,7 @@ export function resolveCadSketchContours(sketch: CadSketchFeature, parameters: R
   const prepared = profiles.map(({ profile, geometry }) => {
     let path: AnalyticPath | null = null;
     let edges: Boundary[] | null = null;
-    const positive = (value: number) => value > tolerance && value <= 1e6;
+    const positive = (value: number) => value > tolerance && value <= CAD_PRECISION.modelExtentMm;
     switch (geometry.kind) {
       case 'circle': if (!positive(geometry.radius)) throw new CadError('invalid-profile', `Circle "${profile.name}" needs a positive radius.`); break;
       case 'rectangle': if (!positive(geometry.width) || !positive(geometry.height) || geometry.cornerRadius < 0 || geometry.cornerRadius > Math.min(geometry.width, geometry.height) / 2) throw new CadError('invalid-profile', `Rectangle "${profile.name}" has invalid dimensions or corner radius.`); break;

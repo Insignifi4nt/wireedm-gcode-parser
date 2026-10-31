@@ -4,6 +4,7 @@ import { evaluateCadScalar } from './cadExpression';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { signedSweep } from '@/domain/path-intel/segments';
 import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION, cadRoundoff, cadSupportedLength } from '@/domain/precision/cadPrecision';
 
 export const cornerSub = (a: Point2, b: Point2): Point2 => ({ x: a.x - b.x, y: a.y - b.y });
 export const cornerLength = (a: Point2): number => Math.hypot(a.x, a.y);
@@ -11,9 +12,9 @@ export const cornerDot = (a: Point2, b: Point2): number => a.x * b.x + a.y * b.y
 export const cornerCross = (a: Point2, b: Point2): number => a.x * b.y - a.y * b.x;
 export function cadSketchCornerFrame(vertex: Point2, a: Point2, b: Point2) {
   const va = cornerSub(a, vertex), vb = cornerSub(b, vertex), lengthA = cornerLength(va), lengthB = cornerLength(vb);
-  if (lengthA <= 1e-7 || lengthB <= 1e-7) throw new CadError('invalid-corner-geometry', 'Corner supports must have positive length.');
+  if (lengthA <= CAD_PRECISION.minimumLengthMm || lengthB <= CAD_PRECISION.minimumLengthMm) throw new CadError('invalid-corner-geometry', 'Corner supports must have positive length.');
   const u = { x: va.x / lengthA, y: va.y / lengthA }, v = { x: vb.x / lengthB, y: vb.y / lengthB }, cross = cornerCross(u, v);
-  const uncertainty = 16 * Number.EPSILON + 4 * cadPathClosureTolerance([vertex, a, b]) * (1 / lengthA + 1 / lengthB);
+  const uncertainty = cadRoundoff(16) + 4 * cadPathClosureTolerance([vertex, a, b]) * (1 / lengthA + 1 / lengthB);
   if (Math.abs(cross) <= uncertainty) throw new CadError('invalid-corner-geometry', 'Collinear or numerically uncertain lines cannot define a corner.');
   return { u, v, lengthA, lengthB, cross, angle: Math.atan2(Math.abs(cross), cornerDot(u, v)) };
 }
@@ -59,12 +60,12 @@ export function checkCadSketchCornerRelation(graph: CadSketchGraph, relation: Ca
       const line = cornerSub(trim, far), lineLength = cornerLength(line);
       residual('support', Math.abs(cornerCross(cornerSub(vertex, far), line)) / lineLength, [vertex, far, trim]);
       const projection = cornerDot(cornerSub(trim, vertex), axis);
-      if (!(projection > 0 && extent - projection > 1e-7)) fail('Corner trim must remain strictly between its retained vertex and far endpoint.');
+      if (!(projection > 0 && extent - projection > CAD_PRECISION.minimumLengthMm)) fail('Corner trim must remain strictly between its retained vertex and far endpoint.');
     }
     if (relation.kind === 'fillet-corner' && topology.entity.kind === 'arc') {
       const center = points.get(topology.entity.centerPointId); if (!center) return issues;
       const radius = evaluateCadScalar(relation.value, parameters);
-      if (!(radius > 1e-7 && radius <= 1e6)) fail('Corner radius must be positive and within one million millimetres.');
+      if (!cadSupportedLength(radius)) fail('Corner radius must be positive and within one million millimetres.');
       residual('radius', Math.abs(cornerLength(cornerSub(center, p)) - radius), [center, p]);
       for (const [far, trim] of [[a, p], [b, q]] as const) residual('tangency',
         Math.abs(cornerDot(cornerSub(center, trim), cornerSub(far, trim))) / cornerLength(cornerSub(far, trim)), [center, trim, far]);
@@ -77,7 +78,7 @@ export function checkCadSketchCornerRelation(graph: CadSketchGraph, relation: Ca
     } else if (relation.kind === 'chamfer-corner') {
       for (const [trim, value] of [[p, relation.values[0]], [q, relation.values[1]]] as const) {
         const distance = evaluateCadScalar(value, parameters);
-        if (!(distance > 1e-7 && distance <= 1e6)) fail('Corner setbacks must be positive and within one million millimetres.');
+        if (!cadSupportedLength(distance)) fail('Corner setbacks must be positive and within one million millimetres.');
         residual('setback', Math.abs(cornerLength(cornerSub(trim, vertex)) - distance), [trim, vertex]);
       }
     }

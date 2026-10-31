@@ -2,6 +2,7 @@ import { isMotionCommand, organizeGCodeStructure, type GCodeContourGroup, type G
 import { canonicalizeMotionCodes } from './isoNormalizer';
 import { createGCodeInterpreterState, interpretGCodeBlock, type GCodeInterpreterState } from './gcodeBlockInterpreter';
 import { splitGCodeLines } from './gcodeLines';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export interface MoveBodyGroupResult {
   text: string;
@@ -384,7 +385,7 @@ function extractIJ(line: string) {
 function xyEqual(
   a: { x: number | null; y: number | null },
   b: { x: number | null; y: number | null } | { x: number; y: number } | undefined,
-  epsilon = 1e-6
+  epsilon = CAD_PRECISION.gcodeLineMatchMm
 ) {
   if (!b || a.x === null || a.y === null || b.x === null || b.y === null) return false;
   return Math.abs(a.x - b.x) <= epsilon && Math.abs(a.y - b.y) <= epsilon;

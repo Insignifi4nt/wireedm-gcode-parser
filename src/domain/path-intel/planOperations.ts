@@ -24,6 +24,7 @@ import type {
   Point2
 } from './types';
 import { resolvePathPlanningOptions } from './segments';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export interface PlanOperationsInput {
   chains: PathChain[];
@@ -337,7 +338,7 @@ function createStartIndex(items: PlanItem[]) {
 
       const cutoff = rapidCutoff(nearest, epsilon);
       // Pad for rounding between the square and the exact box distance; extra items only cost a check.
-      const padding = cutoff * 1e-9 + (1 + Math.abs(position.x) + Math.abs(position.y)) * 1e-12;
+      const padding = cutoff * CAD_PRECISION.camRankRelative + (1 + Math.abs(position.x) + Math.abs(position.y)) * CAD_PRECISION.camRankAbsoluteMm;
       // Queries list entries in insertion order, which is item order.
       return accepted(position, cutoff + padding, accept)
         .filter((item) => distanceToBounds(position, item.startBounds) <= cutoff);
@@ -409,7 +410,7 @@ function chooseFrom(
 /** Longest rapid that can still rank level with or ahead of `rapidLength`. */
 function rapidCutoff(rapidLength: number, epsilon: number) {
   // The relative margin absorbs rounding between the box distance and the exact start distance.
-  return (rapidLength + epsilon) * (1 + 1e-9) + 1e-12;
+  return (rapidLength + epsilon) * (1 + CAD_PRECISION.camRankRelative) + CAD_PRECISION.camRankAbsoluteMm;
 }
 
 function distanceToBounds(point: Point2, bounds: Bounds2) {
