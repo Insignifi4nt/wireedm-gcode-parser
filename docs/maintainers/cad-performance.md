@@ -144,14 +144,20 @@ Caps are drawn on the plane (`cadSectionCaps.ts`).
 
 - **What is drawn.** For each cut body, every triangle the plane crosses gives one segment, directed by the triangle's outward winding. A fan of triangles runs from the middle of the cut to every segment. Two passes count the fans into the stencil buffer, front faces adding one and back faces taking one away, and one quad on the plane colours where the count is not zero and clears it.
 - **Why.** That fills wherever the cut winds round a point. Solids of one body inside or overlapping each other are filled as one, and a cavity, whose shell faces inward, cancels the solid round it and stays open. Everything drawn lies on the plane, so the count does not depend on where the camera stands.
+- **Many solids.** A point inside k of a body's solids counts k, or -k seen from the other side, and the stencil's eight bits count modulo 256.
+  - A body of at most 255 solids counts at once: its count is zero modulo 256 only where no solid is.
+  - A body of more solids counts them in groups of at most 127, by the solid the kernel gives each face (`faceSolids` in the build's mesh), in the low seven bits, which count modulo 128. After each group, one quad sets the top bit wherever the group's count is not zero and clears the count. One fill then colours where the top bit is set. No count passes 127, however many solids cover a point.
+  - A cut that crosses only one group counts at once. A body of more than 255 solids without face solids, or whose groups do not each close, gets no cap.
+  - Before this, 256 solids nested round one point counted 0 there and read as a cavity.
 - **Earlier drafts.**
   - The first draft counted the body's own surfaces along each view ray. That lost the cap wherever the camera or the near plane was inside the kept material, and it drew each body twice more on every frame.
   - The second draft joined segments into loops, made loops inside loops holes and triangulated them. That opened a solid lying inside another solid of the same body, and filled only part of overlapping ones.
 - **When caps are built.** Once for each plane and each mesh upload while a capped section shows, never on a frame or a hover.
   - A body whose box the plane misses is skipped before its triangles are prepared.
   - Other builds run in slices of about 6 ms, each ending after the step that passes it. Caps that finish in a later slice draw one more frame.
+  - Every loop checks the clock between runs of 8,192 items, laying out the fans included. A check inside a tight loop made it three to five times slower.
   - A build that a new plane, mesh upload or hiding replaces is dropped, and none of its caps is shown.
-- **Per frame.** Each cut body draws three times: two counting passes and the fill.
+- **Per frame.** Each cut body draws three times: two counting passes and the fill. A body counted in groups draws three times for each group its cut crosses, and once more.
 
 Hover still requests one frame per pointer move, coalesced to one per animation frame and doing its raycasts in that frame, as before.
 
@@ -171,6 +177,19 @@ Preparing joins the vertices that faces repeat and checks that every edge is cro
 | Missed by the plane, alone | 60.0 to 87.5 ms in one task | 2.7 to 3.6 ms on the first plane after an upload, computing its box; 0.01 to 0.04 ms after |
 | Missed, with the plate cut | 54.7 to 101.1 ms in one task | 2.5 to 12.2 ms, preparing and capping the plate |
 | Cut, with the plate | 61.8 to 79.2 ms in one task | 11 to 15 slices, the longest 8.1 to 9.1 ms, 68.5 to 97.1 ms in all |
+
+**Many crossed triangles.** A closed prism of 120,000 sides, 480,000 triangles, cut across so that 240,000 of them cross the plane, then cut by a second plane. The 480,000-triangle box above crosses only 1,600.
+
+- **Before.** The middle of the cut, the fans and the fill's bounds were laid out in one step after the cut. On the second plane that step made the last slice 10.1 to 19.3 ms long, over 12 runs.
+- **Clock checks.** The first fix checked the clock on every item. Same-session medians of ten rotated runs each, with other work holding the CPU at 79 to 94%:
+
+  | Version | Longest slice, second plane | Second plane in all | First plane in all |
+  |---|---|---|---|
+  | Laid out in one step | 14.7 and 13.9 ms | 49.6 and 49.5 ms | 190.3 and 212.6 ms |
+  | A clock check on every item | 8.5 and 8.6 ms | 50.8 and 56.0 ms | 207.6 and 219.3 ms |
+  | Checks between runs of 8,192 | 8.1 and 9.6 ms | 43.3 and 46.1 ms | 180.2 and 185.9 ms |
+
+- **Why runs.** Alone in Node, minimum of 40 runs: scanning the 2^21 edge slots of a 480,000-triangle body took 1.09 ms in one loop, 5.56 ms with a check on every slot and 1.07 ms in runs. Averaging 480,000 segment ends took 0.73, 3.75 and 0.72 ms. With every loop in runs, preparing the box took at least 105.8 ms, against 113.6 ms before, in a busier session than the table above.
 
 The hover measurements below are from production builds in Chromium with SwiftShader at 4× CPU throttling:
 
@@ -199,6 +218,7 @@ Results:
   - Three more rounds of Section and Caps alone ran while other work held the CPU at 16 to 63%. Caps measured 8.8 ms faster, 19.3 ms slower and 3.5 ms slower, and Section's P50 frame gap was 33.3 ms in two of its runs, so those rounds decide nothing.
   - The P50 frame gap was 33.3 ms in two of the three four-mode Caps runs and in one Plain run, and 16.7 or 16.8 ms in the rest.
   - The extra cost is three draws per cut body, two of them stencil-only. Measure on a hardware GPU before acting on it.
+  - A hover-only frame draws the caps again with everything else. Keeping the model and caps as a cached layer, with only the hover drawn on top, is left for its own change. Hover also tints bodies and reference planes, which that layer would hold, and an antialiased frame's depth cannot be copied cheaply under the hover.
 - **Section without caps.** It measured no slower than Plain: it removes about half of the plate from drawing and picking.
 - **Plain against No references.**
   - On the final build, Plain measured 13.2, 13.5 and 15.4 ms slower in the four-mode rounds, and 3.8, 9.0 and 1.6 ms slower in three more rounds of the two alone.
