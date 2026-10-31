@@ -4,9 +4,9 @@ import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { cadProfileReferenceGeometry } from './cadViewportReferences';
 import { cadClosedBoundarySvgPath } from './cadSketchSvg';
 
-/** Cache exact geometry in a small frame; navigation changes only its placement. */
-export const CadSketchProfileGeometry = memo(function CadSketchProfileGeometry({ geometry, parameters, viewCenter }: {
-  geometry: CadProfile; parameters: Readonly<Record<string, number>>; viewCenter: readonly [number, number];
+/** Cache exact geometry in a small frame; navigation changes only its placement. A halo width draws the same shape first as a dark under-stroke. */
+export const CadSketchProfileGeometry = memo(function CadSketchProfileGeometry({ geometry, parameters, viewCenter, halo = 0 }: {
+  geometry: CadProfile; parameters: Readonly<Record<string, number>>; viewCenter: readonly [number, number]; halo?: number;
 }) {
   const prepared = useMemo(() => {
     try {
@@ -35,5 +35,7 @@ export const CadSketchProfileGeometry = memo(function CadSketchProfileGeometry({
       return { origin, content };
     } catch { return null; } // Invalid geometry keeps its existing feature diagnostic.
   }, [geometry, parameters]);
-  return prepared && <g transform={`translate(${prepared.origin[0] - viewCenter[0]},${prepared.origin[1] - viewCenter[1]})`}>{prepared.content}</g>;
+  return prepared && <g transform={`translate(${prepared.origin[0] - viewCenter[0]},${prepared.origin[1] - viewCenter[1]})`}>
+    {halo > 0 && <g className="cad-sketch-halo" strokeWidth={halo}>{prepared.content}</g>}{prepared.content}
+  </g>;
 });

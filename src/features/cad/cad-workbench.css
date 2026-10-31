@@ -63,6 +63,11 @@
 .cad-viewport, .cad-sketch-viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .cad-webgl { position: absolute; inset: 0; }
 .cad-webgl canvas { display: block; width: 100%; height: 100%; }
+/* Behind an open sketch the model view fills the same area under the sketch canvas, which lets it show through and keeps every pointer. */
+.cad-viewport.is-sketch-background { position: absolute; inset: 0; pointer-events: none; }
+.cad-center.has-sketch-background .cad-sketch-canvas { background: none; }
+.cad-sketch-view-choices { display: flex; align-items: center; gap: 5px; }
+.cad-sketch-view-choices .cad-check { margin: 0 0 0 5px; font-size: 10px; }
 .cad-view-tools { position: absolute; z-index: 2; bottom: 66px; right: 12px; display: flex; align-items: center; gap: 2px; padding: 3px 5px; background: var(--card); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 3px 8px color-mix(in srgb, var(--background) 55%, transparent); color: var(--muted-foreground); }
 .cad-view-tools select { padding: 3px 5px; font-size: 12px; width: 98px; }
 .cad-view-tools button { padding: 3px 6px; font-size: 12px; }
@@ -232,6 +237,8 @@
 .cad-sketch-trim-preview .is-removed { stroke: var(--destructive); stroke-dasharray: 6 3; }
 .cad-sketch-trim-preview .is-added { stroke: var(--foreground); stroke-dasharray: 5 3; }
 .cad-sketch-trim-preview .is-cut { fill: var(--card); stroke: var(--primary); }
+/* Over a part shown plainly, each preview stroke has an under-stroke copy with its role, so the copy keeps the dashes; it must follow the role colours. */
+:is(.cad-sketch-split-preview, .cad-sketch-trim-preview) > .cad-sketch-halo { stroke: var(--background); stroke-width: 4px; }
 .cad-curve-viewport .cad-profile, .cad-curve-viewport .cad-profile.is-selected, .cad-curve-viewport .cad-profile-preview { fill: none; }
 .cad-sketch-vertex { fill: #84dcea; stroke: #143645; }
 .cad-sketch-snap-target { fill: var(--card); fill-opacity: .35; stroke: var(--primary); stroke-width: 1.5px; vector-effect: non-scaling-stroke; pointer-events: none; }
@@ -248,7 +255,13 @@
 .cad-sketch-entity, .cad-sketch-entity.is-selected { fill: none; }
 .cad-sketch-entity:not([aria-disabled]):hover { stroke: #d6f6ff; }
 .cad-sketch-entity.is-selected { stroke: var(--primary); }
-.cad-sketch-entity.is-selected > :not(.cad-sketch-entity-hit) { stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
+.cad-sketch-entity.is-selected > :not(.cad-sketch-entity-hit, .cad-sketch-halo) { stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
+/*
+ * Over a part shown plainly behind the sketch, each stroke gets a dark under-stroke a pixel wider on each side, so pale edges stay
+ * readable on bright faces. It keeps the dashes of construction edges, takes no pointer, and every state colour still draws above it.
+ */
+.cad-sketch-halo { stroke: var(--background); fill: none; pointer-events: none; }
+.cad-sketch-entity.is-selected > .cad-sketch-halo { stroke-width: 4.5px; vector-effect: non-scaling-stroke; }
 .cad-sketch-graph-point { cursor: pointer; outline: none; }
 .cad-sketch-graph.is-draggable :is(.cad-sketch-entity:not([aria-disabled]), .cad-sketch-graph-point:not(.is-locked, [aria-disabled])) { cursor: grab; }
 .cad-sketch-graph.is-dragging, .cad-sketch-graph.is-dragging * { cursor: grabbing; }

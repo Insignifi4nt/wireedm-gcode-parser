@@ -1,12 +1,17 @@
 import { useSyncExternalStore } from 'react';
+import { CAD_DEFAULT_SKETCH_VIEW, parseCadSketchViewChoices, type CadSketchViewChoices } from './view/cadViewState';
 
 export type CadNavigationMode = 'mouse' | 'trackpad';
-export interface CadPreferences { readonly navigationMode: CadNavigationMode; readonly showOnPartDimensions: boolean; readonly showDepthHandles?: boolean; readonly showRelations?: boolean }
+export interface CadPreferences { readonly navigationMode: CadNavigationMode; readonly showOnPartDimensions: boolean; readonly showDepthHandles?: boolean; readonly showRelations?: boolean;
+  /** The 3D background and cut a sketch opens with: the last choice made in a sketch. */
+  readonly sketchView?: CadSketchViewChoices }
 export const CAD_PREFERENCES_KEY = 'wire-edm:cad-preferences:v1';
 /** Depth handles are on unless the device explicitly turned them off; stored bytes are never rewritten. */
 export const cadDepthHandlesShown = (preferences: CadPreferences) => preferences.showDepthHandles !== false;
 /** Relation glyphs on the sketch canvas are on unless the device explicitly turned them off. */
 export const cadRelationsShown = (preferences: CadPreferences) => preferences.showRelations !== false;
+/** The sketch view choices remembered on this device, or the defaults: the part dimmed and uncut. */
+export const cadSketchViewChoices = (preferences: CadPreferences): CadSketchViewChoices => preferences.sketchView ?? CAD_DEFAULT_SKETCH_VIEW;
 const defaults: CadPreferences = Object.freeze({ navigationMode: 'mouse', showOnPartDimensions: true });
 let current = defaults;
 let lastRaw: string | null | undefined;
@@ -22,9 +27,12 @@ function parse(raw: string | null): CadPreferences {
     if (value && typeof value === 'object' && 'navigationMode' in value && 'showOnPartDimensions' in value
       && (value.navigationMode === 'mouse' || value.navigationMode === 'trackpad') && typeof value.showOnPartDimensions === 'boolean'
       && (!('showDepthHandles' in value) || typeof value.showDepthHandles === 'boolean') && (!('showRelations' in value) || typeof value.showRelations === 'boolean')) {
+      // A sketch view this build cannot read leaves the other preferences in force and the stored bytes as they are.
+      const sketchView = 'sketchView' in value ? parseCadSketchViewChoices(value.sketchView) : undefined;
       return Object.freeze({ navigationMode: value.navigationMode, showOnPartDimensions: value.showOnPartDimensions,
         ...('showDepthHandles' in value ? { showDepthHandles: value.showDepthHandles as boolean } : {}),
-        ...('showRelations' in value ? { showRelations: value.showRelations as boolean } : {}) });
+        ...('showRelations' in value ? { showRelations: value.showRelations as boolean } : {}),
+        ...(sketchView ? { sketchView } : {}) });
     }
   } catch { /* Invalid device preferences never rewrite stored originals. */ }
   return defaults;

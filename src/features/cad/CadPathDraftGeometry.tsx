@@ -13,10 +13,13 @@ export function CadPathSegmentGeometry({ segment, origin = [0, 0] }: { segment: 
     startAngle, endAngle, sweepRadians: sweep, clockwise: sweep < 0, start: at(startAngle), end: at(endAngle) }, origin)} />;
 }
 
-export const CadPathDraftGeometry = memo(function CadPathDraftGeometry({ segments, preview = true, viewCenter = [0, 0] }: { segments: readonly ResolvedCadPathSegment[]; preview?: boolean; viewCenter?: readonly [number, number] }) {
+/** A halo width draws the segments first as a dark under-stroke. */
+export const CadPathDraftGeometry = memo(function CadPathDraftGeometry({ segments, preview = true, viewCenter = [0, 0], halo = 0 }: { segments: readonly ResolvedCadPathSegment[]; preview?: boolean; viewCenter?: readonly [number, number]; halo?: number }) {
   const prepared = useMemo(() => {
     const first = segments[0]; const origin = !first ? [0, 0] as const : first.kind === 'line' ? first.start : first.center;
     return { origin, content: segments.map((segment, index) => <CadPathSegmentGeometry key={index} segment={segment} origin={origin} />) };
   }, [segments]);
-  return <g data-cad-path-segments transform={`translate(${prepared.origin[0] - viewCenter[0]},${prepared.origin[1] - viewCenter[1]})`} className={`cad-profile ${preview ? 'cad-profile-preview' : ''}`}>{prepared.content}</g>;
+  return <g data-cad-path-segments transform={`translate(${prepared.origin[0] - viewCenter[0]},${prepared.origin[1] - viewCenter[1]})`} className={`cad-profile ${preview ? 'cad-profile-preview' : ''}`}>
+    {halo > 0 && <g className="cad-sketch-halo" strokeWidth={halo}>{prepared.content}</g>}{prepared.content}
+  </g>;
 });
