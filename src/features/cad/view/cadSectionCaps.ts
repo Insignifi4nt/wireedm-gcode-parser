@@ -128,19 +128,26 @@ function finish<T>(steps: Generator<void, T>): T {
 
 /**
  * The count group of each of a body's `triangles`: `null` when the body counts at once, `undefined` when it has too many solids to
- * count at once and its triangles are not told apart by solid.
+ * count at once and its triangles are not told apart by solid. Yields after about every 8,192 triangles, each run counting as one more
+ * so that a body of many small faces yields too.
  */
-function countGroups(solids: CadCapBodySolids | undefined, triangles: number): Uint16Array | null | undefined {
+function* countGroupSteps(solids: CadCapBodySolids | undefined, triangles: number): Generator<void, Uint16Array | null | undefined> {
   if (!solids || solids.count <= CAD_SECTION_CAP_SOLIDS_AT_ONCE) return null;
   if (!solids.runs || Math.ceil(solids.count / CAD_SECTION_CAP_GROUP_SOLIDS) > 0xffff) return undefined;
   const groups = new Uint16Array(triangles), seen = new Uint8Array(triangles);
-  let told = 0;
+  let told = 0, work = 0;
   for (const { start, count, solid } of solids.runs) {
+    if (++work >= CHECK_EVERY) { work = 0; yield; }
     if (start % 3 || count % 3 || start < 0 || start + count > 3 * triangles || !Number.isSafeInteger(solid) || solid < 0 || solid >= solids.count) return undefined;
-    const group = Math.floor(solid / CAD_SECTION_CAP_GROUP_SOLIDS);
-    for (let triangle = start / 3; triangle < (start + count) / 3; triangle++) {
-      if (seen[triangle]) return undefined;
-      seen[triangle] = 1; groups[triangle] = group;
+    const group = Math.floor(solid / CAD_SECTION_CAP_GROUP_SOLIDS), last = (start + count) / 3;
+    for (let first = start / 3; first < last; first += CHECK_EVERY) {
+      const end = Math.min(last, first + CHECK_EVERY);
+      for (let triangle = first; triangle < end; triangle++) {
+        if (seen[triangle]) return undefined;
+        seen[triangle] = 1; groups[triangle] = group;
+      }
+      work += end - first;
+      if (work >= CHECK_EVERY) { work = 0; yield; }
     }
     told += count / 3;
   }
@@ -157,21 +164,22 @@ export function cadCapSolid(geometry: THREE.BufferGeometry, solids?: CadCapBodyS
 
 function* cadCapSolidSteps(geometry: THREE.BufferGeometry, solids?: CadCapBodySolids): Generator<void, CadCapSolid> {
   const position = geometry.getAttribute('position'), index = geometry.index, total = position.count;
-  const corners = index ? index.count - index.count % 3 : total - total % 3, given = countGroups(solids, corners / 3);
+  const corners = index ? index.count - index.count % 3 : total - total % 3, given = yield* countGroupSteps(solids, corners / 3);
   if (given === undefined) return Object.freeze({ vertices: new Float64Array(0), triangles: new Uint32Array(0), closed: false, groups: null });
-  // Open-addressed tables in typed arrays: a large mesh joins and counts in tens of milliseconds, where maps take hundreds.
+  // Open-addressed tables in typed arrays: a large mesh joins and counts in tens of milliseconds, where maps take hundreds. A slot holds
+  // its point's or edge's first vertex plus one, so zero marks a free slot and a new table needs no filling.
   const scratch = new Float32Array(3), bits = new Uint32Array(scratch.buffer);
-  const pointSlots = tableSize(2 * total), points = new Int32Array(pointSlots).fill(-1);
+  const pointSlots = tableSize(2 * total), points = new Uint32Array(pointSlots);
   const keys = new Uint32Array(3 * total), vertices = new Float64Array(3 * total), joined = new Uint32Array(total);
   let count = 0;
   for (let first = 0; first < total; first += CHECK_EVERY) {
     for (let item = first, end = Math.min(total, first + CHECK_EVERY); item < end; item++) {
       // Adding zero turns a negative zero into zero, so both spellings of a point join.
       scratch[0] = position.getX(item) + 0; scratch[1] = position.getY(item) + 0; scratch[2] = position.getZ(item) + 0;
-      let slot = mix(Math.imul(bits[0], 0x9e3779b1) ^ Math.imul(bits[1], 0x85ebca77) ^ Math.imul(bits[2], 0xc2b2ae3d)) & (pointSlots - 1), id = points[slot];
-      while (id >= 0 && !(keys[3 * id] === bits[0] && keys[3 * id + 1] === bits[1] && keys[3 * id + 2] === bits[2])) { slot = (slot + 1) & (pointSlots - 1); id = points[slot]; }
+      let slot = mix(Math.imul(bits[0], 0x9e3779b1) ^ Math.imul(bits[1], 0x85ebca77) ^ Math.imul(bits[2], 0xc2b2ae3d)) & (pointSlots - 1), id = points[slot] - 1;
+      while (id >= 0 && !(keys[3 * id] === bits[0] && keys[3 * id + 1] === bits[1] && keys[3 * id + 2] === bits[2])) { slot = (slot + 1) & (pointSlots - 1); id = points[slot] - 1; }
       if (id < 0) {
-        id = count++; points[slot] = id;
+        id = count++; points[slot] = id + 1;
         for (let axis = 0; axis < 3; axis++) { keys[3 * id + axis] = bits[axis]; vertices[3 * id + axis] = scratch[axis]; }
       }
       joined[item] = id;
@@ -193,15 +201,15 @@ function* cadCapSolidSteps(geometry: THREE.BufferGeometry, solids?: CadCapBodySo
   // Each triangle runs along its edges in its winding. Closed solids run along every edge as often one way as the other: once each for
   // an edge of one solid, twice each where two solids touch. A body counted in groups must close within each group, so each group's
   // count is a winding of its own. The table has more slots than corners, so a free slot always ends a probe.
-  const edgeSlots = tableSize(kept), low = new Int32Array(edgeSlots).fill(-1), high = new Uint32Array(edgeSlots), balance = new Int32Array(edgeSlots);
+  const edgeSlots = tableSize(kept), low = new Uint32Array(edgeSlots), high = new Uint32Array(edgeSlots), balance = new Int32Array(edgeSlots);
   const edgeGroups = groups ? new Uint16Array(edgeSlots) : null;
   for (let first = 0; first < kept; first += CHECK_EVERY) {
     for (let corner = first, end = Math.min(kept, first + CHECK_EVERY); corner < end; corner++) {
       const from = triangles[corner], to = triangles[corner % 3 === 2 ? corner - 2 : corner + 1], a = Math.min(from, to), b = Math.max(from, to);
       const group = groups ? groups[(corner / 3) | 0] : 0;
       let slot = mix(Math.imul(a, 0x9e3779b1) ^ Math.imul(b, 0x85ebca77) ^ Math.imul(group, 0xc2b2ae3d)) & (edgeSlots - 1);
-      while (low[slot] >= 0 && !(low[slot] === a && high[slot] === b && (!edgeGroups || edgeGroups[slot] === group))) slot = (slot + 1) & (edgeSlots - 1);
-      low[slot] = a; high[slot] = b; balance[slot] += from < to ? 1 : -1;
+      while (low[slot] !== 0 && !(low[slot] === a + 1 && high[slot] === b && (!edgeGroups || edgeGroups[slot] === group))) slot = (slot + 1) & (edgeSlots - 1);
+      low[slot] = a + 1; high[slot] = b; balance[slot] += from < to ? 1 : -1;
       if (edgeGroups) edgeGroups[slot] = group;
     }
     if (first + CHECK_EVERY <= kept) yield;
@@ -211,7 +219,33 @@ function* cadCapSolidSteps(geometry: THREE.BufferGeometry, solids?: CadCapBodySo
     for (let slot = first, end = Math.min(edgeSlots, first + CHECK_EVERY); closed && slot < end; slot++) closed = balance[slot] === 0;
     if (first + CHECK_EVERY <= edgeSlots) yield;
   }
-  return Object.freeze({ vertices: vertices.slice(0, 3 * count), triangles: triangles.slice(0, kept), closed, groups: groups && groups.slice(0, kept / 3) });
+  const joinedVertices = yield* head(vertices, 3 * count), keptTriangles = yield* head(triangles, kept), keptGroups = groups && (yield* head(groups, kept / 3));
+  return Object.freeze({ vertices: joinedVertices, triangles: keptTriangles, closed, groups: keptGroups });
+}
+/** The first `length` items of `array`: the array itself when that is all of it, otherwise a copy made in runs. */
+function* head<T extends Float64Array | Uint32Array | Uint16Array>(array: T, length: number): Generator<void, T> {
+  if (length === array.length) return array;
+  const copy = new (array.constructor as new (length: number) => T)(length);
+  for (let first = 0; first < length; first += CHECK_EVERY) {
+    copy.set(array.subarray(first, Math.min(length, first + CHECK_EVERY)), first);
+    if (first + CHECK_EVERY <= length) yield;
+  }
+  return copy;
+}
+/** `geometry`'s box, as three.js computes it from the positions, in runs: an empty box, which no plane crosses, when it has none. */
+function* boundingBoxSteps(geometry: THREE.BufferGeometry): Generator<void, THREE.Box3> {
+  const position = geometry.getAttribute('position');
+  if (!position) return new THREE.Box3();
+  const count = position.count;
+  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let first = 0; first < count; first += CHECK_EVERY) {
+    for (let item = first, end = Math.min(count, first + CHECK_EVERY); item < end; item++) {
+      const x = position.getX(item), y = position.getY(item), z = position.getZ(item);
+      if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    if (first + CHECK_EVERY <= count) yield;
+  }
+  return new THREE.Box3(new THREE.Vector3(minX, minY, minZ), new THREE.Vector3(maxX, maxY, maxZ));
 }
 /** A power of two above `entries`, for an open-addressed table. */
 const tableSize = (entries: number) => 2 ** Math.ceil(Math.log2(entries + 16));
@@ -395,8 +429,8 @@ export function createCadSectionCaps({ onChange, sliceMs = CAD_SECTION_CAP_SLICE
       // n · (p + o) + c = n · p + (n · o + c).
       local.normal.copy(plane.normal); local.constant = plane.constant + plane.normal.dot(body.position);
       const geometry = body.geometry;
-      if (!geometry.boundingBox) geometry.computeBoundingBox();
-      if (!geometry.boundingBox!.intersectsPlane(local)) continue;
+      if (!geometry.boundingBox) geometry.boundingBox = yield* boundingBoxSteps(geometry);
+      if (!geometry.boundingBox.intersectsPlane(local)) continue;
       let solid = solids.get(body);
       if (!solid) { solid = yield* cadCapSolidSteps(geometry, kernel?.(body)); solids.set(body, solid); }
       const cap = yield* cadSectionCapSteps(solid, local);

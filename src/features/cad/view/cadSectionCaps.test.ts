@@ -23,8 +23,8 @@ const merged = (...parts: THREE.BufferGeometry[]) => {
  * Boxes 20 mm tall about z = 0, one inside the next: the first 100 mm square, each next 0.1 mm smaller all round. `raised` lifts the
  * boxes it picks 60 mm, clear of a cut near z = 0.
  */
-const nestedBoxes = (solids: number, raised = (_solid: number) => false) =>
-  merged(...Array.from({ length: solids }, (_, solid) => new THREE.BoxGeometry(100 - 0.2 * solid, 100 - 0.2 * solid, 20).translate(0, 0, raised(solid) ? 60 : 0)));
+const nestedBoxes = (solids: number, raised = (_solid: number) => false, segments = 1) =>
+  merged(...Array.from({ length: solids }, (_, solid) => new THREE.BoxGeometry(100 - 0.2 * solid, 100 - 0.2 * solid, 20, segments, segments).translate(0, 0, raised(solid) ? 60 : 0)));
 
 describe('section cap geometry', () => {
   it('fills the cut of a closed body whose faces repeat their shared points, across the whole section and on the plane', () => {
@@ -238,6 +238,23 @@ describe('section caps in the view', () => {
     made.setPlane(below(1)); drain();
     expect(shownCaps(made)).toHaveLength(1); expect(zValues(capIn(shownCaps(made)[0]))).toEqual([1]);
     made.dispose(); expect(queue.size).toBe(0);
+  });
+
+  it('gives input a turn while it tells the triangles of a body of many solids apart, and drops that build for a new plane', () => {
+    // 300 boxes of 96 triangles each, 28,800 in all: telling them apart by solid takes more than one turn of 8,192.
+    const { geometry, runs } = nestedBoxes(300, undefined, 4);
+    let read = 0;
+    const counted = runs.map(({ start, count, solid }) => ({ start, count, get solid() { read++; return solid; } }));
+    const queue: (() => void)[] = [], made = createCadSectionCaps({ sliceMs: 0, schedule: next => { queue.push(next); return () => undefined; } });
+    made.setBodies([body(geometry, [0, 0, 0])], () => ({ count: 300, runs: counted }));
+    made.setPlane(below(1));
+    // Its box comes first, in slices of its own; the first slice that reads the runs ends part-way through them.
+    while (!read && queue.length) queue.shift()!();
+    expect(read).toBeGreaterThan(0); expect(read).toBeLessThan(runs.length);
+    made.setPlane(below(-1));
+    while (queue.length) queue.shift()!();
+    expect(shownCaps(made)).toHaveLength(1); expect(zValues(capIn(shownCaps(made)[0]))).toEqual([-1]);
+    made.dispose();
   });
 
   it('gives input a turn while it lays out the fans of a body the plane crosses many triangles of', () => {
