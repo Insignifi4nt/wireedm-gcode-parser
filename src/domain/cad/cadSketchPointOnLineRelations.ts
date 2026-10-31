@@ -1,15 +1,18 @@
 import { CadError } from './cadError';
-import type { CadSketchGraph, CadSketchPointOnLineRelation, CadSketchGraphIssue } from './cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphPoint, CadSketchPointOnLineRelation, CadSketchGraphIssue } from './cadSketchGraph';
 import { resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
+import { CAD_SKETCH_POINT_ON_LINE_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 import { cadSketchLineDirection } from './cadSketchLineRelations';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
 
 /** An authored point and infinite line support, without an endpoint identity or projection. */
 export function resolveCadSketchPointOnLineOperands(graph: CadSketchGraph, relation: Pick<CadSketchPointOnLineRelation, 'pointId' | 'lineId'>) {
-  const point = graph.points.find(point => point.id === relation.pointId), line = graph.entities.find(entity => entity.id === relation.lineId);
-  if (!point) throw new CadError('missing-sketch-point', 'Point on line needs an existing sketch point.');
-  if (line?.kind !== 'line') throw new CadError('invalid-sketch-point-on-line', 'Point on line needs an existing straight guide.');
+  const [point, line] = resolveCadSketchOperands(graph, CAD_SKETCH_POINT_ON_LINE_OPERANDS, [relation.pointId, relation.lineId]) as readonly [CadSketchGraphPoint, Extract<CadSketchGraphEntity, { kind: 'line' }>];
+  return assertCadSketchPointOnLineIdentities(graph, point, line);
+}
+/** The point stays apart from both ends of its guide and from the points joined to them. */
+export function assertCadSketchPointOnLineIdentities(graph: CadSketchGraph, point: CadSketchGraphPoint, line: Extract<CadSketchGraphEntity, { kind: 'line' }>) {
   const identity = resolveCadSketchPointIdentities(graph);
   if (new Set([point.id, line.startPointId, line.endPointId].map(identity)).size !== 3)
     throw new CadError('invalid-sketch-point-on-line', 'The point must be distinct from both guide endpoints and their declared coincident aliases.');

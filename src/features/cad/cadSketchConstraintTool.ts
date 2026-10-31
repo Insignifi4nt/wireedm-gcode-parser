@@ -7,6 +7,7 @@ import { resolveCadSketchPointOnCurveOperands } from '@/domain/cad/cadSketchPoin
 import { resolveCadSketchSymmetryOperands } from '@/domain/cad/cadSketchSymmetryRelations';
 import { resolveCadSketchTangentJoint } from '@/domain/cad/cadSketchTangentRelations';
 import { cadSketchEntityPointIds } from '@/domain/cad/cadSketchGraphReferences';
+import { cadSketchRelationsLike } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import type { CadScalar } from '@/domain/cad/cadDocument';
 import { cadSketchZeroScalar, type CadSketchDatum, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 
@@ -78,7 +79,7 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
   const exists = (match: (relation: CadSketchGraphRelation) => boolean) => graph.relations.some(match);
   const matching = (match: (relation: CadSketchGraphRelation) => boolean) => graph.relations.filter(match).map(relation => relation.id);
   const ready = (relation: CadSketchGraphRelation, check?: () => unknown): CadSketchConstraintStep => {
-    const existing = matching(other => other.kind === relation.kind && sameRelation(other, relation));
+    const existing = cadSketchRelationsLike(graph, relation);
     if (existing.length) return invalid(`${cadSketchConstraintToolLabels[tool]} is already applied here.`, existing);
     const reason = check ? attempt(check) : null;
     return reason ? invalid(reason) : { status: 'ready', relations: [relation] };
@@ -309,7 +310,7 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       if (datum && datum !== 'origin' && curve) return onAxis(curve.centerPointId, datum, `The center of this ${curve.kind}`, `This ${curve.kind} is already centered on the ${datum === 'x-axis' ? 'X' : 'Y'} axis.`);
       if (datum) return datum === 'origin' ? more('Choose a point to place at the origin', [], allPoints) : more('Choose a point, line, arc or circle to keep on this axis', [...lines, ...curves], allPoints);
       if (points.length === 2) {
-        return identity(points[0]) === identity(points[1]) ? invalid('These points are already joined.', matching(relation => relation.kind === 'coincident' && samePoints(relation.pointIds, [points[0], points[1]])))
+        return identity(points[0]) === identity(points[1]) ? invalid('These points are already joined.', cadSketchRelationsLike(graph, { kind: 'coincident', pointIds: [points[0], points[1]] }))
           : ready({ id: newId(), kind: 'coincident', pointIds: [points[0], points[1]] });
       }
       if (points.length === 1 && line) {
@@ -388,7 +389,7 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       if (datum) return more('Choose an arc or circle to center at the origin', curves, []);
       if (chosen.length === 2) {
         const centers = [chosen[0].centerPointId, chosen[1].centerPointId] as const;
-        if (identity(centers[0]) === identity(centers[1])) return invalid('These already share a center.', matching(relation => relation.kind === 'coincident' && samePoints(relation.pointIds, centers)));
+        if (identity(centers[0]) === identity(centers[1])) return invalid('These already share a center.', cadSketchRelationsLike(graph, { kind: 'coincident', pointIds: centers }));
         return ready({ id: newId(), kind: 'coincident', pointIds: [chosen[0].centerPointId, chosen[1].centerPointId] });
       }
       return more(chosen.length ? 'Choose the second arc or circle, or the origin' : 'Choose an arc or circle, or the origin', curves, [], ['origin']);
@@ -471,15 +472,4 @@ function completedStep(graph: CadSketchGraph, tool: CadSketchConstraintTool, pic
 
 function orders<T>(items: readonly T[]): readonly (readonly T[])[] {
   return items.length < 2 ? [items] : items.flatMap((item, index) => orders([...items.slice(0, index), ...items.slice(index + 1)]).map(rest => [item, ...rest]));
-}
-
-function sameRelation(a: CadSketchGraphRelation, b: CadSketchGraphRelation): boolean {
-  if ('pointId' in a && 'pointId' in b && a.pointId !== b.pointId) return false;
-  if ('lineId' in a && 'lineId' in b && a.lineId !== b.lineId) return false;
-  if ('curveId' in a && 'curveId' in b && a.curveId !== b.curveId) return false;
-  if (a.kind === 'tangent-joint' && b.kind === 'tangent-joint') return a.endpoints.every(endpoint => b.endpoints.some(other => other.entityId === endpoint.entityId && other.pointId === endpoint.pointId));
-  if ('pointIds' in b) return 'pointIds' in a && samePoints(a.pointIds, b.pointIds);
-  if ('lineIds' in b) return 'lineIds' in a && samePoints(a.lineIds, b.lineIds);
-  if ('curveIds' in b) return 'curveIds' in a && samePoints(a.curveIds, b.curveIds);
-  return 'pointId' in b;
 }

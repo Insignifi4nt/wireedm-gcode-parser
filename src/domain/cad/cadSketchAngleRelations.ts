@@ -26,7 +26,10 @@ const ambiguous = () => new CadError('ambiguous-sketch-angle-sector', 'Choose th
 
 /** Source ownership only. Changed angle values may still have unsolved coordinates. */
 export function resolveCadSketchAngleRays(graph: CadSketchGraph, rays: Rays) {
-  const lines = resolveCadSketchLinePair(graph, [rays[0].lineId, rays[1].lineId]);
+  return cadSketchAngleRaysOnLines(resolveCadSketchLinePair(graph, [rays[0].lineId, rays[1].lineId]), rays);
+}
+/** The rays on their resolved lines, each pointing toward an end of its own line. */
+export function cadSketchAngleRaysOnLines(lines: ReturnType<typeof resolveCadSketchLinePair>, rays: Rays) {
   const resolve = (line: typeof lines[number], towardPointId: string) => {
     if (towardPointId !== line.startPointId && towardPointId !== line.endPointId)
       throw new CadError('invalid-sketch-angle-ray', 'Each angle ray must point toward an endpoint of its own line.');

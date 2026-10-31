@@ -1,7 +1,4 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
-import { RelationCoincidentIcon, RelationCollinearIcon, RelationConcentricIcon, RelationEqualLengthIcon, RelationEqualRadiusIcon, RelationFixIcon, RelationHorizontalIcon,
-  RelationMidpointIcon, RelationParallelIcon, RelationPerpendicularIcon, RelationPointOnCurveIcon, RelationPointOnLineIcon, RelationSymmetricIcon, RelationTangentIcon,
-  RelationVerticalIcon, type WorkbenchDrawnIconComponent } from '@wire-edm/icons-react';
 import { cadSketchGraphPlacedFrom, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchDimensionPickOf, cadSketchHighlightRelationIds, cadSketchPointIdentity, createCadSketchDimensionKeys, isCadSketchGlyphRelation, type CadSketchDimensionPick,
   type CadSketchHighlightSource, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
@@ -9,14 +6,11 @@ import { CAD_SKETCH_RELATION_GLYPH_PIXELS, cadSketchRelationGlyphEntries, cadSke
   cadSketchRelationGlyphPlate, placeCadSketchRelationGlyphs, type CadSketchRelationGlyph, type CadSketchRelationGlyphHolds, type CadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
 import { joinedPathData, placedPathData } from './cadSketchRelationGlyphDrawing';
 import type { SketchPoint } from './cadSketchInteraction';
+import { CAD_SKETCH_RELATION_ICONS } from './sketch-relations/cadSketchRelationPresentation';
 import './cad-sketch-graph-dimensions.css';
 
 /** One drawing per relation kind, shared with the Constrain menu and the relations list; the canvas layer draws their `paths` itself. */
-export const CAD_SKETCH_RELATION_ICONS: Readonly<Record<CadSketchRelationGlyphKind, WorkbenchDrawnIconComponent>> = {
-  horizontal: RelationHorizontalIcon, vertical: RelationVerticalIcon, parallel: RelationParallelIcon, perpendicular: RelationPerpendicularIcon, collinear: RelationCollinearIcon,
-  'equal-length': RelationEqualLengthIcon, 'equal-radius': RelationEqualRadiusIcon, tangent: RelationTangentIcon, coincident: RelationCoincidentIcon, concentric: RelationConcentricIcon,
-  midpoint: RelationMidpointIcon, symmetric: RelationSymmetricIcon, fix: RelationFixIcon, 'point-on-line': RelationPointOnLineIcon, 'point-on-curve': RelationPointOnCurveIcon
-};
+export { CAD_SKETCH_RELATION_ICONS } from './sketch-relations/cadSketchRelationPresentation';
 
 /** The geometry whose glyphs stay shown on a sketch above the glyph limit, and that lights its glyphs up as related. */
 export interface CadSketchRelationGlyphFocus { readonly pointIds: readonly string[]; readonly entityIds: readonly string[] }

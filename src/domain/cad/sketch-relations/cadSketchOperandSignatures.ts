@@ -1,0 +1,92 @@
+import { CadError } from '../cadError';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphPoint } from '../cadSketchGraph';
+import type { CadSketchOperandSignature, CadSketchOperandSlot, CadSketchOperandTrait, CadSketchOperandType, CadSketchRefusal, CadSketchResolvedOperands } from './cadSketchRelationTypes';
+
+// Shared by the relation definitions and by the resolvers other modules call, so a check is written once. This module imports nothing
+// that imports the sketch graph, so the resolvers can use it while the graph module is still loading.
+
+const traits: Readonly<Record<CadSketchOperandType, readonly CadSketchOperandTrait[]>> = {
+  point: ['point'], line: ['line', 'curve', 'axis'], arc: ['arc', 'round', 'curve'], circle: ['circle', 'round', 'curve']
+};
+/** Whether an element of this type fits the slot. */
+export function cadSketchSlotAccepts(slot: Pick<CadSketchOperandSlot, 'accepts'>, type: CadSketchOperandType): boolean {
+  return slot.accepts.some(trait => traits[type].includes(trait));
+}
+const pointSlot = (slot: CadSketchOperandSlot) => slot.accepts.includes('point');
+/** Whether the slot names a point rather than an edge. */
+export const isCadSketchPointSlot = pointSlot;
+
+/**
+ * The element of each stored operand, checking the slots that declare a refusal: an id repeated among the `distinct` slots first, then
+ * each slot in order, missing or of a type it does not accept. A slot without a refusal is left to the point references check and
+ * resolves to undefined, so parsing looks up only what it checks.
+ */
+export function resolveCadSketchOperands(graph: CadSketchGraph, signature: CadSketchOperandSignature, ids: readonly string[]): CadSketchResolvedOperands {
+  const refuse = (refusal: CadSketchRefusal) => new CadError(refusal.code, refusal.message);
+  if (signature.distinct) {
+    const seen = new Set<string>();
+    for (const index of signature.distinct.slots) {
+      if (seen.has(ids[index])) throw refuse(signature.distinct.refusal);
+      seen.add(ids[index]);
+    }
+  }
+  return signature.slots.map((slot, index): CadSketchGraphPoint | CadSketchGraphEntity | undefined => {
+    if (!slot.refusal) return undefined;
+    const id = ids[index];
+    if (pointSlot(slot)) {
+      const point = graph.points.find(item => item.id === id);
+      if (!point) throw refuse(slot.refusal);
+      return point;
+    }
+    const entity = graph.entities.find(item => item.id === id);
+    if (!entity || !cadSketchSlotAccepts(slot, entity.kind)) throw refuse(slot.refusal);
+    return entity;
+  });
+}
+
+const linePairRefusal = { code: 'invalid-sketch-line-pair', message: 'Choose two distinct existing sketch lines.' } as const;
+const radialRefusal = { code: 'invalid-sketch-radial-entity', message: 'Radial geometry requires an existing circle or arc.' } as const;
+const missingPoint = (message: string) => ({ code: 'missing-sketch-point', message });
+
+/** Two distinct lines: Parallel, Perpendicular, Collinear, Equal length and an angle's lines. */
+export const CAD_SKETCH_LINE_PAIR_OPERANDS = {
+  slots: [{ role: 'First line', accepts: ['line'], refusal: linePairRefusal }, { role: 'Second line', accepts: ['line'], refusal: linePairRefusal }],
+  unordered: [[0, 1]], distinct: { slots: [0, 1], refusal: linePairRefusal }
+} as const satisfies CadSketchOperandSignature;
+/** One arc or circle a size is read from. */
+export const CAD_SKETCH_RADIAL_OPERANDS = {
+  slots: [{ role: 'Arc or circle', accepts: ['round'], refusal: radialRefusal }]
+} as const satisfies CadSketchOperandSignature;
+/** Two distinct arcs or circles of one radius. */
+export const CAD_SKETCH_RADIUS_PAIR_OPERANDS = {
+  slots: [{ role: 'First arc or circle', accepts: ['round'], refusal: radialRefusal }, { role: 'Second arc or circle', accepts: ['round'], refusal: radialRefusal }],
+  unordered: [[0, 1]], distinct: { slots: [0, 1], refusal: { code: 'invalid-sketch-radius-pair', message: 'Choose two distinct circles or arcs.' } }
+} as const satisfies CadSketchOperandSignature;
+export const CAD_SKETCH_MIDPOINT_OPERANDS = {
+  slots: [{ role: 'Point', accepts: ['point'], refusal: missingPoint('The midpoint relation needs an existing point.') },
+    { role: 'Line', accepts: ['line'], refusal: { code: 'invalid-sketch-midpoint', message: 'The midpoint relation needs an existing line.' } }]
+} as const satisfies CadSketchOperandSignature;
+export const CAD_SKETCH_POINT_ON_LINE_OPERANDS = {
+  slots: [{ role: 'Point', accepts: ['point'], refusal: missingPoint('Point on line needs an existing sketch point.') },
+    { role: 'Guide line', accepts: ['line'], refusal: { code: 'invalid-sketch-point-on-line', message: 'Point on line needs an existing straight guide.' } }]
+} as const satisfies CadSketchOperandSignature;
+export const CAD_SKETCH_POINT_ON_CURVE_OPERANDS = {
+  slots: [{ role: 'Point', accepts: ['point'], refusal: missingPoint('Point on curve needs an existing sketch point.') },
+    { role: 'Arc or circle', accepts: ['round'], refusal: { code: 'invalid-sketch-point-on-curve', message: 'Point on curve needs an existing arc or circle.' } }]
+} as const satisfies CadSketchOperandSignature;
+export const CAD_SKETCH_POINT_LINE_DISTANCE_OPERANDS = {
+  slots: [{ role: 'Point', accepts: ['point'], refusal: missingPoint('Point to line distance needs an existing sketch point.') },
+    { role: 'Line', accepts: ['line'], refusal: { code: 'invalid-sketch-point-line-distance', message: 'Point to line distance needs an existing straight line.' } }]
+} as const satisfies CadSketchOperandSignature;
+const symmetricPoint = missingPoint('Symmetry needs two existing sketch points.');
+export const CAD_SKETCH_SYMMETRY_OPERANDS = {
+  slots: [{ role: 'First point', accepts: ['point'], refusal: symmetricPoint }, { role: 'Second point', accepts: ['point'], refusal: symmetricPoint },
+    { role: 'Axis line', accepts: ['line'], refusal: { code: 'invalid-sketch-symmetry', message: 'Symmetry needs an existing straight axis line.' } }],
+  unordered: [[0, 1]]
+} as const satisfies CadSketchOperandSignature;
+/** An angle's two lines, each with the end its ray points toward. */
+export const CAD_SKETCH_ANGLE_OPERANDS = {
+  slots: [{ role: 'First line', accepts: ['line'], refusal: linePairRefusal }, { role: 'First ray end', accepts: ['point'], end: true },
+    { role: 'Second line', accepts: ['line'], refusal: linePairRefusal }, { role: 'Second ray end', accepts: ['point'], end: true }],
+  distinct: { slots: [0, 2], refusal: linePairRefusal }
+} as const satisfies CadSketchOperandSignature;

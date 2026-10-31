@@ -1,16 +1,14 @@
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphIssue, CadSketchLineRelation } from './cadSketchGraph';
 import { CadError } from './cadError';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
+import { CAD_SKETCH_LINE_PAIR_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 import type { Point2 } from '@/domain/path-intel/types';
 
 type Line = Extract<CadSketchGraphEntity, { kind: 'line' }>;
 
 /** Entity ownership only. Numeric coordinates may still be unsolved intent. */
 export function resolveCadSketchLinePair(graph: CadSketchGraph, lineIds: readonly [string, string]): readonly [Line, Line] {
-  const a = graph.entities.find(entity => entity.id === lineIds[0]), b = graph.entities.find(entity => entity.id === lineIds[1]);
-  if (lineIds[0] === lineIds[1] || a?.kind !== 'line' || b?.kind !== 'line')
-    throw new CadError('invalid-sketch-line-pair', 'Choose two distinct existing sketch lines.');
-  return [a, b];
+  return resolveCadSketchOperands(graph, CAD_SKETCH_LINE_PAIR_OPERANDS, lineIds) as readonly [Line, Line];
 }
 
 /** Missing numeric points already have an owning coordinate/expression issue. */

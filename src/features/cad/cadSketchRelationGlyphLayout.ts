@@ -1,13 +1,14 @@
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
+import { cadSketchRelationDefinition, cadSketchRelationSignature, cadSketchSignatureSlots } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { SketchPoint } from './cadSketchInteraction';
 import { CAD_SKETCH_ORIGIN_PAIR_NAME, cadSketchPointIdentity, cadSketchRelationHighlight, isCadSketchGlyphRelation } from './cadSketchDimensionSelection';
 import { cadSketchCurveCentres, cadSketchRelationDescription, cadSketchRelationName, cadSketchRelationOperandLabels, createCadSketchRelationLabels, isCadSketchConcentric } from './cadSketchRelationNames';
+import { CAD_SKETCH_RELATION_PRESENTATION, type CadSketchRelationGlyphKind, type CadSketchRelationGlyphPresentation } from './sketch-relations/cadSketchRelationPresentation';
 
-/** The drawing a glyph shows, one per relation kind as the user knows it; a Concentric is stored as a Coincident between two centres. */
-export type CadSketchRelationGlyphKind = 'horizontal' | 'vertical' | 'parallel' | 'perpendicular' | 'collinear' | 'equal-length' | 'equal-radius' | 'tangent'
-  | 'coincident' | 'concentric' | 'midpoint' | 'symmetric' | 'fix' | 'point-on-line' | 'point-on-curve';
+export type { CadSketchRelationGlyphKind } from './sketch-relations/cadSketchRelationPresentation';
+
 /** The point or edge a glyph sits on, as `point:<id>` or `entity:<id>`; a point is named by its Coincident identity, so the points of one place share one row of glyphs. */
 export type CadSketchRelationGlyphOperand = `point:${string}` | `entity:${string}`;
 /**
@@ -36,17 +37,12 @@ export interface CadSketchRelationGlyph {
  * a Distance dimension, and the Fix tool's fixed point draws as Fix.
  */
 export function cadSketchRelationGlyphKind(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres = cadSketchCurveCentres(graph)): CadSketchRelationGlyphKind | null {
-  switch (relation.kind) {
-    case 'horizontal': case 'vertical': case 'parallel': case 'perpendicular': case 'collinear': case 'equal-length': case 'equal-radius':
-    case 'midpoint': case 'symmetric': case 'point-on-line': case 'point-on-curve': return relation.kind;
-    case 'coincident': return isCadSketchConcentric(graph, relation, centres) ? 'concentric' : 'coincident';
-    case 'fixed-point': return 'fix';
-    case 'fixed-axis': return isCadSketchGlyphRelation(relation) ? 'coincident' : null;
-    case 'tangent-joint': return 'tangent';
-    case 'distance': case 'point-line-distance': case 'axis-distance': case 'radial-size': case 'fillet-corner': case 'chamfer-corner': case 'line-angle': case 'reference-dimension':
-    case 'linear-pattern': case 'external-reference': return null;
-    default: { const unreachable: never = relation; return unreachable; }
-  }
+  return glyphPresentation(graph, relation, centres)?.glyph ?? null;
+}
+function glyphPresentation(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres: ReadonlyMap<string, readonly string[]>): CadSketchRelationGlyphPresentation | null {
+  const presentation = CAD_SKETCH_RELATION_PRESENTATION[relation.kind];
+  if (presentation.centred && isCadSketchConcentric(graph, relation, centres)) return presentation.centred;
+  return presentation.datumOnly && !isCadSketchGlyphRelation(relation) ? null : presentation.glyph;
 }
 
 /** Screen-pixel placement: glyphs sit 12 px off a line or curve, 10 px diagonally off a point, and stack 15 px apart. */
@@ -64,39 +60,35 @@ type Operands = readonly CadSketchRelationGlyphOperand[];
 const point = (id: string): CadSketchRelationGlyphOperand => `point:${id}`, entity = (id: string): CadSketchRelationGlyphOperand => `entity:${id}`;
 
 /**
- * Where each relation draws its glyphs, from the operands the shared resolvers name, with points by Coincident identity. Dimensions draw as
- * dimensions; a linear pattern and a linked reference keep their own controls, whose Detach keeps their geometry, so a glyph Delete must never stand in for it.
+ * Where each relation draws its glyphs, by the anchor its kind's presentation names, from the operands its definition stores, with points
+ * by Coincident identity.
  */
 function glyphOperands(graph: CadSketchGraph, relation: CadSketchGraphRelation, lines: ReadonlyMap<string, string>, centres: ReadonlyMap<string, readonly string[]>,
   identity: (pointId: string) => string): { readonly kind: CadSketchRelationGlyphKind; readonly operands: Operands } | null {
-  const kind = cadSketchRelationGlyphKind(graph, relation, centres);
-  if (!kind) return null;
-  const at = (id: string) => point(identity(id));
-  switch (relation.kind) {
-    case 'horizontal': case 'vertical': {
+  const presented = glyphPresentation(graph, relation, centres);
+  if (!presented) return null;
+  const kind = presented.glyph, at = (id: string) => point(identity(id));
+  switch (presented.anchor) {
+    case 'between': {
       // Between a line's own endpoints, or points joined to them, the relation is about that line; otherwise it aligns two points and marks both.
       const [a, b] = cadSketchRelationPointIds(graph, relation).map(identity), line = lines.get(pairKey(a, b));
       return { kind, operands: line ? [entity(line)] : [point(a), point(b)] };
     }
-    case 'parallel': case 'perpendicular': case 'collinear': case 'equal-length': case 'equal-radius':
-      return { kind, operands: cadSketchRelationEntityIds(relation).map(entity) };
-    case 'coincident':
-      // A Concentric marks both curves; the two points of any other Coincident share one place, so one glyph marks them.
-      return kind === 'concentric' ? { kind, operands: cadSketchRelationPointIds(graph, relation).map(id => entity(centres.get(id)![0])) }
-        : { kind, operands: [at(cadSketchRelationPointIds(graph, relation)[0])] };
-    // Point on curve marks its point and the arc or circle that keeps it.
-    case 'point-on-curve': return { kind, operands: [at(relation.pointId), entity(relation.curveId)] };
-    case 'midpoint': case 'point-on-line': case 'fixed-point': case 'fixed-axis':
-      return { kind, operands: [at(cadSketchRelationPointIds(graph, relation)[0])] };
-    case 'symmetric': {
-      const [a, b] = cadSketchRelationPointIds(graph, relation);
-      return { kind, operands: [at(a), at(b), ...cadSketchRelationEntityIds(relation).map(entity)] };
+    case 'edges': return { kind, operands: cadSketchRelationEntityIds(relation).map(entity) };
+    // The two points of a Coincident share one place, so one glyph marks them.
+    case 'at-point': return { kind, operands: [at(cadSketchRelationPointIds(graph, relation)[0])] };
+    case 'at-end': {
+      const ids = cadSketchRelationDefinition(relation).operands(relation);
+      return { kind, operands: [at(ids[cadSketchRelationSignature(relation).slots.findIndex(slot => slot.end)])] };
     }
-    case 'tangent-joint': return { kind, operands: [at(relation.endpoints[0].pointId)] };
-    case 'distance': case 'point-line-distance': case 'axis-distance': case 'radial-size': case 'fillet-corner': case 'chamfer-corner': case 'line-angle': case 'reference-dimension':
-    case 'linear-pattern': case 'external-reference':
-      return null;
-    default: { const unreachable: never = relation; return unreachable; }
+    // Point on curve marks its point and the arc or circle that keeps it; Symmetric marks both points and its axis.
+    case 'operands': {
+      const ids = cadSketchRelationDefinition(relation).operands(relation), slots = cadSketchSignatureSlots(cadSketchRelationSignature(relation));
+      return { kind, operands: [...slots.points.map(index => at(ids[index])), ...slots.entities.map(index => entity(ids[index]))] };
+    }
+    // A Concentric marks both curves.
+    case 'curves': return { kind, operands: cadSketchRelationPointIds(graph, relation).map(id => entity(centres.get(id)![0])) };
+    default: { const unreachable: never = presented.anchor; return unreachable; }
   }
 }
 const pairKey = (a: string, b: string) => a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;

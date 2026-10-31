@@ -1,11 +1,6 @@
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { cadSketchRelationKindName, cadSketchRelationMentions, isCadSketchRelationDirected } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { cadSketchDatumRelationLabel } from './cadSketchGraphSelection';
-
-const relationNames: Record<CadSketchGraphRelation['kind'], string> = {
-  'tangent-joint': 'Tangent', 'point-on-line': 'Point on line', 'point-on-curve': 'Point on curve', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', distance: 'Distance', 'point-line-distance': 'Point to line distance', 'axis-distance': 'Axis distance',
-  'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'external-reference': 'Linked reference',
-  'fixed-point': 'Fixed point', 'fixed-axis': 'Distance', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer', 'radial-size': 'Radial size'
-};
 
 /** The arcs and circles centred on each point; a Coincident between two of these centres is a Concentric relation. */
 export function cadSketchCurveCentres(graph: CadSketchGraph): ReadonlyMap<string, readonly string[]> {
@@ -20,8 +15,7 @@ export function isCadSketchConcentric(graph: CadSketchGraph, relation: CadSketch
 /** Sentence-case name of a relation, as the relations list, the constraint issues, the canvas and its status line show it. */
 export function cadSketchRelationName(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres?: ReadonlyMap<string, readonly string[]>): string {
   if (isCadSketchConcentric(graph, relation, centres)) return 'Concentric';
-  return cadSketchDatumRelationLabel(relation) ?? (relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
-    : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationNames[relation.kind]);
+  return cadSketchDatumRelationLabel(relation) ?? cadSketchRelationKindName(relation);
 }
 
 /** Ordinal labels of one graph snapshot, built once per snapshot so many relations can be named without rescanning it. */
@@ -39,28 +33,12 @@ export function createCadSketchRelationLabels(graph: CadSketchGraph): CadSketchR
 }
 /** The operands a relation names, in its stored order; a Concentric names its two curves. */
 export function cadSketchRelationOperandLabels(graph: CadSketchGraph, relation: CadSketchGraphRelation, labels = createCadSketchRelationLabels(graph)): readonly string[] {
-  const { point, entity } = labels;
-  if (relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, labels.centres)) return relation.pointIds.map(id => entity(labels.centres.get(id)![0]));
-  switch (relation.kind) {
-    case 'tangent-joint': return relation.endpoints.map(endpoint => `${entity(endpoint.entityId)} at ${point(endpoint.pointId)}`);
-    case 'midpoint': case 'point-on-line': case 'point-line-distance': return [point(relation.pointId), entity(relation.lineId)];
-    case 'point-on-curve': return [point(relation.pointId), entity(relation.curveId)];
-    case 'line-angle': return relation.rays.map(ray => entity(ray.lineId));
-    case 'parallel': case 'perpendicular': case 'collinear': case 'equal-length': return relation.lineIds.map(entity);
-    case 'equal-radius': return relation.curveIds.map(entity);
-    case 'radial-size': case 'external-reference': return [entity(relation.entityId)];
-    case 'symmetric': return [...relation.pointIds.map(point), entity(relation.lineId)];
-    case 'linear-pattern': return [entity(relation.seed.entityId)];
-    case 'reference-dimension': return relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds.map(point)
-      : relation.measurement.kind === 'point-line-distance' ? [point(relation.measurement.pointId), entity(relation.measurement.lineId)] : [entity(relation.measurement.entityId)];
-    // A distance from an axis names the axis among its operands, as a distance between two lines names both.
-    case 'fixed-axis': return cadSketchDatumRelationLabel(relation) ? [point(relation.pointId)] : [point(relation.pointId), relation.axis === 'x' ? 'Y axis' : 'X axis'];
-    case 'fixed-point': case 'fillet-corner': case 'chamfer-corner': return [point(relation.pointId)];
-    case 'coincident': case 'horizontal': case 'vertical': case 'distance': case 'axis-distance': return relation.pointIds.map(point);
-    default: { const unreachable: never = relation; return unreachable; }
-  }
+  if (relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, labels.centres)) return relation.pointIds.map(id => labels.entity(labels.centres.get(id)![0]));
+  // A point held on an axis or at the origin names only the point: its name says where it is held.
+  if (relation.kind === 'fixed-axis' && cadSketchDatumRelationLabel(relation)) return [labels.point(relation.pointId)];
+  return cadSketchRelationMentions(relation, labels);
 }
 /** "Parallel: Line 3 and Line 5", the accessible name of a relation on the canvas. */
 export function cadSketchRelationDescription(graph: CadSketchGraph, relation: CadSketchGraphRelation, labels = createCadSketchRelationLabels(graph), name = cadSketchRelationName(graph, relation, labels.centres)): string {
-  return `${name}: ${cadSketchRelationOperandLabels(graph, relation, labels).join(relation.kind === 'axis-distance' ? ' → ' : ' and ')}`;
+  return `${name}: ${cadSketchRelationOperandLabels(graph, relation, labels).join(isCadSketchRelationDirected(relation) ? ' → ' : ' and ')}`;
 }
