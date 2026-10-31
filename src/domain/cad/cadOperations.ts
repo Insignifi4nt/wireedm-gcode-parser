@@ -15,7 +15,7 @@ import { appendCadSketchEntities, deleteCadSketchElements, setCadSketchConstruct
 import { CadSketchCornerCommandTreatmentSchema, createCadSketchCornerTreatmentFromIds, type CadSketchCornerCommandTreatment } from './cadSketchCornerTreatment';
 import { CAD_SKETCH_SELECTION_LIMIT, CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { translateCadSketchGraph } from './cadSketchTranslation';
-import { keepCadSketchPointLineSides } from './cadSketchPointLineDistanceRelations';
+import { keepCadSketchLineSides } from './cadSketchPointLineDistanceRelations';
 import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
 import { CadSketchPlacementRequestSchema, placeCadSketchGraph, type CadSketchPlacementRequest } from './cadSketchPlacement';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
@@ -361,11 +361,11 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
       }
       default: { const exhaustive: never = edit; throw exhaustive; }
     }
-    // Whatever rewrote a sketch, a line it turned around keeps its distances on their physical sides.
+    // Whatever rewrote a sketch, a line it turned around keeps its distances on their physical sides and its dimensions where they were drawn.
     features = features.map(feature => {
       const previous = before.get(feature.id);
       if (previous === feature || previous?.kind !== 'sketch' || feature.kind !== 'sketch' || !previous.graph || !feature.graph) return feature;
-      const graph = keepCadSketchPointLineSides(previous.graph, feature.graph);
+      const graph = keepCadSketchLineSides(previous.graph, feature.graph);
       return graph === feature.graph ? feature : { ...feature, graph };
     });
   }
