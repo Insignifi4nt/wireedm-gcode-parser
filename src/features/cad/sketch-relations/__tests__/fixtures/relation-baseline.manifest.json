@@ -1,0 +1,63 @@
+{
+  "format": 1,
+  "fixture": "relation-baseline.json.gz",
+  "test": "src/features/cad/sketch-relations/__tests__/cadSketchRelationBaseline.test.ts",
+  "recorder": "scripts/record-sketch-relation-baseline.ts",
+  "captureHook": "scripts/record-sketch-relation-baseline.capture.patch",
+  "source": {
+    "commit": "0cb6a292eb9d3378443bb4993c260d6c0c218fbe",
+    "description": "main at release 0.0.785, the last commit with the per-kind relation switches. The fixture records that commit's outputs. It is frozen: never record it from later code, whose outputs it exists to check."
+  },
+  "inputs": [
+    {
+      "name": "Vitest capture",
+      "description": "Every sketch graph parseCadSketchGraph accepted while the full Vitest suite ran at the source commit (562 files, 6,665 tests, all passed) with the capture hook applied and nothing else changed. Each loaded copy of the graph module wrote each topology it accepted once, the graph with its points' coordinates left out, to a file for its process and worker thread: 5,469 lines in 124 files, 3,307 topologies. The capture is not committed; the fixture's own graphs stand for it."
+    },
+    {
+      "name": "Solver corpus",
+      "path": "src/features/cad/sketch-solver/__tests__/fixtures/planegcs-corpus/graphs.json.gz",
+      "description": "The 1,215 graphs of the frozen PlaneGCS corpus, read in key order after the capture."
+    }
+  ],
+  "normalization": [
+    "Each input is parsed, its numeric point coordinates are set to 0 with expressions kept, and the result is parsed again: parseCadSketchGraph(compact(parseCadSketchGraph(input))). Nothing recorded reads a numeric coordinate.",
+    "Inputs the parser refuses are skipped (none), as are graphs with no relations or more than 300 (887 of 6,684 inputs).",
+    "Each graph is kept once, by the SHA-256 of its JSON (2,953 repeats skipped), and the graphs are ordered by relation count, then by that hash."
+  ],
+  "contents": {
+    "records": "One for each graph: the graph; for each relation [entity ids, point ids, scalar paths and values or null when it has none, name, operand labels, description or 0 when it is the name followed by the labels, glyph kind]; and the glyph listing, each entry [relation ids, operand, kind, name and label or 0 when they are its one relation's own, index, count]. A thrown error is recorded as { throws: '<code>: <message>' }.",
+    "same": "For the first 400 relations of each kind the Constrain tool checked for an existing relation (coincident, horizontal, vertical, parallel, perpendicular, point-on-line, point-on-curve, tangent-joint, equal-length, equal-radius, midpoint and symmetric), every ordered pair [i, j] the tool's sameRelation at the source commit, copied verbatim into the recorder, took for the same relation.",
+    "variants": "For every relation of those kinds, [index, same(relation, swapped), same(swapped, relation), same(relation, replaced), same(replaced, relation)]. The swapped variant stores its pointIds, lineIds, curveIds or endpoints in reverse. The replaced variant keeps the first id of such a group and replaces the second with the first other point or entity of the graph, or replaces a single pointId with the first other point. A variant the relation cannot have is null.",
+    "mutations": "Up to 40 relations of each kind, the first in graph order from graphs with at most 200 points. Every id the relation names (fields ending in Id, items of fields ending in Ids, and the ids nested in rays and endpoints) is set in turn to 'zzmissing', to the graph's first two points, to its first two lines, arcs and circles, and to each other id the relation names. Each mutated graph is parsed, and the parse error code and message, or 0 when it is accepted, recorded as [graph, relation, path, value, error].",
+    "encoding": "JSON text { format: 1, records, mutations }, gzip level 9."
+  },
+  "counts": {
+    "graphs": 2844,
+    "relations": 17400,
+    "kinds": 25,
+    "mutations": 12858,
+    "refused": 10544
+  },
+  "details": {
+    "points": 22351,
+    "entities": 14944,
+    "glyphs": 14755,
+    "samePairs": 408,
+    "variantRelations": 10270,
+    "variantComparisons": 38962,
+    "mutatedGraphs": 910,
+    "jsonBytes": 7534484,
+    "gzipBytes": 664080
+  },
+  "sha256": {
+    "json": "2f96bc72b68f729439f075ce8dcf0b298372f3f5d441456e3f5313b573b35013",
+    "gzip": "b48705e923239ee46fae984a23b423bc044531d501b270a1fd8f802bc155755b"
+  },
+  "regenerate": [
+    "Snapshot the source commit outside this checkout, with git worktree add --detach <snapshot> 0cb6a292eb9d3378443bb4993c260d6c0c218fbe or git archive 0cb6a292eb9d3378443bb4993c260d6c0c218fbe | tar -x -C <snapshot>. Link its node_modules to an installed checkout's; do not install packages for it.",
+    "Copy scripts/record-sketch-relation-baseline.ts and scripts/record-sketch-relation-baseline.capture.patch into the snapshot's scripts directory.",
+    "To record the committed graphs again, from the snapshot's root: node scripts/run-bundled.mjs scripts/record-sketch-relation-baseline.ts --graphs <checkout>/src/features/cad/sketch-relations/__tests__/fixtures/relation-baseline.json.gz --out <file>. The output is byte for byte the committed fixture, with the hashes above.",
+    "To capture the inputs again, from the snapshot's root: git apply scripts/record-sketch-relation-baseline.capture.patch; WIREEDM_CAPTURE_SKETCH_GRAPHS=<empty directory> node node_modules/vitest/vitest.mjs --run; then node scripts/run-bundled.mjs scripts/record-sketch-relation-baseline.ts --capture <directory> --out <file>. The original capture recorded with --capture gives the committed fixture byte for byte. A fresh capture does not: some tests make random ids, so it holds other copies of those graphs. One on 2026-10-31 gave the same 5,469 lines, 3,307 topologies, 2,844 graphs and 17,400 relations, with 174 graphs differing, each holding random ids (UUIDs or pattern id prefixes) and matched by one of the same shape, and the same records for every graph both held; the sampled parse mutations moved with the graph order, 10,551 of 12,858 refused.",
+    "Replace the fixture only with a recording from the source commit, and update counts, details and sha256 here from the summary the recorder prints. The baseline test checks the hash and counts against this manifest."
+  ]
+}

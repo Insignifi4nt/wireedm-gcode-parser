@@ -1,0 +1,29 @@
+diff --git a/src/domain/cad/cadSketchGraph.ts b/src/domain/cad/cadSketchGraph.ts
+index 5dcb23d..51ffb2c 100644
+--- a/src/domain/cad/cadSketchGraph.ts
++++ b/src/domain/cad/cadSketchGraph.ts
+@@ -201,8 +201,24 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
+   }
+   deepFreezeCadData(graph);
+   acceptedGraphs.add(graph);
++  captureCadSketchGraph(graph);
+   return graph;
+ }
++// Relation baseline capture: with WIREEDM_CAPTURE_SKETCH_GRAPHS naming a directory, each accepted graph is appended to a JSON Lines
++// file there for each process and thread, once for each topology this module copy meets (the graph with its points' coordinates left
++// out), as `sha256\tgraph`.
++const captureSeen = new Set<string>();
++function captureCadSketchGraph(graph: CadSketchGraph) {
++  const proc = (globalThis as { process?: { env?: Record<string, string | undefined>; pid?: number; getBuiltinModule?: (name: string) => any } }).process;
++  const directory = proc?.env?.WIREEDM_CAPTURE_SKETCH_GRAPHS;
++  if (!directory || !proc?.getBuiltinModule) return;
++  const fs = proc.getBuiltinModule('node:fs'), crypto = proc.getBuiltinModule('node:crypto'), threads = proc.getBuiltinModule('node:worker_threads');
++  const topology = JSON.stringify({ ...graph, points: graph.points.map(point => point.id) });
++  const hash = crypto.createHash('sha256').update(topology).digest('hex');
++  if (captureSeen.has(hash)) return;
++  captureSeen.add(hash);
++  fs.appendFileSync(directory + '/graphs-' + proc.pid + '-' + threads.threadId + '.jsonl', hash + '\t' + JSON.stringify(graph) + '\n');
++}
+ 
+ /** A placement the schema admits for every relation that has one, but that fits only some of its measurements, is refused. */
+ function assertCadSketchPlacementFits(relation: CadSketchGraphRelation) {

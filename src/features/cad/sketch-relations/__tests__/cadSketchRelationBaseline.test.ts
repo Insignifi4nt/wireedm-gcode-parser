@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
@@ -8,9 +9,11 @@ import { cadSketchRelationDescription, cadSketchRelationName, cadSketchRelationO
 import { cadSketchRelationGlyphEntries, cadSketchRelationGlyphKind } from '../../cadSketchRelationGlyphLayout';
 
 // Replays the outputs the per-kind switches gave before the shared definitions replaced them. The fixture holds every distinct sketch
-// with relations from the e2e journeys and the solver corpus, each read back through the parser with numeric coordinates set to 0, so
-// it fixes every derived value per relation: references, scalar paths, names, labels and glyphs, which relations the constraint tool took
-// for the same one, and the parse error, if any, for operands swapped for missing, repeated or other points and entities.
+// with relations that the Vitest suite parsed at the source commit, and the solver corpus, each read back through the parser with numeric
+// coordinates set to 0, so it fixes every derived value per relation: references, scalar paths, names, labels and glyphs, which relations
+// the constraint tool took for the same one, and the parse error, if any, for operands swapped for missing, repeated or other points and
+// entities. It is frozen: scripts/record-sketch-relation-baseline.ts recorded it at the commit its manifest names, never from this code,
+// and the manifest gives its inputs, normalization and steps.
 
 type Path = readonly (string | number)[];
 type Outcome = unknown;
@@ -24,7 +27,13 @@ interface GraphRecord {
   readonly variants: readonly (readonly [index: number, ...same: (boolean | null)[]])[];
 }
 interface Baseline { readonly format: 1; readonly records: readonly GraphRecord[]; readonly mutations: readonly (readonly [graph: number, relation: number, path: Path, value: string, error: 0 | string])[] }
-const baseline = JSON.parse(gunzipSync(readFileSync(`${process.cwd()}/src/features/cad/sketch-relations/__tests__/fixtures/relation-baseline.json.gz`)).toString('utf8')) as Baseline;
+const fixtures = `${process.cwd()}/src/features/cad/sketch-relations/__tests__/fixtures`, bytes = readFileSync(`${fixtures}/relation-baseline.json.gz`);
+const baseline = JSON.parse(gunzipSync(bytes).toString('utf8')) as Baseline;
+const manifest = JSON.parse(readFileSync(`${fixtures}/relation-baseline.manifest.json`, 'utf8')) as {
+  readonly source: { readonly commit: string };
+  readonly counts: { readonly graphs: number; readonly relations: number; readonly kinds: number; readonly mutations: number; readonly refused: number };
+  readonly sha256: { readonly gzip: string };
+};
 // The recorded sketches, parsed once on first use, so a sketch the parser now refuses fails each test that reads it.
 let parsed: readonly CadSketchGraph[] | undefined;
 const accepted = () => parsed ??= baseline.records.map(record => parseCadSketchGraph(record.graph));
@@ -57,11 +66,16 @@ function setAt(value: unknown, path: Path, next: string): unknown {
 }
 
 describe('sketch relation definitions against the recorded per-kind outputs', () => {
-  it('parse every recorded sketch, which together hold every relation kind', () => {
+  it('parse every recorded sketch, which together hold every relation kind, from the fixture its manifest describes', () => {
     const relations = accepted().flatMap(graph => graph.relations);
     expect(baseline.format).toBe(1);
     expect(new Set(relations.map(relation => relation.kind)).size).toBe(25);
     expect(relations.length).toBeGreaterThan(10_000);
+    // A fixture recorded again must come with its manifest, from the same source commit.
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(manifest.sha256.gzip);
+    expect(manifest.source.commit).toBe('0cb6a292eb9d3378443bb4993c260d6c0c218fbe');
+    expect({ graphs: baseline.records.length, relations: relations.length, kinds: 25, mutations: baseline.mutations.length,
+      refused: baseline.mutations.filter(mutation => mutation[4] !== 0).length }).toEqual(manifest.counts);
   });
 
   it('derive the same references, scalars, names, labels and glyph kinds for every relation', () => {
