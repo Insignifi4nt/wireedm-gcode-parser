@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { Page, TestInfo } from '@playwright/test';
 import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
@@ -305,4 +306,46 @@ test('caps a cut round body with a bore while the camera stands inside the kept 
     expect(warmth(probes.bore), report).toBeLessThan(20);
   }
   expect(warmth(open.material), report).toBeLessThan(20);
+});
+
+test('caps an imported body whose solids lie one inside another or overlap, and leaves a cavity in a hollow solid open', async ({ page }, info) => {
+  test.setTimeout(120_000);
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  // Front and Back keep the model's span, so the origin planes are sized as above. Between them at y = 0, z -30 to -20: a solid with
+  // another inside it, a solid overlapping that one, and Bar hollowed by a pocket it wholly encloses.
+  const box = (id: string, x: number, y: number, width: number, depth: number, z: number, height: number, cut = false) => [
+    { id: `${id}-sketch`, name: `${id} sketch`, kind: 'sketch', suppressed: false, plane: 'XY', offset: z, profiles: [
+      { id: `${id}-outline`, name: `${id} outline`, construction: false, geometry: { kind: 'rectangle', x, y, width, height: depth, cornerRadius: 0 } }] },
+    { id, name: id, kind: 'extrude', suppressed: false, sketchId: `${id}-sketch`, distance: height, symmetric: false, operation: cut ? 'cut' : 'new', targetId: cut ? 'bar' : null }];
+  const solids = [...features, ...box('outer', -40, -8, 10, 16, -30, 10), ...box('inner', -37, -2, 4, 4, -27, 4), ...box('overlap', -32, -4, 5.5, 8, -29, 8),
+    ...box('pocket', -22, -2, 4, 4, -27, 4, true)];
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: solids.map(feature => ({ kind: 'add-feature', feature })) });
+  const source = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: source.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies).toHaveLength(6);
+  await call(page, 'cad_save_document', { expectedVersion: source.version });
+  // One STEP file of all six bodies imports as one body of six solids, as a file from another program would.
+  const downloaded = page.waitForEvent('download');
+  await call(page, 'cad_export_solid', { expectedVersion: (await context(page)).version, format: 'step' });
+  const path = await (await downloaded).path();
+  if (!path) throw new Error('Missing STEP download');
+  const step = { format: 'step', fileName: 'solids.step', encoding: 'utf8', data: (await readFile(path)).toString('utf8') };
+  expect(await call(page, 'cad_import_solid', { expectedVersion: (await context(page)).version, source: step })).toMatchObject({ imported: true, solidCount: 6 });
+  const imported = await context(page);
+  const rebuilt = await call(page, 'cad_build', { expectedVersion: imported.version });
+  expect(rebuilt.diagnostics).toEqual([]); expect(rebuilt.bodies).toMatchObject([{ solidCount: 6 }]);
+  await expect.poll(async () => (await viewport(page)).view).toMatchObject({ mode: 'solid', available: true, referenceVersion: imported.version });
+
+  const front = await projection(page, 'Front');
+  for (const command of [{ kind: 'select-reference-plane', plane: 'XZ' }, { kind: 'set-section', on: true }, { kind: 'select-reference-plane', plane: null }])
+    await call(page, 'cad_set_viewport', { expectedVersion: imported.version, command });
+  await expect.poll(async () => (await viewport(page)).view.section).toMatchObject({ caps: true, normal: [0, 1, 0] });
+  const probes = {
+    inner: front([-35, 0, -25]), outer: front([-38.5, 0, -25]), overlapped: front([-31, 0, -25]), overlap: front([-28.5, 0, -25]),
+    wall: front([-23.5, 0, -25]), pocket: front([-20, 0, -25]), above: front([-30, 0, -15]),
+  };
+  const capped = await colours(page, probes, info, 'caps-imported-solids');
+  const report = JSON.stringify(capped);
+  for (const name of ['inner', 'outer', 'overlapped', 'overlap', 'wall'] as const) expect(warmth(capped[name]), `${name} ${report}`).toBeGreaterThan(60);
+  for (const name of ['pocket', 'above'] as const) expect(warmth(capped[name]), `${name} ${report}`).toBeLessThan(20);
 });
