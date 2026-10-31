@@ -838,6 +838,43 @@ describe('model behind an open sketch', () => {
     expect(drawn()).toBe(before + 1);
   });
 
+  it('sets aside the lines a sketch leaves out and shows the same ones again when it closes', async () => {
+    const link = createCadSketchCameraLink(); link.publish(firstView);
+    const sketches = (width: number) => prepareCadViewportReferences(['base', 'open'].map((id, index): CadSketchFeature => ({ id, name: id, kind: 'sketch', plane: 'XY', offset: index * 10, suppressed: false,
+      profiles: [{ id: `${id}-outline`, name: 'Outline', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: id === 'open' ? width : 30, height: 20, cornerRadius: 0 } }] })), {});
+    const model = [CAD_PRINCIPAL_PLANE_REFERENCES[0], ...sketches(30)];
+    const onlyBase = (references: readonly CadViewportReference[]) => references.filter(reference => reference.featureId === 'base');
+    const sketchView = (cutBySketchPlane: boolean): CadSketchBackgroundView => ({ placement, background: 'dimmed', cutBySketchPlane, camera: link });
+    const showLines = (references: readonly CadViewportReference[], view: CadSketchBackgroundView | null) => act(async () => root.render(<CadViewport meshes={meshes}
+      references={references} referenceVersion="v1" selectedId={null} onSelect={vi.fn()} hidden={view !== null} sketchView={view} />));
+    /** Reference lines and plane patches in the drawn scene. */
+    const drawnLines = () => { const lines: (LineSegments | Mesh)[] = []; lastScene().traverse(child => { if ((child instanceof LineSegments || child instanceof Mesh) && child.userData.referenceId) lines.push(child); }); return lines; };
+    await showLines(model, null); await flushFrame();
+    const shown = drawnLines(), left = shown.filter(object => object.userData.featureId !== 'base');
+    // The plane's lines and patch, and the open sketch's lines.
+    expect(left).toHaveLength(3);
+    const disposed = left.map(object => vi.spyOn(object.geometry, 'dispose'));
+    await showLines(onlyBase(model), sketchView(true)); await flushFrame();
+    expect(drawnLines()).toEqual(shown.filter(object => object.userData.featureId === 'base'));
+    // Leaving the sketch brings back the same buffers and materials, uncut, so nothing is uploaded or compiled again.
+    await showLines(model, null); await flushFrame();
+    expect(new Set(drawnLines())).toEqual(new Set(shown));
+    for (const object of left) expect((object.material as MeshBasicMaterial).clippingPlanes).toBeNull();
+    expect(disposed.every(spy => spy.mock.calls.length === 0)).toBe(true);
+    // A line edited while it was set aside is replaced, and a view closed during a sketch disposes the lines it set aside.
+    await showLines(onlyBase(model), sketchView(false));
+    const wider = sketches(50).find(reference => reference.featureId === 'open')!, edited = model.map(reference => reference.featureId === 'open' ? wider : reference);
+    await showLines(edited, null); await flushFrame();
+    const now = drawnLines();
+    expect(now).toHaveLength(shown.length);
+    expect(now.filter(object => !shown.includes(object)).map(object => object.userData.featureId)).toEqual(['open']);
+    expect(disposed.map(spy => spy.mock.calls.length)).toEqual(left.map(object => object.userData.featureId === 'open' ? 1 : 0));
+    const kept = now.map(object => vi.spyOn(object.geometry, 'dispose'));
+    await showLines(onlyBase(edited), sketchView(false));
+    await act(async () => root.render(<></>));
+    expect(kept.map(spy => spy.mock.calls.length)).toEqual(now.map(() => 1));
+  });
+
   it('opens straight into a sketch without ever publishing model controls', async () => {
     const link = createCadSketchCameraLink(), published = vi.fn();
     link.publish(firstView);

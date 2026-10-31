@@ -179,6 +179,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const referenceLines = new THREE.Group();
     const pickableReferences: THREE.LineSegments[] = [];
     const installedReferences = new Map<string, { reference: CadViewportReference; line: THREE.LineSegments; patch?: THREE.Mesh }>();
+    // Lines an open sketch leaves out of its background, out of the scene but kept with their buffers and shader programs, so
+    // leaving the sketch shows them again without rebuilding them.
+    const setAsideReferences = new Map<string, { reference: CadViewportReference; line: THREE.LineSegments; patch?: THREE.Mesh }>();
     const pickableBodies: THREE.Mesh[] = [];
     const pickableEdges: THREE.LineSegments[] = [];
     const meshByObject = new Map<THREE.Object3D, CadMesh>();
@@ -353,8 +356,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       }
     };
     const disposeReferences = () => {
-      for (const { line, patch } of installedReferences.values()) disposeReference(line, patch);
-      installedReferences.clear();
+      for (const { line, patch } of [...installedReferences.values(), ...setAsideReferences.values()]) disposeReference(line, patch);
+      installedReferences.clear(); setAsideReferences.clear();
       pickableReferences.length = 0;
     };
     const disposeReference = (line: THREE.LineSegments, patch?: THREE.Mesh) => {
@@ -410,9 +413,27 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       const changed = uploadedReferences.current !== data.current.references;
       if (changed) {
         const wanted = new Map(data.current.references.map(reference => [reference.referenceId, reference]));
+        // Read from the props, since this runs before the view hears that a sketch opened or closed.
+        const behindSketch = data.current.hidden && data.current.sketchView !== null;
         for (const [id, installed] of installedReferences) {
-          if (wanted.get(id) === installed.reference) continue;
-          disposeReference(installed.line, installed.patch); installedReferences.delete(id);
+          const next = wanted.get(id);
+          if (next === installed.reference) continue;
+          installedReferences.delete(id);
+          if (next || !behindSketch) { disposeReference(installed.line, installed.patch); continue; }
+          referenceLines.remove(installed.line); if (installed.patch) referenceLines.remove(installed.patch);
+          setAsideReferences.set(id, installed);
+        }
+        for (const [id, kept] of setAsideReferences) {
+          const next = wanted.get(id);
+          if (!next && behindSketch) continue;
+          setAsideReferences.delete(id);
+          if (next !== kept.reference) { disposeReference(kept.line, kept.patch); continue; }
+          // The cut as the view stands; when a sketch closes, the style pass that follows sets it for every line again.
+          for (const object of kept.patch ? [kept.line, kept.patch] : [kept.line]) {
+            for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.clippingPlanes = sketch?.cutBySketchPlane ? sketchClipPlanes : null;
+            referenceLines.add(object);
+          }
+          installedReferences.set(id, kept);
         }
         for (const reference of data.current.references) {
           if (installedReferences.has(reference.referenceId)) continue;
