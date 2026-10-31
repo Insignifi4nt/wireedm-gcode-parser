@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { CAD_SECTION_CAP_GROUP_SOLIDS, cadCapSolid, cadSectionCapGeometry, createCadSectionCaps, type CadCapBodySolids, type CadSectionCap } from './cadSectionCaps';
-import { capCoveredArea, capGroupWindings, capWinding } from './__tests__/cadSectionCapFixtures';
+import { cadCapPrism, capCoveredArea, capGroupWindings, capWinding } from './__tests__/cadSectionCapFixtures';
 
 /** Keeps the side below `z`, as a section by the XY plane at that height does. */
 const below = (z: number) => new THREE.Plane(new THREE.Vector3(0, 0, -1), z);
@@ -238,5 +238,32 @@ describe('section caps in the view', () => {
     made.setPlane(below(1)); drain();
     expect(shownCaps(made)).toHaveLength(1); expect(zValues(capIn(shownCaps(made)[0]))).toEqual([1]);
     made.dispose(); expect(queue.size).toBe(0);
+  });
+
+  it('gives input a turn while it lays out the fans of a body the plane crosses many triangles of', () => {
+    // A 24,000-triangle prism of 6,000 sides. Cut across, 12,000 of its triangles cross the plane; cut lengthwise near one side, about
+    // 1,100 do. Both prepare and walk the same triangles, so the extra slices across are the layout of 12,000 fans: the middle of their
+    // 24,000 ends, the fans and the quad's bounds.
+    const prism = () => body(cadCapPrism(6000), [0, 0, 0]);
+    const slices = (plane: THREE.Plane) => {
+      const queue: (() => void)[] = [], made = createCadSectionCaps({ sliceMs: 0, schedule: next => { queue.push(next); return () => undefined; } });
+      made.setBodies([prism()]); made.setPlane(plane);
+      let count = 1;
+      while (queue.length) { queue.shift()!(); count++; }
+      expect(shownCaps(made)).toHaveLength(1);
+      return count;
+    };
+    const across = slices(below(0.3)), lengthwise = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 9.9);
+    expect(across - slices(lengthwise)).toBeGreaterThanOrEqual(5);
+    // A new plane two slices before the end, while the fans are being laid out, drops that build: only the new plane's cap shows.
+    const queue: (() => void)[] = [], made = createCadSectionCaps({ sliceMs: 0, schedule: next => { queue.push(next); return () => undefined; } });
+    made.setBodies([prism()]); made.setPlane(below(0.3));
+    for (let slice = 2; slice < across - 1; slice++) queue.shift()!();
+    expect(shownCaps(made)).toHaveLength(0);
+    made.setPlane(lengthwise);
+    while (queue.length) queue.shift()!();
+    expect(shownCaps(made)).toHaveLength(1);
+    const ends = capIn(shownCaps(made)[0]).fans.getAttribute('position');
+    for (let item = 0; item < ends.count; item += 997) expect(ends.getX(item)).toBeCloseTo(9.9, 4);
   });
 });

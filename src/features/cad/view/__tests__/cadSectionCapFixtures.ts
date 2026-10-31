@@ -40,3 +40,22 @@ export function capCoveredArea(cap: CadSectionCap, z: number, step = 0.25): numb
   }
   return cells * step * step;
 }
+
+/**
+ * A closed prism of `sides` sides round the z axis, 10 mm in radius and 20 mm tall about z = 0, its points shared between faces:
+ * 4 × `sides` triangles, half of them on its sides.
+ */
+export function cadCapPrism(sides: number): THREE.BufferGeometry {
+  const positions = new Float32Array(3 * (2 * sides + 2)), indices = new Uint32Array(12 * sides);
+  for (let side = 0; side < sides; side++) {
+    const angle = 2 * Math.PI * side / sides, x = 10 * Math.cos(angle), y = 10 * Math.sin(angle);
+    positions.set([x, y, -10], 3 * side); positions.set([x, y, 10], 3 * (sides + side));
+  }
+  positions.set([0, 0, -10], 6 * sides); positions.set([0, 0, 10], 6 * sides + 3);
+  for (let side = 0; side < sides; side++) {
+    const next = (side + 1) % sides, low = side, lowNext = next, high = sides + side, highNext = sides + next;
+    indices.set([low, lowNext, highNext, low, highNext, high, 2 * sides, lowNext, low, 2 * sides + 1, high, highNext], 12 * side);
+  }
+  const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3)); geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  return geometry;
+}

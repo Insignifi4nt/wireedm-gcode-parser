@@ -193,7 +193,10 @@ function* cadCapSolidSteps(geometry: THREE.BufferGeometry, solids?: CadCapBodySo
     if (corner % CHECK_EVERY === CHECK_EVERY - 1) yield;
   }
   let closed = kept > 0;
-  for (let slot = 0; closed && slot < edgeSlots; slot++) closed = balance[slot] === 0;
+  for (let slot = 0; closed && slot < edgeSlots; slot++) {
+    closed = balance[slot] === 0;
+    if (slot % CHECK_EVERY === CHECK_EVERY - 1) yield;
+  }
   return Object.freeze({ vertices: vertices.slice(0, 3 * count), triangles: triangles.slice(0, kept), closed, groups: groups && groups.slice(0, kept / 3) });
 }
 /** A power of two above `entries`, for an open-addressed table. */
@@ -254,6 +257,7 @@ function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<
   let ox = 0, oy = 0, oz = 0;
   for (let point = 0; point < 2 * segments; point++) {
     ox += ends[3 * point]; oy += ends[3 * point + 1]; oz += ends[3 * point + 2];
+    if (point % CHECK_EVERY === CHECK_EVERY - 1) yield;
   }
   ox /= 2 * segments; oy /= 2 * segments; oz /= 2 * segments;
   // Snap the start onto the plane, which rounding in the average may have left a hair off.
@@ -264,7 +268,10 @@ function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<
   let next: Uint32Array | null = null, runs: { start: number; count: number }[] | null = null;
   if (groups) {
     const sizes = new Uint32Array(lastGroup + 1);
-    for (const group of owners) sizes[group]++;
+    for (let segment = 0; segment < segments; segment++) {
+      sizes[owners[segment]]++;
+      if (segment % CHECK_EVERY === CHECK_EVERY - 1) yield;
+    }
     if (sizes.filter(size => size > 0).length > 1) {
       next = new Uint32Array(lastGroup + 1); runs = [];
       for (let group = 0, start = 0; group <= lastGroup; start += sizes[group++]) {
@@ -278,6 +285,7 @@ function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<
     const place = 9 * (next ? next[owners[segment]]++ : segment);
     fans[place] = ox; fans[place + 1] = oy; fans[place + 2] = oz;
     for (let item = 0; item < 6; item++) fans[place + 3 + item] = ends[6 * segment + item];
+    if (segment % CHECK_EVERY === CHECK_EVERY - 1) yield;
   }
   // The quad covers every fan, with a margin so that no counted pixel on its border is missed.
   const across = new THREE.Vector3(), up = new THREE.Vector3();
@@ -287,6 +295,7 @@ function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<
   for (let point = 0; point < 2 * segments; point++) {
     const x = ends[3 * point] - ox, y = ends[3 * point + 1] - oy, z = ends[3 * point + 2] - oz, u = x * across.x + y * across.y + z * across.z, v = x * up.x + y * up.y + z * up.z;
     minU = Math.min(minU, u); maxU = Math.max(maxU, u); minV = Math.min(minV, v); maxV = Math.max(maxV, v);
+    if (point % CHECK_EVERY === CHECK_EVERY - 1) yield;
   }
   const margin = 0.01 * Math.max(maxU - minU, maxV - minV) + 1e-6, quad = new Float32Array(12);
   [[minU - margin, minV - margin], [maxU + margin, minV - margin], [maxU + margin, maxV + margin], [minU - margin, maxV + margin]].forEach(([u, v], corner) => {
