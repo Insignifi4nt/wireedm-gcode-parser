@@ -1612,7 +1612,9 @@ test('turns a line green once its dimensions and relations fully define it, unde
     return { x: point.x, y: point.y };
   });
   const hovered = await middle('cd'); await page.mouse.move(hovered.x, hovered.y);
-  const hover = await stroke('cd'); expect(hover).not.toBe(blueGrey);
+  // Hover draws on the next render, so wait for it before taking its colour.
+  await expect.poll(() => stroke('cd')).not.toBe(blueGrey);
+  const hover = await stroke('cd');
   const defined = await middle('ab'); await page.mouse.move(defined.x, defined.y);
   await expect.poll(() => stroke('ab')).toBe(hover);
   await page.mouse.move(5, 5); await expect.poll(() => stroke('ab')).toBe(green);

@@ -106,17 +106,28 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     private readonly pointParameters: ReadonlyMap<string, number>, readonly radiusParameters: ReadonlyMap<string, number>,
     private readonly numericPoints: ReadonlyMap<string, Point2>) {}
 
-  /** Lowers one relation through its definition. */
+  /**
+   * Lowers one relation through its definition, whole or not at all: a relation whose lowering throws, a refusal or any other error,
+   * leaves none of its equations, radial holds or tags behind.
+   */
   lower(relation: CadSketchGraphRelation) {
     this.relation = relation; this.sourceId = relation.id;
-    cadSketchRelationDefinition(relation).lower(relation, this);
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, tags = this.tags;
+    try { cadSketchRelationDefinition(relation).lower(relation, this); }
+    catch (error) { this.restore(equations, radialHolds, tags); throw error; }
   }
-  /** The equations an edge keeps by itself, under its own id. */
+  /** The equations an edge keeps by itself, under its own id, whole or not at all. */
   structure(entity: CadSketchGraphEntity) {
     const structure = capability(STRUCTURES, entity);
     if (!structure) return;
     this.relation = undefined; this.sourceId = entity.id;
-    structure(this, entity);
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, tags = this.tags;
+    try { structure(this, entity); }
+    catch (error) { this.restore(equations, radialHolds, tags); throw error; }
+  }
+  /** Drops what was emitted since the counts were taken, and gives back the tags it took. */
+  private restore(equations: number, radialHolds: number, tags: number) {
+    this.equations.length = equations; this.radialHolds.length = radialHolds; this.tags = tags; this.sharedTag = undefined;
   }
   /** A drag target: a value on one coordinate of the dragged point, solved but left out of diagnosis. */
   target(pointId: string, axis: 0 | 1, value: number) {

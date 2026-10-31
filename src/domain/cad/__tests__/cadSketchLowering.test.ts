@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCadSketchGraph } from '../cadSketchGraph';
+import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
 import { CAD_SKETCH_QUANTITIES } from '../cadSketchQuantity';
 import { CAD_SKETCH_RELATION_DEFINITIONS, CAD_SKETCH_RELATION_KINDS } from '../sketch-relations/cadSketchRelationRegistry';
 import { compileCadSketchEquations } from '../sketch-solver/compileCadSketchEquations';
@@ -44,6 +44,36 @@ describe('sketch relation lowering', () => {
     }
     // A refused read emits nothing.
     expect(context.equations).toEqual([]);
+  });
+
+  it('leaves nothing behind from a relation it refuses partway through', () => {
+    const onCopy = { id: 'on', kind: 'point-on-curve', pointId: 'p', curveId: 'holes_i1_e0' } as const;
+    const row = { id: 'row', kind: 'linear-pattern', seed: { kind: 'circle', entityId: 'seed', centerPointId: 'center' }, idPrefix: 'holes',
+      direction: '+x', count: 2, spacing: 15, omittedInstances: [] } as const;
+    const gap = { id: 'gap', kind: 'distance', pointIds: ['center', 'p'], value: 15.3 } as const;
+    const patterned: CadSketchGraph = {
+      points: [{ id: 'center', position: [10, 10] }, { id: 'holes_i1_p0', position: [25, 10] }, { id: 'p', position: [25, 13] }],
+      entities: [{ id: 'seed', kind: 'circle', centerPointId: 'center', radius: 3, construction: false },
+        { id: 'holes_i1_e0', kind: 'circle', centerPointId: 'holes_i1_p0', radius: 3, construction: false }],
+      relations: [onCopy, row, gap]
+    };
+    const model = compileCadSketchEquations({ graph: patterned, parameters: {} });
+    const points = new Map(patterned.points.map(point => [point.id, { x: Number(point.position[0]), y: Number(point.position[1]) }]));
+    // Without the seed's radius parameter, the pattern emits its copy's two offsets and then refuses the seed's size.
+    const radii = new Map([...model.radiusParameters].filter(([id]) => id !== 'seed'));
+    const context = new CadSketchLowering(patterned, {}, model.pointParameters, radii, points);
+    context.lower(onCopy);
+    const kept = { equations: [...context.equations], radialHolds: [...context.radialHolds] };
+    expect(kept.radialHolds).toHaveLength(1);
+    expect(refusal(() => context.lower(row))).toMatchObject({ code: 'unlowerable-sketch-operand', operandId: 'seed', capability: 'size' });
+    expect(context.equations).toEqual(kept.equations);
+    expect(context.radialHolds).toEqual(kept.radialHolds);
+    // The next relation's equations and tags are those it would have had if the refused one had never been lowered.
+    context.lower(gap);
+    const clean = new CadSketchLowering(patterned, {}, model.pointParameters, radii, points);
+    clean.lower(onCopy); clean.lower(gap);
+    expect(context.equations).toEqual(clean.equations);
+    expect(context.equations.map(equation => equation.tag)).toEqual([0, 1]);
   });
 
   it('declares what each driving value of every kind measures', () => {
