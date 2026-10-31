@@ -116,10 +116,10 @@ function lineNeighbours(prepared: Prepared, pointId: string): readonly SketchPoi
 /** Exact translation accepts at most this many selections at once. */
 const MAX_TRANSLATED_SELECTIONS = 64;
 
-function Boundary({ boundary, center }: { boundary: CadAnalyticBoundary; center: SketchPoint }) {
-  return boundary.type === 'line' ? <line x1={boundary.start.x - center[0]} y1={boundary.start.y - center[1]} x2={boundary.end.x - center[0]} y2={boundary.end.y - center[1]} />
-    : boundary.type === 'circle' ? <circle cx={boundary.center.x - center[0]} cy={boundary.center.y - center[1]} r={boundary.radius} />
-      : <path d={cadArcSvgPath(boundary, center)} />;
+function Boundary({ boundary, center, className, strokeWidth }: { boundary: CadAnalyticBoundary; center: SketchPoint; className?: string; strokeWidth?: number }) {
+  return boundary.type === 'line' ? <line className={className} strokeWidth={strokeWidth} x1={boundary.start.x - center[0]} y1={boundary.start.y - center[1]} x2={boundary.end.x - center[0]} y2={boundary.end.y - center[1]} />
+    : boundary.type === 'circle' ? <circle className={className} strokeWidth={strokeWidth} cx={boundary.center.x - center[0]} cy={boundary.center.y - center[1]} r={boundary.radius} />
+      : <path className={className} strokeWidth={strokeWidth} d={cadArcSvgPath(boundary, center)} />;
 }
 
 type GraphSegment = Prepared['geometry']['segments'][number];
@@ -141,9 +141,9 @@ type Actions = { readonly current: GraphItemActions };
 
 const FULLY_DEFINED_HINT = 'Fully defined by dimensions and relations';
 
-const GraphEntityRow = memo(function GraphEntityRow({ segment, index, sketchName, selected, related, highlighted, construction, mark, interactive, active, center, scaleY, actions }: {
+const GraphEntityRow = memo(function GraphEntityRow({ segment, index, sketchName, selected, related, highlighted, construction, mark, interactive, active, center, scaleY, halo, actions }: {
   segment: GraphSegment; index: number; sketchName: string; selected: boolean; related: boolean; highlighted: boolean; construction: boolean; mark: CadSketchGeometryMark;
-  interactive: boolean; active: boolean; center: SketchPoint; scaleY: number; actions: Actions;
+  interactive: boolean; active: boolean; center: SketchPoint; scaleY: number; halo: number; actions: Actions;
 }) {
   const boundary = cadSketchGraphBoundary(segment);
   return <g data-cad-sketch-entity={segment.id} className={`cad-profile cad-sketch-entity${selected ? ' is-selected' : ''}${related ? ' is-relation-highlighted' : ''}${highlighted ? ' is-pick-highlighted' : ''}${construction ? ' is-construction' : ''}${mark ? ` is-${mark}` : ''}`}
@@ -152,6 +152,7 @@ const GraphEntityRow = memo(function GraphEntityRow({ segment, index, sketchName
     onPointerDown={event => actions.current.entityDown(event, segment)} onPointerMove={event => actions.current.move(event)} onPointerUp={event => actions.current.endDrag(event)}
     onPointerCancel={event => actions.current.cancelPointer(event)} onLostPointerCapture={event => actions.current.lostCapture(event)}
     onClick={event => actions.current.entityClick(event, segment.id)} onKeyDown={event => actions.current.entityKey(event, segment.id)}>
+    {halo > 0 && <Boundary boundary={boundary} center={center} className="cad-sketch-halo" strokeWidth={halo} />}
     <Boundary boundary={boundary} center={center} />
     {active && <g className="cad-sketch-entity-hit" strokeWidth={12 * scaleY}><Boundary boundary={boundary} center={center} /></g>}
   </g>;
@@ -184,7 +185,7 @@ const GraphPointRow = memo(function GraphPointRow({ point, original, graph, degr
  * Point and size handles share one gesture owner; solved previews never become accepted geometry. The layer is memoized,
  * so drawing-cursor moves in the canvas do not render every edge and point again; callers pass stable props.
  */
-export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, coversDimensionLine, coversRelationGlyph, highlighted }: {
+export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls, sketch, version, prepared, visual, center, scaleX, scaleY, gridStep, snap, gridSnap = false, active, locked, cancelSignal, onPendingChange, onError, filter = 'auto', pickAt, coversDimensionLine, coversRelationGlyph, highlighted, halo = 0 }: {
   controls: CadSketchGraphControls; sketch: CadSketchFeature; version?: string; prepared: Prepared; visual?: Prepared;
   center: SketchPoint; scaleX: number; scaleY: number; gridStep: number; snap: boolean; gridSnap?: boolean; active: boolean; locked: boolean; cancelSignal: number;
   onPendingChange(pending: boolean): void; onError(message: string): void;
@@ -195,6 +196,8 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   /** Whether sketch geometry, a datum, a profile grip or a profile edge under the pointer keeps the pick from a relation glyph. */
   coversRelationGlyph?(event: GlyphEvent): boolean;
   highlighted?: CadSketchGraphSelection | null;
+  /** Width, in sketch units, of the dark under-stroke each edge gets over a plainly shown part; 0 draws none. */
+  halo?: number;
 }) {
   const submission = useCadEditSubmission();
   const [ownHighlight] = useState(createCadSketchHighlightStore), highlightStore = controls.highlight ?? ownHighlight;
@@ -517,7 +520,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
         related={relatedEntities.has(segment.id) || entity?.kind === 'line' && relatedPoints.has(entity.startPointId) && relatedPoints.has(entity.endPointId)}
         highlighted={Boolean(snapCandidate?.entityIds.includes(segment.id)) || highlighted?.kind === 'entity' && highlighted.id === segment.id}
         construction={construction.has(segment.id)} mark={cadSketchGeometryMark('entity', segment.id, controls.definition, diagnosis)}
-        interactive={edgeAllowed(segment.id)} active={active} center={center} scaleY={scaleY} actions={actions} />;
+        interactive={edgeAllowed(segment.id)} active={active} center={center} scaleY={scaleY} halo={halo} actions={actions} />;
     })}
     {displayed.points.map((point, index) => {
       const snapTarget = snapCandidate?.target, isSelected = selected('point', point.id);

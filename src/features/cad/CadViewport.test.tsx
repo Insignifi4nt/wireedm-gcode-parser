@@ -763,6 +763,8 @@ describe('model behind an open sketch', () => {
     // Behind the sketch the view publishes no controls, takes no focus and is not announced.
     expect(controls).toBeNull();
     expect(container.querySelector('.cad-viewport.is-sketch-background')?.getAttribute('aria-hidden')).toBe('true');
+    // Inert, so focus the 3D canvas had is released rather than left inside a layer no one can see.
+    expect(container.querySelector('.cad-viewport.is-sketch-background')?.hasAttribute('inert')).toBe(true);
     expect(renderer().domElement.tabIndex).toBe(-1);
     expect(container.querySelector('.cad-webgl canvas')).toBe(renderer().domElement);
     // Until the sketch canvas publishes its view there is no camera to draw with.
@@ -875,15 +877,71 @@ describe('model behind an open sketch', () => {
     expect(kept.map(spy => spy.mock.calls.length)).toEqual(now.map(() => 1));
   });
 
+  describe('the model camera a sketch returns to', () => {
+    const outline = prepareCadViewportReferences([{ id: 'base', name: 'Base', kind: 'sketch', plane: 'XY', offset: 0, suppressed: false,
+      profiles: [{ id: 'plate', name: 'Plate', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: 30, height: 20, cornerRadius: 0 } }] }], {});
+    const tall = (height: number): CadMesh => ({ ...mesh, positions: [-40, -40, 0, 40, -40, 0, -40, 40, height], edges: [-40, -40, 0, -40, 40, height], bounds: { min: [-40, -40, 0], max: [40, 40, height] } });
+    const render = (meshes: readonly CadMesh[], references: readonly CadViewportReference[], hidden: boolean, sketchView: CadSketchBackgroundView | null) => act(async () => root.render(
+      <CadViewport meshes={meshes} references={references} referenceVersion="v1" selectedId={null} onSelect={vi.fn()} hidden={hidden} sketchView={sketchView}
+        onControlsReady={(value, released) => { if (value) controls = value; else if (!released || controls === released) controls = null; }} />));
+    const snapshot = (camera: OrthographicCamera) => ({ position: camera.position.toArray(), quaternion: camera.quaternion.toArray(), up: camera.up.toArray(), zoom: camera.zoom,
+      frustum: [camera.left, camera.right, camera.top, camera.bottom, camera.near, camera.far] });
+
+    it.each(['dimmed', 'hidden'] as const)('keeps it exactly through a first build, a larger rebuild and refused view commands in %s', async mode => {
+      const link = createCadSketchCameraLink(); link.publish(firstView);
+      const sketchView = mode === 'dimmed' ? { placement, background: 'dimmed' as const, cutBySketchPlane: false, camera: link } : null;
+      // The view shows a sketch outline and no solid yet, framed on that outline.
+      await render([], outline, false, null); await flushFrame();
+      const modelCamera = lastCamera(), before = snapshot(modelCamera), stale = currentControls();
+      await render([], outline, true, sketchView); await flushFrame();
+      // The first solid finishes while the sketch is open, then a rebuild makes it taller.
+      await render([tall(20)], outline, true, sketchView); await flushFrame();
+      expect(snapshot(modelCamera)).toEqual(before);
+      const sketchCamera = mode === 'dimmed' ? lastCamera() : null, shallow = sketchCamera?.far;
+      await render([tall(300)], outline, true, sketchView); await flushFrame();
+      expect(snapshot(modelCamera)).toEqual(before);
+      // Behind the sketch the depth range still follows the taller part.
+      if (sketchCamera) { expect(lastCamera()).toBe(sketchCamera); expect(sketchCamera.far).toBeGreaterThan(shallow! + 250); }
+      // Controls released when the sketch opened refuse to frame or turn the covered view.
+      await act(async () => { stale.fit(); stale.setView?.('Front'); });
+      expect(snapshot(modelCamera)).toEqual(before);
+      await render([tall(300)], outline, false, null); await flushFrame();
+      expect(lastCamera()).toBe(modelCamera);
+      expect(snapshot(modelCamera)).toEqual(before);
+      expect(solidViewState().view).toBe('Isometric');
+    });
+
+    it('frames the part once on leaving when the view had nothing but planes before the sketch', async () => {
+      const link = createCadSketchCameraLink(); link.publish(firstView);
+      const sketchView: CadSketchBackgroundView = { placement, background: 'dimmed', cutBySketchPlane: false, camera: link }, planes = [CAD_PRINCIPAL_PLANE_REFERENCES[0]];
+      // A part that opens straight into its first sketch, whose solid builds while the sketch is open.
+      await render([], planes, true, sketchView); await flushFrame();
+      await render([tall(300)], planes, true, sketchView); await flushFrame();
+      await render([tall(300)], planes, false, null); await flushFrame();
+      const modelCamera = lastCamera(); modelCamera.updateMatrixWorld();
+      for (const corner of [new Vector3(-40, -40, 0), new Vector3(40, 40, 0), new Vector3(-40, 40, 300)]) {
+        corner.project(modelCamera); expect(Math.abs(corner.x)).toBeLessThan(1); expect(Math.abs(corner.y)).toBeLessThan(1);
+      }
+      const framed = snapshot(modelCamera);
+      // That frame happens once: the next sketch and rebuild leave it alone.
+      await render([tall(300)], planes, true, sketchView); await render([tall(600)], planes, true, sketchView); await render([tall(600)], planes, false, null); await flushFrame();
+      expect(snapshot(modelCamera)).toEqual(framed);
+    });
+  });
+
   it('opens straight into a sketch without ever publishing model controls', async () => {
-    const link = createCadSketchCameraLink(), published = vi.fn();
+    const link = createCadSketchCameraLink(), published = vi.fn(), menu = vi.fn();
     link.publish(firstView);
-    await act(async () => root.render(<CadViewport meshes={meshes} selectedId={null} onSelect={vi.fn()} hidden sketchView={{ placement, background: 'dimmed', cutBySketchPlane: true, camera: link }} onControlsReady={published} />));
+    await act(async () => root.render(<CadViewport meshes={meshes} selectedId={null} onSelect={vi.fn()} onContextMenu={menu} hidden sketchView={{ placement, background: 'dimmed', cutBySketchPlane: true, camera: link }} onControlsReady={published} />));
     await flushFrame();
     expect(published).not.toHaveBeenCalled();
     expect(drawn()).toBe(1);
     expect(clipping().every(entry => entry?.length === 1)).toBe(true);
-    await act(async () => root.render(<CadViewport meshes={meshes} selectedId={null} onSelect={vi.fn()} onControlsReady={published} />));
+    // A menu key reaching the covered canvas opens nothing; the shown view opens its menu as before.
+    const menuKey = () => act(async () => { renderer().domElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true, cancelable: true })); });
+    await menuKey(); expect(menu).not.toHaveBeenCalled();
+    await act(async () => root.render(<CadViewport meshes={meshes} selectedId={null} onSelect={vi.fn()} onContextMenu={menu} onControlsReady={published} />));
     expect(published).toHaveBeenCalledTimes(1);
+    await menuKey(); expect(menu).toHaveBeenCalledTimes(1);
   });
 });

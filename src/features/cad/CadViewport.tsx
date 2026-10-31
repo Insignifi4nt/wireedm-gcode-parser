@@ -310,6 +310,14 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     // A reference-only scene and its first solid have separate initial frames.
     // Later rebuilds, or an explicitly chosen camera, never trigger another fit.
     let fittedReferences = false, fittedSolid = false, userFramed = false, fittingAutomatically = false;
+    // While a sketch surface covers the view the model camera stays where the sketch found it, so leaving returns to it exactly. A first
+    // fit asked for meanwhile waits, and runs on leaving only when the view had nothing but planes to show before the sketch opened.
+    let cover: { geometryBefore: boolean; fitWaiting: boolean } | null = data.current.hidden ? { geometryBefore: false, fitWaiting: false } : null;
+    const showsGeometry = () => solids.children.length > 0 || [...installedReferences.values(), ...setAsideReferences.values()].some(({ reference }) => !reference.planePatch);
+    const fitFirst = () => {
+      if (userFramed) return;
+      if (cover) cover.fitWaiting = true; else fit(true);
+    };
     const fit = (automatic = false) => {
       if (!automatic) userFramed = true;
       fittingAutomatically = automatic;
@@ -469,7 +477,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       viewState.revision++;
       if (!fittedReferences && !fittedSolid && data.current.references.length && !data.current.meshes.length) {
         fittedReferences = true;
-        if (!userFramed) fit(true);
+        fitFirst();
       }
       // Behind a sketch only changed lines need a frame; a new reference version alone, such as a sketch edit, draws nothing new.
       if (changed || !sketch) render();
@@ -512,7 +520,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       sceneBoundsCurrent = false;
       if (!fittedSolid && data.current.meshes.length) {
         fittedSolid = true;
-        if (!userFramed) fit(true);
+        fitFirst();
       }
       viewState.hoveredTopology = null;
       hoveredFeatureId = null;
@@ -818,7 +826,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       if (event.key === 'Escape' && depthPointer !== null) { event.preventDefault(); event.stopImmediatePropagation(); cancelPointerInteraction(); return; }
       if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return;
       event.preventDefault();
-      if (depthPointer !== null || data.current.interactionLocked || data.current.regionSelection || !data.current.onContextMenu || renderer.getContext().isContextLost()) return;
+      if (depthPointer !== null || data.current.hidden || data.current.interactionLocked || data.current.regionSelection || !data.current.onContextMenu || renderer.getContext().isContextLost()) return;
       cancelPointerInteraction();
       const selection = data.current.topologySelection;
       const mesh = selection && data.current.pickingEnabled ? data.current.meshes.find(mesh => mesh.featureId === selection.bodyId) : null;
@@ -922,9 +930,11 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     controller.current = {
       getState: () => Object.freeze({ mode: 'solid', available: !disposed && !renderer.getContext().isContextLost(), view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision, referenceVersion: installedReferenceVersion, referenceFeatureIds: installedReferenceFeatureIds, referencePlanes: installedReferencePlanes,
         hoveredTopology: viewState.hoveredTopology ? Object.freeze({ ...viewState.hoveredTopology, pick: Object.freeze({ ...viewState.hoveredTopology.pick }) }) : null }),
-      fit,
+      // Only a shown model view publishes these; a covered one also refuses them, so nothing moves the camera a sketch will return to.
+      fit() { if (!cover) fit(); },
       setGrid(visible) { grid.visible = visible; viewState.gridVisible = visible; viewState.revision++; setGridVisible(visible); render(); },
       setView(name) {
+        if (cover) return;
         const direction = name === 'Top' ? new THREE.Vector3(0, 0, 1) : name === 'Front' ? new THREE.Vector3(0, -1, 0) : name === 'Right' ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(1, -1.2, 0.9).normalize();
         const distance = Math.max(1000, camera.position.distanceTo(controls.target));
         const up = new THREE.Vector3(0, name === 'Top' ? 1 : 0, name === 'Top' ? 0 : 1);
@@ -972,6 +982,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     present.current = (covered, nextSketch) => {
       const nextSketchView = covered ? nextSketch : null, nextVisible = !covered || nextSketchView !== null;
       if (disposed || nextVisible === visible && nextSketchView === sketch) return;
+      if (covered && !cover) cover = { geometryBefore: showsGeometry(), fitWaiting: false };
       const wasShown = visible, wasPublished = visible && !sketch;
       if (nextSketchView?.camera !== sketch?.camera) {
         releaseSketchCamera?.();
@@ -994,6 +1005,11 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         updateReferences();
         updateSelection();
         updateHighlights();
+      }
+      if (!covered && cover) {
+        const ended = cover;
+        cover = null;
+        if (ended.fitWaiting && !ended.geometryBefore && !userFramed) fit(true);
       }
       render();
       if (publishes && !wasPublished) publish.current?.(publishedControls);
@@ -1075,7 +1091,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   useLayoutEffect(() => { cancelDepth.current?.(); }, [navigationLocked, navigationMode]);
   useLayoutEffect(() => { present.current?.(hidden, sketchView); }, [hidden, sketchView]);
   // Behind a sketch the same graphics host draws under the sketch canvas and takes no input; the sketch owns every control.
-  if (hidden && sketchView) return <div className="cad-viewport is-sketch-background" aria-hidden="true"><div className="cad-webgl" ref={host} /></div>;
+  // Inert also releases focus the 3D canvas already had, which a negative tab index alone would leave inside the hidden layer.
+  if (hidden && sketchView) return <div className="cad-viewport is-sketch-background" aria-hidden="true" inert><div className="cad-webgl" ref={host} /></div>;
   // Hidden, only the graphics host stays so the sketch surface owns every visible control.
   if (hidden) return <div className="cad-viewport" hidden><div className="cad-webgl" ref={host} aria-label="3D model viewport" /></div>;
   return <div className="cad-viewport">

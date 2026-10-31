@@ -63,6 +63,8 @@ async function openViewControls(page: Page) {
 async function modelCamera(page: Page, version: string) {
   const label = page.locator('.cad-viewport [data-cad-plane-label]').first();
   await expect(label).toBeAttached();
+  // Labels move only when a frame is drawn, which software GL can hold back under load; read them after two frames.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const view = (await call(page, 'cad_get_viewport', { expectedVersion: version })).view as { mode: string; view: string; zoom: number };
   return { mode: view.mode, view: view.view, zoom: view.zoom, label: await label.evaluate(element => [(element as HTMLElement).style.left, (element as HTMLElement).style.top]) };
 }
@@ -92,7 +94,15 @@ test('shows the part dimmed behind a sketch on its top face, hides or shows it p
 
   await choose(page, 'Normal'); await settled(page);
   const normal = await brightness(page, document.version, info, 'normal');
+  // Over the plain part each sketch stroke lies on a dark under-stroke, in the theme background colour, that takes no pointer.
+  const halos = page.locator('svg.cad-sketch-canvas .cad-sketch-halo');
+  await expect(halos).toHaveCount(2);
+  for (const halo of await halos.all()) {
+    await expect(halo).toHaveCSS('stroke', 'rgb(18, 26, 32)');
+    await expect(halo).toHaveCSS('pointer-events', 'none');
+  }
   await choose(page, 'Hidden');
+  await expect(halos).toHaveCount(0);
   await expect(page.locator('.cad-viewport.is-sketch-background')).toHaveCount(0);
   await expect(cut).toBeDisabled();
   const hidden = await brightness(page, document.version, info, 'hidden');
@@ -114,6 +124,7 @@ test('shows the part dimmed behind a sketch on its top face, hides or shows it p
   expect(Math.abs(shown(cutNormal, 'block')), cutReport).toBeLessThan(3);
   expect(Math.abs(cutNormal.plate - normal.plate), cutReport).toBeLessThan(3);
   await choose(page, 'Dimmed'); await settled(page);
+  await expect(halos).toHaveCount(0);
   const cutDimmed = await brightness(page, document.version, info, 'cut-dimmed');
   expect(Math.abs(shown(cutDimmed, 'block')), JSON.stringify({ cutDimmed, hidden })).toBeLessThan(3);
   expect(Math.abs(cutDimmed.plate - dimmed.plate), JSON.stringify({ cutDimmed, dimmed })).toBeLessThan(3);
@@ -150,4 +161,64 @@ test('shows the part dimmed behind a sketch on its top face, hides or shows it p
   await expect(page.getByLabel('Sketch drawing canvas')).toHaveCount(0);
   await expect.poll(() => modelCamera(page, document.version)).toEqual(before);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wire-edm:cad-preferences:v1') ?? '{}').sketchView)).toEqual({ background: 'dimmed', cutBySketchPlane: true });
+});
+
+const focused = (page: Page) => page.evaluate(() => {
+  const active = document.activeElement;
+  return active?.matches('svg.cad-sketch-canvas') ? 'sketch' : active?.matches('.cad-viewport canvas') ? `3d${active.closest('[inert]') ? ' inert' : ''}` : active?.tagName.toLowerCase() ?? 'none';
+});
+const sketchSpan = async (page: Page, version: string) => ((await call(page, 'cad_get_viewport', { expectedVersion: version })).view as { heightSpanMm: number }).heightSpanMm;
+
+test('moves focus from the 3D view into the sketch it opens, so the sketch keys work, and back when the sketch closes', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: features.filter(feature => feature.kind === 'sketch').map(feature => ({ kind: 'add-feature', feature })) });
+  const document = await context(page);
+  const model = page.locator('.cad-viewport:not(.is-sketch-background) canvas');
+  await expect(model).toBeVisible();
+  await model.focus();
+  expect(await focused(page)).toBe('3d');
+  await call(page, 'cad_set_viewport', { expectedVersion: document.version, command: { kind: 'edit-sketch', sketchId: 'top' } });
+  await expect(page.getByLabel('Sketch drawing canvas')).toBeVisible();
+  await expect(page.locator('.cad-viewport.is-sketch-background')).toHaveAttribute('inert', '');
+  expect(await focused(page)).toBe('sketch');
+  // F fits the sketch only when the sketch canvas itself has focus.
+  const opened = await sketchSpan(page, document.version);
+  const box = await page.getByLabel('Sketch drawing canvas').boundingBox(); if (!box) throw new Error('Sketch canvas unavailable.');
+  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.4); await page.mouse.wheel(0, 360);
+  await expect.poll(() => sketchSpan(page, document.version)).not.toBe(opened);
+  const zoomed = await sketchSpan(page, document.version);
+  await page.keyboard.press('f');
+  await expect.poll(() => sketchSpan(page, document.version)).toBeLessThan(zoomed);
+  await call(page, 'cad_set_viewport', { expectedVersion: document.version, command: { kind: 'finish-sketch' } });
+  await expect(page.getByLabel('Sketch drawing canvas')).toHaveCount(0);
+  expect(await focused(page)).toBe('3d');
+});
+
+test('keeps the model camera exactly where the sketch found it when the first solid builds and then grows while the sketch is open', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: features.filter(feature => feature.kind === 'sketch').map(feature => ({ kind: 'add-feature', feature })) });
+  const outlines = await context(page);
+  expect((await call(page, 'cad_build', { expectedVersion: outlines.version })).bodies).toHaveLength(0);
+  await expect.poll(async () => (await call(page, 'cad_get_viewport', { expectedVersion: outlines.version })).view).toMatchObject({ mode: 'solid', available: true, referenceVersion: outlines.version });
+  // The view frames the outlines, the only geometry so far.
+  let before = await modelCamera(page, outlines.version);
+  await expect.poll(async () => { const now = await modelCamera(page, outlines.version), same = JSON.stringify(now) === JSON.stringify(before); before = now; return same; }, { intervals: [300] }).toBe(true);
+  await call(page, 'cad_set_viewport', { expectedVersion: outlines.version, command: { kind: 'edit-sketch', sketchId: 'top' } });
+  await expect(page.getByLabel('Sketch drawing canvas')).toBeVisible();
+  const drawn = await settled(page);
+  // The first solids build behind the open sketch, which draws them.
+  await call(page, 'cad_edit_document', { expectedVersion: outlines.version, edits: features.filter(feature => feature.kind === 'extrude').map(feature => ({ kind: 'add-feature', feature })) });
+  const padded = await context(page);
+  expect((await call(page, 'cad_build', { expectedVersion: padded.version })).bodies).toHaveLength(2);
+  await expect.poll(() => framesDrawn(page)).toBeGreaterThan(drawn);
+  // A rebuild makes the block ten times taller, so the part's bounds change again.
+  const block = features.find(feature => feature.id === 'block')!;
+  await call(page, 'cad_edit_document', { expectedVersion: padded.version, edits: [{ kind: 'update-feature', feature: { ...block, distance: 100 } }] });
+  const taller = await context(page);
+  expect((await call(page, 'cad_build', { expectedVersion: taller.version })).bodies).toHaveLength(2);
+  await settled(page);
+  await call(page, 'cad_set_viewport', { expectedVersion: taller.version, command: { kind: 'finish-sketch' } });
+  await expect(page.getByLabel('Sketch drawing canvas')).toHaveCount(0);
+  await expect.poll(async () => (await call(page, 'cad_get_viewport', { expectedVersion: taller.version })).view).toMatchObject({ mode: 'solid', available: true, referenceVersion: taller.version });
+  expect(await modelCamera(page, taller.version)).toEqual(before);
 });

@@ -23,7 +23,9 @@ vi.mock('./CadViewport', () => ({ CadViewport: function RecordingViewport(props:
   useLayoutEffect(() => { if (props.hidden) return; props.onControlsReady?.(controls); return () => props.onControlsReady?.(null, controls); }, [props.onControlsReady, controls, props.hidden]);
   const camera = props.sketchView?.camera;
   useEffect(() => camera?.subscribe(() => { viewport.views += 1; }), [camera]);
-  return props.hidden ? <div className="cad-viewport" hidden={!props.sketchView} data-background={props.sketchView?.background ?? 'hidden'} /> : <div aria-label="3D model viewport" />;
+  // One persistent canvas, as the real view keeps one graphics context, so focus it held is still there after a sketch covers it.
+  return <div className={`cad-viewport${props.hidden && props.sketchView ? ' is-sketch-background' : ''}`} hidden={props.hidden && !props.sketchView} inert={props.hidden || undefined}
+    data-background={props.hidden ? props.sketchView?.background ?? 'hidden' : undefined}><div className="cad-webgl" aria-label={props.hidden ? undefined : '3D model viewport'}><canvas tabIndex={props.hidden ? -1 : 0} /></div></div>;
 } }));
 
 let root: Root; let container: HTMLDivElement; let session: CadSession; let controls: CadWorkbenchViewportControls | null;
@@ -150,5 +152,72 @@ describe('sketch view modes in the workbench', () => {
     await act(async () => { surface.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 120, clientX: 300, clientY: 200 })); });
     expect(viewport.views).toBe(views + 1);
     expect(settled.sketchView?.camera.current()?.span).toBeGreaterThan(span);
+  });
+
+  it('moves focus the model view held to the sketch canvas however a sketch opens, and back to the model view when it closes', async () => {
+    await mount(part());
+    const model = () => container.querySelector<HTMLCanvasElement>('.cad-viewport canvas')!, sketchCanvas = () => container.querySelector('svg.cad-sketch-canvas');
+    const row = (name: string) => container.querySelector<HTMLButtonElement>(`[aria-label="Select ${name} in history"]`)!;
+    /** Whether the sketch canvas's own F (fit the sketch) handled a key pressed where focus is. */
+    const fitKeyHandled = async () => {
+      const key = new KeyboardEvent('keydown', { key: 'f', bubbles: true, cancelable: true });
+      await act(async () => { window.document.activeElement?.dispatchEvent(key); });
+      return key.defaultPrevented;
+    };
+    // An agent opens a sketch while the 3D canvas has focus: the canvas keeps the same element underneath, so focus must be moved.
+    await act(async () => model().focus());
+    expect(await fitKeyHandled()).toBe(false);
+    await openSketch('top');
+    expect(model().closest('.cad-viewport')?.hasAttribute('inert')).toBe(true);
+    expect(window.document.activeElement).toBe(sketchCanvas());
+    expect(await fitKeyHandled()).toBe(true);
+    // Finishing the sketch hands focus back to the model view.
+    await finishSketch();
+    expect(window.document.activeElement).toBe(model());
+    // A double-click in the tree opens the sketch and leaves focus on the row it came from, including after finishing.
+    await act(async () => { row('Top').focus(); row('Top').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, detail: 2 })); });
+    expect(latest().sketchView).toMatchObject({ placement: { offsetMm: 10 } });
+    expect(window.document.activeElement).toBe(row('Top'));
+    await chooseBackground('hidden');
+    await finishSketch();
+    expect(window.document.activeElement).toBe(row('Top'));
+    // With focus nowhere, the sketch takes it; in Hidden too, where the model view is not shown at all.
+    await act(async () => (window.document.activeElement as HTMLElement).blur());
+    await openSketch('base');
+    expect(latest()).toMatchObject({ hidden: true, sketchView: null });
+    expect(window.document.activeElement).toBe(sketchCanvas());
+    await finishSketch();
+    expect(window.document.activeElement).toBe(model());
+  });
+
+  it('draws the sketch strokes and the drawing preview over a dark under-stroke only while the part shows plainly behind them', async () => {
+    const lined: CadSketchFeature = { ...top, graph: { points: [{ id: 'a', position: [0, 20] }, { id: 'b', position: [30, 20] }],
+      entities: [{ id: 'edge', kind: 'line', startPointId: 'a', endPointId: 'b', construction: true }], relations: [] } };
+    await mount({ ...part(), schemaVersion: 2, features: part().features.map(feature => feature.id === 'top' ? lined : feature) });
+    await openSketch('top');
+    const halos = () => container.querySelectorAll('svg.cad-sketch-canvas .cad-sketch-halo');
+    expect(halos()).toHaveLength(0);
+    await chooseBackground('normal');
+    // The under-stroke lies first within the edge, so it keeps the edge's dashes and every state colour draws above it, and widens the stroke.
+    const edge = container.querySelector('[data-cad-sketch-entity="edge"]')!, under = edge.firstElementChild!;
+    expect(under.classList.contains('cad-sketch-halo')).toBe(true);
+    expect(under.tagName).toBe(edge.querySelector(':scope > :not(.cad-sketch-halo)')?.tagName);
+    const stroke = Number(edge.closest('g[transform="scale(1,-1)"]')?.getAttribute('stroke-width'));
+    expect(Number(under.getAttribute('stroke-width'))).toBeGreaterThan(stroke);
+    const boss = container.querySelector('[aria-label="Select Boss profile"]')!;
+    expect(boss.querySelectorAll('.cad-sketch-halo')).toHaveLength(1);
+    expect(boss.querySelector('.cad-sketch-halo')?.compareDocumentPosition(boss.querySelector('.cad-sketch-halo + rect')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(halos()).toHaveLength(2);
+    // A line being drawn gets one too.
+    const surface = canvas(), line = [...container.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === 'Line' || button.textContent?.trim() === 'Line')!;
+    await act(async () => line.click());
+    await act(async () => { surface.dispatchEvent(pointer('pointerdown', 100, 100, 1)); });
+    for (let step = 1; step <= 4; step++) await act(async () => { surface.dispatchEvent(pointer('pointermove', 100 + step * 25, 100 + step * 12, 1)); });
+    expect(container.querySelector('[data-cad-sketch-overlay] .cad-sketch-halo')).not.toBeNull();
+    await act(async () => { surface.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+    await chooseBackground('dimmed');
+    expect(halos()).toHaveLength(0);
+    await chooseBackground('hidden');
+    expect(halos()).toHaveLength(0);
   });
 });

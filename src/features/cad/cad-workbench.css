@@ -253,7 +253,13 @@
 .cad-sketch-entity, .cad-sketch-entity.is-selected { fill: none; }
 .cad-sketch-entity:not([aria-disabled]):hover { stroke: #d6f6ff; }
 .cad-sketch-entity.is-selected { stroke: var(--primary); }
-.cad-sketch-entity.is-selected > :not(.cad-sketch-entity-hit) { stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
+.cad-sketch-entity.is-selected > :not(.cad-sketch-entity-hit, .cad-sketch-halo) { stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
+/*
+ * Over a part shown plainly behind the sketch, each stroke gets a dark under-stroke a pixel wider on each side, so pale edges stay
+ * readable on bright faces. It keeps the dashes of construction edges, takes no pointer, and every state colour still draws above it.
+ */
+.cad-sketch-halo { stroke: var(--background); fill: none; pointer-events: none; }
+.cad-sketch-entity.is-selected > .cad-sketch-halo { stroke-width: 4.5px; vector-effect: non-scaling-stroke; }
 .cad-sketch-graph-point { cursor: pointer; outline: none; }
 .cad-sketch-graph.is-draggable :is(.cad-sketch-entity:not([aria-disabled]), .cad-sketch-graph-point:not(.is-locked, [aria-disabled])) { cursor: grab; }
 .cad-sketch-graph.is-dragging, .cad-sketch-graph.is-dragging * { cursor: grabbing; }
