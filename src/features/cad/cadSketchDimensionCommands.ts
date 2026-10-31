@@ -83,13 +83,13 @@ export function cadSketchReferenceDrivingLock(graph: CadSketchGraph, relation: C
 export type CadSketchDimensionConversion = { readonly relation: CadSketchGraphRelation; readonly reason: null } | { readonly relation: null; readonly reason: string };
 const unavailable = (reason: string): CadSketchDimensionConversion => ({ relation: null, reason });
 /** Why a distance from the origin or an axis takes no reference form, when placed and once placed. */
-export const CAD_SKETCH_NO_REFERENCE_DATUM = 'A distance from the origin or an axis has no reference form yet.';
+export const CAD_SKETCH_NO_REFERENCE_HOLD = 'A distance from the origin or an axis has no reference form yet.';
 
 /** A driving length, distance, point to line distance, radius or diameter becomes a reference that measures the same thing and keeps its identity and placement. */
 export function cadSketchDimensionToReference(graph: CadSketchGraph, relation: CadSketchGraphRelation): CadSketchDimensionConversion {
   if (relation.kind === 'reference-dimension') return unavailable('This is already a reference dimension.');
   if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return unavailable('A corner treatment owns its fillet or chamfer size. Edit the corner instead.');
-  if (relation.kind === 'fixed-axis') return unavailable(CAD_SKETCH_NO_REFERENCE_DATUM);
+  if (relation.kind === 'fixed-axis') return unavailable(CAD_SKETCH_NO_REFERENCE_HOLD);
   if (relation.kind !== 'distance' && relation.kind !== 'point-line-distance' && relation.kind !== 'radial-size') return unavailable('Reference dimensions measure lengths, point distances, point to line distances, radii and diameters.');
   const line = relation.kind === 'distance' && graph.entities.find(entity => entity.kind === 'line' && cadSketchRelationHasPointPair(relation, [entity.startPointId, entity.endPointId]));
   const measurement: Measurement = relation.kind === 'radial-size' ? { kind: 'radial-size', entityId: relation.entityId, quantity: relation.quantity }

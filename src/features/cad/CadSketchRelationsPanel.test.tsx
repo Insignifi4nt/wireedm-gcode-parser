@@ -636,7 +636,7 @@ describe('selected sketch entity relations', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it('names relations that hold a point on the origin or an axis after that reference, and keeps the coordinate name for editing', async () => {
+  it('names a coordinate held at 0 as the Coincident that keeps the point on that axis, and keeps the coordinate name for editing', async () => {
     const source = parseCadDocument({ ...createCadDocument('Point', 'point'), schemaVersion: 2, features: [{
       id: 'sketch', kind: 'sketch', name: 'Sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
         points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 4] }, { id: 'c', position: [0, 0] }],
@@ -647,8 +647,9 @@ describe('selected sketch entity relations', () => {
     }] });
     const h = await mount(source, [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }, { kind: 'point', id: 'c' }]);
     const rows = () => [...container.querySelectorAll('[aria-label="Sketch relations"] li button[aria-pressed]')].map(row => row.textContent?.trim());
-    expect(rows()).toEqual(['On the X axis', 'On the Y axis', 'Distance4 mm', 'Fixed at the origin']);
-    await clickRelation('Inspect', 'On the X axis', 1);
+    // A point fixed at 0, 0 is a fixed point like any other; the origin itself is never stored.
+    expect(rows()).toEqual(['Coincident with the H axis', 'Coincident with the V axis', 'Distance4 mm', 'Fixed point']);
+    await clickRelation('Inspect', 'Coincident', 1);
     expect(h.inspect).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'onX' }));
     expect(field('Distance mm').value).toBe('0');
   });
@@ -740,36 +741,6 @@ describe('selected sketch entity relations', () => {
     expect(h.session.getSnapshot().document.features[0]).toMatchObject({ graph: { points: [{ id: 'a', position: [' origin ', 10] }] } });
     expect(document.querySelector('input[aria-label="Y mm"]')).toBeNull();
     expect(field('Fix Y').checked).toBe(false); expect(field('Fix Y').disabled).toBe(false);
-  });
-});
-
-describe('dimensions from the sketch origin and axes', () => {
-  const boreDocument = (relations: readonly unknown[] = []) => parseCadDocument({ ...createCadDocument('Located bore', 'located-bore'), schemaVersion: 2, features: [{
-    id: 'sketch', kind: 'sketch', name: 'Bore', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
-      points: [{ id: 'center', position: [30, -20] }], entities: [{ id: 'bore', kind: 'circle', centerPointId: 'center', radius: 4, construction: false }], relations
-    }
-  }] });
-  it('keeps signed coordinates from the origin and drives the one you change', async () => {
-    const h = await mount(boreDocument(), { kind: 'point', id: 'center' }, { initialCommand: { kind: 'datum-distance', datum: 'origin' } });
-    expect(field('X from origin mm').value).toBe('30'); expect(field('Y from origin mm').value).toBe('-20');
-    expect(document.activeElement).toBe(field('X from origin mm'));
-    await input('X from origin mm', '35'); await click('Apply');
-    expect(h.edit).toHaveBeenCalledExactlyOnceWith([
-      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({ kind: 'fixed-axis', pointId: 'center', axis: 'x', value: 35 }) },
-      { kind: 'set-sketch-relation', sketchId: 'sketch', relation: expect.objectContaining({ kind: 'fixed-axis', pointId: 'center', axis: 'y', value: -20 }) }
-    ], expect.any(AbortSignal));
-  });
-  it('reuses the coordinate an axis already drives and explains a point that cannot take one', async () => {
-    const h = await mount(boreDocument([{ id: 'level', kind: 'fixed-axis', pointId: 'center', axis: 'y', value: -20 }]), { kind: 'point', id: 'center' },
-      { initialCommand: { kind: 'datum-distance', datum: 'x-axis' } });
-    // A distance shows its size and keeps the side of the axis the point is on; only the one the X axis drives is offered.
-    expect([...container.querySelectorAll('input[aria-label="Distance mm"]')].map(item => (item as HTMLInputElement).value)).toEqual(['20']);
-    await input('Distance mm', '25'); await click('Apply');
-    expect(h.edit).toHaveBeenCalledExactlyOnceWith([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'level', kind: 'fixed-axis', pointId: 'center', axis: 'y', value: -25 } }], expect.any(AbortSignal));
-    await act(async () => root.unmount()); root = createRoot(container);
-    await mount(boreDocument([{ id: 'pin', kind: 'fixed-point', pointId: 'center', position: [30, -20] }]), { kind: 'point', id: 'center' }, { initialCommand: { kind: 'datum-distance', datum: 'y-axis' } });
-    expect(container.textContent).toContain('already has its position from a fixed point or an expression');
-    expect(container.querySelector('input[aria-label="Distance mm"]')).toBeNull();
   });
 });
 
@@ -1092,7 +1063,7 @@ describe('point to line distance dimensions', () => {
     expect(pointLine.edit).toHaveBeenCalledExactlyOnceWith([set({ ...rise, value: 12 })], expect.any(AbortSignal));
   });
 
-  it('edits a point pair or datum dimension that a coincident alias already carries', async () => {
+  it('edits a point pair dimension that a coincident alias already carries', async () => {
     const apart = { id: 'apart', kind: 'distance', pointIds: ['e', 'd'], value: 20 } as const, across = { id: 'across', kind: 'axis-distance', pointIds: ['e', 'd'], axis: 'x', value: 20 } as const;
     const aligned = await mount(aliasDocument([apart, across]), [{ kind: 'point', id: 'c' }, { kind: 'point', id: 'd' }], { initialCommand: { kind: 'distance' }, dimensionOnly: true });
     expect(field('Distance mm').value).toBe('20');
@@ -1108,14 +1079,6 @@ describe('point to line distance dimensions', () => {
     expect(horizontal.edit).toHaveBeenCalledExactlyOnceWith([set({ ...across, value: 22 })], expect.any(AbortSignal));
     await remount();
     const fix = { id: 'fix', kind: 'fixed-axis', pointId: 'e', axis: 'x', value: 0 } as const;
-    const datum = await mount(aliasDocument([fix]), { kind: 'point', id: 'c' }, { initialCommand: { kind: 'datum-distance', datum: 'y-axis' }, dimensionOnly: true });
-    expect(field('Distance mm').value).toBe('0');
-    await input('Distance mm', ' 3 '); await click('Apply');
-    expect(datum.edit).toHaveBeenCalledExactlyOnceWith([set({ ...fix, value: 3 })], expect.any(AbortSignal));
-    await remount();
-    await mount(aliasDocument([{ id: 'pin', kind: 'fixed-point', pointId: 'e', position: [0, 10] }]), { kind: 'point', id: 'c' }, { initialCommand: { kind: 'datum-distance', datum: 'origin' }, dimensionOnly: true });
-    expect(container.textContent).toContain('already has its position from a fixed point or an expression');
-    await remount();
     // Fix X shows the alias's coordinate as already fixed instead of offering a second, redundant one.
     await mount(aliasDocument([fix]), { kind: 'point', id: 'c' });
     expect(field('Fix X')).toMatchObject({ checked: true, disabled: true }); expect(field('Fix Y')).toMatchObject({ checked: false, disabled: false });

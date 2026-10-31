@@ -14,6 +14,7 @@ import { CadSketchGraphSchema, type CadSketchGraph, type CadSketchGraphRelation 
 import { appendCadSketchEntities, deleteCadSketchElements, setCadSketchConstruction } from './cadSketchGraphEdits';
 import { CadSketchCornerCommandTreatmentSchema, createCadSketchCornerTreatmentFromIds, type CadSketchCornerCommandTreatment } from './cadSketchCornerTreatment';
 import { CAD_SKETCH_SELECTION_LIMIT, CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
+import { cadSketchFixedElementError, isCadSketchVirtualId } from './sketch-relations/cadSketchVirtualElements';
 import { translateCadSketchGraph } from './cadSketchTranslation';
 import { keepCadSketchLineSides } from './cadSketchPointLineDistanceRelations';
 import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
@@ -135,9 +136,26 @@ export function placeCadSketchDimensions(document: CadDocument, edits: readonly 
   return placed;
 }
 
+/** The sketch edits that move, cut, delete, convert or copy the points and edges they name, which the origin and the axes refuse. */
+const SKETCH_ELEMENT_EDITS: ReadonlySet<string> = new Set(['translate-sketch-geometry', 'place-sketch-geometry', 'create-sketch-corner',
+  'split-sketch-entity', 'trim-sketch-entity', 'extend-sketch-entity', 'offset-sketch-loop', 'mirror-sketch-geometry', 'use-sketch-entity',
+  'delete-sketch-elements', 'set-sketch-construction', 'move-sketch-point']);
+/** Refuse an edit that names the origin or an axis as something it changes, with that reason rather than as malformed. */
+function refuseFixedSketchElements(edit: unknown): void {
+  if (!edit || typeof edit !== 'object' || !SKETCH_ELEMENT_EDITS.has((edit as { kind?: unknown }).kind as string)) return;
+  const visit = (value: unknown, key: string): void => {
+    // A mirror line is only read, so a mirror may be about an axis.
+    if (typeof value === 'string') { if (key !== 'axisLineId' && /(?:^i|I)ds?$/.test(key) && isCadSketchVirtualId(value)) throw cadSketchFixedElementError(); }
+    else if (Array.isArray(value)) for (const item of value) visit(item, key);
+    else if (value && typeof value === 'object') for (const [name, item] of Object.entries(value)) visit(item, name);
+  };
+  visit(edit, '');
+}
+
 export function validateCadEditBatch(edits: readonly CadEdit[]): void {
   if (!isCadImportData(edits) || !Array.isArray(edits)) throw new CadError('invalid-edit', 'CAD edits must contain their own complete JSON data fields.');
   if (edits.length > 256) throw new CadError('edit-limit', 'An edit batch may contain at most 256 edits.');
+  for (const edit of edits) refuseFixedSketchElements(edit);
   for (const edit of edits) if (!Value.Check(CadEditSchema, edit)) throw new CadError('invalid-edit', 'Malformed CAD edit.');
 }
 

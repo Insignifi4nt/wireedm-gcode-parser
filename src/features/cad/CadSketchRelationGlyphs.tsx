@@ -41,7 +41,7 @@ export interface CadSketchRelationGlyphsProps {
   /** Whether the glyphs are tab stops: in Select, outside a pending path or a pick. Defaults to `interactive`. */
   readonly focusable?: boolean;
   readonly highlight?: CadSketchHighlightStore;
-  /** Whether a sketch point or edge, a datum, a profile grip or a profile edge under the pointer keeps the pick from a glyph. */
+  /** Whether a sketch point or edge, the origin or an axis, a profile grip or a profile edge under the pointer keeps the pick from a glyph. */
   covered?(event: GlyphEvent): boolean;
   /** A plain click selects a glyph's relations, Shift toggles them and Escape clears with `null`. */
   onSelect?(picks: readonly CadSketchDimensionPick[] | null, additive: boolean): void;
@@ -204,7 +204,7 @@ function useRestingReveal(layer: SVGGElement | null, highlight: CadSketchHighlig
 
 /**
  * Relation glyphs: thin, quiet marks in the annotation colour on each point or edge a relation names. The layer lies beneath the dimension
- * lines, the sketch points and the edges, so they keep their own picks; a press on a glyph over geometry, a datum, a grip or a profile edge
+ * lines, the sketch points and the edges, so they keep their own picks; a press on a glyph over geometry, the origin or an axis, a grip or a profile edge
  * leaves it to the canvas too. The glyphs at rest paint as a few paths in one scaled group: their plates as one path per state and their
  * icons as one path per state, so every repaint of the sketch, as each hover move brings, paints a few items per layer rather than per glyph,
  * and the layers below count how deeply glyphs overlap, not how many there are.
@@ -322,7 +322,7 @@ export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ g
       },
       leave: key => { if (hovered.current === `glyph:${key}`) hide(); },
       down: (key, event) => {
-        // The canvas owns right and middle presses: a still right release opens this glyph's menu. Geometry, a datum, a grip or a
+        // The canvas owns right and middle presses: a still right release opens this glyph's menu. Geometry, the origin or an axis, a grip or a
         // profile edge under the pointer keeps the left press, so it passes on to the canvas untouched.
         if (event.button !== 0) return;
         if (!latest.current.interactive || latest.current.covered?.(event)) { pressed.current = null; return; }

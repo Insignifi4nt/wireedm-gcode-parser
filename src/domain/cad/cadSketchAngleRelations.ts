@@ -10,6 +10,7 @@ import { resolveCadSketchGraphJoints } from './cadSketchGraphJoints';
 import type { Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
 import { cross, dot } from '@/domain/path-intel/segments';
+import { CadSketchPositions } from './sketch-relations/cadSketchVirtualElements';
 
 type Rays = CadSketchAngleRelation['rays'];
 type Direction = NonNullable<ReturnType<typeof cadSketchLineDirection>>;
@@ -113,7 +114,8 @@ interface CreationInput {
 }
 function prepare(input: CreationInput) {
   if (!Value.Check(CadIdentifierSchema, input.relationId)) throw new CadError('invalid-sketch-angle', 'Choose a valid angle relation identity.');
-  const points = new Map(input.graph.points.map(point => [point.id,
+  // An axis's ends are the origin and its sample, which the positions always hold.
+  const points = new CadSketchPositions(input.graph.points.map(point => [point.id,
     { x: evaluateCadScalar(point.position[0], input.parameters), y: evaluateCadScalar(point.position[1], input.parameters) }]));
   const lines = resolveCadSketchLinePair(input.graph, input.lineIds);
   const a = cadSketchLineDirection(lines[0], points), b = cadSketchLineDirection(lines[1], points);

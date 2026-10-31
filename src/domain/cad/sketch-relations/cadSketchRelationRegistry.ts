@@ -1,11 +1,12 @@
 import { isAcceptedCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from '../cadSketchGraph';
+import { cadSketchCanonicalForm, cadSketchCanonicalRelations } from './cadSketchCanonicalForms';
 import { isCadSketchPointSlot, resolveCadSketchOperands } from './cadSketchOperandSignatures';
 import type { CadSketchOperandNames, CadSketchOperandSignature, CadSketchRelationDefinition, CadSketchRelationDefinitions, CadSketchRelationIntent, CadSketchRelationKind } from './cadSketchRelationTypes';
 import { chamferCorner, externalReference, filletCorner, linearPattern } from './kinds/composites';
 import { axisDistance, distance, fixedAxis, lineAngle, pointLineDistance, radialSize, referenceDimension } from './kinds/dimensions';
 import { equalLength, equalRadius } from './kinds/equality';
 import { fixedPoint } from './kinds/fix';
-import { coincident, midpoint, pointOnCurve, pointOnLine, symmetric, tangentJoint } from './kinds/incidence';
+import { coincident, midpoint, pointOnCurve, pointOnLine, symmetric, tangent, tangentJoint } from './kinds/incidence';
 import { collinear, horizontal, parallel, perpendicular, vertical } from './kinds/orientation';
 
 /**
@@ -15,7 +16,7 @@ import { collinear, horizontal, parallel, perpendicular, vertical } from './kind
 export const CAD_SKETCH_RELATION_DEFINITIONS: CadSketchRelationDefinitions = Object.freeze({
   'linear-pattern': linearPattern, 'reference-dimension': referenceDimension, 'external-reference': externalReference,
   coincident, horizontal, vertical, parallel, perpendicular, collinear,
-  midpoint, 'point-on-line': pointOnLine, 'point-on-curve': pointOnCurve, 'tangent-joint': tangentJoint, symmetric,
+  midpoint, 'point-on-line': pointOnLine, 'point-on-curve': pointOnCurve, 'tangent-joint': tangentJoint, tangent, symmetric,
   'equal-length': equalLength, 'equal-radius': equalRadius,
   'line-angle': lineAngle, 'radial-size': radialSize, 'fixed-point': fixedPoint, 'fixed-axis': fixedAxis,
   distance, 'point-line-distance': pointLineDistance, 'axis-distance': axisDistance,
@@ -70,9 +71,17 @@ export function cadSketchRelationKeyIndex(graph: CadSketchGraph): ReadonlyMap<st
   return index;
 }
 const NO_IDS: readonly string[] = Object.freeze([]);
-/** The graph's relations that already hold what `relation` holds, in graph order. */
+/**
+ * The graph's relations that already hold what `relation` holds, in graph order. A relation on the origin or an axis that another kind
+ * keeps is held by the relations of that form, when the graph has every one of them.
+ */
 export function cadSketchRelationsLike(graph: CadSketchGraph, relation: CadSketchRelationIntent): readonly string[] {
-  return cadSketchRelationKeyIndex(graph).get(cadSketchRelationKey(relation as CadSketchGraphRelation)) ?? NO_IDS;
+  const index = cadSketchRelationKeyIndex(graph), form = cadSketchCanonicalForm(graph, relation);
+  if (!form) return index.get(cadSketchRelationKey(relation as CadSketchGraphRelation)) ?? NO_IDS;
+  const holding = cadSketchCanonicalRelations(form).map(canonical => index.get(cadSketchRelationKey(canonical as CadSketchGraphRelation)) ?? NO_IDS);
+  if (holding.some(ids => !ids.length)) return NO_IDS;
+  const ids = new Set(holding.flat());
+  return graph.relations.filter(stored => ids.has(stored.id)).map(stored => stored.id);
 }
 
 /** The kind's name for this relation: a radial size names its radius or diameter. */

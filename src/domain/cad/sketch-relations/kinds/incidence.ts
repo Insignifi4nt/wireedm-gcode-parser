@@ -7,7 +7,10 @@ import { assertCadSketchSymmetryIdentities, checkCadSketchSymmetricRelation, res
 import { checkCadSketchTangentJoint, resolveCadSketchTangentJoint } from '../../cadSketchTangentRelations';
 import { checkCadSketchMidpoint, checkCadSketchPointPair } from '../cadSketchRelationChecks';
 import { CAD_SKETCH_MIDPOINT_OPERANDS, CAD_SKETCH_POINT_ON_CURVE_OPERANDS, CAD_SKETCH_POINT_ON_LINE_OPERANDS, CAD_SKETCH_SYMMETRY_OPERANDS } from '../cadSketchOperandSignatures';
+import { evaluateCadScalar } from '../../cadExpression';
+import { cadSketchDriverTolerance } from '../../cadSketchPrecision';
 import type { CadSketchRelationDefinition } from '../cadSketchRelationTypes';
+import { CAD_SKETCH_ORIGIN_ID, cadSketchAxisNormal, type CadSketchVirtualAxisId } from '../cadSketchVirtualElements';
 import { CAD_SKETCH_POINT_PAIR_OPERANDS, LINE_SLOT, POINT_SLOT, ROUND_SLOT, chainedPair, sortedIds } from './kindParts';
 
 // Points that lie on, or in a set place on, other geometry. Their parse checks resolve exact identities: proximity never stands in for one.
@@ -43,7 +46,7 @@ export const midpoint: CadSketchRelationDefinition<'midpoint'> = {
   withOperands: (relation, [pointId, lineId]) => ({ ...relation, pointId, lineId }),
   key: relation => `midpoint ${relation.pointId} ${relation.lineId}`,
   validate: (graph, _, [point, line]) => { assertCadSketchMidpointIdentities(graph, point as CadSketchGraphPoint, line as Line); },
-  offers: [{ signature: { slots: [POINT_SLOT, LINE_SLOT] }, plan: (planner, [point, line]) => planner.place({ kind: 'midpoint', pointId: point.id, lineId: line.id }) }],
+  offers: [{ signature: { slots: [POINT_SLOT, { ...LINE_SLOT, needs: ['midpoint'] }] }, plan: (planner, [point, line]) => planner.place({ kind: 'midpoint', pointId: point.id, lineId: line.id }) }],
   lower: (relation, context) => {
     const { line } = resolveCadSketchMidpointOperands(context.graph, relation);
     context.together(() => {
@@ -117,7 +120,7 @@ export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
     meaning: 'Keeps two point positions reflected about the infinite supporting line of the named axis. It does not fix that axis, join points or equalize circle radii.' }
 };
 
-const tangentCurve = (role: string) => ({ role, accepts: ['line', 'arc'] }) as const;
+const tangentCurve = (role: string) => ({ role, accepts: ['line', 'arc'], needs: ['ends'] }) as const;
 export const tangentJoint: CadSketchRelationDefinition<'tangent-joint'> = {
   kind: 'tangent-joint', family: 'incidence', name: 'Tangent',
   // Each curve with the end it joins at.
@@ -145,4 +148,38 @@ export const tangentJoint: CadSketchRelationDefinition<'tangent-joint'> = {
   check: (graph, relation, points) => checkCadSketchTangentJoint(graph, relation, points),
   agent: { exposed: true, summary: 'A line and an arc that share an endpoint join smoothly there.',
     meaning: 'Keeps one line and one arc smoothly opposed at their explicitly joined endpoints. Declared endpoint identity, arc direction and existing size drivers remain authoritative; it adds no coincidence or radius driver.' }
+};
+
+const axisTangentRefusal = { code: 'invalid-sketch-tangent', message: 'Tangent to an axis needs an existing arc or circle and the H or V axis.' } as const;
+// An arc or circle touching the H or V axis, on whichever side of it the arc or circle is.
+export const tangent: CadSketchRelationDefinition<'tangent'> = {
+  kind: 'tangent', family: 'incidence', name: 'Tangent',
+  stored: { slots: [{ role: 'Arc or circle', accepts: ['round'], refusal: axisTangentRefusal }, { role: 'Axis', accepts: ['axis'], refusal: axisTangentRefusal }] },
+  operands: relation => relation.curveIds,
+  withOperands: (relation, [curve, axis]) => ({ ...relation, curveIds: [curve, axis] }),
+  key: relation => `tangent ${relation.curveIds[0]} ${relation.curveIds[1]}`,
+  offers: [{ signature: { slots: [ROUND_SLOT, { role: 'Axis', accepts: ['axis'] }] }, plan: (planner, [curve, axis]) => planner.tangent(planner.entity(curve.id)!, planner.entity(axis.id)!) }],
+  // The span from the centre to its foot on the axis, which keeps the centre's own coordinate along the axis and the axis's 0 across
+  // it, is the arc's or circle's size, so either side of the axis holds it.
+  lower: (relation, context) => {
+    const curve = context.edge(relation.curveIds[0]), [cx, cy] = context.point(context.centre(curve)), [ox, oy] = context.point(CAD_SKETCH_ORIGIN_ID);
+    const foot = cadSketchAxisNormal(relation.curveIds[1] as CadSketchVirtualAxisId) === 'y' ? [cx, oy] as const : [ox, cy] as const;
+    context.equalSizes({ kind: 'span', span: [cx, cy, ...foot] }, context.size(curve));
+  },
+  check: (graph, relation, points, parameters) => {
+    const source = { kind: 'relation', id: relation.id } as const;
+    try {
+      const curve = graph.entities.find(entity => entity.id === relation.curveIds[0]) as Round | undefined, centre = curve && points.get(curve.centerPointId);
+      const start = curve?.kind === 'arc' ? points.get(curve.startPointId) : undefined;
+      if (!curve || !centre || curve.kind === 'arc' && !start) return []; // Owning point checks report missing or invalid coordinates.
+      const radius = curve.kind === 'circle' ? evaluateCadScalar(curve.radius, parameters) : Math.hypot(start!.x - centre.x, start!.y - centre.y);
+      const across = cadSketchAxisNormal(relation.curveIds[1] as CadSketchVirtualAxisId) === 'y' ? centre.y : centre.x, residualMm = Math.abs(Math.abs(across) - radius);
+      return !Number.isFinite(residualMm) || residualMm > cadSketchDriverTolerance([centre, ...(start ? [start] : [])])
+        ? [{ source, code: 'relation-residual', message: 'The arc or circle does not touch its axis.', ...(Number.isFinite(residualMm) ? { residualMm } : {}) }] : [];
+    } catch (error) {
+      return [{ source, code: 'invalid-expression', message: error instanceof Error ? error.message : 'Invalid tangent to an axis.' }];
+    }
+  },
+  agent: { exposed: true, summary: 'An arc or circle touches the H or V axis.',
+    meaning: 'Keeps the full circle of an arc or circle touching an axis, on either side of it.' }
 };

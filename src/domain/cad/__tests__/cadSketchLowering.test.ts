@@ -19,7 +19,7 @@ const graph = parseCadSketchGraph({
 });
 const lowering = () => {
   const model = compileCadSketchEquations({ graph, parameters: { span: 10 } }), points = new Map(graph.points.map(point => [point.id, { x: 0, y: 0 }]));
-  return new CadSketchLowering(graph, { span: 10 }, model.pointParameters, model.radiusParameters, points);
+  return new CadSketchLowering(graph, { span: 10 }, model.pointParameters, model.radiusParameters, points, model.values.length);
 };
 const refusal = (run: () => unknown) => { try { run(); } catch (error) { return error; } return undefined; };
 
@@ -61,7 +61,7 @@ describe('sketch relation lowering', () => {
     const points = new Map(patterned.points.map(point => [point.id, { x: Number(point.position[0]), y: Number(point.position[1]) }]));
     // Without the seed's radius parameter, the pattern emits its copy's two offsets and then refuses the seed's size.
     const radii = new Map([...model.radiusParameters].filter(([id]) => id !== 'seed'));
-    const context = new CadSketchLowering(patterned, {}, model.pointParameters, radii, points);
+    const context = new CadSketchLowering(patterned, {}, model.pointParameters, radii, points, model.values.length);
     context.lower(onCopy);
     const kept = { equations: [...context.equations], radialHolds: [...context.radialHolds] };
     expect(kept.radialHolds).toHaveLength(1);
@@ -70,7 +70,7 @@ describe('sketch relation lowering', () => {
     expect(context.radialHolds).toEqual(kept.radialHolds);
     // The next relation's equations and tags are those it would have had if the refused one had never been lowered.
     context.lower(gap);
-    const clean = new CadSketchLowering(patterned, {}, model.pointParameters, radii, points);
+    const clean = new CadSketchLowering(patterned, {}, model.pointParameters, radii, points, model.values.length);
     clean.lower(onCopy); clean.lower(gap);
     expect(context.equations).toEqual(clean.equations);
     expect(context.equations.map(equation => equation.tag)).toEqual([0, 1]);

@@ -3,7 +3,9 @@ import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoin
 import { cadSketchRelationEntityIds } from '@/domain/cad/cadSketchGraphReferences';
 import type { CadSketchDimensionRelation, CadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
 import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
-import { cadSketchZeroScalar, type CadSketchDatum } from './cadSketchGraphSelection';
+import { cadSketchZeroScalar } from './cadSketchGraphSelection';
+import { cadSketchRelationDefinition } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
+import { CAD_SKETCH_ORIGIN_ID, cadSketchAxisOfNormal, isCadSketchVirtualId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import { cadSketchCurveCentres, cadSketchRelationName, isCadSketchConcentric } from './cadSketchRelationNames';
 
 const DIMENSION_KINDS: ReadonlySet<CadSketchGraphRelation['kind']> = new Set(['distance', 'point-line-distance', 'axis-distance', 'fixed-axis', 'radial-size', 'fillet-corner', 'chamfer-corner', 'line-angle', 'reference-dimension']);
@@ -75,7 +77,7 @@ export function selectCadSketchDimension(current: readonly CadSketchDimensionPic
   return current.length >= MAX_SELECTED_DIMENSIONS ? current : Object.freeze([...current, pick]);
 }
 /**
- * The same for a glyph that draws several relations, such as X and Y held at 0 on one point drawn as one At the origin glyph: a plain pick selects
+ * The same for a glyph that draws several relations, such as X and Y held at 0 on one point drawn as one Coincident glyph with the origin: a plain pick selects
  * them all; an additive pick removes them once all are selected, and otherwise adds the ones missing.
  */
 export function selectCadSketchAnnotations(current: readonly CadSketchDimensionPick[], picks: readonly CadSketchDimensionPick[], graph: CadSketchGraph | null | undefined, additive = false): readonly CadSketchDimensionPick[] {
@@ -226,8 +228,8 @@ export function cadSketchDimensionName(graph: CadSketchGraph, relation: CadSketc
     case 'reference-dimension': return 'Reference dimension';
   }
 }
-/** How a relation glyph that draws X and Y held at 0 on one place names them: the point sits at the origin. */
-export const CAD_SKETCH_ORIGIN_PAIR_NAME = 'At the origin';
+/** How a relation glyph that draws X and Y held at 0 on one place names them: the point is Coincident with the origin. */
+export const CAD_SKETCH_ORIGIN_PAIR_NAME = 'Coincident';
 /**
  * Whether the relations are X and Y held at 0 on one point, or on points that Coincident joins in one place: two relation glyph
  * relations that one glyph draws as the point at the origin. A coordinate held away from 0 is a Distance dimension, never part of one.
@@ -240,7 +242,7 @@ export function isCadSketchOriginPair(graph: CadSketchGraph, relations: readonly
 }
 /**
  * What the canvas status line says about the selected dimensions and relations; selection never opens the editor. X and Y held at 0 on
- * one point, drawn as one At the origin glyph, read as that glyph.
+ * one point, drawn as one Coincident glyph with the origin, read as that glyph.
  */
 export function cadSketchDimensionSelectionStatus(graph: CadSketchGraph | undefined, ids: readonly string[]): string | null {
   if (!graph || !ids.length) return null;
@@ -260,9 +262,9 @@ export function cadSketchAnnotationCount(graph: CadSketchGraph, ids: readonly st
   return !others ? count(dimensions, 'dimension') : !dimensions ? count(others, 'relation') : `${count(dimensions, 'dimension')} and ${count(others, 'relation')}`;
 }
 
-/** Geometry a relation names directly, plus the sketch datum it measures from. */
-export interface CadSketchHighlight { readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly datums: readonly CadSketchDatum[] }
-export const NO_SKETCH_HIGHLIGHT: CadSketchHighlight = Object.freeze({ pointIds: [], entityIds: [], datums: [] });
+/** Geometry a relation names directly, the origin and the axes among it, plus the origin or the axis a coordinate is measured from. */
+export interface CadSketchHighlight { readonly pointIds: readonly string[]; readonly entityIds: readonly string[] }
+export const NO_SKETCH_HIGHLIGHT: CadSketchHighlight = Object.freeze({ pointIds: [], entityIds: [] });
 /** A graph's point and edge IDs, its lines by their two end IDs and its curves by centre, built once per graph so naming many relations reads no graph twice. */
 interface GeometryIndex {
   readonly points: ReadonlySet<string>; readonly entities: ReadonlySet<string>;
@@ -296,11 +298,13 @@ export function cadSketchRelationHighlight(graph: CadSketchGraph, relation: CadS
   const identity = cadSketchPointIdentity(graph), [first, second] = named.map(identity);
   const spanned = relation.kind === 'coincident' && isCadSketchConcentric(graph, relation, centres) ? relation.pointIds.flatMap(id => centres.get(id) ?? [])
     : named.length === 2 ? [...new Set([`${first} ${second}`, `${first} ${first}`, `${second} ${second}`].flatMap(key => lines.get(key) ?? []))].sort((a, b) => a - b).map(at => graph.entities[at].id) : [];
-  // A coordinate is measured from the other axis: X from the Y axis, Y from the X axis. A distance drawn to a line kept along the axis lights that line.
-  const datums: readonly CadSketchDatum[] = relation.kind === 'fixed-axis' ? [relation.axis === 'x' ? 'y-axis' : 'x-axis'] : relation.kind === 'fixed-point' ? ['origin'] : [];
+  // A coordinate is measured from the axis across it: X from the V axis, Y from the H axis, and a fixed point from the origin. A distance
+  // drawn to a line kept along the axis lights that line.
+  const fixed = [...cadSketchRelationDefinition(relation).operands(relation).filter(isCadSketchVirtualId),
+    ...relation.kind === 'fixed-axis' ? [cadSketchAxisOfNormal(relation.axis)] : relation.kind === 'fixed-point' ? [CAD_SKETCH_ORIGIN_ID] : []];
   const measured = relation.kind === 'fixed-axis' && isCadSketchDimensionRelation(relation) ? cadSketchAxisDistanceLine(graph, relation)?.id : undefined;
-  return { pointIds: [...new Set(named)].filter(id => points.has(id)),
-    entityIds: [...new Set([...cadSketchRelationEntityIds(relation), ...spanned, ...measured ? [measured] : []])].filter(id => entities.has(id)), datums };
+  return { pointIds: [...new Set([...named.filter(id => points.has(id)), ...fixed.filter(id => id === CAD_SKETCH_ORIGIN_ID)])],
+    entityIds: [...new Set([...[...cadSketchRelationEntityIds(relation), ...spanned, ...measured ? [measured] : []].filter(id => entities.has(id)), ...fixed.filter(id => id !== CAD_SKETCH_ORIGIN_ID)])] };
 }
 
 /**

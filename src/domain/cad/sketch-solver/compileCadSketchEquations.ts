@@ -1,7 +1,7 @@
 import { evaluateCadScalar } from '../cadExpression';
 import { cadSketchExternalReferenceComponents } from '../cadSketchExternalReferences';
 import type { CadSketchGraph } from '../cadSketchGraph';
-import type { Point2 } from '../../path-intel/types';
+import { CadSketchPositions } from '../sketch-relations/cadSketchVirtualElements';
 import type { CadSketchEquationModel } from './cadSketchEquationModel';
 import { CadSketchLowering, type CadSketchRadialHold } from './cadSketchLoweringContext';
 
@@ -27,7 +27,7 @@ export function compileCadSketchEquations(input: CadSketchEquationInput): CadSke
   const graph = input.graph, scalar = (value: number | string) => evaluateCadScalar(value, input.parameters);
   const owned = cadSketchExternalReferenceComponents(graph);
   const values: number[] = [], fixed: boolean[] = [];
-  const pointParameters = new Map<string, number>(), radiusParameters = new Map<string, number>(), numericPoints = new Map<string, Point2>();
+  const pointParameters = new Map<string, number>(), radiusParameters = new Map<string, number>(), numericPoints = new CadSketchPositions();
   for (const point of graph.points) {
     pointParameters.set(point.id, values.length);
     const position = { x: scalar(point.position[0]), y: scalar(point.position[1]) }; numericPoints.set(point.id, position);
@@ -38,9 +38,11 @@ export function compileCadSketchEquations(input: CadSketchEquationInput): CadSke
     radiusParameters.set(entity.id, values.length);
     values.push(scalar(entity.radius)); fixed.push(typeof entity.radius === 'string' || owned.circleIds.has(entity.id));
   }
-  const lowering = new CadSketchLowering(graph, input.parameters, pointParameters, radiusParameters, numericPoints);
+  const lowering = new CadSketchLowering(graph, input.parameters, pointParameters, radiusParameters, numericPoints, values.length);
   for (const entity of graph.entities) lowering.structure(entity);
   for (const relation of graph.relations) lowering.lower(relation);
+  // The origin and the axes, where an equation keeps their fixed values, follow every point and radius.
+  for (const value of lowering.fixedValues) { values.push(value); fixed.push(true); }
   if (input.drag) {
     const { pointId, position } = input.drag;
     if (!pointParameters.has(pointId) || position.some(value => !Number.isFinite(value) || Math.abs(value) > 1e9)) throw new Error('Invalid sketch drag target.');

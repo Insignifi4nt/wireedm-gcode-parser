@@ -3,6 +3,7 @@ import { checkCadSketchGraph } from './cadSketchGraph';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { createArcSegment } from '@/domain/path-intel/segments';
+import { cadSketchVirtualPoint } from './sketch-relations/cadSketchVirtualElements';
 
 export type CadSketchEntityMeasurement =
   | { readonly kind: 'line'; readonly lengthMm: number; readonly deltaMm: readonly [number, number] }
@@ -18,8 +19,9 @@ export function createCadSketchMeasurementReader(graph: CadSketchGraph, paramete
     if (!value) throw new CadError('missing-sketch-point', 'The measured point is no longer available.');
     return value;
   };
+  // The origin is measured from as any point is.
   const point = (id: string): readonly [number, number] => {
-    const source = sourcePoint(id);
+    const source = cadSketchVirtualPoint(id) ?? sourcePoint(id);
     return [evaluateCadScalar(source.position[0], parameters), evaluateCadScalar(source.position[1], parameters)];
   };
   const betweenPoints = (firstId: string, secondId: string) => {

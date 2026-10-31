@@ -29,7 +29,7 @@ export class CadSketchPlacementDependencyError extends CadError {
 export function placeCadSketchGraph({ graph, parameters, selections, anchor, target, angleDegrees }: CadSketchPlacementRequest & {
   readonly graph: CadSketchGraph; readonly parameters: Readonly<Record<string, number>>;
 }): CadSketchGraph {
-  const selected = cadSketchGraphSelectionSet(graph, selections);
+  const selected = cadSketchGraphSelectionSet(graph, selections, true);
   if (!selected.length) throw new CadError('invalid-sketch-selection', 'Choose at least one point or edge to place.');
   const origin = anchor.map(value => evaluateCadScalar(value, parameters)), destination = target.map(value => evaluateCadScalar(value, parameters));
   const degrees = evaluateCadScalar(angleDegrees, parameters) % 360;

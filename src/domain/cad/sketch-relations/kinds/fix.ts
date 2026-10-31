@@ -19,7 +19,7 @@ export const fixedPoint: CadSketchRelationDefinition<'fixed-point'> = {
   key: relation => `fixed-point ${relation.pointId}`,
   // The point is held where it is: as one fixed point, or as a fixed axis for each numeric coordinate that nothing holds yet, since a
   // coordinate written as an expression already follows it. A point joined to a fixed one is fixed already.
-  offers: [{ signature: { slots: [POINT_SLOT], expand: 'each' }, plan: (planner, [point]) => planner.fix(point.id) }],
+  offers: [{ signature: { slots: [{ ...POINT_SLOT, needs: ['movable'] }], expand: 'each' }, plan: (planner, [point]) => planner.fix(point.id) }],
   lower: (relation, context) => {
     context.hold(relation.pointId, 0, context.value(relation.id, 'position.0'));
     context.hold(relation.pointId, 1, context.value(relation.id, 'position.1'));

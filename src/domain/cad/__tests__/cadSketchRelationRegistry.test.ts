@@ -20,6 +20,7 @@ const examples: { readonly [K in CadSketchRelationKind]: CadSketchRelationOf<K> 
   'point-on-line': { id: 'r11', kind: 'point-on-line', pointId: 'p3', lineId: 'l1' },
   'point-on-curve': { id: 'r12', kind: 'point-on-curve', pointId: 'p3', curveId: 'c1' },
   'tangent-joint': { id: 'r13', kind: 'tangent-joint', endpoints: [{ entityId: 'l1', pointId: 'p2' }, { entityId: 'a1', pointId: 'p4' }] },
+  tangent: { id: 'r26', kind: 'tangent', curveIds: ['c1', '@h'] },
   symmetric: { id: 'r14', kind: 'symmetric', pointIds: ['p1', 'p2'], lineId: 'l3' },
   'equal-length': { id: 'r15', kind: 'equal-length', lineIds: ['l1', 'l2'] },
   'equal-radius': { id: 'r16', kind: 'equal-radius', curveIds: ['c1', 'a1'] },
@@ -137,7 +138,8 @@ describe('sketch relation definitions', () => {
     expect(cadSketchRelationMentions(examples['line-angle'], names)).toEqual(['edge l1', 'edge l2']);
     expect(cadSketchRelationMentions(examples['linear-pattern'], names)).toEqual(['edge c1']);
     expect(cadSketchRelationMentions(examples['tangent-joint'], names)).toEqual(['edge l1 at point p2', 'edge a1 at point p4']);
-    expect(cadSketchRelationMentions(examples['fixed-axis'], names)).toEqual(['point p1', 'Y axis']);
+    // A held X is a distance from the V axis, which is named as any edge is.
+    expect(cadSketchRelationMentions(examples['fixed-axis'], names)).toEqual(['point p1', 'edge @v']);
     expect(cadSketchRelationMentions(examples['fillet-corner'], names)).toEqual(['point p2']);
     expect(cadSketchRelationMentions(examples['external-reference'], names)).toEqual(['edge l9']);
   });

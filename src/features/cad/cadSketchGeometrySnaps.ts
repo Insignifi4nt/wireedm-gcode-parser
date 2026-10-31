@@ -1,6 +1,7 @@
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchEntityPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import { resolveCadSketchGraphJoints } from '@/domain/cad/cadSketchGraphJoints';
+import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_V_AXIS_ID, CAD_SKETCH_VIRTUAL_LABELS, type CadSketchVirtualAxisId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import { angleIsOnSweep, pointOnArcAtParameter } from '@/domain/path-intel/segments';
 import type { PathSegment } from '@/domain/path-intel/types';
 import type { SketchPoint } from './cadSketchInteraction';
@@ -294,17 +295,22 @@ export function cadSketchSnapTargetLabel(target: CadSketchSnapTarget): string {
     case 'origin': return 'Origin';
     case 'intersection': return 'Intersection';
     case 'on-entity': case 'on-axis': {
-      const on = target.kind === 'on-entity' ? `On ${target.entityKind}` : `On ${target.axis.toUpperCase()} axis`;
+      const on = target.kind === 'on-entity' ? `On ${target.entityKind}` : `On ${CAD_SKETCH_VIRTUAL_LABELS[cadSketchSnapAxisId(target.axis)]}`;
       return target.horizontal ? `${on} · horizontal with point` : target.vertical ? `${on} · vertical with point` : on;
     }
     case 'aligned': return target.horizontal && target.vertical ? 'Aligned with two points' : target.horizontal ? 'Horizontal with point' : 'Vertical with point';
     case 'profile-position': case 'draft-start': case 'midpoint': case 'endpoint': case 'center': case 'point': return `${target.kind[0].toUpperCase()}${target.kind.slice(1).replace('-', ' ')}`;
   }
 }
-/** The relation a fresh point placed on this target can keep, or null for a position only. */
+/** The axis a snap lies along, by its reserved id: the X axis of the sketch plane is its H axis. */
+export const cadSketchSnapAxisId = (axis: 'x' | 'y'): CadSketchVirtualAxisId => axis === 'x' ? CAD_SKETCH_H_AXIS_ID : CAD_SKETCH_V_AXIS_ID;
+/**
+ * The relation a fresh point placed on this target can keep, or null for a position only. The origin and the axes are operands like any
+ * other point and line, so a point placed on them is coincident with them.
+ */
 export function cadSketchSnapRelation(target: CadSketchSnapTarget): string | null {
-  return target.kind === 'origin' ? 'Fixed at origin' : target.kind === 'on-axis' ? `Fixed ${target.axis === 'x' ? 'Y' : 'X'} at 0`
-    : target.kind === 'on-entity' ? target.entityKind === 'line' ? 'Point on line' : 'Point on curve' : 'pointId' in target ? 'Coincident' : null;
+  return target.kind === 'on-entity' ? target.entityKind === 'line' ? 'Point on line' : 'Point on curve'
+    : target.kind === 'origin' || target.kind === 'on-axis' || 'pointId' in target ? 'Coincident' : null;
 }
 
 /**
