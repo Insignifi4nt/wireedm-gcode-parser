@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { cadClipRaycaster } from './view/cadSectionView';
 import type { CadMesh, CadMeshTopologyGroup } from '@/domain/cad/cadDocument';
 import type { CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
 
@@ -54,13 +55,14 @@ export function validateTopologySelection(selection: CadTopologyPickSet, source:
   }
 }
 
-export function pickTopology({ mode, raycaster, bodies, edges, meshByObject, camera, viewportHeight }: {
+/** With a section's `clip`, `raycaster` is already limited to the kept side; the depth checks behind each edge are limited the same way. */
+export function pickTopology({ mode, raycaster, bodies, edges, meshByObject, camera, viewportHeight, clip = null }: {
   mode: 'auto' | 'edge' | 'face'; raycaster: THREE.Raycaster; bodies: readonly THREE.Mesh[];
   edges: readonly THREE.LineSegments[]; meshByObject: ReadonlyMap<THREE.Object3D, CadMesh>;
-  camera: THREE.OrthographicCamera; viewportHeight: number;
+  camera: THREE.OrthographicCamera; viewportHeight: number; clip?: THREE.Plane | null;
 }): CadTopologyHit | null {
   if (mode === 'auto') {
-    const options = { raycaster, bodies, edges, meshByObject, camera, viewportHeight };
+    const options = { raycaster, bodies, edges, meshByObject, camera, viewportHeight, clip };
     return pickTopology({ ...options, mode: 'edge' }) ?? pickTopology({ ...options, mode: 'face' });
   }
   if (mode === 'face') {
@@ -82,7 +84,7 @@ export function pickTopology({ mode, raycaster, bodies, edges, meshByObject, cam
     // Cast through the actual closest edge point. The pointer may be several pixels
     // away, especially at silhouettes, and must not reveal an edge behind a face.
     const projected = hit.point.clone().project(camera);
-    depthRay.setFromCamera(new THREE.Vector2(projected.x, projected.y), camera);
+    depthRay.setFromCamera(new THREE.Vector2(projected.x, projected.y), camera); cadClipRaycaster(depthRay, clip);
     const surface = depthRay.intersectObjects([...bodies], false)[0];
     const extent = Math.max(...mesh.bounds.max.map((value, index) => value - mesh.bounds.min[index]));
     const tolerance = Math.max(1e-7, extent * 2e-7); // Only floating-point preview precision, not a whole mesh tolerance.

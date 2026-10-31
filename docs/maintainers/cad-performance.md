@@ -138,6 +138,44 @@ From 0.0.787 the 3D view stays under an open sketch and draws the part, dimmed b
   - With the lines kept aside, a Dimmed exit after the first recreates no buffer and compiles no program. In one later, busier session, Dimmed entered in 220 ms and exited in 51 ms, against 201 and 55 ms in Hidden and 430 and 63 ms on main.
 - **Memory.** Ten enter and exit cycles, after two warm-up cycles that also switch the cut, left the heap at 17.36 MB after garbage collection. DOM nodes stayed at 435 in Dimmed and 430 in Hidden and on main, with 763 listeners and one canvas, before and after.
 
+From 0.0.789 the model view shows reference geometry, and a section view can cut it. The origin planes, axes and origin point are sized to the part in steps, and the same objects return until the part outgrows a step, so a rebuild keeps their lines installed. A section is one clipping plane, shared by every clipped material and updated in place. Picks skip the removed side by limiting the ray's near and far distances. Caps draw each body twice more into the stencil buffer, then one quad on the plane, and reuse the bodies' geometry.
+
+Hover still requests one frame per pointer move, coalesced to one per animation frame and doing its raycasts in that frame, as before.
+
+The measurements below are from production builds in Chromium with SwiftShader at 4× CPU throttling:
+
+- **Workload.** One body: a 120 × 80 × 10 mm plate with 40 holes of 3 mm radius.
+- **Hover run.** 150 pointer moves along a wave across the middle of the view in its default orientation. Every run ended hovering an edge.
+- **Modes.**
+  - Plain shows the reference geometry.
+  - No references hides it.
+  - Section cuts by XZ without caps; Caps cuts by XZ with caps. Both show the reference geometry.
+- **Rounds.** Each round runs the four modes one after another, in an order rotated by one each round. Each run starts only when no other test server holds the Playwright port.
+
+Results:
+
+- **No work outside the page.** No run posted a message to a worker, so hover made no kernel or solver request and started no rebuild. Every run drew 150 frames for its 149 or 150 moves.
+- **Hover latency.** Time runs from the move to the first task after it. Median of three P50s on the final build:
+
+  | Mode | P50 | P95 |
+  |---|---|---|
+  | Plain | 42.5 ms | 135.0 ms |
+  | No references | 40.2 ms | 138.8 ms |
+  | Section | 39.0 ms | 131.6 ms |
+  | Caps | 51.8 ms | 154.4 ms |
+
+  Single runs of one mode differed by up to 6.5 ms in the same session.
+- **Frame gap.** The P50 frame gap was 16.7 ms in every run without caps, and 33.3 ms in every run with caps.
+- **Caps.** Caps measured 10.1, 11.5 and 14.5 ms slower than Section in the same rounds. SwiftShader rasterizes on the CPU, so the extra stencil passes show up here as time. Measure on a hardware GPU before changing how caps draw.
+- **Section without caps.** It measured no slower than Plain: it removes about half of the plate from drawing and picking.
+- **Plane patches drawn in one pass.**
+  - In the first session, Plain measured 7.5, 8.1 and 12.6 ms slower than No references in the same rounds.
+  - A CPU profile of one run of each traced part of that to the translucent plane patches. three.js draws a transparent double-sided material in two passes, back faces then front, and marks it for update before each, so each patch looked up its shader program twice per frame.
+  - A flat patch shows one side at each pixel, so `forceSinglePass` draws the same pixels in one pass. In the profiled Plain run, the program lookups fell from 111 to 20 ms and three.js's draw call from 73 to 35 ms.
+  - On the final build Plain measured 1.2, 1.8 and 10.9 ms slower than No references, which is within the spread of single runs.
+  - Main had the same three patches at 25 mm, so it gains this too.
+- **Plane hover.** Pointing at an origin plane renders the workbench once when the hovered plane changes, as pointing at a plane did before, so the tree row can highlight. The planes now reach past the part, so a pointer leaving the part meets one more often.
+
 ## Native sketch solver
 
 `packages/sketch-solver` is our own Rust constraint solver, compiled to a WebAssembly module with no dependencies (92 kB, 33 kB gzip, at 0.0.739). From 0.0.739 it was built, tested and compared with PlaneGCS; from 0.0.746 the app solved with it first; from 0.0.757 it is the app's only sketch solver.

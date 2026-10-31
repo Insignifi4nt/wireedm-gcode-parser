@@ -61,6 +61,8 @@ export interface CadFeatureTreeProps {
   hoveredReferencePlane?: CadSketchPlane | null;
   /** Pointer hover over a reference or datum plane row, and `null` when it leaves. */
   onHoverReferencePlane?(plane: CadSketchPlane | null): void;
+  /** Cuts the model view by a datum plane, from that plane's context menu. */
+  onSectionView?(plane: CadSketchPlane): void;
   /** Real parameter operations supplied by the workbench, mounted when expanded. */
   parameterContent?: ReactNode;
   /** Actions for the Parameters branch's context menu; choosing one reveals the branch first. */
@@ -69,7 +71,7 @@ export interface CadFeatureTreeProps {
 
 /** One ordered model history, with links taken from the same reference model as rebuild. */
 export function CadFeatureTree({ document, diagnostics = [], selectedId, selectedProfileId, locked, selectionOnly = false, highlightedFeatureIds = [], onSelect, onConfigure, onEditSketch, onEditCurve, onSelectProfile,
-  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onProperties, onChangeSketchPlane, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, hoveredReferencePlane = null, onHoverReferencePlane, parameterContent, parameterMenu }: CadFeatureTreeProps) {
+  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onProperties, onChangeSketchPlane, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, hoveredReferencePlane = null, onHoverReferencePlane, onSectionView, parameterContent, parameterMenu }: CadFeatureTreeProps) {
 
   const treeId = useId();
   const tree = useRef<HTMLOListElement>(null), returnFocus = useRef<{ documentId: string; target: TreeTarget } | null>(null);
@@ -170,6 +172,7 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
         : feature.kind === 'curve' ? { label: 'Edit curve', onSelect: () => onEditCurve(feature) }
           : { label: 'Edit feature', onSelect: () => (onConfigure ?? (entry => onSelect(entry.id)))(feature) });
       if (feature.kind === 'sketch' && onChangeSketchPlane) menuItems.push({ label: 'Change sketch plane', help: 'Click the new plane in the design area.', onSelect: () => onChangeSketchPlane(feature) });
+      if (feature.kind === 'datum-plane' && !feature.suppressed && onSectionView) menuItems.push({ label: 'Section view', help: 'Cut the model view by this plane.', onSelect: () => onSectionView({ kind: 'datum-plane', featureId: feature.id }) });
       if (onRename) menuItems.push({ label: 'Rename feature', onSelect: () => beginRename({ kind: 'feature', featureId: feature.id }) });
       const inputs = cadFeatureDependencies(feature).flatMap(id => { const source = relationships.byId.get(id); return source ? [source] : []; });
       if (relationships.children.get(feature.id)?.length || relationships.shared.get(feature.id)?.length || feature.kind === 'sketch' && feature.profiles.length) {

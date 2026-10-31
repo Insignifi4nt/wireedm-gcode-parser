@@ -360,7 +360,7 @@ export function cadSiteTools(getController: () => CadController) {
       if (input.direction === 'undo') cad.undo(input.expectedVersion); else cad.redo(input.expectedVersion);
       return context(cad);
     }, false),
-    tool('cad_get_viewport', 'Read current CAD selection/view/build/reference metadata and viewportToken. Large ID collections report exact totals/omissions: page visible-bodies or reference-features with the same expectedVersion and expectedViewportToken. STALE_VIEW requires a new summary. referencePlanes identifies principal glyphs without feature IDs. Verify view changes before capture.', Type.Union([
+    tool('cad_get_viewport', 'Read CAD selection, view, section, build and reference metadata with viewportToken. Large ID lists report totals/omissions; page visible-bodies or reference-features at the same expectedVersion/expectedViewportToken. STALE_VIEW needs a new summary. referencePlanes are principal glyphs without feature IDs. Verify views before capture.', Type.Union([
       object(version), object({ ...version, collection: Type.Union([Type.Literal('visible-bodies'), Type.Literal('reference-features')]),
         expectedViewportToken: Type.String({ minLength: 1, maxLength: 128 }), ...pageFields })
     ]), (cad, input) => {
@@ -372,7 +372,7 @@ export function cadSiteTools(getController: () => CadController) {
       if (rows === undefined) throw new ToolError('VIEW_UNAVAILABLE', 'Installed reference IDs are available in the solid viewport. Finish sketch or curve editing and wait for the reference layer.');
       return { documentId: state.documentId, documentVersion: state.documentVersion, viewportToken, collection: input.collection, ...page(rows, input) };
     }),
-    tool('cad_set_viewport', 'Use visible CAD viewport operations: named view, fit/grid, feature/profile/reference-plane selection and ordered sketch point/edge sets, enter/finish sketch or curve editing, body/face/edge pick mode and exact-build topology selection. Plane selection never inserts a sketch: use cad_edit_document with an explicit plane to create one. Does not edit geometry or save. Active workflows block changes. Read cad_get_viewport after applying.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
+    tool('cad_set_viewport', 'Viewport operations: selection, named view, fit/grid, sketch/curve editing, pick mode, topology, section by the selected plane. Selecting a plane adds no sketch; cad_edit_document does. No edits or saves; active workflows block. Verify with cad_get_viewport.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
     tool('cad_capture_preview', 'Capture current CAD draft pixels as a local PNG receipt with version, view metadata and SHA-256. Requires current build/reference layers; stale views reject. Read omitted IDs via cad_get_viewport collection pages. The blob URL is browser-local. Optional download requests a browser save; no CAD/storage edits.', object({ ...version, download: Type.Optional(Type.Boolean()) }), async (cad, input, signal) => {
       const captured = await cad.captureViewport(input.expectedVersion, input.download ?? false, signal);
       const receipt = (viewState: unknown) => ({ ...captured, viewState });
