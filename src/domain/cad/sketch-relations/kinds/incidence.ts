@@ -5,16 +5,13 @@ import { assertCadSketchPointOnCurveIdentities } from '../../cadSketchPointOnCur
 import { assertCadSketchSymmetryIdentities, resolveCadSketchSymmetryOperands } from '../../cadSketchSymmetryRelations';
 import { resolveCadSketchTangentJoint } from '../../cadSketchTangentRelations';
 import { CAD_SKETCH_MIDPOINT_OPERANDS, CAD_SKETCH_POINT_ON_CURVE_OPERANDS, CAD_SKETCH_POINT_ON_LINE_OPERANDS, CAD_SKETCH_SYMMETRY_OPERANDS } from '../cadSketchOperandSignatures';
-import type { CadSketchOfferContext, CadSketchRelationDefinition } from '../cadSketchRelationTypes';
-import { CAD_SKETCH_POINT_PAIR_OPERANDS, LINE_SLOT, POINT_SLOT, ROUND_SLOT, chainedPair, refusal, sortedIds } from './kindParts';
+import type { CadSketchRelationDefinition } from '../cadSketchRelationTypes';
+import { CAD_SKETCH_POINT_PAIR_OPERANDS, LINE_SLOT, POINT_SLOT, ROUND_SLOT, chainedPair, sortedIds } from './kindParts';
 
 // Points that lie on, or in a set place on, other geometry. Their parse checks resolve exact identities: proximity never stands in for one.
 
 type Line = Extract<CadSketchGraphEntity, { kind: 'line' }>;
 type Round = Extract<CadSketchGraphEntity, { kind: 'arc' | 'circle' }>;
-const joined = refusal('invalid-sketch-coincident', 'These points are already joined.');
-// Other relations join the two points in one place already.
-const sharing = ({ identity }: CadSketchOfferContext, { pointIds: [a, b] }: { readonly pointIds: readonly [string, string] }) => identity(a) === identity(b);
 
 export const coincident: CadSketchRelationDefinition<'coincident'> = {
   kind: 'coincident', family: 'incidence', name: 'Coincident',
@@ -23,10 +20,9 @@ export const coincident: CadSketchRelationDefinition<'coincident'> = {
   withOperands: (relation, [first, second]) => ({ ...relation, pointIds: [first, second] }),
   key: relation => `coincident ${sortedIds(relation.pointIds)}`,
   offers: [
-    { signature: chainedPair(POINT_SLOT), build: (_, [a, b]) => ({ kind: 'coincident', pointIds: [a.id, b.id] }), refuse: (context, relation) => sharing(context, relation) ? joined : undefined },
+    { signature: chainedPair(POINT_SLOT), plan: (planner, [a, b]) => planner.coincide([a.id, b.id]) },
     // Two arcs or circles share their centre: a Coincident between the centres, which reads as Concentric.
-    { signature: chainedPair(ROUND_SLOT), build: ({ entity }, [a, b]) => ({ kind: 'coincident', pointIds: [(entity(a.id) as Round).centerPointId, (entity(b.id) as Round).centerPointId] }),
-      refuse: (context, relation) => sharing(context, relation) ? refusal('invalid-sketch-coincident', 'These already share a center.') : undefined }
+    { signature: chainedPair(ROUND_SLOT), plan: (planner, [a, b]) => planner.concentric(planner.entity(a.id) as Round, planner.entity(b.id) as Round) }
   ],
   agent: { exposed: true, summary: 'Two points share one position. Between two arc or circle centres it reads as Concentric.' }
 };
@@ -38,7 +34,7 @@ export const midpoint: CadSketchRelationDefinition<'midpoint'> = {
   withOperands: (relation, [pointId, lineId]) => ({ ...relation, pointId, lineId }),
   key: relation => `midpoint ${relation.pointId} ${relation.lineId}`,
   validate: (graph, _, [point, line]) => { assertCadSketchMidpointIdentities(graph, point as CadSketchGraphPoint, line as Line); },
-  offers: [{ signature: { slots: [POINT_SLOT, LINE_SLOT] }, build: (_, [point, line]) => ({ kind: 'midpoint', pointId: point.id, lineId: line.id }) }],
+  offers: [{ signature: { slots: [POINT_SLOT, LINE_SLOT] }, plan: (planner, [point, line]) => planner.place({ kind: 'midpoint', pointId: point.id, lineId: line.id }) }],
   agent: { exposed: true, summary: 'A point stays at the middle of a line.' }
 };
 
@@ -49,7 +45,7 @@ export const pointOnLine: CadSketchRelationDefinition<'point-on-line'> = {
   withOperands: (relation, [pointId, lineId]) => ({ ...relation, pointId, lineId }),
   key: relation => `point-on-line ${relation.pointId} ${relation.lineId}`,
   validate: (graph, _, [point, line]) => { assertCadSketchPointOnLineIdentities(graph, point as CadSketchGraphPoint, line as Line); },
-  offers: [{ signature: { slots: [POINT_SLOT, LINE_SLOT] }, build: (_, [point, line]) => ({ kind: 'point-on-line', pointId: point.id, lineId: line.id }) }],
+  offers: [{ signature: { slots: [POINT_SLOT, LINE_SLOT] }, plan: (planner, [point, line]) => planner.place({ kind: 'point-on-line', pointId: point.id, lineId: line.id }) }],
   agent: { exposed: true, summary: 'A point stays on the infinite line through a line.' }
 };
 
@@ -60,7 +56,7 @@ export const pointOnCurve: CadSketchRelationDefinition<'point-on-curve'> = {
   withOperands: (relation, [pointId, curveId]) => ({ ...relation, pointId, curveId }),
   key: relation => `point-on-curve ${relation.pointId} ${relation.curveId}`,
   validate: (graph, _, [point, curve]) => { assertCadSketchPointOnCurveIdentities(graph, point as CadSketchGraphPoint, curve as Round); },
-  offers: [{ signature: { slots: [POINT_SLOT, ROUND_SLOT] }, build: (_, [point, curve]) => ({ kind: 'point-on-curve', pointId: point.id, curveId: curve.id }) }],
+  offers: [{ signature: { slots: [POINT_SLOT, ROUND_SLOT] }, plan: (planner, [point, curve]) => planner.place({ kind: 'point-on-curve', pointId: point.id, curveId: curve.id }) }],
   agent: { exposed: true, summary: 'A point stays on the full circle of an arc or circle.' }
 };
 
@@ -78,10 +74,8 @@ export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
     return [...relation.pointIds, line.startPointId, line.endPointId];
   },
   // A circle stands for its centre.
-  offers: [{ signature: { slots: [mirrored, mirrored, { role: 'Axis line', accepts: ['line'] }], unordered: [[0, 1]] }, build: ({ entity }, [a, b, line]) => {
-    const target = (pick: typeof a) => pick.kind === 'point' ? pick.id : (entity(pick.id) as Round).centerPointId;
-    return { kind: 'symmetric', pointIds: [target(a), target(b)], lineId: line.id };
-  } }],
+  offers: [{ signature: { slots: [mirrored, mirrored, { role: 'Axis line', accepts: ['line'] }], unordered: [[0, 1]] },
+    plan: (planner, [a, b, line]) => planner.mirror([a, b], planner.entity(line.id) as Line) }],
   agent: { exposed: true, summary: 'Two points mirror each other about a line.' }
 };
 
@@ -97,13 +91,11 @@ export const tangentJoint: CadSketchRelationDefinition<'tangent-joint'> = {
   key: relation => `tangent-joint ${sortedIds(relation.endpoints.map(endpoint => `${endpoint.entityId}@${endpoint.pointId}`))}`,
   mentions: (relation, names) => relation.endpoints.map(endpoint => `${names.entity(endpoint.entityId)} at ${names.point(endpoint.pointId)}`),
   validate: (graph, relation) => { resolveCadSketchTangentJoint(graph, relation); },
-  // A line and an arc join at the one pair of their ends that share a place.
-  offers: [{ signature: { slots: [{ role: 'Line', accepts: ['line'] }, { role: 'Arc', accepts: ['arc'] }] }, build: ({ entity, identity }, [first, second]) => {
-    const line = entity(first.id) as Line, arc = entity(second.id) as Extract<CadSketchGraphEntity, { kind: 'arc' }>;
-    const joints = [line.startPointId, line.endPointId].flatMap(lineEnd => [arc.startPointId, arc.endPointId].filter(arcEnd => identity(lineEnd) === identity(arcEnd))
-      .map(arcEnd => [{ entityId: line.id, pointId: lineEnd }, { entityId: arc.id, pointId: arcEnd }] as const));
-    if (joints.length !== 1) return refusal('invalid-sketch-tangent-joint', joints.length ? 'Choose a line and arc with one shared endpoint.' : 'Join these endpoints with Coincident before adding Tangent.');
-    return { kind: 'tangent-joint', endpoints: joints[0] };
+  // A line and an arc join at the one pair of their ends that share a place. Each joint end follows its curve's pick, so the picks keep
+  // their own order, and two lines or two arcs take none.
+  offers: [{ signature: { slots: [tangentCurve('First curve'), tangentCurve('Second curve')] }, plan: (planner, [a, b]) => {
+    const first = planner.entity(a.id)!, second = planner.entity(b.id)!;
+    return first.kind === second.kind ? null : planner.tangent(first, second);
   } }],
   agent: { exposed: true, summary: 'A line and an arc that share an endpoint join smoothly there.' }
 };

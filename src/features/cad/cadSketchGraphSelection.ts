@@ -1,17 +1,15 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { CadError } from '@/domain/cad/cadError';
-import type { CadScalar } from '@/domain/cad/cadDocument';
-import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
+import { cadSketchZeroScalar } from '@/domain/cad/sketch-relations/cadSketchRelationPlanning';
 import type { CadContextMenuItem } from './CadContextMenu';
 import type { CadSketchDimensionPlan } from './cadSketchDimensionPlacement';
 import type { CadSketchPointerStore } from './CadSketchDimensionPreview';
 
-const NO_PARAMETERS: Readonly<Record<string, number>> = Object.freeze({});
-
 export { CadSketchGraphSelectionSchema, CadSketchGraphSelectionSetSchema, cadSketchGraphSelectionSet } from '@/domain/cad/cadSketchGraphSelection';
 export type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
+export { cadSketchZeroScalar };
 
 export const CadSketchGraphPickFilterSchema = Type.Union([Type.Literal('auto'), Type.Literal('points'), Type.Literal('edges')]);
 export type CadSketchGraphPickFilter = Static<typeof CadSketchGraphPickFilterSchema>;
@@ -71,14 +69,6 @@ export function pickCadSketchDatum(point: readonly [number, number], millimeters
   return axes.length ? axes.reduce((best, next) => next[1] < best[1] ? next : best)[0] : null;
 }
 
-/**
- * Whether a coordinate is zero whatever the parameters are: 0, or an expression of numbers alone such as `"0"` or `"2 - 2"`.
- * A value that follows a parameter is a dimension that only happens to be zero now, so it never counts.
- */
-export function cadSketchZeroScalar(value: CadScalar | undefined): boolean {
-  if (value === undefined) return false;
-  try { return evaluateCadScalar(value, NO_PARAMETERS) === 0; } catch { return false; }
-}
 /**
  * The plane reference a fixed relation holds its point on, or null: a zero Y keeps the point on the X axis, a zero X on the
  * Y axis, and a fixed point at [0, 0] sits at the origin. A point at the origin through both coordinates has one of each.

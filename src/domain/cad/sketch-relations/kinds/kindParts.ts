@@ -1,10 +1,9 @@
-import type { CadSketchOperandSignature, CadSketchOperandSlot, CadSketchRefusal } from '../cadSketchRelationTypes';
+import type { CadSketchOperandSignature, CadSketchOperandSlot } from '../cadSketchRelationTypes';
 
 // Parts several kinds share. Like the signatures, this module imports nothing that imports the sketch graph.
 
 /** The ids in one fixed order, so a group stored in any order gives one key. Ids never hold a space. */
 export const sortedIds = (ids: readonly string[]) => [...ids].sort().join(' ');
-export const refusal = (code: string, message: string): CadSketchRefusal => ({ code, message });
 
 export const POINT_SLOT = { role: 'Point', accepts: ['point'] } as const satisfies CadSketchOperandSlot;
 export const LINE_SLOT = { role: 'Line', accepts: ['line'] } as const satisfies CadSketchOperandSlot;

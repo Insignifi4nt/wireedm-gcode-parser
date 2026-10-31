@@ -64,12 +64,30 @@ describe('sketch relation offers', () => {
     const one = cadSketchRelationOffers(graph, [edge('ab')]);
     expect(kinds(one)).toEqual(['horizontal', 'vertical']);
     expect(find(one, 'horizontal')).toMatchObject({ state: 'applied', relationIds: ['level'] });
-    expect(find(one, 'vertical')).toMatchObject({ state: 'available', relations: [{ kind: 'vertical', pointIds: ['a', 'b'] }] });
+    // A level line cannot also stand upright, as the Constrain tool says.
+    expect(find(one, 'vertical')).toMatchObject({ state: 'blocked', reason: 'This is already horizontal.' });
+    expect(find(cadSketchRelationOffers(graph, [edge('bc')]), 'vertical')).toMatchObject({ state: 'available', relations: [{ kind: 'vertical', pointIds: ['b', 'c'] }] });
     const three = cadSketchRelationOffers(graph, [edge('ab'), edge('bc'), edge('cd')]);
     // One already level: the others are added and the existing one named.
     expect(find(three, 'horizontal')).toEqual({ kind: 'horizontal', state: 'available', operands: [[edge('bc')], [edge('cd')]],
       relations: [{ kind: 'horizontal', pointIds: ['b', 'c'] }, { kind: 'horizontal', pointIds: ['c', 'd'] }], relationIds: ['level'] });
     expectAddable(graph, three);
+  });
+
+  it('refuse a direction other relations already rule out, directly or through a chain of them', () => {
+    // ab is level and bc perpendicular to it, so bc stands upright, and cd, parallel to ab, is level too.
+    const graph = sketch([{ id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'square', kind: 'perpendicular', lineIds: ['ab', 'bc'] },
+      { id: 'across', kind: 'parallel', lineIds: ['cd', 'ab'] }]);
+    expect(find(cadSketchRelationOffers(graph, [edge('bc')]), 'horizontal')).toMatchObject({ state: 'blocked', reason: 'This is already vertical through other relations.' });
+    expect(find(cadSketchRelationOffers(graph, [edge('cd')]), 'horizontal')).toMatchObject({ state: 'blocked', reason: 'This is already horizontal through other relations.' });
+    expect(find(cadSketchRelationOffers(graph, [point('c'), point('d')]), 'vertical')).toMatchObject({ state: 'blocked', reason: 'This is already horizontal through other relations.' });
+    // Lines that keep one relation of direction, or an angle, take no other until it is removed; the same one is applied.
+    const pair = cadSketchRelationOffers(graph, [edge('bc'), edge('ab')]);
+    expect(find(pair, 'parallel')).toMatchObject({ state: 'blocked', reason: 'These lines already have a perpendicular relation. Remove it first.' });
+    expect(find(pair, 'collinear')).toMatchObject({ state: 'blocked', reason: 'These lines already have a perpendicular relation. Remove it first.' });
+    expect(find(pair, 'perpendicular')).toMatchObject({ state: 'applied', relationIds: ['square'] });
+    const angled = sketch([{ id: 'angle', kind: 'line-angle', rays: [{ lineId: 'ab', towardPointId: 'a' }, { lineId: 'bc', towardPointId: 'c' }], sense: 'ccw', value: 90 }]);
+    expect(find(cadSketchRelationOffers(angled, [edge('ab'), edge('bc')]), 'perpendicular')).toMatchObject({ state: 'blocked', reason: 'These lines already have an angle. Remove it first.' });
   });
 
   it('pair the first of several lines with each later one', () => {
@@ -110,11 +128,15 @@ describe('sketch relation offers', () => {
     expect(find(cadSketchRelationOffers(centred, [edge('c1'), edge('c2')]), 'coincident')).toMatchObject({ state: 'applied', relationIds: ['same'] });
   });
 
-  it('join a line and an arc smoothly at the one end they share', () => {
+  it('join a line and an arc smoothly at the one end they share, each end in the order of its pick', () => {
     const graph = sketch(), offers = cadSketchRelationOffers(graph, [edge('arc1'), edge('bc')]);
-    expect(find(offers, 'tangent-joint')).toMatchObject({ state: 'available', operands: [[edge('bc'), edge('arc1')]],
-      relations: [{ kind: 'tangent-joint', endpoints: [{ entityId: 'bc', pointId: 'c' }, { entityId: 'arc1', pointId: 'c' }] }] });
+    expect(find(offers, 'tangent-joint')).toMatchObject({ state: 'available', operands: [[edge('arc1'), edge('bc')]],
+      relations: [{ kind: 'tangent-joint', endpoints: [{ entityId: 'arc1', pointId: 'c' }, { entityId: 'bc', pointId: 'c' }] }] });
+    expect(find(cadSketchRelationOffers(graph, [edge('bc'), edge('arc1')]), 'tangent-joint').relations).toEqual([
+      { kind: 'tangent-joint', endpoints: [{ entityId: 'bc', pointId: 'c' }, { entityId: 'arc1', pointId: 'c' }] }]);
     expectAddable(graph, offers);
+    // Two lines are not a tangent's operands.
+    expect(kinds(cadSketchRelationOffers(graph, [edge('ab'), edge('bc')]))).not.toContain('tangent-joint');
     // A stored joint lists its curves in either order.
     const joined = sketch([{ id: 'smooth', kind: 'tangent-joint', endpoints: [{ entityId: 'arc1', pointId: 'c' }, { entityId: 'bc', pointId: 'c' }] }]);
     expect(find(cadSketchRelationOffers(joined, [edge('bc'), edge('arc1')]), 'tangent-joint')).toMatchObject({ state: 'applied', relationIds: ['smooth'] });
@@ -132,15 +154,47 @@ describe('sketch relation offers', () => {
       reason: 'Symmetric points and axis endpoints need four distinct declared identities.' });
   });
 
-  it('fix a point where it is, unless a coordinate is an expression', () => {
-    const graph = sketch([{ id: 'held', kind: 'fixed-point', pointId: 'b', position: [10, 0] }]);
+  it('fix a point where it is, or each numeric coordinate that nothing holds yet, and never one joined to a fixed point', () => {
+    const graph = sketch([{ id: 'held', kind: 'fixed-point', pointId: 'b', position: [10, 0] }, { id: 'onto', kind: 'coincident', pointIds: ['g', 'b'] },
+      { id: 'across', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 10 }, { id: 'up', kind: 'fixed-axis', pointId: 'd', axis: 'x', value: 0 },
+      { id: 'over', kind: 'fixed-axis', pointId: 'd', axis: 'y', value: 10 }]);
     expect(cadSketchRelationOffers(graph, [point('a')])).toEqual([{ kind: 'fixed-point', state: 'available', operands: [[point('a')]],
       relations: [{ kind: 'fixed-point', pointId: 'a', position: [0, 0] }], relationIds: [] }]);
     expect(find(cadSketchRelationOffers(graph, [point('b')]), 'fixed-point')).toMatchObject({ state: 'applied', relationIds: ['held'] });
-    expect(find(cadSketchRelationOffers(graph, [point('w')]), 'fixed-point')).toMatchObject({ state: 'blocked',
-      reason: 'A coordinate written as an expression already follows it, so the point cannot be fixed where it is.' });
+    // A point coincident with a fixed one is held by it.
+    expect(find(cadSketchRelationOffers(graph, [point('g')]), 'fixed-point')).toMatchObject({ state: 'applied', relationIds: ['held'] });
+    // An expression coordinate follows its expression, and a coordinate held already keeps its relation: the other is held alone.
+    expect(find(cadSketchRelationOffers(graph, [point('w')]), 'fixed-point')).toMatchObject({ state: 'available', relations: [{ kind: 'fixed-axis', pointId: 'w', axis: 'y', value: 4 }] });
+    expect(find(cadSketchRelationOffers(graph, [point('c')]), 'fixed-point')).toMatchObject({ state: 'available', relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 10 }] });
+    expect(find(cadSketchRelationOffers(graph, [point('d')]), 'fixed-point')).toMatchObject({ state: 'applied', relationIds: ['up', 'over'] });
+    const free = sketch([], [{ id: 'z', position: ['width', 'width / 2'] }]);
+    expect(find(cadSketchRelationOffers(free, [point('z')]), 'fixed-point')).toEqual({ kind: 'fixed-point', state: 'blocked', reason: 'This point is already fixed or follows expressions.',
+      operands: [[point('z')]], relations: [], relationIds: [] });
     // One blocked part blocks the offer, and names the parts already held.
-    expect(find(cadSketchRelationOffers(graph, [point('a'), point('b'), point('w')]), 'fixed-point')).toMatchObject({ state: 'blocked', relationIds: ['held'] });
+    expect(find(cadSketchRelationOffers(sketch([{ id: 'held', kind: 'fixed-point', pointId: 'b', position: [10, 0] }], [{ id: 'z', position: ['width', 'width / 2'] }]),
+      [point('a'), point('b'), point('z')]), 'fixed-point')).toMatchObject({ state: 'blocked', relationIds: ['held'] });
+    expect(find(cadSketchRelationOffers(graph, [point('a'), point('b'), point('w')]), 'fixed-point')).toMatchObject({ state: 'available', relationIds: ['held'],
+      relations: [{ kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { kind: 'fixed-axis', pointId: 'w', axis: 'y', value: 4 }] });
+    expectAddable(graph, cadSketchRelationOffers(graph, [point('a'), point('c'), point('w')]));
+  });
+
+  it('plan each part with the relations the parts before it add, as the tool would add them one after another', () => {
+    const graph = sketch([{ id: 'joined', kind: 'coincident', pointIds: ['a', 'm'] }]);
+    // Fixing a fixes m, which is joined to it.
+    expect(find(cadSketchRelationOffers(graph, [point('a'), point('m')]), 'fixed-point')).toEqual({ kind: 'fixed-point', state: 'available', operands: [[point('a')]],
+      relations: [{ kind: 'fixed-point', pointId: 'a', position: [0, 0] }], relationIds: [] });
+    expect(find(cadSketchRelationOffers(sketch(), [point('b'), point('g'), point('m')]), 'coincident')).toMatchObject({ state: 'available',
+      relations: [{ kind: 'coincident', pointIds: ['b', 'g'] }, { kind: 'coincident', pointIds: ['b', 'm'] }] });
+    // With g and m joined already, joining b to g joins it to m too.
+    expect(find(cadSketchRelationOffers(sketch([{ id: 'end', kind: 'coincident', pointIds: ['g', 'm'] }]), [point('b'), point('g'), point('m')]), 'coincident'))
+      .toMatchObject({ state: 'blocked', reason: 'These points are already joined.' });
+  });
+
+  it('name the relations that hold the parts in graph order, whatever order the parts come in', () => {
+    const first = { id: 'first', kind: 'parallel', lineIds: ['ab', 'cd'] }, second = { id: 'second', kind: 'parallel', lineIds: ['ab', 'bc'] };
+    expect(find(cadSketchRelationOffers(sketch([first, second]), [edge('ab'), edge('bc'), edge('cd')]), 'parallel')).toMatchObject({ state: 'applied', relationIds: ['first', 'second'] });
+    expect(find(cadSketchRelationOffers(sketch([second, first]), [edge('ab'), edge('bc'), edge('cd')]), 'parallel')).toMatchObject({ state: 'applied', relationIds: ['second', 'first'] });
+    expect(find(cadSketchRelationOffers(sketch([first, second]), [edge('ab'), edge('cd'), edge('bc')]), 'parallel')).toMatchObject({ state: 'applied', relationIds: ['first', 'second'] });
   });
 
   it('expand several points to Coincident with the first and a Fix for each', () => {

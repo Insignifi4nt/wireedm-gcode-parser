@@ -10,7 +10,7 @@ export const equalLength: CadSketchRelationDefinition<'equal-length'> = {
   operands: relation => relation.lineIds,
   withOperands: (relation, [first, second]) => ({ ...relation, lineIds: [first, second] }),
   key: relation => `equal-length ${sortedIds(relation.lineIds)}`,
-  offers: [{ signature: chainedPair(LINE_SLOT), build: (_, [a, b]) => ({ kind: 'equal-length', lineIds: [a.id, b.id] }) }],
+  offers: [{ signature: chainedPair(LINE_SLOT), plan: (planner, [a, b]) => planner.equal(planner.entity(a.id)!, planner.entity(b.id)!) }],
   agent: { exposed: true, summary: 'Two lines keep the same length.' }
 };
 export const equalRadius: CadSketchRelationDefinition<'equal-radius'> = {
@@ -19,6 +19,6 @@ export const equalRadius: CadSketchRelationDefinition<'equal-radius'> = {
   operands: relation => relation.curveIds,
   withOperands: (relation, [first, second]) => ({ ...relation, curveIds: [first, second] }),
   key: relation => `equal-radius ${sortedIds(relation.curveIds)}`,
-  offers: [{ signature: chainedPair(ROUND_SLOT), build: (_, [a, b]) => ({ kind: 'equal-radius', curveIds: [a.id, b.id] }) }],
+  offers: [{ signature: chainedPair(ROUND_SLOT), plan: (planner, [a, b]) => planner.equal(planner.entity(a.id)!, planner.entity(b.id)!) }],
   agent: { exposed: true, summary: 'Two arcs or circles keep the same radius.' }
 };

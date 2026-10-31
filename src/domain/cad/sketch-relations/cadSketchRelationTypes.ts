@@ -15,7 +15,7 @@ export type CadSketchOperandType = 'point' | 'line' | 'arc' | 'circle';
  * that gives a direction. The origin and the X and Y axes are not operands yet; they keep their own cases until they are.
  */
 export type CadSketchOperandTrait = CadSketchOperandType | 'curve' | 'round' | 'axis';
-/** The error a parse or an offer gives for operands that cannot take a relation. */
+/** The error a parse gives for operands that cannot take a relation. */
 export interface CadSketchRefusal { readonly code: string; readonly message: string }
 
 export interface CadSketchOperandSlot {
@@ -46,21 +46,52 @@ export interface CadSketchOperandNames { point(id: string): string; entity(id: s
 /** Points and edges a relation made and keeps: removing it removes them. Their own points belong to it too. */
 export interface CadSketchRelationOwnership { readonly pointIds: readonly string[]; readonly entityIds: readonly string[] }
 
-/** What an offer reads its graph through, indexed once for each accepted graph. */
-export interface CadSketchOfferContext {
+type Line = Extract<CadSketchGraphEntity, { kind: 'line' }>;
+type Round = Extract<CadSketchGraphEntity, { kind: 'arc' | 'circle' }>;
+/**
+ * What the picks of a relation would do: add these relations, find the graph holding it already, or be refused. An applied plan names
+ * the relations that hold it, and says how when that is more than one identical relation, such as a joint or a fix. A refusal keeps
+ * the precise message, as domain errors do; the workbench shows it through `readableMessage`.
+ */
+export type CadSketchRelationPlan =
+  | { readonly state: 'available'; readonly relations: readonly CadSketchRelationIntent[] }
+  | { readonly state: 'applied'; readonly relationIds: readonly string[]; readonly reason?: string }
+  | { readonly state: 'blocked'; readonly reason: string };
+/**
+ * The Constrain tool's planning of the relations that need no value. The offers share it, so both give one answer for the same picks.
+ * Plans read the graph as it is: identical relations, Coincident identities, held coordinates, and what the value-free relations
+ * already keep level, upright or in one direction.
+ */
+export interface CadSketchRelationPlanner {
   readonly graph: CadSketchGraph;
   point(id: string): CadSketchGraphPoint | undefined;
   entity(id: string): CadSketchGraphEntity | undefined;
   /** The point's Coincident identity: points that Coincident joins share one. */
   identity(id: string): string;
+  /** Two points kept level or upright. */
+  align(kind: 'horizontal' | 'vertical', pair: readonly [string, string]): CadSketchRelationPlan;
+  /** Two points joined in one place. */
+  coincide(pair: readonly [string, string]): CadSketchRelationPlan;
+  /** Two arcs or circles that share one centre. */
+  concentric(first: Round, second: Round): CadSketchRelationPlan;
+  /** Two lines that keep one direction, a right angle, or one line between them. */
+  orient(kind: 'parallel' | 'perpendicular' | 'collinear', pair: readonly [string, string]): CadSketchRelationPlan;
+  /** A point kept on a line, at its middle, or on an arc or circle. */
+  place(relation: CadSketchRelationIntent<'point-on-line' | 'midpoint' | 'point-on-curve'>): CadSketchRelationPlan;
+  /** A line and an arc, in either order, joined smoothly at the one pair of their ends that share a place. */
+  tangent(first: CadSketchGraphEntity, second: CadSketchGraphEntity): CadSketchRelationPlan;
+  /** Two lines of one length, or two arcs or circles of one radius. */
+  equal(first: CadSketchGraphEntity, second: CadSketchGraphEntity): CadSketchRelationPlan;
+  /** Two points, or a circle by its centre, mirrored about a line. */
+  mirror(targets: readonly [CadSketchGraphSelection, CadSketchGraphSelection], line: Line): CadSketchRelationPlan;
+  /** A point held where it is: as one fixed point, or as each numeric coordinate that nothing holds yet. */
+  fix(pointId: string): CadSketchRelationPlan;
 }
-/** One way a selection makes a relation: picks in slot order, built into its data, or refused. */
-export interface CadSketchRelationOffering<K extends CadSketchRelationKind> {
+/** One way a selection makes a relation: picks in slot order, planned as the Constrain tool plans them. */
+export interface CadSketchRelationOffering {
   readonly signature: CadSketchOperandSignature;
-  /** The relation the picks make, or why they cannot make one. */
-  readonly build: (context: CadSketchOfferContext, picks: readonly CadSketchGraphSelection[]) => CadSketchRelationIntent<K> | CadSketchRefusal;
-  /** Why the relation cannot join those the graph holds, asked only once the graph is found not to hold it already. */
-  readonly refuse?: (context: CadSketchOfferContext, relation: CadSketchRelationIntent<K>) => CadSketchRefusal | undefined;
+  /** What the picks make, or null when picks in this order are not operands of the kind. A plan may add relations of another kind. */
+  readonly plan: (planner: CadSketchRelationPlanner, picks: readonly CadSketchGraphSelection[]) => CadSketchRelationPlan | null;
 }
 
 export type CadSketchRelationFamily = 'incidence' | 'orientation' | 'equality' | 'fix' | 'dimension' | 'composite';
@@ -99,7 +130,7 @@ export interface CadSketchRelationDefinition<K extends CadSketchRelationKind> {
   /** The points the relation references, where they are not its point slots and the points of its edges. */
   readonly pointIds?: (graph: CadSketchGraph, relation: CadSketchRelationOf<K>) => readonly string[];
   /** Selections that make this relation, tried in order. A relation that needs a value, or one that tools create, has none. */
-  readonly offers?: readonly CadSketchRelationOffering<K>[];
+  readonly offers?: readonly CadSketchRelationOffering[];
   /** Whether agent tools may name the kind, and what they are told it does. */
   readonly agent: { readonly exposed: boolean; readonly summary: string };
 }
