@@ -93,6 +93,11 @@ function isCadMesh(value: unknown): value is CadMesh {
     || !('max' in value.bounds) || !isNumbers(value.bounds.max) || value.bounds.max.length !== 3) return false;
   const vertices = value.positions.length / 3;
   if (!value.indices.every(index => Number.isInteger(index) && index >= 0 && index < vertices)) return false;
+  if ('faceSolids' in value && value.faceSolids !== undefined) {
+    const solids = 'solidCount' in value && typeof value.solidCount === 'number' ? value.solidCount : 0;
+    if (!Array.isArray(value.faceSolids) || value.faceSolids.length !== value.faceGroups.length
+      || !value.faceSolids.every(solid => Number.isSafeInteger(solid) && solid >= 0 && solid < solids)) return false;
+  }
   const min = value.bounds.min; const max = value.bounds.max;
   const faceKeys = new Set(value.faceGroups.map(group => group.key));
   if (value.edgeGroups.some(group => faceKeys.has(group.key))) return false;

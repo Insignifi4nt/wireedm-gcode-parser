@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Page, TestInfo } from '@playwright/test';
+import initOpenCascade from 'replicad-opencascadejs';
+import { exportSTEP, makeBox, setOC } from 'replicad';
 import { expect, test } from './fixtures/native-sketch-solver';
 import { prepareCadTools, callCadTool as call, cadContext as context } from './cad-tool-helpers';
 
@@ -348,4 +350,39 @@ test('caps an imported body whose solids lie one inside another or overlap, and 
   const report = JSON.stringify(capped);
   for (const name of ['inner', 'outer', 'overlapped', 'overlap', 'wall'] as const) expect(warmth(capped[name]), `${name} ${report}`).toBeGreaterThan(60);
   for (const name of ['pocket', 'above'] as const) expect(warmth(capped[name]), `${name} ${report}`).toBeLessThan(20);
+});
+
+test('caps an imported body of 258 solids where 256 of them nest round one point', async ({ page }, info) => {
+  test.setTimeout(180_000);
+  // A STEP file made here, as another program would write it: Front and Back, and 256 boxes one inside the next between them at y = 0.
+  // The outermost box spans x -40…-15 and z -30…-20, so the model spans what the origin plane labels above assume. Each box is 0.02 mm
+  // inside the one before along x and y and 0.008 mm along z; the innermost is much smaller than the one round it. So a point in the
+  // middle lies in all 256 boxes, and a point just outside the innermost box in 255 of them.
+  const wasmBinary = await readFile(new URL('../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
+  setOC(await initOpenCascade({ wasmBinary, print: () => undefined, printErr: () => undefined }));
+  const corners: [[number, number, number], [number, number, number]][] = [[[-40, -30, -30], [-30, -10, -20]], [[-40, 10, -30], [-30, 30, -20]]];
+  for (let box = 0; box < 255; box++) corners.push([[-40 + 0.02 * box, -9 + 0.02 * box, -30 + 0.008 * box], [-15 - 0.02 * box, 9 - 0.02 * box, -20 - 0.008 * box]]);
+  corners.push([[-30.5, -2, -26.5], [-24.5, 2, -23.5]]);
+  const shapes = corners.map(([min, max]) => makeBox(min, max));
+  let data: string;
+  try { data = await exportSTEP(shapes.map(shape => ({ shape }))).text(); } finally { for (const shape of shapes) shape.delete(); }
+
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const step = { format: 'step', fileName: 'nested.step', encoding: 'utf8', data };
+  expect(await call(page, 'cad_import_solid', { expectedVersion: (await context(page)).version, source: step })).toMatchObject({ imported: true, solidCount: 258 });
+  const imported = await context(page);
+  const built = await call(page, 'cad_build', { expectedVersion: imported.version });
+  expect(built.diagnostics).toEqual([]); expect(built.bodies).toMatchObject([{ solidCount: 258 }]);
+  await expect.poll(async () => (await viewport(page)).view).toMatchObject({ mode: 'solid', available: true, referenceVersion: imported.version });
+
+  const front = await projection(page, 'Front');
+  for (const command of [{ kind: 'select-reference-plane', plane: 'XZ' }, { kind: 'set-section', on: true }, { kind: 'select-reference-plane', plane: null }])
+    await call(page, 'cad_set_viewport', { expectedVersion: imported.version, command });
+  await expect.poll(async () => (await viewport(page)).view.section).toMatchObject({ caps: true, normal: [0, 1, 0] });
+  // An 8-bit stencil count of how often the cut winds round a point reads 256 as 0, and would leave the middle open.
+  const probes = { all: front([-27.5, 0, -25]), allButOne: front([-32.7, 0, -25]), outer: front([-39.5, 0, -25]), above: front([-27.5, 0, -15]) };
+  const capped = await colours(page, probes, info, 'caps-nested-256');
+  const report = JSON.stringify(capped);
+  for (const name of ['all', 'allButOne', 'outer'] as const) expect(warmth(capped[name]), `${name} ${report}`).toBeGreaterThan(60);
+  expect(warmth(capped.above), report).toBeLessThan(20);
 });

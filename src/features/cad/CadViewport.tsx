@@ -30,7 +30,7 @@ import { cadSketchClipPlane, cadSketchClipTolerance, syncCadSketchCamera, type C
 import { CAD_SKETCH_DIM_AMOUNT, createCadBackgroundDim } from './view/cadSketchBackgroundStyle';
 import type { CadResolvedFrame } from '@/domain/cad/cadDatumPlanes';
 import { cadBoundsClipped, cadClipRaycaster, cadSectionClipPlane } from './view/cadSectionView';
-import { createCadSectionCaps } from './view/cadSectionCaps';
+import { cadCapBodySolids, createCadSectionCaps } from './view/cadSectionCaps';
 import { CAD_DEFAULT_SELECTION_FILTER, cadSelectionAccepts, type CadSelectionFilter, type CadSelectionKind } from './view/cadSelectionFilter';
 import type { CadOriginSelection } from './view/cadReferenceSelection';
 const NO_REFERENCES: readonly CadViewportReference[] = Object.freeze([]);
@@ -586,7 +586,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       }
       sceneBoundsCurrent = false;
       solidBounds.makeEmpty(); solidBounds.expandByObject(solids);
-      caps.setBodies(pickableBodies);
+      caps.setBodies(pickableBodies, body => { const mesh = meshByObject.get(body); return mesh && cadCapBodySolids(mesh); });
       syncSection(); applySketchStyle();
       if (!fittedSolid && data.current.meshes.length) {
         fittedSolid = true;
