@@ -7,7 +7,10 @@ export const CAD_SECTION_CAP_COLOR = 0xc98a5e;
 export const CAD_SECTION_CAP_SLICE_MS = 6;
 /** Caps draw after everything else that is opaque, each cut body's steps in a row from here. */
 const CAP_RENDER_ORDER = 10;
-/** How many vertices, triangles or segments a build handles between looks at the clock. */
+/**
+ * How many vertices, triangles or segments a build handles between looks at the clock. Each loop runs in runs of this many with its
+ * yield between them, since a yield inside a tight loop made it three to five times slower.
+ */
 const CHECK_EVERY = 8192;
 /**
  * How many solids one count holds. Where k of a body's solids cover a point of the plane, the body's triangles wind k times round it,
@@ -131,14 +134,17 @@ function countGroups(solids: CadCapBodySolids | undefined, triangles: number): U
   if (!solids || solids.count <= CAD_SECTION_CAP_SOLIDS_AT_ONCE) return null;
   if (!solids.runs || Math.ceil(solids.count / CAD_SECTION_CAP_GROUP_SOLIDS) > 0xffff) return undefined;
   const groups = new Uint16Array(triangles), seen = new Uint8Array(triangles);
+  let told = 0;
   for (const { start, count, solid } of solids.runs) {
     if (start % 3 || count % 3 || start < 0 || start + count > 3 * triangles || !Number.isSafeInteger(solid) || solid < 0 || solid >= solids.count) return undefined;
+    const group = Math.floor(solid / CAD_SECTION_CAP_GROUP_SOLIDS);
     for (let triangle = start / 3; triangle < (start + count) / 3; triangle++) {
       if (seen[triangle]) return undefined;
-      seen[triangle] = 1; groups[triangle] = Math.floor(solid / CAD_SECTION_CAP_GROUP_SOLIDS);
+      seen[triangle] = 1; groups[triangle] = group;
     }
+    told += count / 3;
   }
-  return seen.every(Boolean) ? groups : undefined;
+  return told === triangles ? groups : undefined;
 }
 
 /**
@@ -158,46 +164,52 @@ function* cadCapSolidSteps(geometry: THREE.BufferGeometry, solids?: CadCapBodySo
   const pointSlots = tableSize(2 * total), points = new Int32Array(pointSlots).fill(-1);
   const keys = new Uint32Array(3 * total), vertices = new Float64Array(3 * total), joined = new Uint32Array(total);
   let count = 0;
-  for (let item = 0; item < total; item++) {
-    // Adding zero turns a negative zero into zero, so both spellings of a point join.
-    scratch[0] = position.getX(item) + 0; scratch[1] = position.getY(item) + 0; scratch[2] = position.getZ(item) + 0;
-    let slot = mix(Math.imul(bits[0], 0x9e3779b1) ^ Math.imul(bits[1], 0x85ebca77) ^ Math.imul(bits[2], 0xc2b2ae3d)) & (pointSlots - 1), id = points[slot];
-    while (id >= 0 && !(keys[3 * id] === bits[0] && keys[3 * id + 1] === bits[1] && keys[3 * id + 2] === bits[2])) { slot = (slot + 1) & (pointSlots - 1); id = points[slot]; }
-    if (id < 0) {
-      id = count++; points[slot] = id;
-      for (let axis = 0; axis < 3; axis++) { keys[3 * id + axis] = bits[axis]; vertices[3 * id + axis] = scratch[axis]; }
+  for (let first = 0; first < total; first += CHECK_EVERY) {
+    for (let item = first, end = Math.min(total, first + CHECK_EVERY); item < end; item++) {
+      // Adding zero turns a negative zero into zero, so both spellings of a point join.
+      scratch[0] = position.getX(item) + 0; scratch[1] = position.getY(item) + 0; scratch[2] = position.getZ(item) + 0;
+      let slot = mix(Math.imul(bits[0], 0x9e3779b1) ^ Math.imul(bits[1], 0x85ebca77) ^ Math.imul(bits[2], 0xc2b2ae3d)) & (pointSlots - 1), id = points[slot];
+      while (id >= 0 && !(keys[3 * id] === bits[0] && keys[3 * id + 1] === bits[1] && keys[3 * id + 2] === bits[2])) { slot = (slot + 1) & (pointSlots - 1); id = points[slot]; }
+      if (id < 0) {
+        id = count++; points[slot] = id;
+        for (let axis = 0; axis < 3; axis++) { keys[3 * id + axis] = bits[axis]; vertices[3 * id + axis] = scratch[axis]; }
+      }
+      joined[item] = id;
     }
-    joined[item] = id;
-    if (item % CHECK_EVERY === CHECK_EVERY - 1) yield;
+    if (first + CHECK_EVERY <= total) yield;
   }
   const triangles = new Uint32Array(corners), groups = given ? new Uint16Array(corners / 3) : null;
   let kept = 0;
-  for (let corner = 0; corner < corners; corner += 3) {
-    const a = joined[index ? index.getX(corner) : corner], b = joined[index ? index.getX(corner + 1) : corner + 1], c = joined[index ? index.getX(corner + 2) : corner + 2];
-    if (a !== b && b !== c && c !== a) {
-      if (groups) groups[kept / 3] = given![corner / 3];
-      triangles[kept++] = a; triangles[kept++] = b; triangles[kept++] = c;
+  for (let first = 0; first < corners; first += 3 * CHECK_EVERY) {
+    for (let corner = first, end = Math.min(corners, first + 3 * CHECK_EVERY); corner < end; corner += 3) {
+      const a = joined[index ? index.getX(corner) : corner], b = joined[index ? index.getX(corner + 1) : corner + 1], c = joined[index ? index.getX(corner + 2) : corner + 2];
+      if (a !== b && b !== c && c !== a) {
+        if (groups) groups[kept / 3] = given![corner / 3];
+        triangles[kept++] = a; triangles[kept++] = b; triangles[kept++] = c;
+      }
     }
-    if (corner % (3 * CHECK_EVERY) === 3 * CHECK_EVERY - 3) yield;
+    if (first + 3 * CHECK_EVERY <= corners) yield;
   }
   // Each triangle runs along its edges in its winding. Closed solids run along every edge as often one way as the other: once each for
   // an edge of one solid, twice each where two solids touch. A body counted in groups must close within each group, so each group's
   // count is a winding of its own. The table has more slots than corners, so a free slot always ends a probe.
   const edgeSlots = tableSize(kept), low = new Int32Array(edgeSlots).fill(-1), high = new Uint32Array(edgeSlots), balance = new Int32Array(edgeSlots);
   const edgeGroups = groups ? new Uint16Array(edgeSlots) : null;
-  for (let corner = 0; corner < kept; corner++) {
-    const from = triangles[corner], to = triangles[corner % 3 === 2 ? corner - 2 : corner + 1], a = Math.min(from, to), b = Math.max(from, to);
-    const group = groups ? groups[(corner / 3) | 0] : 0;
-    let slot = mix(Math.imul(a, 0x9e3779b1) ^ Math.imul(b, 0x85ebca77) ^ Math.imul(group, 0xc2b2ae3d)) & (edgeSlots - 1);
-    while (low[slot] >= 0 && !(low[slot] === a && high[slot] === b && (!edgeGroups || edgeGroups[slot] === group))) slot = (slot + 1) & (edgeSlots - 1);
-    low[slot] = a; high[slot] = b; balance[slot] += from < to ? 1 : -1;
-    if (edgeGroups) edgeGroups[slot] = group;
-    if (corner % CHECK_EVERY === CHECK_EVERY - 1) yield;
+  for (let first = 0; first < kept; first += CHECK_EVERY) {
+    for (let corner = first, end = Math.min(kept, first + CHECK_EVERY); corner < end; corner++) {
+      const from = triangles[corner], to = triangles[corner % 3 === 2 ? corner - 2 : corner + 1], a = Math.min(from, to), b = Math.max(from, to);
+      const group = groups ? groups[(corner / 3) | 0] : 0;
+      let slot = mix(Math.imul(a, 0x9e3779b1) ^ Math.imul(b, 0x85ebca77) ^ Math.imul(group, 0xc2b2ae3d)) & (edgeSlots - 1);
+      while (low[slot] >= 0 && !(low[slot] === a && high[slot] === b && (!edgeGroups || edgeGroups[slot] === group))) slot = (slot + 1) & (edgeSlots - 1);
+      low[slot] = a; high[slot] = b; balance[slot] += from < to ? 1 : -1;
+      if (edgeGroups) edgeGroups[slot] = group;
+    }
+    if (first + CHECK_EVERY <= kept) yield;
   }
   let closed = kept > 0;
-  for (let slot = 0; closed && slot < edgeSlots; slot++) {
-    closed = balance[slot] === 0;
-    if (slot % CHECK_EVERY === CHECK_EVERY - 1) yield;
+  for (let first = 0; closed && first < edgeSlots; first += CHECK_EVERY) {
+    for (let slot = first, end = Math.min(edgeSlots, first + CHECK_EVERY); closed && slot < end; slot++) closed = balance[slot] === 0;
+    if (first + CHECK_EVERY <= edgeSlots) yield;
   }
   return Object.freeze({ vertices: vertices.slice(0, 3 * count), triangles: triangles.slice(0, kept), closed, groups: groups && groups.slice(0, kept / 3) });
 }
@@ -224,9 +236,11 @@ function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<
   if (!solid.closed) return null;
   const { vertices, triangles, groups } = solid, count = vertices.length / 3, { normal, constant } = plane;
   const side = new Float64Array(count);
-  for (let vertex = 0; vertex < count; vertex++) {
-    side[vertex] = normal.x * vertices[3 * vertex] + normal.y * vertices[3 * vertex + 1] + normal.z * vertices[3 * vertex + 2] + constant;
-    if (vertex % CHECK_EVERY === CHECK_EVERY - 1) yield;
+  for (let first = 0; first < count; first += CHECK_EVERY) {
+    for (let vertex = first, end = Math.min(count, first + CHECK_EVERY); vertex < end; vertex++) {
+      side[vertex] = normal.x * vertices[3 * vertex] + normal.y * vertices[3 * vertex + 1] + normal.z * vertices[3 * vertex + 2] + constant;
+    }
+    if (first + CHECK_EVERY <= count) yield;
   }
   // Each segment's start and end, x, y and z each, and for a body counted in groups the group of each segment.
   const ends: number[] = [], owners: number[] = [], at = new Float64Array(6);
@@ -238,28 +252,32 @@ function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<
       at[offset + axis] = t === 0 ? from : t === 1 ? to : from + (to - from) * t;
     }
   };
-  for (let corner = 0; corner < triangles.length; corner += 3) {
-    if (corner % (3 * CHECK_EVERY) === 3 * CHECK_EVERY - 3) yield;
-    let leaves = -1, returns = -1;
-    for (let edge = 0; edge < 3; edge++) {
-      const p = triangles[corner + edge], q = triangles[corner + (edge + 1) % 3], fromKept = side[p] >= 0, toKept = side[q] >= 0;
-      if (fromKept && !toKept) leaves = edge; else if (!fromKept && toKept) returns = edge;
+  for (let first = 0; first < triangles.length; first += 3 * CHECK_EVERY) {
+    for (let corner = first, end = Math.min(triangles.length, first + 3 * CHECK_EVERY); corner < end; corner += 3) {
+      let leaves = -1, returns = -1;
+      for (let edge = 0; edge < 3; edge++) {
+        const p = triangles[corner + edge], q = triangles[corner + (edge + 1) % 3], fromKept = side[p] >= 0, toKept = side[q] >= 0;
+        if (fromKept && !toKept) leaves = edge; else if (!fromKept && toKept) returns = edge;
+      }
+      if (leaves < 0) continue;
+      cross(triangles[corner + leaves], triangles[corner + (leaves + 1) % 3], 0);
+      cross(triangles[corner + returns], triangles[corner + (returns + 1) % 3], 3);
+      // A triangle that only touches the plane at a vertex gives a segment of no length, which counts nothing.
+      if (at[0] === at[3] && at[1] === at[4] && at[2] === at[5]) continue;
+      for (let item = 0; item < 6; item++) ends.push(at[item]);
+      if (groups) { const group = groups[corner / 3]; owners.push(group); lastGroup = Math.max(lastGroup, group); }
     }
-    if (leaves < 0) continue;
-    cross(triangles[corner + leaves], triangles[corner + (leaves + 1) % 3], 0);
-    cross(triangles[corner + returns], triangles[corner + (returns + 1) % 3], 3);
-    // A triangle that only touches the plane at a vertex gives a segment of no length, which counts nothing.
-    if (at[0] === at[3] && at[1] === at[4] && at[2] === at[5]) continue;
-    for (let item = 0; item < 6; item++) ends.push(at[item]);
-    if (groups) { const group = groups[corner / 3]; owners.push(group); lastGroup = Math.max(lastGroup, group); }
+    if (first + 3 * CHECK_EVERY <= triangles.length) yield;
   }
   const segments = ends.length / 6;
   if (!segments) return null;
   // The fans start from the middle of the cut, so they overlap little; any point of the plane would count the same.
   let ox = 0, oy = 0, oz = 0;
-  for (let point = 0; point < 2 * segments; point++) {
-    ox += ends[3 * point]; oy += ends[3 * point + 1]; oz += ends[3 * point + 2];
-    if (point % CHECK_EVERY === CHECK_EVERY - 1) yield;
+  for (let first = 0; first < 2 * segments; first += CHECK_EVERY) {
+    for (let point = first, end = Math.min(2 * segments, first + CHECK_EVERY); point < end; point++) {
+      ox += ends[3 * point]; oy += ends[3 * point + 1]; oz += ends[3 * point + 2];
+    }
+    if (first + CHECK_EVERY <= 2 * segments) yield;
   }
   ox /= 2 * segments; oy /= 2 * segments; oz /= 2 * segments;
   // Snap the start onto the plane, which rounding in the average may have left a hair off.
@@ -270,9 +288,9 @@ function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<
   let next: Uint32Array | null = null, runs: { start: number; count: number }[] | null = null;
   if (groups) {
     const sizes = new Uint32Array(lastGroup + 1);
-    for (let segment = 0; segment < segments; segment++) {
-      sizes[owners[segment]]++;
-      if (segment % CHECK_EVERY === CHECK_EVERY - 1) yield;
+    for (let first = 0; first < segments; first += CHECK_EVERY) {
+      for (let segment = first, end = Math.min(segments, first + CHECK_EVERY); segment < end; segment++) sizes[owners[segment]]++;
+      if (first + CHECK_EVERY <= segments) yield;
     }
     if (sizes.filter(size => size > 0).length > 1) {
       next = new Uint32Array(lastGroup + 1); runs = [];
@@ -283,21 +301,26 @@ function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<
     }
   }
   const fans = new Float32Array(9 * segments);
-  for (let segment = 0; segment < segments; segment++) {
-    const place = 9 * (next ? next[owners[segment]]++ : segment);
-    fans[place] = ox; fans[place + 1] = oy; fans[place + 2] = oz;
-    for (let item = 0; item < 6; item++) fans[place + 3 + item] = ends[6 * segment + item];
-    if (segment % CHECK_EVERY === CHECK_EVERY - 1) yield;
+  for (let first = 0; first < segments; first += CHECK_EVERY) {
+    for (let segment = first, end = Math.min(segments, first + CHECK_EVERY); segment < end; segment++) {
+      const place = 9 * (next ? next[owners[segment]]++ : segment);
+      fans[place] = ox; fans[place + 1] = oy; fans[place + 2] = oz;
+      for (let item = 0; item < 6; item++) fans[place + 3 + item] = ends[6 * segment + item];
+    }
+    if (first + CHECK_EVERY <= segments) yield;
   }
   // The quad covers every fan, with a margin so that no counted pixel on its border is missed.
   const across = new THREE.Vector3(), up = new THREE.Vector3();
   const least = Math.abs(normal.x) <= Math.abs(normal.y) && Math.abs(normal.x) <= Math.abs(normal.z) ? new THREE.Vector3(1, 0, 0) : Math.abs(normal.y) <= Math.abs(normal.z) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
   across.crossVectors(least, normal).normalize(); up.crossVectors(normal, across);
+  const { x: ax, y: ay, z: az } = across, { x: ux, y: uy, z: uz } = up;
   let minU = 0, maxU = 0, minV = 0, maxV = 0;
-  for (let point = 0; point < 2 * segments; point++) {
-    const x = ends[3 * point] - ox, y = ends[3 * point + 1] - oy, z = ends[3 * point + 2] - oz, u = x * across.x + y * across.y + z * across.z, v = x * up.x + y * up.y + z * up.z;
-    minU = Math.min(minU, u); maxU = Math.max(maxU, u); minV = Math.min(minV, v); maxV = Math.max(maxV, v);
-    if (point % CHECK_EVERY === CHECK_EVERY - 1) yield;
+  for (let first = 0; first < 2 * segments; first += CHECK_EVERY) {
+    for (let point = first, end = Math.min(2 * segments, first + CHECK_EVERY); point < end; point++) {
+      const x = ends[3 * point] - ox, y = ends[3 * point + 1] - oy, z = ends[3 * point + 2] - oz, u = x * ax + y * ay + z * az, v = x * ux + y * uy + z * uz;
+      minU = Math.min(minU, u); maxU = Math.max(maxU, u); minV = Math.min(minV, v); maxV = Math.max(maxV, v);
+    }
+    if (first + CHECK_EVERY <= 2 * segments) yield;
   }
   const margin = 0.01 * Math.max(maxU - minU, maxV - minV) + 1e-6, quad = new Float32Array(12);
   [[minU - margin, minV - margin], [maxU + margin, minV - margin], [maxU + margin, maxV + margin], [minU - margin, maxV + margin]].forEach(([u, v], corner) => {
