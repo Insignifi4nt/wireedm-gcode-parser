@@ -974,6 +974,42 @@ describe('graph spatial selection', () => {
     } }], expect.any(AbortSignal));
     expect(h.selected).toHaveBeenLastCalledWith({ kind: 'point', id: pointId }); expect(h.pending).toHaveBeenLastCalledWith(false);
   });
+  it('outlines the Extend, Split and Trim previews over a part shown plainly, beneath every stroke and with each stroke\'s role', async () => {
+    const h = await spatialFixture(), graph = h.feature.graph!;
+    const feature: CadSketchFeature = { ...h.feature, graph: { ...graph,
+      points: [...graph.points, { id: 'fence-start', position: [-5, -5] }, { id: 'fence-end', position: [-5, 5] }],
+      entities: [...graph.entities, { id: 'fence', kind: 'line', construction: true, startPointId: 'fence-start', endPointId: 'fence-end' }] } };
+    const graphControls = { ...h.props().graphControls!, document: { ...h.props().graphControls!.document, features: [feature] } };
+    const shape = (element: Element) => ['x1', 'y1', 'x2', 'y2', 'd'].map(name => element.getAttribute(name));
+    const preview = async (item: string, label: string) => {
+      await h.pointer('pointerdown', 2, .1, false, 7, 2); await h.pointer('pointerup', 2, .1, false, 7, 2);
+      const action = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent === item);
+      expect(action?.disabled, item).toBe(false); await act(async () => action?.focus());
+      const group = container.querySelector(`[aria-label="${label}"]`); if (!group) throw new Error(`${label} missing.`);
+      const drawn = [...group.children].filter(child => child.tagName === 'line' || child.tagName === 'path');
+      const halos = drawn.filter(child => child.classList.contains('cad-sketch-halo')), strokes = drawn.filter(child => !child.classList.contains('cad-sketch-halo'));
+      const result = { pointerEvents: group.getAttribute('pointer-events'), order: drawn.map(child => child.classList.contains('cad-sketch-halo')),
+        roles: strokes.map(child => child.getAttribute('class')), halos: halos.map(child => [child.getAttribute('class'), ...shape(child)]),
+        under: strokes.map(child => [`${child.getAttribute('class')} cad-sketch-halo`, ...shape(child)]) };
+      await act(async () => document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+      return result;
+    };
+    await h.show({ sketch: feature, graphControls });
+    const plain = await preview('Extend start', 'Extend preview');
+    expect(plain).toMatchObject({ pointerEvents: 'none', roles: ['is-boundary', 'is-retained', 'is-added'], halos: [] });
+    await h.show({ outlined: true });
+    // The added piece lies over nothing the sketch has drawn, so its own under-stroke is all that separates it from a bright face.
+    // Split orders its pieces by their ids, one of them new and random, so roles compare as sets.
+    for (const [item, label, roles] of [['Extend start', 'Extend preview', ['is-boundary', 'is-retained', 'is-added']],
+      ['Split here', 'Split preview: both pieces remain', ['is-retained', 'is-new']], ['Trim here', 'Trim preview', ['is-removed']]] as const) {
+      const outlined = await preview(item, label);
+      expect([...outlined.roles].sort(), item).toEqual([...roles].sort());
+      expect(outlined.pointerEvents, item).toBe('none');
+      expect(outlined.halos, item).toEqual(outlined.under);
+      expect(outlined.order, item).toEqual([...outlined.roles.map(() => true), ...outlined.roles.map(() => false)]);
+    }
+    expect(h.edited).not.toHaveBeenCalled();
+  });
   it('requires a deliberate Extend end and a real outward boundary without inventing a free endpoint', async () => {
     const h = await spatialFixture();
     for (const [x, label] of [[2, 'Extend start'], [5, 'Extend']] as const) {

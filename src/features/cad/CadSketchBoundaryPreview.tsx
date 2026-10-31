@@ -108,8 +108,21 @@ function Stroke({ segment, center, className }: { segment: PathSegment; center: 
       : <circle className={className} cx={boundary.center.x - center[0]} cy={boundary.center.y - center[1]} r={boundary.radius} />;
 }
 
-export function CadSketchTrimPreview({ preview, center, mmPerPixel }: {
-  preview: Extract<CadSketchTrimPreview, { kind: 'ready' }>; center: SketchPoint; mmPerPixel: number;
+/**
+ * The strokes of a trim, extend or split preview, each with its role class. Outlined, over a part shown plainly behind the sketch,
+ * every stroke first gets a dark under-stroke with the same role and dashes, all beneath the strokes so none cuts a neighbour.
+ */
+export function CadSketchPreviewStrokes({ strokes, center, outlined }: {
+  strokes: readonly (readonly [segment: PathSegment, className: string])[]; center: SketchPoint; outlined: boolean;
+}) {
+  return <>
+    {outlined && strokes.map(([segment, className], index) => <Stroke key={`halo-${index}`} segment={segment} center={center} className={`${className} cad-sketch-halo`} />)}
+    {strokes.map(([segment, className], index) => <Stroke key={index} segment={segment} center={center} className={className} />)}
+  </>;
+}
+
+export function CadSketchTrimPreview({ preview, center, mmPerPixel, outlined = false }: {
+  preview: Extract<CadSketchTrimPreview, { kind: 'ready' }>; center: SketchPoint; mmPerPixel: number; outlined?: boolean;
 }) {
   const geometry = preview.geometry, trim = preview.edit.trim;
   const survivors = 'survivors' in geometry ? geometry.survivors : geometry.survivor ? [geometry.survivor] : [];
@@ -117,23 +130,20 @@ export function CadSketchTrimPreview({ preview, center, mmPerPixel }: {
   const cutPointIds = 'cutPointIds' in trim ? trim.cutPointIds : trim.kind === 'end' ? [trim.cutPointId] : [];
   return <g className="cad-sketch-trim-preview" pointerEvents="none" aria-label="Trim preview">
     <title>{preview.help}</title>
-    {cuts.map((cut, index) => <Stroke key={index} segment={cut.boundary} center={center} className="is-boundary" />)}
-    {survivors.map((survivor, index) => <Stroke key={index} segment={survivor} center={center} className="is-retained" />)}
-    <Stroke segment={geometry.removed} center={center} className="is-removed" />
+    <CadSketchPreviewStrokes center={center} outlined={outlined} strokes={[...cuts.map(cut => [cut.boundary, 'is-boundary'] as const),
+      ...survivors.map(survivor => [survivor, 'is-retained'] as const), [geometry.removed, 'is-removed']]} />
     {cuts.map((cut, index) => <circle key={index} className="is-cut" data-cad-sketch-trim-point={cutPointIds[index]}
       cx={cut.point[0] - center[0]} cy={cut.point[1] - center[1]} r={4 * mmPerPixel} />)}
   </g>;
 }
 
-export function CadSketchExtendPreview({ preview, center, mmPerPixel }: {
-  preview: Extract<CadSketchExtendPreview, { kind: 'ready' }>; center: SketchPoint; mmPerPixel: number;
+export function CadSketchExtendPreview({ preview, center, mmPerPixel, outlined = false }: {
+  preview: Extract<CadSketchExtendPreview, { kind: 'ready' }>; center: SketchPoint; mmPerPixel: number; outlined?: boolean;
 }) {
   const { added, extended, boundary, point } = preview.geometry;
   return <g className="cad-sketch-trim-preview" pointerEvents="none" aria-label="Extend preview">
     <title>{preview.help}</title>
-    <Stroke segment={boundary} center={center} className="is-boundary" />
-    <Stroke segment={extended} center={center} className="is-retained" />
-    <Stroke segment={added} center={center} className="is-added" />
+    <CadSketchPreviewStrokes center={center} outlined={outlined} strokes={[[boundary, 'is-boundary'], [extended, 'is-retained'], [added, 'is-added']]} />
     <circle className="is-cut" data-cad-sketch-extend-point={preview.edit.extend.endPointId}
       cx={point[0] - center[0]} cy={point[1] - center[1]} r={4 * mmPerPixel} />
   </g>;

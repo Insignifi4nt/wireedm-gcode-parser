@@ -2,13 +2,12 @@ import { userFacingMessage } from '@/lib/userMessage';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { CadSketchSplitDependencyError, splitCadSketchEntity } from '@/domain/cad/cadSketchSplit';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
-import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { nearestPointOnSegment } from '@/domain/path-editor/pathPointInference';
 import type { PathSegment } from '@/domain/path-intel/types';
 import type { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
 import type { SketchPoint } from './cadSketchInteraction';
-import { cadArcSvgPath } from './cadSketchSvg';
 import { describeCadSketchConstraintSource } from './cadSketchConstraintFeedback';
+import { CadSketchPreviewStrokes } from './CadSketchBoundaryPreview';
 
 export type CadSketchSplitPreview = { readonly kind: 'unavailable'; readonly reason: string }
   | { readonly kind: 'ready'; readonly edit: Extract<CadEdit, { kind: 'split-sketch-entity' }>;
@@ -41,16 +40,12 @@ export function prepareCadSketchSplitPreview(prepared: ReturnType<typeof prepare
   }
 }
 
-export function CadSketchSplitPreview({ preview, center, mmPerPixel }: {
-  preview: Extract<CadSketchSplitPreview, { kind: 'ready' }>; center: SketchPoint; mmPerPixel: number;
+export function CadSketchSplitPreview({ preview, center, mmPerPixel, outlined = false }: {
+  preview: Extract<CadSketchSplitPreview, { kind: 'ready' }>; center: SketchPoint; mmPerPixel: number; outlined?: boolean;
 }) {
   return <g className="cad-sketch-split-preview" pointerEvents="none" aria-label="Split preview: both pieces remain">
-    {preview.pieces.map(segment => {
-      const boundary = cadSketchGraphBoundary(segment), className = segment.id === preview.edit.split.entityId ? 'is-retained' : 'is-new';
-      return boundary.type === 'line' ? <line key={segment.id} className={className} x1={boundary.start.x - center[0]} y1={boundary.start.y - center[1]}
-        x2={boundary.end.x - center[0]} y2={boundary.end.y - center[1]} />
-        : boundary.type === 'arc' ? <path key={segment.id} className={className} d={cadArcSvgPath(boundary, center)} /> : null;
-    })}
+    <CadSketchPreviewStrokes center={center} outlined={outlined}
+      strokes={preview.pieces.map(segment => [segment, segment.id === preview.edit.split.entityId ? 'is-retained' : 'is-new'] as const)} />
     <circle data-cad-sketch-split-point={preview.edit.split.splitPointId} cx={preview.point[0] - center[0]} cy={preview.point[1] - center[1]} r={4 * mmPerPixel}>
       <title>Split point · Both pieces remain</title>
     </circle>

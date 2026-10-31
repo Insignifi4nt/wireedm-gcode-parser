@@ -1078,6 +1078,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     initialCursorFit.current = true; fitView.current?.(); initialCursorFit.current = false;
   }, [sketch.id, sketch.kind, curveCreation]);
   const pathPreview = useMemo(() => pathTool ? previewCadPathDraft(pathDraft, cursor) : { kind: 'none' as const }, [pathTool, pathDraft, cursor]);
+  const invalidArcPoints = pathPreview.kind === 'invalid' ? [pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ') : '';
   const pathMode = pathDraft.kind === 'arc-through' ? 'arc' : pathDraft.mode;
   const pathEnd = pathDraft.kind === 'idle' ? null : cadPathDraftEndpoint(pathDraft);
   const pathNeedsClosingLine = pathDraft.kind === 'ready' && pathDraft.segments.length > 0 && pathEnd !== null
@@ -1638,14 +1639,15 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         the canvas's life: promoting it when a box, pick or tool starts stalled that first frame, and an empty layer costs nothing measurable. */}
     <CadSketchOverlay frame={overlayFrame} layer="pointer">
       {geometryPick?.dimensionPreview && geometryPick.pointer && <CadSketchDimensionPreview plan={geometryPick.dimensionPreview} pointer={geometryPick.pointer} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
-      {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
-      {currentTrim?.kind === 'ready' && <CadSketchTrimPreview preview={currentTrim} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
-      {currentOverlap?.action === 'trim' && currentOverlap.trim?.kind === 'ready' && <CadSketchTrimPreview preview={currentOverlap.trim} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
-      {currentOverlap?.action === 'extend' && activeExtend?.kind === 'ready' && <CadSketchExtendPreview preview={activeExtend} center={center} mmPerPixel={overlayFrame.mmPerPixel} />}
+      {currentOverlap?.action === 'split' && currentOverlap.split?.kind === 'ready' && <CadSketchSplitPreview preview={currentOverlap.split} center={center} mmPerPixel={overlayFrame.mmPerPixel} outlined={outlined} />}
+      {currentTrim?.kind === 'ready' && <CadSketchTrimPreview preview={currentTrim} center={center} mmPerPixel={overlayFrame.mmPerPixel} outlined={outlined} />}
+      {currentOverlap?.action === 'trim' && currentOverlap.trim?.kind === 'ready' && <CadSketchTrimPreview preview={currentOverlap.trim} center={center} mmPerPixel={overlayFrame.mmPerPixel} outlined={outlined} />}
+      {currentOverlap?.action === 'extend' && activeExtend?.kind === 'ready' && <CadSketchExtendPreview preview={activeExtend} center={center} mmPerPixel={overlayFrame.mmPerPixel} outlined={outlined} />}
       {preview && <g className="cad-profile cad-profile-preview"><CadSketchProfileGeometry geometry={preview} parameters={parameters} viewCenter={center} halo={halo} /></g>}
       {pathTool && pathDraft.kind !== 'idle' && (pathPreview.kind === 'line' || pathPreview.kind === 'arc') && <g className="cad-profile cad-profile-preview">
         {halo > 0 && <g className="cad-sketch-halo" strokeWidth={halo}><CadPathSegmentGeometry segment={pathPreview.segment} origin={center} /></g>}<CadPathSegmentGeometry segment={pathPreview.segment} origin={center} /></g>}
-      {pathTool && pathDraft.kind === 'arc-through' && pathPreview.kind === 'invalid' && <polyline className="cad-path-invalid" points={[pathPreview.start, pathPreview.through, pathPreview.end].map(([x, y]) => `${x - center[0]},${y - center[1]}`).join(' ')} />}
+      {pathTool && pathDraft.kind === 'arc-through' && pathPreview.kind === 'invalid' && <g className="cad-path-invalid">
+        {halo > 0 && <polyline className="cad-sketch-halo" strokeWidth={halo} points={invalidArcPoints} />}<polyline points={invalidArcPoints} /></g>}
       {drawingReadout && viewportSize.height > 0 && <g data-cad-drawing-readout="" pointerEvents="none" aria-hidden="true"
         transform={`translate(${cursor[0] - center[0]},${cursor[1] - center[1]}) scale(${width / viewportSize.width},${-span / viewportSize.height})`}>
         <rect className="cad-sketch-snap-label-bg" x="12" y="10" width={drawingReadout.length * 5.6 + 12} height="19" rx="3" />

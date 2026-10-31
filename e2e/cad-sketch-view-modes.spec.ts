@@ -222,3 +222,31 @@ test('keeps the model camera exactly where the sketch found it when the first so
   await expect.poll(async () => (await call(page, 'cad_get_viewport', { expectedVersion: taller.version })).view).toMatchObject({ mode: 'solid', available: true, referenceVersion: taller.version });
   expect(await modelCamera(page, taller.version)).toEqual(before);
 });
+
+test('outlines the piece an Extend preview adds over a plainly shown face, keeping its dashes', async ({ page }) => {
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  // An edge on the plate's top face stops short of a fence line; extending its end adds a piece that lies over nothing but the face.
+  const lines = { id: 'lines', name: 'Lines', kind: 'sketch', suppressed: false, plane: 'XY', offset: 10, profiles: [], graph: {
+    points: [{ id: 'a', position: [10, 10] }, { id: 'b', position: [20, 10] }, { id: 'f1', position: [40, 0] }, { id: 'f2', position: [40, 30] }],
+    entities: [{ id: 'edge', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false },
+      { id: 'fence', kind: 'line', startPointId: 'f1', endPointId: 'f2', construction: false }], relations: [] } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version,
+    edits: [...features.slice(0, 2), lines].map(feature => ({ kind: 'add-feature', feature })) });
+  const document = await context(page);
+  expect((await call(page, 'cad_build', { expectedVersion: document.version })).bodies).toHaveLength(1);
+  await call(page, 'cad_set_viewport', { expectedVersion: document.version, command: { kind: 'edit-sketch', sketchId: 'lines' } });
+  await expect(page.getByLabel('Sketch drawing canvas')).toBeVisible();
+  await openViewControls(page); await choose(page, 'Normal'); await settled(page);
+  await page.locator('[data-cad-sketch-entity="edge"]').press('Shift+F10');
+  const extend = page.getByRole('menuitem', { name: 'Extend end', exact: true }); await expect(extend).toBeEnabled(); await extend.focus();
+  const preview = page.getByLabel('Extend preview', { exact: true });
+  const added = preview.locator('line.is-added:not(.cad-sketch-halo)'), under = preview.locator('line.is-added.cad-sketch-halo');
+  await expect(added).toHaveCount(1); await expect(under).toHaveCount(1);
+  await expect(preview.locator('.cad-sketch-halo')).toHaveCount(3);
+  const style = (element: Element) => { const css = getComputedStyle(element); return { stroke: css.stroke, width: css.strokeWidth, dashes: css.strokeDasharray, pointer: css.pointerEvents }; };
+  const piece = await added.evaluate(style), halo = await under.evaluate(style);
+  expect(piece.dashes).toBe('5px, 3px'); expect(piece.width).toBe('2px'); expect(piece.stroke).not.toBe('rgb(18, 26, 32)');
+  expect(halo).toEqual({ stroke: 'rgb(18, 26, 32)', width: '4px', dashes: piece.dashes, pointer: 'none' });
+  expect(await under.evaluate((element, other) => ['x1', 'y1', 'x2', 'y2'].map(name => element.getAttribute(name)).join() === other, await added.evaluate(element => ['x1', 'y1', 'x2', 'y2'].map(name => element.getAttribute(name)).join()))).toBe(true);
+  await page.keyboard.press('Escape');
+});
