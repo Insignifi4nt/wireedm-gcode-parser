@@ -4,6 +4,8 @@ Design parts and plan wire EDM cuts in your browser. Build parametric sketches a
 
 [Open the app](https://insignifi4nt.github.io/wireedm-gcode-parser/) · [Read the guides](https://insignifi4nt.github.io/wireedm-gcode-parser/documentation/)
 
+> broCAD/M is alpha software. Its file formats change without backward compatibility: files from older versions may not open, and files from newer versions won't open in older ones.
+
 ![A 45-tooth spur gear in the editor, with its contours, entry moves and program stops.](docs/images/spur-gear-editor.png)
 
 Import DXF drawings, reopen saved projects or work with existing machine programs. Set the cut order, entry points, compensation and stops directly on the part, with undo and redo when you need them.

@@ -1,15 +1,16 @@
-import type { CadSketchEqualRelation, CadSketchGraph, CadSketchGraphIssue } from './cadSketchGraph';
+import type { CadSketchEqualRelation, CadSketchGraph, CadSketchGraphEntity, CadSketchGraphIssue } from './cadSketchGraph';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { cadSketchLineDirection, resolveCadSketchLinePair } from './cadSketchLineRelations';
 import { resolveCadSketchRadialEntity } from './cadSketchRadialRelations';
 import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_SKETCH_RADIUS_PAIR_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 
 /** Exact entity ownership only; no source sorting, driver transfer or numeric healing. */
 export function resolveCadSketchRadiusPair(graph: CadSketchGraph, curveIds: readonly [string, string]) {
-  if (curveIds[0] === curveIds[1]) throw new CadError('invalid-sketch-radius-pair', 'Choose two distinct circles or arcs.');
-  return [resolveCadSketchRadialEntity(graph, curveIds[0]), resolveCadSketchRadialEntity(graph, curveIds[1])] as const;
+  type Round = Extract<CadSketchGraphEntity, { kind: 'arc' | 'circle' }>;
+  return resolveCadSketchOperands(graph, CAD_SKETCH_RADIUS_PAIR_OPERANDS, curveIds) as readonly [Round, Round];
 }
 
 function radialMeasurements(entity: ReturnType<typeof resolveCadSketchRadialEntity>, points: ReadonlyMap<string, Point2>, parameters: Readonly<Record<string, number>>) {

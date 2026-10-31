@@ -1,14 +1,13 @@
-import type { CadSketchGraph, CadSketchGraphIssue, CadSketchRadialRelation } from './cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphIssue, CadSketchRadialRelation } from './cadSketchGraph';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_SKETCH_RADIAL_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 
 /** Source topology only: a changed dimension may have unsolved numeric geometry. */
 export function resolveCadSketchRadialEntity(graph: CadSketchGraph, entityId: string) {
-  const entity = graph.entities.find(entity => entity.id === entityId);
-  if (!entity || entity.kind === 'line') throw new CadError('invalid-sketch-radial-entity', 'Radial geometry requires an existing circle or arc.');
-  return entity;
+  return resolveCadSketchOperands(graph, CAD_SKETCH_RADIAL_OPERANDS, [entityId])[0] as Extract<CadSketchGraphEntity, { kind: 'arc' | 'circle' }>;
 }
 
 function validRadius(radius: number): boolean { return Number.isFinite(radius) && radius > 1e-7 && radius <= 1e6; }

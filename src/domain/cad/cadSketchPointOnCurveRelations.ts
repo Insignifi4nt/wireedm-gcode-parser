@@ -1,15 +1,18 @@
 import { CadError } from './cadError';
-import type { CadSketchGraph, CadSketchPointOnCurveRelation, CadSketchGraphIssue } from './cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphPoint, CadSketchPointOnCurveRelation, CadSketchGraphIssue } from './cadSketchGraph';
 import { resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
+import { CAD_SKETCH_POINT_ON_CURVE_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 import { evaluateCadScalar } from './cadExpression';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
 
 /** An authored point and the full supporting circle of an arc or circle, without a center or endpoint identity or projection. */
 export function resolveCadSketchPointOnCurveOperands(graph: CadSketchGraph, relation: Pick<CadSketchPointOnCurveRelation, 'pointId' | 'curveId'>) {
-  const point = graph.points.find(point => point.id === relation.pointId), curve = graph.entities.find(entity => entity.id === relation.curveId);
-  if (!point) throw new CadError('missing-sketch-point', 'Point on curve needs an existing sketch point.');
-  if (curve?.kind !== 'arc' && curve?.kind !== 'circle') throw new CadError('invalid-sketch-point-on-curve', 'Point on curve needs an existing arc or circle.');
+  const [point, curve] = resolveCadSketchOperands(graph, CAD_SKETCH_POINT_ON_CURVE_OPERANDS, [relation.pointId, relation.curveId]) as readonly [CadSketchGraphPoint, Extract<CadSketchGraphEntity, { kind: 'arc' | 'circle' }>];
+  return assertCadSketchPointOnCurveIdentities(graph, point, curve);
+}
+/** The point stays apart from the curve's centre and arc ends and from the points joined to them. */
+export function assertCadSketchPointOnCurveIdentities(graph: CadSketchGraph, point: CadSketchGraphPoint, curve: Extract<CadSketchGraphEntity, { kind: 'arc' | 'circle' }>) {
   const identity = resolveCadSketchPointIdentities(graph), own = curve.kind === 'arc' ? [curve.centerPointId, curve.startPointId, curve.endPointId] : [curve.centerPointId];
   if (own.some(id => identity(id) === identity(point.id)))
     throw new CadError('invalid-sketch-point-on-curve', 'The point must be distinct from the curve center, its arc endpoints and their declared coincident aliases.');

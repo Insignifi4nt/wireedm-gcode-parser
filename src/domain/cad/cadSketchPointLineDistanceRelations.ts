@@ -1,7 +1,8 @@
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
-import type { CadSketchGraph, CadSketchGraphIssue, CadSketchGraphRelation, CadSketchPointLineDistanceRelation } from './cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphIssue, CadSketchGraphPoint, CadSketchGraphRelation, CadSketchPointLineDistanceRelation } from './cadSketchGraph';
 import { resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
+import { CAD_SKETCH_POINT_LINE_DISTANCE_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 import { Value } from '@sinclair/typebox/value';
 import { CadIdentifierSchema } from './cadPrimitives';
 import { checkCadSketchLineRelation, cadSketchLineDirection, resolveCadSketchLinePair } from './cadSketchLineRelations';
@@ -13,9 +14,11 @@ const positive = 'Point to line distance must be a positive length; use Point on
 
 /** An authored point and an infinite line support, without an endpoint identity or projection. */
 export function resolveCadSketchPointLineDistanceOperands(graph: CadSketchGraph, relation: Pick<CadSketchPointLineDistanceRelation, 'pointId' | 'lineId'>) {
-  const point = graph.points.find(point => point.id === relation.pointId), line = graph.entities.find(entity => entity.id === relation.lineId);
-  if (!point) throw new CadError('missing-sketch-point', 'Point to line distance needs an existing sketch point.');
-  if (line?.kind !== 'line') throw new CadError('invalid-sketch-point-line-distance', 'Point to line distance needs an existing straight line.');
+  const [point, line] = resolveCadSketchOperands(graph, CAD_SKETCH_POINT_LINE_DISTANCE_OPERANDS, [relation.pointId, relation.lineId]) as readonly [CadSketchGraphPoint, Extract<CadSketchGraphEntity, { kind: 'line' }>];
+  return assertCadSketchPointLineDistanceIdentities(graph, point, line);
+}
+/** The point stays apart from both ends of its line and from the points joined to them. */
+export function assertCadSketchPointLineDistanceIdentities(graph: CadSketchGraph, point: CadSketchGraphPoint, line: Extract<CadSketchGraphEntity, { kind: 'line' }>) {
   const identity = resolveCadSketchPointIdentities(graph);
   if (new Set([point.id, line.startPointId, line.endPointId].map(identity)).size !== 3)
     throw new CadError('invalid-sketch-point-line-distance', 'The point must be distinct from both line endpoints and their declared coincident aliases.');
@@ -25,8 +28,12 @@ export function resolveCadSketchPointLineDistanceOperands(graph: CadSketchGraph,
 /** Operands and a literal value; an expression's value is checked where it is evaluated. */
 export function validateCadSketchPointLineDistance(graph: CadSketchGraph, relation: CadSketchPointLineDistanceRelation) {
   const operands = resolveCadSketchPointLineDistanceOperands(graph, relation);
-  if (typeof relation.value === 'number' && !(relation.value > 0)) throw new CadError('invalid-distance', positive);
+  assertCadSketchPointLineDistanceValue(relation);
   return operands;
+}
+/** A literal distance is positive; an expression's value is checked where it is evaluated. */
+export function assertCadSketchPointLineDistanceValue(relation: Pick<CadSketchPointLineDistanceRelation, 'value'>) {
+  if (typeof relation.value === 'number' && !(relation.value > 0)) throw new CadError('invalid-distance', positive);
 }
 
 /** The driven length, positive and finite. */

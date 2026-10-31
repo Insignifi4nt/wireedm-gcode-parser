@@ -1,16 +1,18 @@
 import { CadError } from './cadError';
-import type { CadSketchGraph, CadSketchSymmetricRelation, CadSketchGraphIssue } from './cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphPoint, CadSketchSymmetricRelation, CadSketchGraphIssue } from './cadSketchGraph';
 import { resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
+import { CAD_SKETCH_SYMMETRY_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 import { cadSketchLineDirection } from './cadSketchLineRelations';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
 
 /** Source identities, never position/proximity, determine the pair and its axis. */
 export function resolveCadSketchSymmetryOperands(graph: CadSketchGraph, relation: Pick<CadSketchSymmetricRelation, 'pointIds' | 'lineId'>) {
-  const first = graph.points.find(point => point.id === relation.pointIds[0]), second = graph.points.find(point => point.id === relation.pointIds[1]);
-  const line = graph.entities.find(entity => entity.id === relation.lineId);
-  if (!first || !second) throw new CadError('missing-sketch-point', 'Symmetry needs two existing sketch points.');
-  if (line?.kind !== 'line') throw new CadError('invalid-sketch-symmetry', 'Symmetry needs an existing straight axis line.');
+  const [first, second, line] = resolveCadSketchOperands(graph, CAD_SKETCH_SYMMETRY_OPERANDS, [...relation.pointIds, relation.lineId]) as readonly [CadSketchGraphPoint, CadSketchGraphPoint, Extract<CadSketchGraphEntity, { kind: 'line' }>];
+  return assertCadSketchSymmetryIdentities(graph, first, second, line);
+}
+/** The two points and the axis line's ends are four identities: no two of them the same point or joined. */
+export function assertCadSketchSymmetryIdentities(graph: CadSketchGraph, first: CadSketchGraphPoint, second: CadSketchGraphPoint, line: Extract<CadSketchGraphEntity, { kind: 'line' }>) {
   const identity = resolveCadSketchPointIdentities(graph);
   if (new Set([first.id, second.id, line.startPointId, line.endPointId].map(identity)).size !== 4)
     throw new CadError('invalid-sketch-symmetry', 'Symmetric points and axis endpoints need four distinct declared identities.');
