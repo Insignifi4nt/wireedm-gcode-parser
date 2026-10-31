@@ -84,6 +84,11 @@ export interface CadSketchLoweringContext {
   equalSizes(first: CadSketchSizeParameters, second: CadSketchSizeParameters): void;
   /** A size is `value`. */
   sized(size: CadSketchSizeParameters, value: number): void;
+  /**
+   * An arc's or circle's radius as one parameter: a circle's own, or for an arc a free one this relation makes, starting at the arc's
+   * radius and held equal to the span from its centre to its start. Lower inside `together`, so that hold is part of the relation.
+   */
+  radius(edge: CadSketchEdge): number;
 }
 
 // What each kind of edge gives the lowering. Only these tables name edge kinds; a relation's lowering asks for capabilities.
@@ -92,6 +97,8 @@ type Capability<R> = { readonly [K in CadSketchEdge['kind']]?: (lowering: CadSke
 /** A line runs from its start toward its end, and an axis from the origin toward its sample end. */
 const SUPPORTS: Capability<readonly [string, string]> = { line: (_, line) => [line.startPointId, line.endPointId], axis: (_, axis) => [axis.startPointId, axis.endPointId] };
 const CENTRES: Capability<string> = { arc: (_, arc) => arc.centerPointId, circle: (_, circle) => circle.centerPointId };
+/** An arc's radius runs from its centre to its start. */
+const RADII: Capability<readonly [string, string]> = { arc: (_, arc) => [arc.centerPointId, arc.startPointId] };
 /** An arc's size spans from its centre to its start; a circle holds its radius as a parameter. */
 const SIZES: Capability<CadSketchSizeParameters> = {
   arc: (lowering, arc) => lowering.span(arc.centerPointId, arc.startPointId),
@@ -177,9 +184,13 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   private sourceId = '';
   private entities: Map<string, CadSketchGraphEntity> | undefined;
   private relations: Map<string, CadSketchGraphRelation> | undefined;
-  /** The fixed values the origin and the axes became, in the order they were made; they follow the `parameterCount` parameters before them. */
-  readonly fixedValues: number[] = [];
-  private readonly made = new Map<number, number>();
+  /**
+   * The values made after the `parameterCount` parameters, in the order they were made: the fixed values the origin and the axes
+   * became, and the free radius an arc's relation makes.
+   */
+  readonly made: { readonly value: number; readonly fixed: boolean }[] = [];
+  /** The parameter each fixed value of the origin or an axis became, by its sentinel. */
+  private readonly sentinels = new Map<number, number>();
 
   /** `numericPoints` gives the origin and the axes' sample ends too, as `CadSketchPositions` does. */
   constructor(readonly graph: CadSketchGraph, private readonly parameters: Readonly<Record<string, number>>,
@@ -192,7 +203,7 @@ export class CadSketchLowering implements CadSketchLoweringContext {
    */
   lower(relation: CadSketchGraphRelation) {
     this.relation = relation; this.sourceId = relation.id;
-    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.fixedValues.length;
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.made.length;
     try { cadSketchRelationDefinition(relation).lower(relation, this); }
     catch (error) { this.restore(equations, radialHolds, squareHolds, tags, made); throw error; }
   }
@@ -201,16 +212,16 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     const structure = capability(STRUCTURES, entity);
     if (!structure) return;
     this.relation = undefined; this.sourceId = entity.id;
-    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.fixedValues.length;
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.made.length;
     try { structure(this, entity); }
     catch (error) { this.restore(equations, radialHolds, squareHolds, tags, made); throw error; }
   }
   /** Drops what was emitted since the counts were taken, and gives back the tags it took. */
   private restore(equations: number, radialHolds: number, squareHolds: number, tags: number, made: number) {
     this.equations.length = equations; this.radialHolds.length = radialHolds; this.squareHolds.length = squareHolds; this.tags = tags; this.sharedTag = undefined;
-    if (this.fixedValues.length === made) return;
-    this.fixedValues.length = made;
-    for (const [sentinel, index] of this.made) if (index >= this.parameterCount + made) this.made.delete(sentinel);
+    if (this.made.length === made) return;
+    this.made.length = made;
+    for (const [sentinel, index] of this.sentinels) if (index >= this.parameterCount + made) this.sentinels.delete(sentinel);
   }
   /** A drag target: a value on one coordinate of the dragged point, solved but left out of diagnosis. */
   target(pointId: string, axis: 0 | 1, value: number) {
@@ -285,8 +296,8 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   }
   /** The parameter a fixed value of the origin or an axis became, made the first time an equation keeps it. */
   private fixed(sentinel: number): number {
-    let index = this.made.get(sentinel);
-    if (index === undefined) { index = this.parameterCount + this.fixedValues.length; this.fixedValues.push(fixedValue(sentinel)); this.made.set(sentinel, index); }
+    let index = this.sentinels.get(sentinel);
+    if (index === undefined) { index = this.parameterCount + this.made.length; this.made.push({ value: fixedValue(sentinel), fixed: true }); this.sentinels.set(sentinel, index); }
     return index;
   }
   together(lower: () => void) {
@@ -325,5 +336,15 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   sized(size: CadSketchSizeParameters, value: number) {
     if (size.kind === 'span') this.emit('distance', size.span, value);
     else this.emit('value', [size.index], value);
+  }
+  radius(edge: CadSketchEdge): number {
+    const size = this.size(edge);
+    if (size.kind === 'parameter') return size.index;
+    const ends = capability(RADII, edge)?.(this, edge), [centre, start] = ends ? ends.map(id => this.numericPoints.get(id)) : [];
+    if (!centre || !start) throw new CadSketchLoweringRefusal(edge.id, 'size');
+    const index = this.parameterCount + this.made.length;
+    this.made.push({ value: Math.hypot(start.x - centre.x, start.y - centre.y), fixed: false });
+    this.equalSizes(size, { kind: 'parameter', index });
+    return index;
   }
 }

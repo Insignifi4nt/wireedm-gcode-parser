@@ -161,18 +161,14 @@ export const tangent: CadSketchRelationDefinition<'tangent'> = {
   withOperands: (relation, [curve, axis]) => ({ ...relation, curveIds: [curve, axis] }),
   key: relation => `tangent ${relation.curveIds[0]} ${relation.curveIds[1]}`,
   offers: [{ signature: { slots: [ROUND_SLOT, { role: 'Axis', accepts: ['axis'] }] }, plan: (planner, [curve, axis]) => planner.tangent(planner.entity(curve.id)!, planner.entity(axis.id)!) }],
-  // Signed, on the side the centre starts on, so a centre that starts on the axis has a regular equation there. At or above 0 across
-  // the axis, the centre's coordinate across it is the size. Below, a circle's radius is that coordinate negated; an arc's size is the
-  // span from the centre to its foot on the axis, which is regular since the centre starts strictly off the axis.
+  // Signed, on the side the centre starts on, so the curve never crosses the axis to touch it from the other side, and a centre that
+  // starts on the axis has a regular equation there. At or above 0 across the axis, the centre's coordinate across it is the size.
+  // Below, the radius is that coordinate negated: a circle's own radius, or a free one an arc's relation makes, held to its span.
   lower: (relation, context) => {
-    const curve = context.edge(relation.curveIds[0]), centre = context.centre(curve), size = context.size(curve);
+    const curve = context.edge(relation.curveIds[0]), centre = context.centre(curve);
     const axis = cadSketchAxisNormal(relation.curveIds[1] as CadSketchVirtualAxisId) === 'y' ? 1 : 0, across = context.point(centre)[axis];
-    if (context.side(centre, axis) > 0) context.equalSizes(size, { kind: 'parameter', index: across });
-    else if (size.kind === 'parameter') context.emit('midpoint', [across, size.index, context.point(CAD_SKETCH_ORIGIN_ID)[axis]]);
-    else {
-      const [cx, cy] = context.point(centre), [ox, oy] = context.point(CAD_SKETCH_ORIGIN_ID);
-      context.equalSizes({ kind: 'span', span: axis ? [cx, cy, cx, oy] : [cx, cy, ox, cy] }, size);
-    }
+    if (context.side(centre, axis) > 0) context.equalSizes(context.size(curve), { kind: 'parameter', index: across });
+    else context.together(() => { const radius = context.radius(curve); context.emit('midpoint', [across, radius, context.point(CAD_SKETCH_ORIGIN_ID)[axis]]); });
   },
   check: (graph, relation, points, parameters) => {
     const source = { kind: 'relation', id: relation.id } as const;

@@ -34,6 +34,10 @@ function part(relations: readonly unknown[] = [], moved: Moved = {}): CadDocumen
   return parseCadDocument({ ...createCadDocument('Axis relations', 'axis-relations'), schemaVersion: 2, features: [{
     id: 'sketch', name: 'Axes', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: rawGraph(relations, moved) }] });
 }
+/** A sketch of these points, edges and relations, its expressions reading `parameters`. */
+const sketchOf = (points: readonly unknown[], entities: readonly unknown[], relations: readonly unknown[], parameters: Readonly<Record<string, number>>) =>
+  parseCadDocument({ ...createCadDocument('Axis relations', 'axis-relations'), schemaVersion: 2, parameters, features: [{
+    id: 'sketch', name: 'Axes', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points, entities, relations } }] });
 const graphOf = (document: CadDocument) => { const sketch = document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing sketch.'); return sketch.graph; };
 const at = (document: CadDocument, id: string) => { const [x, y] = graphOf(document).points.find(point => point.id === id)!.position.map(Number); return { x, y }; };
 /** The solved size of an arc or circle: its radius, or the span from its centre to its start. */
@@ -72,7 +76,7 @@ function lowerAlone(relation: CadSketchGraphRelation) {
   const context = new CadSketchLowering(graph, {}, model.pointParameters, model.radiusParameters, points, model.values.length);
   context.lower(relation);
   const param = (id: string, axis: 0 | 1) => model.pointParameters.get(id)! + axis;
-  return { equations: context.equations.map(({ kind, operands, value }) => ({ kind, operands, value })), fixedValues: context.fixedValues, param, own: model.values.length };
+  return { equations: context.equations.map(({ kind, operands, value }) => ({ kind, operands, value })), fixedValues: context.made.map(made => made.value), param, own: model.values.length };
 }
 const failure = (run: () => unknown) => { try { run(); } catch (error) { return error; } throw new Error('Expected a failure.'); };
 const dimension = (graph: CadSketchGraph, ids: readonly string[], form: CadSketchDimensionForm) => {
@@ -227,6 +231,38 @@ describe('relations with the origin and the H and V axes, end to end', () => {
       // It stays on its own side: the circle below the H axis, the arc right of the V axis.
       expect(Math.sign(across)).toBe(axis === '@h' ? -1 : 1);
     }
+  });
+
+  it('never crosses the axis to touch it from the other side, when the relation is made or a value moves the curve', async () => {
+    // An arc, and a circle held through two points, start below the H axis centred at (-20, -5), their points held by parameters. With
+    // the points raised to (-5, 5) and (-10, 10), only a curve above the axis passes through both and touches it, so Tangent is refused,
+    // whether it is made then or already holds. An arc lowered unsigned moved its centre across to (10, 25) and turned major.
+    const held = (ends: Readonly<Record<string, number>>, curve: 'arc' | 'circle', relations: readonly unknown[] = []) => sketchOf(
+      [{ id: 'c', position: [-20, -5] }, { id: 's', position: ['sx', 'sy'] }, { id: 'e', position: ['ex', 'ey'] }],
+      curve === 'arc' ? [{ id: 'bow', kind: 'arc', construction: false, centerPointId: 'c', startPointId: 's', endPointId: 'e', direction: 'ccw' }]
+        : [{ id: 'bow', kind: 'circle', construction: false, centerPointId: 'c', radius: Math.hypot(ends.sx + 20, ends.sy + 5) }],
+      [...curve === 'circle' ? [{ id: 'on-s', kind: 'point-on-curve', pointId: 's', curveId: 'bow' }, { id: 'on-e', kind: 'point-on-curve', pointId: 'e', curveId: 'bow' }] : [],
+        ...relations], ends);
+    const below = { sx: -17, sy: -1, ex: -23, ey: -1 }, above = { sx: -5, sy: 5, ex: -10, ey: 10 };
+    const touch = { id: 'touch', kind: 'tangent', curveIds: ['bow', '@h'] } as const, refused = { code: expect.stringMatching(/^sketch-(failed|conflicting)$/) };
+    const values = (set: Readonly<Record<string, number>>) => Object.entries(set).map(([name, value]) => ({ kind: 'set-parameter', name, value }) as const);
+    for (const curve of ['arc', 'circle'] as const) {
+      await expect(prepareCadEdits(held(above, curve), [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: touch }], runtime)).rejects.toMatchObject(refused);
+      await expect(prepareCadEdits(held(below, curve, [touch]), values(above), runtime)).rejects.toMatchObject(refused);
+      // Lowered instead, the points leave one curve below the axis touching it, centred on x = -20 and 3.25 under the axis.
+      const lowered = (await prepareCadEdits(held(below, curve, [touch]), values({ sy: -2, ey: -2 }), runtime)).document;
+      const centre = at(lowered, 'c'), bow = graphOf(lowered).entities.find(entity => entity.id === 'bow');
+      expect(centre).toEqual({ x: expect.closeTo(-20, 9), y: expect.closeTo(-3.25, 9) });
+      // The start is held at (-17, -2) by its expressions.
+      expect(bow?.kind === 'circle' ? Number(bow.radius) : Math.hypot(-17 - centre.x, -2 - centre.y)).toBeCloseTo(3.25, 9);
+    }
+    // Below the axis an arc's radius is a free parameter of the relation's own, starting at the arc's radius of 5 and held to the span from
+    // its centre to its start, and the centre's y is that radius negated, with the origin's y as a fixed parameter: one relation's two rows.
+    const source = held(below, 'arc', [touch]), model = compileCadSketchEquations({ graph: graphOf(source), parameters: source.parameters });
+    const c = model.pointParameters.get('c')!, s = model.pointParameters.get('s')!, rows = model.equations.filter(equation => equation.sourceId === 'touch');
+    expect(rows.map(({ kind, operands }) => ({ kind, operands }))).toEqual([{ kind: 'distance-to-parameter', operands: [c, c + 1, s, s + 1, 6] }, { kind: 'midpoint', operands: [c + 1, 6, 7] }]);
+    expect(new Set(rows.map(row => row.tag)).size).toBe(1);
+    expect([model.values.slice(6), model.fixed.slice(6)]).toEqual([[5, 0], [false, true]]);
   });
 
   it('solves a curve whose centre starts on the axis it is made tangent to, on the positive side', async () => {

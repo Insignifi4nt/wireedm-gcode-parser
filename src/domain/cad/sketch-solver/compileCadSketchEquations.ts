@@ -43,8 +43,9 @@ export function compileCadSketchEquations(input: CadSketchEquationInput): CadSke
   const lowering = new CadSketchLowering(graph, input.parameters, pointParameters, radiusParameters, numericPoints, values.length);
   for (const entity of graph.entities) lowering.structure(entity);
   for (const relation of graph.relations) lowering.lower(relation);
-  // The origin and the axes, where an equation keeps their fixed values, follow every point and radius.
-  for (const value of lowering.fixedValues) { values.push(value); fixed.push(true); }
+  // The origin's and the axes' fixed values where an equation keeps them, and the free radius an arc's relation makes, follow every
+  // point and radius.
+  for (const made of lowering.made) { values.push(made.value); fixed.push(made.fixed); }
   if (input.drag) {
     const { pointId, position } = input.drag;
     if (!pointParameters.has(pointId) || position.some(value => !Number.isFinite(value) || Math.abs(value) > 1e9)) throw new Error('Invalid sketch drag target.');
