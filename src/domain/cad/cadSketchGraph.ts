@@ -6,24 +6,24 @@ import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
-import { resolveCadSketchSymmetryOperands, checkCadSketchSymmetricRelation } from './cadSketchSymmetryRelations';
-import { resolveCadSketchPointOnLineOperands, checkCadSketchPointOnLineRelation } from './cadSketchPointOnLineRelations';
-import { resolveCadSketchPointOnCurveOperands, checkCadSketchPointOnCurveRelation } from './cadSketchPointOnCurveRelations';
-import { validateCadSketchPointLineDistance, checkCadSketchPointLineDistanceRelation } from './cadSketchPointLineDistanceRelations';
-import { resolveCadSketchTangentJoint, checkCadSketchTangentJoint } from './cadSketchTangentRelations';
-import { validateCadSketchLinearPattern, checkCadSketchLinearPattern } from './cadSketchLinearPattern';
+import { checkCadSketchSymmetricRelation } from './cadSketchSymmetryRelations';
+import { checkCadSketchPointOnLineRelation } from './cadSketchPointOnLineRelations';
+import { checkCadSketchPointOnCurveRelation } from './cadSketchPointOnCurveRelations';
+import { checkCadSketchPointLineDistanceRelation } from './cadSketchPointLineDistanceRelations';
+import { checkCadSketchTangentJoint } from './cadSketchTangentRelations';
+import { checkCadSketchLinearPattern } from './cadSketchLinearPattern';
 import type { Point2 } from '@/domain/path-intel/types';
 import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
-import { checkCadSketchCornerRelation, resolveCadSketchCornerTopology } from './cadSketchCornerGeometry';
-import { checkCadSketchLineRelation, resolveCadSketchLinePair } from './cadSketchLineRelations';
-import { checkCadSketchRadialRelation, resolveCadSketchRadialEntity } from './cadSketchRadialRelations';
-import { checkCadSketchEqualRelation, resolveCadSketchRadiusPair } from './cadSketchEqualRelations';
-import { checkCadSketchAngleRelation, resolveCadSketchAngleRays } from './cadSketchAngleRelations';
+import { checkCadSketchCornerRelation } from './cadSketchCornerGeometry';
+import { checkCadSketchLineRelation } from './cadSketchLineRelations';
+import { checkCadSketchRadialRelation } from './cadSketchRadialRelations';
+import { checkCadSketchEqualRelation } from './cadSketchEqualRelations';
+import { checkCadSketchAngleRelation } from './cadSketchAngleRelations';
 import { resolveCadSketchMidpointOperands } from './cadSketchMidpointRelations';
 import { cadSketchExternalReferenceComponents, validateCadSketchExternalReference } from './cadSketchExternalReferences';
-import { resolveCadSketchReferenceDimension } from './cadSketchReferenceDimensions';
 import { deepFreezeCadData } from './cadDeepFreeze';
 import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
+import { checkCadSketchRelationOperands } from './sketch-relations/cadSketchRelationRegistry';
 
 const strict = { additionalProperties: false };
 const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
@@ -177,26 +177,10 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
     for (const ref of refs) if (!points.has(ref)) throw new CadError('missing-sketch-point', `Sketch graph "${owner}" references missing point "${ref}".`);
   };
   for (const item of graph.entities) references(item.id, cadSketchEntityPointIds(item));
+  // Each kind's definition checks its operands: the slots that refuse missing or mistyped ones, then its own checks.
   for (const item of graph.relations) {
-    if (item.kind === 'linear-pattern') validateCadSketchLinearPattern(graph, item);
-    if (item.kind === 'reference-dimension') resolveCadSketchReferenceDimension(graph, item);
+    checkCadSketchRelationOperands(graph, item);
     assertCadSketchPlacementFits(item);
-    if (item.kind === 'external-reference') validateCadSketchExternalReference(graph, item);
-    if (item.kind === 'fillet-corner' || item.kind === 'chamfer-corner') resolveCadSketchCornerTopology(graph, item);
-    if (item.kind === 'parallel' || item.kind === 'perpendicular' || item.kind === 'collinear' || item.kind === 'equal-length') resolveCadSketchLinePair(graph, item.lineIds);
-    if (item.kind === 'equal-radius') resolveCadSketchRadiusPair(graph, item.curveIds);
-    if (item.kind === 'line-angle') resolveCadSketchAngleRays(graph, item.rays);
-    if (item.kind === 'midpoint') resolveCadSketchMidpointOperands(graph, item);
-    if (item.kind === 'point-on-line') resolveCadSketchPointOnLineOperands(graph, item);
-    if (item.kind === 'point-on-curve') resolveCadSketchPointOnCurveOperands(graph, item);
-    if (item.kind === 'point-line-distance') validateCadSketchPointLineDistance(graph, item);
-    if (item.kind === 'tangent-joint') resolveCadSketchTangentJoint(graph, item);
-    if (item.kind === 'symmetric') resolveCadSketchSymmetryOperands(graph, item);
-    if (item.kind === 'radial-size') {
-      const entity = resolveCadSketchRadialEntity(graph, item.entityId);
-      if (entity.kind === 'circle' && typeof entity.radius === 'string')
-        throw new CadError('already-driven-sketch-radius', 'Edit or explicitly release the existing circle-radius expression before adding a radial dimension.');
-    }
     references(item.id, cadSketchRelationPointIds(graph, item));
   }
   deepFreezeCadData(graph);
