@@ -1,0 +1,73 @@
+{
+  "format": 1,
+  "fixture": "equation-baseline.json.gz",
+  "test": "src/features/cad/sketch-solver/native/__tests__/cadSketchEquationBaseline.test.ts",
+  "recorder": "scripts/record-sketch-equation-baseline.ts",
+  "helpers": "src/features/cad/sketch-solver/native/__tests__/cadSketchEquationBaseline.ts",
+  "source": {
+    "commit": "4afad29cba7d0426d0430dd43feb3cbefac33f53",
+    "description": "main at release 0.0.787, the last commit whose compiler switched on relation kinds. The fixture records that commit's equations and native's answers to them. It is frozen: never record it from later code, whose outputs it exists to check."
+  },
+  "inputs": [
+    {
+      "name": "Relation baseline",
+      "path": "src/features/cad/sketch-relations/__tests__/fixtures/relation-baseline.json.gz",
+      "description": "The 2,844 graphs of the relation baseline, in its order. They store numeric coordinates as 0, so each is placed: every numeric coordinate is drawn from [-100, 100] mm and rounded to three decimals by a mulberry32 generator seeded with the first 32 bits of the SHA-256 of the graph's JSON, in point order, and every parameter its expressions read, sorted by name, is drawn from [5, 40] and rounded to three decimals by a generator seeded with the SHA-256 of its name. The placed input is parsed with parseCadSketchSolveInput."
+    },
+    {
+      "name": "Solver corpus",
+      "path": "src/features/cad/sketch-solver/__tests__/fixtures/planegcs-corpus/",
+      "description": "The 1,774 inputs of the frozen PlaneGCS corpus, over its 1,215 graphs, in the order readPlaneGcsCorpus gives them."
+    },
+    {
+      "name": "Solver benchmarks",
+      "description": "Every distinct input the solver benchmarks gave the solver at the source commit, kept once by its corpus input hash, in the order first given: each workload case, the edits, drag and drag sweep of the solver-workloads group through the benchmark runtime, then the legacy group's scaling (sizes 1, 10, 40 and 60, drag at 40), drag preview (1, 4, 8 and 32 sketches of 10 rectangles) and capacity probes (80, 100, 200 and 400 independent; 60, 80, 88, 89, 100 and 125 connected) through the native runtime, each run once. 513 inputs over 162 graphs. The fixture stores them, so the benchmarks are not run again to replay it."
+    }
+  ],
+  "normalization": [
+    "Each input is parsed with parseCadSketchSolveInput and compiled, as the solver does. A compile that throws is recorded as { throws: '<code or error name>: <message>' }.",
+    "A compiled model is stored once, by the first 16 hex digits of the SHA-256 of its corpus JSON. Each of its equations is [kind, source id, tag, value, temporary as 1 or 0, ...operands]; the fixed parameters are listed by index; the parameter layout and the start values, as float64 bytes, are hashed.",
+    "Native is the committed module at the source commit, the same bytes as packages/sketch-solver/wasm/sketch_solver.wasm here. It answers each compiled model, asked for the definition unless the input drags, with [status, iterations, diagnosis kind, degrees of freedom or null, nonzero labels as [equation, label], definition codes as digits or null, drag outcome and target distance or null, hash of the solved values as float64 bytes].",
+    "The graph checks' issues, the constraint inspection's relation rows (paged as an agent pages them, a row whose own page throws recorded as its error) and the solver's own attempt, asked for the definition unless it drags, are each hashed as corpus JSON, with errors recorded as for compiling. Hashes are the first 16 hex digits of the SHA-256; the attempt covers retries from off a circle's centre and acceptance by the graph checks."
+  ],
+  "contents": {
+    "benchmark": "The benchmark inputs: graphs by the hash of their corpus JSON, and for each input its source, graph hash, parameters and drag if any.",
+    "models": "The stored models by hash.",
+    "records": "One for each input, in input order: [source, input hash, model hash, native answer or null when compiling threw, checks hash, inspection rows hash, attempt hash].",
+    "encoding": "Corpus JSON text (negative zero kept) { format: 1, benchmark, models, records }, gzip level 9."
+  },
+  "counts": {
+    "inputs": 5131,
+    "compiled": 5111,
+    "refused": 20,
+    "equations": 122709,
+    "temporary": 2700,
+    "relations": 91451
+  },
+  "details": {
+    "relationBaselineInputs": 2844,
+    "corpusInputs": 1774,
+    "benchmarkInputs": 513,
+    "benchmarkGraphs": 162,
+    "storedModels": 4567,
+    "storedEquations": 85954,
+    "nativeErrors": 0,
+    "refusals": [
+      "invalid-radius: Driving radius must exceed 0.0000001 mm and be at most one million millimeters.",
+      "invalid-sketch-angle: Driving angles must remain representably between zero and 180 degrees.",
+      "invalid-sketch-line-pair: Line relations require nondegenerate line directions."
+    ],
+    "jsonBytes": 8355240,
+    "gzipBytes": 1145495
+  },
+  "sha256": {
+    "json": "819e33a60e2728a0452ceab10144346c468a19ff74fd5b6d44e3bc6521eaf330",
+    "gzip": "3d259c4bbe0ce65e9e2828880da7e6ff68ed6f7120fe444c7c54c6d2ac5312aa"
+  },
+  "regenerate": [
+    "Snapshot the source commit outside this checkout, with git worktree add --detach <snapshot> 4afad29cba7d0426d0430dd43feb3cbefac33f53 or git archive 4afad29cba7d0426d0430dd43feb3cbefac33f53 | tar -x -C <snapshot>. Link its node_modules to an installed checkout's; do not install packages for it.",
+    "Copy scripts/record-sketch-equation-baseline.ts into the snapshot's scripts directory, src/features/cad/sketch-solver/native/__tests__/cadSketchEquationBaseline.ts into the same directory there, and the relation baseline fixture into the same directory there if the snapshot lacks it. The recorder imports the compiler from where the source commit kept it.",
+    "To record the committed benchmark inputs again, from the snapshot's root: node scripts/run-bundled.mjs scripts/record-sketch-equation-baseline.ts --benchmark <checkout>/src/features/cad/sketch-solver/native/__tests__/fixtures/equation-baseline.json.gz --out <file>. The output is byte for byte the committed fixture, with the hashes above.",
+    "To capture the benchmark inputs again, leave out --benchmark: the recorder runs the benchmarks once, as listed under inputs, through runtimes that keep every input they are given. On 2026-10-31 that gave the committed fixture byte for byte."
+  ]
+}

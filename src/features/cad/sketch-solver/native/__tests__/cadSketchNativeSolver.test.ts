@@ -4,8 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { checkCadSketchGraph, parseCadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { createCadBenchmarkRectangleGraph } from '../../../benchmark/cadBenchmarkCases';
 import { createCadSolverDieInput } from '../../../benchmark/cadSolverWorkloadCases';
-import { compileCadSketchEquations } from '../compileCadSketchEquations';
-import { applyCadSketchEquationSolution, CAD_SKETCH_NATIVE_PROTOCOL_VERSION, cadSketchEquationDiagnostics, encodeCadSketchEquationModel } from '../cadSketchEquationModel';
+import { applyCadSketchEquationSolution } from '@/domain/cad/sketch-solver/cadSketchEquationModel';
+import { compileCadSketchEquations } from '@/domain/cad/sketch-solver/compileCadSketchEquations';
+import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, cadSketchEquationDiagnostics, encodeCadSketchEquationModel } from '../cadSketchNativeProtocol';
 import { loadCadSketchNativeSolver } from '../cadSketchNativeSolver';
 
 const wasm = readFileSync(new URL('../../../../../../packages/sketch-solver/wasm/sketch_solver.wasm', import.meta.url));

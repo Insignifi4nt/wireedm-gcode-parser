@@ -180,7 +180,8 @@ Results:
 
 `packages/sketch-solver` is our own Rust constraint solver, compiled to a WebAssembly module with no dependencies (92 kB, 33 kB gzip, at 0.0.739). From 0.0.739 it was built, tested and compared with PlaneGCS; from 0.0.746 the app solved with it first; from 0.0.757 it is the app's only sketch solver.
 
-- `compileCadSketchEquations` turns a sketch into scalar parameters and twelve kinds of scalar equation, and the module solves them.
+- `compileCadSketchEquations`, in `src/domain/cad/sketch-solver/`, turns a sketch into scalar parameters and thirteen kinds of scalar equation, and the module solves them.
+  - From 0.0.788 each relation kind lowers its own equations. Its definition's `lower` reads points, edges and driving values through `CadSketchLoweringContext`, which hides where each parameter sits and refuses an operand that cannot give what is asked. The compiler allocates the parameters, emits each arc's own equation, sends each relation to its definition and adds a drag's two targets last. The encoding for the module stays with the worker, in `src/features/cad/sketch-solver/native/cadSketchNativeProtocol.ts`.
   - Each connected group of unknowns gets its own damped Gauss-Newton solve, with exact gradients from dual numbers.
   - Each equation is divided by its gradient norm over the unknowns, so every residual reads as the distance they must move.
   - Each step comes from a Givens QR of the weighted Jacobian, not the normal equations, so roundoff does not move the free directions of an under-constrained sketch.

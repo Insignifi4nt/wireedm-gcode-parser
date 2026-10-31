@@ -2,7 +2,8 @@
 // call by call, with the solver it replaces. `packages/sketch-solver/baseline/manifest.json` names it.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, encodeCadSketchEquationModel, type CadSketchEquationModel } from '../cadSketchEquationModel';
+import type { CadSketchEquationModel } from '@/domain/cad/sketch-solver/cadSketchEquationModel';
+import { CAD_SKETCH_NATIVE_PROTOCOL_VERSION, encodeCadSketchEquationModel } from '../cadSketchNativeProtocol';
 import { CadSketchNativeProtocolError, decodeCadSketchNativeOutput, type CadSketchNativeSolution, type CadSketchNativeSolver } from '../cadSketchNativeSolver';
 
 export interface NativeBaselineManifest {

@@ -1,8 +1,9 @@
 import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
 import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from '../cadSketchSolverStages';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
-import { compileCadSketchEquations } from './compileCadSketchEquations';
-import { applyCadSketchEquationSolution, cadSketchEquationDefinition, cadSketchEquationDiagnostics, cadSketchEquationResidual, type CadSketchEquationModel } from './cadSketchEquationModel';
+import { compileCadSketchEquations, type CadSketchCompiledSketch } from '../../../../domain/cad/sketch-solver/compileCadSketchEquations';
+import { applyCadSketchEquationSolution, cadSketchEquationResidual, type CadSketchEquationModel } from '../../../../domain/cad/sketch-solver/cadSketchEquationModel';
+import { cadSketchEquationDefinition, cadSketchEquationDiagnostics } from './cadSketchNativeProtocol';
 import type { CadSketchNativeDiagnosis, CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketchNativeSolver';
 
 /**
@@ -60,7 +61,7 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
   const clock = cadSketchSolverStageClock(observe, 'parseCompile');
   const check: Check = observe ? (graph, parameters) => clock.during('validation', () => checkCadSketchGraph(graph, parameters)) : checkCadSketchGraph;
   try {
-    let model: CadSketchEquationModel;
+    let model: CadSketchCompiledSketch;
     try { model = compileCadSketchEquations(input); }
     catch (error) { return { reason: 'compile', result: { kind: 'rejected', reason: 'invalid-input', message: error instanceof Error ? error.message : 'Invalid sketch input.', diagnostics: noDiagnostics(null) } }; }
     clock.next('nativeCall');
@@ -71,7 +72,7 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     if (attempt.result.kind === 'solved' || input.drag) return attempt;
     // A point held on a curve that starts on its center has no radial direction to move along, so a
     // failed solve tries again from starts one radius out. Only an answer at its most certain replaces it.
-    for (const values of centerStarts(input.graph, model)) {
+    for (const values of centerStarts(model)) {
       const seeded = { ...model, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded, options)), check);
       if (retried.result.kind === 'solved' && !retried.reason) return retried;
     }
@@ -89,20 +90,17 @@ function settle(input: CadSketchSolveInput, model: CadSketchEquationModel, solut
 }
 
 /**
- * Start values that move each point-on-curve point sitting on its curve's center one radius out,
- * using only that point's own free coordinates. Each point offers along X, along Y and diagonally
+ * Start values that move each point a relation holds on a full circle, sitting on that circle's
+ * center, one radius out, using only that point's own free coordinates. Each point offers along X, along Y and diagonally
  * where its free coordinates allow. Start k gives the i-th such point its offer k + i, wrapping, so
  * points with different free axes move together and points on one center start apart. Nothing else
  * moves, and none are offered when no such point exists.
  */
-function centerStarts(graph: CadSketchGraph, model: CadSketchEquationModel): readonly (readonly number[])[] {
-  const { values, fixed, pointParameters, radiusParameters } = model, centered = new Map<number, { readonly reach: number; readonly offers: readonly (readonly number[])[] }>();
-  for (const relation of graph.relations) {
-    if (relation.kind !== 'point-on-curve') continue;
-    const curve = graph.entities.find(entity => entity.id === relation.curveId), x = pointParameters.get(relation.pointId);
-    if ((curve?.kind !== 'arc' && curve?.kind !== 'circle') || x === undefined || centered.has(x)) continue;
-    const center = pointParameters.get(curve.centerPointId)!, start = curve.kind === 'arc' ? pointParameters.get(curve.startPointId)! : -1;
-    const reach = curve.kind === 'arc' ? Math.hypot(values[start] - values[center], values[start + 1] - values[center + 1]) : values[radiusParameters.get(curve.id)!];
+function centerStarts(model: CadSketchCompiledSketch): readonly (readonly number[])[] {
+  const { values, fixed } = model, centered = new Map<number, { readonly reach: number; readonly offers: readonly (readonly number[])[] }>();
+  for (const { point: x, centre: center, size } of model.radialHolds) {
+    if (centered.has(x)) continue;
+    const reach = size.kind === 'span' ? Math.hypot(values[size.span[2]] - values[size.span[0]], values[size.span[3]] - values[size.span[1]]) : values[size.index];
     if (!(reach > 0) || Math.hypot(values[x] - values[center], values[x + 1] - values[center + 1]) > 1e-12 * Math.max(1, reach)) continue;
     const offers = [[1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2]].filter(direction => direction.every((step, axis) => step === 0 || !fixed[x + axis]));
     if (offers.length) centered.set(x, { reach, offers });
