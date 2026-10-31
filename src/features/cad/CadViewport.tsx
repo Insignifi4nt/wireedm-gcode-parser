@@ -169,7 +169,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const container = host.current;
     if (!container) return;
     let renderer: THREE.WebGLRenderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    // Section caps count how the cut winds round each point in the stencil buffer.
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, stencil: true }); }
     catch { setGraphicsFailure('unavailable'); return; }
     setGraphicsFailure(null); setGridVisible(true); setViewName('Isometric');
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -230,8 +231,10 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     // A section cuts the model view while no sketch covers it; an open sketch's own cut replaces it.
     const sectionClip = new THREE.Plane(), sectionClipPlanes = [sectionClip];
     let sectionShown = false;
-    // The caps join the scene only while a capped section shows, so a view without one draws and walks nothing extra.
-    const caps = createCadSectionCaps();
+    // The caps join the scene only while a capped section shows, so a view without one draws and walks nothing extra. Caps of large
+    // bodies finish in later slices, and then draw.
+    const caps = createCadSectionCaps({ onChange: () => { if (!disposed) { placeCaps(); render(); } } });
+    const placeCaps = () => { if (!caps.group.visible) scene.remove(caps.group); else if (caps.group.parent !== scene) scene.add(caps.group); };
     const solidBounds = new THREE.Box3();
     /** The clip a pick honours: the section's in the model view, none otherwise. */
     const pickClip = () => sectionShown && !sketch ? sectionClip : null;
@@ -473,7 +476,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       }
       highlights.setClippingPlanes(sketch ? null : clip);
       caps.setPlane(sectionShown && !sketch && data.current.section?.caps ? sectionClip : null);
-      if (!caps.group.visible) scene.remove(caps.group); else if (caps.group.parent !== scene) scene.add(caps.group);
+      placeCaps();
       dim.setAmount(sketch?.background === 'dimmed' ? CAD_SKETCH_DIM_AMOUNT : 0);
       // The grid, axes and pick highlights belong to the model view; the sketch draws its own.
       grid.visible = !sketch && viewState.gridVisible; axes.visible = !sketch; highlights.objects.visible = !sketch;

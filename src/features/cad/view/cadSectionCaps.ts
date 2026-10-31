@@ -2,18 +2,36 @@ import * as THREE from 'three';
 
 /** The flat colour a section cap fills cut material with. */
 export const CAD_SECTION_CAP_COLOR = 0xc98a5e;
+/** The longest stretch of cap building before input and drawing get a turn, in milliseconds. */
+export const CAD_SECTION_CAP_SLICE_MS = 6;
+/** Caps draw after everything else that is opaque; each cut body takes three steps in a row from here. */
+const CAP_RENDER_ORDER = 10;
+/** How many vertices or triangles a build handles between looks at the clock. */
+const CHECK_EVERY = 8192;
 
 /**
  * Section caps close the solids a section view cuts open. They are display only: nothing picks or exports them, and the exact section
  * of a body stays with the kernel.
  *
- * A cap is real geometry on the cut plane, made from the body's own triangles: every triangle the plane crosses gives one segment, the
- * segments join into closed loops, loops inside loops become holes, and the loops are filled. So it is drawn like any surface, wherever the
- * camera is: inside the kept material, or with the near plane through it. Caps are built once for each plane and each upload of the
- * model's meshes, never for a frame or a hover, and draw once for each cut body.
+ * A cap is drawn on the cut plane from the body's own triangles. Every triangle the plane crosses gives one segment, directed by the
+ * triangle's outward winding, so a body's segments run one way round its material and the other way round a cavity, whose shell faces
+ * inward. The cap fills the plane wherever the segments wind round a point a number of times other than zero:
  *
- * A body whose triangles do not close, where some edge does not join exactly two triangles, gets no cap: an open shell has no inside to
- * fill, so its cut stays open.
+ * - a fan of triangles from one point to every segment counts the winding into the stencil buffer, front faces adding one and back
+ *   faces taking one away;
+ * - one quad on the plane then colours where the count is not zero, and clears the count.
+ *
+ * That fills the union of a body's solids. Two solids one inside the other, or overlapping, fill all they cover. A cavity cancels the
+ * solid around it, and so stays open. Solids that touch, or edges that four triangles share, need no joining. Everything drawn lies on
+ * the plane, so the count does not depend on where the camera is: inside the kept material, or with the near plane through it.
+ *
+ * Caps are built once for each plane and each upload of the model's meshes, never for a frame or a hover, and draw three times for each
+ * cut body: twice to count, once to fill. A body whose box the plane misses is skipped without preparing its triangles. A large body
+ * builds in slices of a few milliseconds, so input keeps its turn. A build that a new plane, upload or hiding replaces is dropped, and
+ * none of its caps is ever shown.
+ *
+ * A body gets no cap when some edge is not crossed as often one way as the other by the triangles on it: an open shell has no inside
+ * to fill, and triangles that disagree about their outside cannot say where it is. Its cut stays open.
  */
 export interface CadSectionCaps {
   readonly group: THREE.Group;
@@ -24,11 +42,32 @@ export interface CadSectionCaps {
   dispose(): void;
 }
 
-/** A body's triangles with the vertices its faces repeat joined into one, and whether every edge joins exactly two triangles. */
+export interface CadSectionCapsOptions {
+  /** Called when caps that finished in a later slice join the group, so the view can draw them. */
+  readonly onChange?: () => void;
+  /** The longest stretch of building before input gets a turn, in milliseconds. */
+  readonly sliceMs?: number;
+  /** Runs `next` later and returns a way to cancel it; a new task by default. */
+  readonly schedule?: (next: () => void) => () => void;
+}
+
+/** A body's triangles with the vertices its faces repeat joined into one, and whether they close. */
 export interface CadCapSolid {
   readonly vertices: Float64Array;
   readonly triangles: Uint32Array;
+  /** Every edge is crossed as often one way as the other by the triangles on it, so the triangles bound solids and their cavities. */
   readonly closed: boolean;
+}
+
+/** What one body's cap draws, in the body's own coordinates: the counting fans and the quad that fills where the count is not zero. */
+export interface CadSectionCap {
+  readonly fans: THREE.BufferGeometry;
+  readonly fill: THREE.BufferGeometry;
+}
+
+/** Runs a build to its end at once. */
+function finish<T>(steps: Generator<void, T>): T {
+  for (;;) { const step = steps.next(); if (step.done) return step.value; }
 }
 
 /**
@@ -36,6 +75,10 @@ export interface CadCapSolid {
  * checks that the triangles close. Costs O(vertices + triangles), once for each upload.
  */
 export function cadCapSolid(geometry: THREE.BufferGeometry): CadCapSolid {
+  return finish(cadCapSolidSteps(geometry));
+}
+
+function* cadCapSolidSteps(geometry: THREE.BufferGeometry): Generator<void, CadCapSolid> {
   const position = geometry.getAttribute('position'), index = geometry.index, total = position.count;
   // Open-addressed tables in typed arrays: a large mesh joins and counts in tens of milliseconds, where maps take hundreds.
   const scratch = new Float32Array(3), bits = new Uint32Array(scratch.buffer);
@@ -52,24 +95,27 @@ export function cadCapSolid(geometry: THREE.BufferGeometry): CadCapSolid {
       for (let axis = 0; axis < 3; axis++) { keys[3 * id + axis] = bits[axis]; vertices[3 * id + axis] = scratch[axis]; }
     }
     joined[item] = id;
+    if (item % CHECK_EVERY === CHECK_EVERY - 1) yield;
   }
   const corners = index ? index.count - index.count % 3 : total - total % 3, triangles = new Uint32Array(corners);
   let kept = 0;
   for (let corner = 0; corner < corners; corner += 3) {
     const a = joined[index ? index.getX(corner) : corner], b = joined[index ? index.getX(corner + 1) : corner + 1], c = joined[index ? index.getX(corner + 2) : corner + 2];
     if (a !== b && b !== c && c !== a) { triangles[kept++] = a; triangles[kept++] = b; triangles[kept++] = c; }
+    if (corner % (3 * CHECK_EVERY) === 3 * CHECK_EVERY - 3) yield;
   }
-  // Every edge must join exactly two triangles. The table has more slots than corners, so a free slot always ends a probe.
-  const edgeSlots = tableSize(kept), low = new Int32Array(edgeSlots).fill(-1), high = new Uint32Array(edgeSlots), uses = new Uint8Array(edgeSlots);
+  // Each triangle runs along its edges in its winding. Closed solids run along every edge as often one way as the other: once each for
+  // an edge of one solid, twice each where two solids touch. The table has more slots than corners, so a free slot always ends a probe.
+  const edgeSlots = tableSize(kept), low = new Int32Array(edgeSlots).fill(-1), high = new Uint32Array(edgeSlots), balance = new Int32Array(edgeSlots);
   for (let corner = 0; corner < kept; corner++) {
     const from = triangles[corner], to = triangles[corner % 3 === 2 ? corner - 2 : corner + 1], a = Math.min(from, to), b = Math.max(from, to);
     let slot = mix(Math.imul(a, 0x9e3779b1) ^ Math.imul(b, 0x85ebca77)) & (edgeSlots - 1);
     while (low[slot] >= 0 && !(low[slot] === a && high[slot] === b)) slot = (slot + 1) & (edgeSlots - 1);
-    low[slot] = a; high[slot] = b;
-    if (uses[slot] < 3) uses[slot]++;
+    low[slot] = a; high[slot] = b; balance[slot] += from < to ? 1 : -1;
+    if (corner % CHECK_EVERY === CHECK_EVERY - 1) yield;
   }
   let closed = kept > 0;
-  for (let slot = 0; closed && slot < edgeSlots; slot++) closed = low[slot] < 0 || uses[slot] === 2;
+  for (let slot = 0; closed && slot < edgeSlots; slot++) closed = balance[slot] === 0;
   return Object.freeze({ vertices: vertices.slice(0, 3 * count), triangles: triangles.slice(0, kept), closed });
 }
 /** A power of two above `entries`, for an open-addressed table. */
@@ -79,153 +125,160 @@ const mix = (hash: number) => { hash = Math.imul(hash ^ (hash >>> 16), 0x45d9f3b
 
 /**
  * The cap of `solid` on `plane`, in the solid's own coordinates, or `null` when the solid is open or the plane misses it. `plane` keeps
- * points whose signed distance is not negative, as a three.js clipping plane does. Points on the plane count as kept, so every crossing
- * lies on an edge from a kept to a removed vertex, and the two triangles on that edge find the same point: the segments join exactly.
+ * points whose signed distance is not negative, as a three.js clipping plane does.
+ *
+ * Points on the plane count as kept, so every crossing lies on an edge from a kept to a removed vertex, and the triangles on that edge
+ * find the same point, computed from its lower vertex. A triangle the plane crosses leaves the kept side through one edge and returns
+ * through another; its segment runs from where it leaves to where it returns, as the kept part's boundary does. Seen from the side the
+ * plane's normal points to, the segments then run anticlockwise round material and clockwise round a cavity, and the fans count +1 in
+ * material.
  */
-export function cadSectionCapGeometry(solid: CadCapSolid, plane: THREE.Plane): THREE.BufferGeometry | null {
+export function cadSectionCapGeometry(solid: CadCapSolid, plane: THREE.Plane): CadSectionCap | null {
+  return finish(cadSectionCapSteps(solid, plane));
+}
+
+function* cadSectionCapSteps(solid: CadCapSolid, plane: THREE.Plane): Generator<void, CadSectionCap | null> {
   if (!solid.closed) return null;
   const { vertices, triangles } = solid, count = vertices.length / 3, { normal, constant } = plane;
   const side = new Float64Array(count);
-  for (let vertex = 0; vertex < count; vertex++) side[vertex] = normal.x * vertices[3 * vertex] + normal.y * vertices[3 * vertex + 1] + normal.z * vertices[3 * vertex + 2] + constant;
-  const nodes = new Map<number, number>(), points: number[] = [], links: number[] = [];
-  const node = (p: number, q: number) => {
-    const a = Math.min(p, q), b = Math.max(p, q), key = a * count + b;
-    let id = nodes.get(key);
-    if (id === undefined) {
-      id = links.length / 2; nodes.set(key, id); links.push(-1, -1);
-      const t = side[a] / (side[a] - side[b]);
-      for (let axis = 0; axis < 3; axis++) points.push(vertices[3 * a + axis] + (vertices[3 * b + axis] - vertices[3 * a + axis]) * t);
-    }
-    return id;
-  };
-  const link = (from: number, to: number) => {
-    if (links[2 * from] < 0) links[2 * from] = to;
-    else if (links[2 * from + 1] < 0) links[2 * from + 1] = to;
-    else return false;
-    return true;
-  };
-  const crossing: number[] = [];
-  for (let corner = 0; corner < triangles.length; corner += 3) {
-    crossing.length = 0;
-    for (let edge = 0; edge < 3; edge++) {
-      const p = triangles[corner + edge], q = triangles[corner + (edge + 1) % 3];
-      if ((side[p] >= 0) !== (side[q] >= 0)) crossing.push(node(p, q));
-    }
-    // A closed surface crosses the plane through two edges of a triangle or none; a third link on a point means it does not close.
-    if (crossing.length === 2 && !(link(crossing[0], crossing[1]) && link(crossing[1], crossing[0]))) return null;
+  for (let vertex = 0; vertex < count; vertex++) {
+    side[vertex] = normal.x * vertices[3 * vertex] + normal.y * vertices[3 * vertex + 1] + normal.z * vertices[3 * vertex + 2] + constant;
+    if (vertex % CHECK_EVERY === CHECK_EVERY - 1) yield;
   }
-  const total = links.length / 2;
-  if (!total) return null;
-  // Plane coordinates: two directions across the plane, from the first crossing, so far-away bodies keep their precision.
+  // Each segment's start and end, x, y and z each.
+  const ends: number[] = [], at = new Float64Array(6);
+  const cross = (p: number, q: number, offset: number) => {
+    const a = Math.min(p, q), b = Math.max(p, q), t = side[a] / (side[a] - side[b]);
+    for (let axis = 0; axis < 3; axis++) {
+      const from = vertices[3 * a + axis], to = vertices[3 * b + axis];
+      at[offset + axis] = t === 0 ? from : t === 1 ? to : from + (to - from) * t;
+    }
+  };
+  for (let corner = 0; corner < triangles.length; corner += 3) {
+    if (corner % (3 * CHECK_EVERY) === 3 * CHECK_EVERY - 3) yield;
+    let leaves = -1, returns = -1;
+    for (let edge = 0; edge < 3; edge++) {
+      const p = triangles[corner + edge], q = triangles[corner + (edge + 1) % 3], fromKept = side[p] >= 0, toKept = side[q] >= 0;
+      if (fromKept && !toKept) leaves = edge; else if (!fromKept && toKept) returns = edge;
+    }
+    if (leaves < 0) continue;
+    cross(triangles[corner + leaves], triangles[corner + (leaves + 1) % 3], 0);
+    cross(triangles[corner + returns], triangles[corner + (returns + 1) % 3], 3);
+    // A triangle that only touches the plane at a vertex gives a segment of no length, which counts nothing.
+    if (at[0] !== at[3] || at[1] !== at[4] || at[2] !== at[5]) for (let item = 0; item < 6; item++) ends.push(at[item]);
+  }
+  const segments = ends.length / 6;
+  if (!segments) return null;
+  // The fans start from the middle of the cut, so they overlap little; any point of the plane would count the same.
+  let ox = 0, oy = 0, oz = 0;
+  for (let item = 0; item < ends.length; item += 3) { ox += ends[item]; oy += ends[item + 1]; oz += ends[item + 2]; }
+  ox /= 2 * segments; oy /= 2 * segments; oz /= 2 * segments;
+  // Snap the start onto the plane, which rounding in the average may have left a hair off.
+  const off = normal.x * ox + normal.y * oy + normal.z * oz + constant;
+  ox -= off * normal.x; oy -= off * normal.y; oz -= off * normal.z;
+  const fans = new Float32Array(9 * segments);
+  for (let segment = 0; segment < segments; segment++) {
+    fans[9 * segment] = ox; fans[9 * segment + 1] = oy; fans[9 * segment + 2] = oz;
+    for (let item = 0; item < 6; item++) fans[9 * segment + 3 + item] = ends[6 * segment + item];
+  }
+  // The quad covers every fan, with a margin so that no counted pixel on its border is missed.
   const across = new THREE.Vector3(), up = new THREE.Vector3();
   const least = Math.abs(normal.x) <= Math.abs(normal.y) && Math.abs(normal.x) <= Math.abs(normal.z) ? new THREE.Vector3(1, 0, 0) : Math.abs(normal.y) <= Math.abs(normal.z) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
-  across.crossVectors(normal, least).normalize(); up.crossVectors(normal, across);
-  const flat = new Float64Array(2 * total);
-  for (let id = 0; id < total; id++) {
-    const x = points[3 * id] - points[0], y = points[3 * id + 1] - points[1], z = points[3 * id + 2] - points[2];
-    flat[2 * id] = x * across.x + y * across.y + z * across.z; flat[2 * id + 1] = x * up.x + y * up.y + z * up.z;
+  across.crossVectors(least, normal).normalize(); up.crossVectors(normal, across);
+  let minU = 0, maxU = 0, minV = 0, maxV = 0;
+  for (let item = 0; item < ends.length; item += 3) {
+    const x = ends[item] - ox, y = ends[item + 1] - oy, z = ends[item + 2] - oz, u = x * across.x + y * across.y + z * across.z, v = x * up.x + y * up.y + z * up.z;
+    minU = Math.min(minU, u); maxU = Math.max(maxU, u); minV = Math.min(minV, v); maxV = Math.max(maxV, v);
   }
-  interface Loop { readonly ids: number[]; readonly area: number; readonly min: [number, number]; readonly max: [number, number]; parent: number; depth: number }
-  const loops: Loop[] = [], seen = new Uint8Array(total);
-  for (let start = 0; start < total; start++) {
-    if (seen[start]) continue;
-    if (links[2 * start + 1] < 0) return null;
-    const ids: number[] = [];
-    let previous = -1, current = start;
-    while (!seen[current]) {
-      seen[current] = 1;
-      // A crossing through a vertex on the plane repeats that point; one copy is enough.
-      const last = ids.at(-1);
-      if (last === undefined || flat[2 * last] !== flat[2 * current] || flat[2 * last + 1] !== flat[2 * current + 1]) ids.push(current);
-      const next = links[2 * current] !== previous ? links[2 * current] : links[2 * current + 1];
-      previous = current; current = next;
-    }
-    if (current !== start) return null;
-    if (ids.length > 1 && flat[2 * ids[0]] === flat[2 * ids.at(-1)!] && flat[2 * ids[0] + 1] === flat[2 * ids.at(-1)! + 1]) ids.pop();
-    if (ids.length < 3) continue;
-    let area = 0;
-    const min: [number, number] = [Infinity, Infinity], max: [number, number] = [-Infinity, -Infinity];
-    for (let item = 0; item < ids.length; item++) {
-      const a = ids[item], b = ids[(item + 1) % ids.length];
-      area += flat[2 * a] * flat[2 * b + 1] - flat[2 * b] * flat[2 * a + 1];
-      for (let axis = 0; axis < 2; axis++) { min[axis] = Math.min(min[axis], flat[2 * a + axis]); max[axis] = Math.max(max[axis], flat[2 * a + axis]); }
-    }
-    if (area !== 0) loops.push({ ids, area: Math.abs(area) / 2, min, max, parent: -1, depth: 0 });
-  }
-  // A loop's parent is the smallest loop around it. Loops of a solid's section never cross, so one point of a loop tells.
-  loops.sort((left, right) => right.area - left.area);
-  const inside = (loop: Loop, x: number, y: number) => {
-    if (x < loop.min[0] || x > loop.max[0] || y < loop.min[1] || y > loop.max[1]) return false;
-    let crossings = false;
-    for (let item = 0, before = loop.ids.length - 1; item < loop.ids.length; before = item++) {
-      const ax = flat[2 * loop.ids[item]], ay = flat[2 * loop.ids[item] + 1], bx = flat[2 * loop.ids[before]], by = flat[2 * loop.ids[before] + 1];
-      if ((ay > y) !== (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) crossings = !crossings;
-    }
-    return crossings;
-  };
-  for (let item = 0; item < loops.length; item++) {
-    const probe = loops[item].ids[0], x = flat[2 * probe], y = flat[2 * probe + 1];
-    for (let outer = item - 1; outer >= 0; outer--) {
-      if (!inside(loops[outer], x, y)) continue;
-      loops[item].parent = outer; loops[item].depth = loops[outer].depth + 1; break;
-    }
-  }
-  // Loops at an even depth bound material and those at an odd depth are its holes; a loop inside a hole is an island again.
-  const positions: number[] = [], indices: number[] = [];
-  const holesOf = new Map<number, Loop[]>();
-  for (const loop of loops) if (loop.depth % 2 === 1) holesOf.set(loop.parent, [...holesOf.get(loop.parent) ?? [], loop]);
-  const vector = (id: number) => new THREE.Vector2(flat[2 * id], flat[2 * id + 1]);
-  loops.forEach((loop, item) => {
-    if (loop.depth % 2 === 1) return;
-    const holes = holesOf.get(item) ?? [], base = positions.length / 3;
-    for (const id of [loop, ...holes].flatMap(part => part.ids)) positions.push(points[3 * id], points[3 * id + 1], points[3 * id + 2]);
-    for (const face of THREE.ShapeUtils.triangulateShape(loop.ids.map(vector), holes.map(hole => hole.ids.map(vector)))) indices.push(base + face[0], base + face[1], base + face[2]);
+  const margin = 0.01 * Math.max(maxU - minU, maxV - minV) + 1e-6, quad = new Float32Array(12);
+  [[minU - margin, minV - margin], [maxU + margin, minV - margin], [maxU + margin, maxV + margin], [minU - margin, maxV + margin]].forEach(([u, v], corner) => {
+    quad[3 * corner] = ox + u * across.x + v * up.x; quad[3 * corner + 1] = oy + u * across.y + v * up.y; quad[3 * corner + 2] = oz + u * across.z + v * up.z;
   });
-  if (!indices.length) return null;
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  return geometry;
+  const fanGeometry = new THREE.BufferGeometry(), fillGeometry = new THREE.BufferGeometry();
+  fanGeometry.setAttribute('position', new THREE.BufferAttribute(fans, 3));
+  fillGeometry.setAttribute('position', new THREE.BufferAttribute(quad, 3)); fillGeometry.setIndex([0, 1, 2, 0, 2, 3]);
+  return { fans: fanGeometry, fill: fillGeometry };
 }
 
-export function createCadSectionCaps(): CadSectionCaps {
+const later = (next: () => void) => { const timer = setTimeout(next, 0); return () => clearTimeout(timer); };
+
+export function createCadSectionCaps({ onChange, sliceMs = CAD_SECTION_CAP_SLICE_MS, schedule = later }: CadSectionCapsOptions = {}): CadSectionCaps {
   const group = new THREE.Group();
   group.name = 'cad-section-caps';
   group.visible = false;
-  // Not clipped: a cap lies on the plane by construction, and rounding must not cut it away.
-  const material = new THREE.MeshBasicMaterial({ color: CAD_SECTION_CAP_COLOR, side: THREE.DoubleSide });
+  // Not clipped: a cap lies on the plane by construction, and rounding must not cut it away. The counting passes write only the
+  // stencil buffer, whatever is in front, so the count is whole; the fill is depth-tested like any surface.
+  const counting = (side: THREE.Side, operation: THREE.StencilOp) => new THREE.MeshBasicMaterial({ side, colorWrite: false, depthWrite: false, depthTest: false,
+    stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, stencilFail: operation, stencilZFail: operation, stencilZPass: operation });
+  const front = counting(THREE.FrontSide, THREE.IncrementWrapStencilOp), back = counting(THREE.BackSide, THREE.DecrementWrapStencilOp);
+  const fill = new THREE.MeshBasicMaterial({ color: CAD_SECTION_CAP_COLOR, side: THREE.DoubleSide, stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc,
+    stencilFail: THREE.ZeroStencilOp, stencilZFail: THREE.ZeroStencilOp, stencilZPass: THREE.ZeroStencilOp });
   let bodies: readonly THREE.Mesh[] = [];
   const solids = new Map<THREE.Mesh, CadCapSolid>();
-  const placed = new THREE.Plane(), local = new THREE.Plane();
-  let built = false;
+  const placed = new THREE.Plane();
+  let shown = false, built = false, generation = 0, cancel: (() => void) | null = null;
+  /** Drops the caps and any build in progress, so nothing it was making can appear. */
   const clear = () => {
-    for (const child of group.children) if (child instanceof THREE.Mesh) child.geometry.dispose();
+    cancel?.(); cancel = null; generation++;
+    const geometries = new Set<THREE.BufferGeometry>();
+    group.traverse(object => { if (object instanceof THREE.Mesh) geometries.add(object.geometry); });
+    for (const geometry of geometries) geometry.dispose();
     group.clear(); built = false;
+  };
+  const capObject = (cap: CadSectionCap, body: THREE.Mesh, order: number) => {
+    const object = new THREE.Group();
+    object.name = 'cad-section-cap';
+    // In the body's own coordinates the cap is as precise as its vertices.
+    object.position.copy(body.position); object.matrixAutoUpdate = false; object.updateMatrix();
+    for (const [geometry, material, step] of [[cap.fans, front, 0], [cap.fans, back, 1], [cap.fill, fill, 2]] as const) {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.name = step < 2 ? 'cad-section-cap-count' : 'cad-section-cap-fill';
+      mesh.renderOrder = order + step; mesh.matrixAutoUpdate = false;
+      object.add(mesh);
+    }
+    return object;
+  };
+  function* build(plane: THREE.Plane, of: readonly THREE.Mesh[]): Generator<void, void> {
+    const local = new THREE.Plane();
+    for (const [index, body] of of.entries()) {
+      // n · (p + o) + c = n · p + (n · o + c).
+      local.normal.copy(plane.normal); local.constant = plane.constant + plane.normal.dot(body.position);
+      const geometry = body.geometry;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      if (!geometry.boundingBox!.intersectsPlane(local)) continue;
+      let solid = solids.get(body);
+      if (!solid) { solid = yield* cadCapSolidSteps(geometry); solids.set(body, solid); }
+      const cap = yield* cadSectionCapSteps(solid, local);
+      if (cap) group.add(capObject(cap, body, CAP_RENDER_ORDER + 3 * index));
+      yield;
+    }
+  }
+  const run = (steps: Generator<void, void>, own: number, inLaterSlice: boolean) => {
+    if (own !== generation) return;
+    cancel = null;
+    const before = group.children.length, until = performance.now() + sliceMs;
+    for (;;) {
+      if (steps.next().done) { built = true; break; }
+      if (performance.now() >= until) { cancel = schedule(() => run(steps, own, true)); break; }
+    }
+    group.visible = shown && group.children.length > 0;
+    if (inLaterSlice && group.children.length !== before) onChange?.();
   };
   return {
     group,
     setBodies(next) { clear(); solids.clear(); bodies = next; group.visible = false; },
     setPlane(plane) {
-      if (!plane) { group.visible = false; return; }
-      if (!built || !placed.equals(plane)) {
-        clear(); placed.copy(plane);
-        for (const body of bodies) {
-          let solid = solids.get(body);
-          if (!solid) { solid = cadCapSolid(body.geometry); solids.set(body, solid); }
-          // In the body's own coordinates the cap is as precise as its vertices: n · (p + o) + c = n · p + (n · o + c).
-          local.normal.copy(plane.normal); local.constant = plane.constant + plane.normal.dot(body.position);
-          const geometry = cadSectionCapGeometry(solid, local);
-          if (!geometry) continue;
-          const cap = new THREE.Mesh(geometry, material);
-          cap.name = 'cad-section-cap';
-          cap.position.copy(body.position);
-          cap.matrixAutoUpdate = false; cap.updateMatrix();
-          group.add(cap);
-        }
-        built = true;
+      if (!plane) {
+        shown = false; group.visible = false;
+        // A build stopped part-way is dropped, not kept for later.
+        if (cancel) clear();
+        return;
       }
-      group.visible = group.children.length > 0;
+      shown = true;
+      if ((built || cancel) && placed.equals(plane)) { group.visible = group.children.length > 0; return; }
+      clear(); placed.copy(plane);
+      run(build(placed.clone(), bodies), generation, false);
     },
-    dispose() { clear(); solids.clear(); material.dispose(); },
+    dispose() { clear(); solids.clear(); front.dispose(); back.dispose(); fill.dispose(); },
   };
 }

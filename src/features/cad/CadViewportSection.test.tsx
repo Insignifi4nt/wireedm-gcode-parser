@@ -105,7 +105,7 @@ describe('section view', () => {
 
   it('caps each closed body the section cuts with geometry on the plane, only while caps are on, and never as a pickable or listed body', async () => {
     const capsShown = (scene: Scene) => find(scene, object => object.name === 'cad-section-caps');
-    const caps = (scene: Scene) => { const found: Mesh[] = []; capsShown(scene)?.traverse(object => { if (object instanceof Mesh) found.push(object); }); return found; };
+    const caps = (scene: Scene) => [...capsShown(scene)?.children ?? []];
     // The tall box crosses the plane at z = 4; the low one lies wholly on the kept side, and the flat slab is open, so neither has a cap.
     const meshes = [box('tall', 0, 8), box('low', 0, 2), upper];
     await show({ meshes, section: section(false, true) });
@@ -113,10 +113,17 @@ describe('section view', () => {
     expect(capsShown(scene)?.visible).toBe(true);
     const [cap, ...others] = caps(scene);
     expect(others).toHaveLength(0);
-    cap.updateMatrixWorld();
-    const position = cap.geometry.getAttribute('position'), corner = new Vector3();
+    cap.updateMatrixWorld(true);
+    // Everything the cap draws lies on the plane: the fans that count the cut's winding and the quad that fills it.
+    const [fans, , fill] = cap.children as Mesh[], corner = new Vector3();
     const heights = new Set<number>(), xs: number[] = [];
-    for (let item = 0; item < position.count; item++) { corner.fromBufferAttribute(position, item).applyMatrix4(cap.matrixWorld); heights.add(Number(corner.z.toFixed(6))); xs.push(corner.x); }
+    for (const part of [fans, fill]) {
+      const position = part.geometry.getAttribute('position');
+      for (let item = 0; item < position.count; item++) {
+        corner.fromBufferAttribute(position, item).applyMatrix4(part.matrixWorld); heights.add(Number(corner.z.toFixed(6)));
+        if (part === fans) xs.push(corner.x);
+      }
+    }
     // The cap lies on the cut the bodies are clipped by, which keeps faces on the plane by a small tolerance.
     const [cut] = clipOf(find(scene, object => object instanceof Mesh && object.userData.featureId === 'tall')) ?? [];
     expect(heights.size).toBe(1); expect([...heights][0]).toBeCloseTo(4, 3); expect(Math.abs([...heights][0] - cut.constant)).toBeLessThan(1e-6);
