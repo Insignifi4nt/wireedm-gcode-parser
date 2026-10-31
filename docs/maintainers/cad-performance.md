@@ -155,7 +155,8 @@ Caps are drawn on the plane (`cadSectionCaps.ts`).
 - **When caps are built.** Once for each plane and each mesh upload while a capped section shows, never on a frame or a hover.
   - A body whose box the plane misses is skipped before its triangles are prepared.
   - Other builds run in slices of about 6 ms, each ending after the step that passes it. Caps that finish in a later slice draw one more frame.
-  - Every loop checks the clock between runs of 8,192 items, laying out the fans included. A check inside a tight loop made it three to five times slower.
+  - Every loop checks the clock between runs of 8,192 items. That includes telling a many-solid body's triangles apart by group, the body's box, laying out the fans and the final copies. A check inside a tight loop made it three to five times slower.
+  - The tables mark a free slot with zero, so a new table needs no filling pass.
   - A build that a new plane, mesh upload or hiding replaces is dropped, and none of its caps is shown.
 - **Per frame.** Each cut body draws three times: two counting passes and the fill. A body counted in groups draws three times for each group its cut crosses, and once more.
 
@@ -189,6 +190,9 @@ Preparing joins the vertices that faces repeat and checks that every edge is cro
   | A clock check on every item | 8.5 and 8.6 ms | 50.8 and 56.0 ms | 207.6 and 219.3 ms |
   | Checks between runs of 8,192 | 8.1 and 9.6 ms | 43.3 and 46.1 ms | 180.2 and 185.9 ms |
 
+- **Many solids.** 256 boxes nested round one point, 2,952,192 triangles in 1,536 face runs, built with no time allowed per slice so that each slice is one step, in Vitest in Node.
+  - Before, the grouping, the box and the table fills ran in one piece, and the first slice took 10.5 to 30.6 ms over four runs. Now it takes 0.1 to 0.7 ms.
+  - The longest slice in the quieter runs fell from 19.8 to 21.0 ms, the edge table's fill and the final copies, to 10.2 to 12.9 ms in the middle of the build. The build takes about the same 620 to 650 ms in all.
 - **Why runs.** Alone in Node, minimum of 40 runs: scanning the 2^21 edge slots of a 480,000-triangle body took 1.09 ms in one loop, 5.56 ms with a check on every slot and 1.07 ms in runs. Averaging 480,000 segment ends took 0.73, 3.75 and 0.72 ms. With every loop in runs, preparing the box took at least 105.8 ms, against 113.6 ms before, in a busier session than the table above.
 
 The hover measurements below are from production builds in Chromium with SwiftShader at 4× CPU throttling:
