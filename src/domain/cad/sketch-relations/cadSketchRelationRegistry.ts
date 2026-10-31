@@ -1,3 +1,4 @@
+import type { CadScalar } from '../cadDocument';
 import { isAcceptedCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from '../cadSketchGraph';
 import { cadSketchCanonicalForm, cadSketchCanonicalRelations } from './cadSketchCanonicalForms';
 import { isCadSketchPointSlot, resolveCadSketchOperands } from './cadSketchOperandSignatures';
@@ -71,14 +72,24 @@ export function cadSketchRelationKeyIndex(graph: CadSketchGraph): ReadonlyMap<st
   return index;
 }
 const NO_IDS: readonly string[] = Object.freeze([]);
+/** A literal by its number, written with or without spaces or zeros; an expression by its text, since no parameters are at hand. */
+function sameScalar(a: CadScalar | undefined, b: CadScalar): boolean {
+  const number = (value: CadScalar) => typeof value === 'number' ? value : value.trim() === '' ? Number.NaN : Number(value);
+  if (a === undefined) return false;
+  const [x, y] = [number(a), number(b)];
+  return Number.isFinite(x) && Number.isFinite(y) ? x === y : String(a).trim() === String(b).trim();
+}
 /**
  * The graph's relations that already hold what `relation` holds, in graph order. A relation on the origin or an axis that another kind
- * keeps is held by the relations of that form, when the graph has every one of them.
+ * keeps is held by the relations of that form, when the graph has every one of them at the same value: a coordinate held at 3 does not
+ * keep a point on the axis.
  */
 export function cadSketchRelationsLike(graph: CadSketchGraph, relation: CadSketchRelationIntent): readonly string[] {
   const index = cadSketchRelationKeyIndex(graph), form = cadSketchCanonicalForm(graph, relation);
   if (!form) return index.get(cadSketchRelationKey(relation as CadSketchGraphRelation)) ?? NO_IDS;
-  const holding = cadSketchCanonicalRelations(form).map(canonical => index.get(cadSketchRelationKey(canonical as CadSketchGraphRelation)) ?? NO_IDS);
+  const byId = new Map(graph.relations.map(stored => [stored.id, stored]));
+  const holding = cadSketchCanonicalRelations(form).map(canonical => (index.get(cadSketchRelationKey(canonical as CadSketchGraphRelation)) ?? NO_IDS)
+    .filter(id => !('value' in canonical) || sameScalar((byId.get(id) as { readonly value?: CadScalar }).value, canonical.value)));
   if (holding.some(ids => !ids.length)) return NO_IDS;
   const ids = new Set(holding.flat());
   return graph.relations.filter(stored => ids.has(stored.id)).map(stored => stored.id);

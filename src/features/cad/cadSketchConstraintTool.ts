@@ -124,8 +124,9 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
       if (mirror && targets.length === 2) return planned(planning.mirror([targets[0], targets[1]], mirror));
       const circles = graph.entities.filter(item => item.kind === 'circle').map(item => item.id);
       const targetPrompt = targets.length ? 'Choose the second point or circle' : 'Choose a point or circle';
-      return mirror ? more(targetPrompt, circles, allPoints) : targets.length === 2 ? more('Choose the line or axis to mirror about', [...lines, ...AXES], [])
-        : more(`${targetPrompt}, or the line or axis to mirror about`, [...lines, ...AXES, ...circles], allPoints);
+      // The origin mirrors as a point does: about a line, or about an axis to hold its pair at the origin.
+      return mirror ? more(targetPrompt, circles, [...allPoints, ...ORIGIN]) : targets.length === 2 ? more('Choose the line or axis to mirror about', [...lines, ...AXES], [])
+        : more(`${targetPrompt}, or the line or axis to mirror about`, [...lines, ...AXES, ...circles], [...allPoints, ...ORIGIN]);
     }
     case 'fix': return points.length ? planned(planning.fix(points[0])) : more('Choose a point to fix', [], allPoints);
   }

@@ -144,6 +144,8 @@ export const tangentJoint: CadSketchRelationDefinition<'tangent-joint'> = {
     context.direct(linePointId, otherLineEndId, 'A tangent support has no numeric endpoints.');
     context.direct(centre, arcPointId, 'A tangent support has no numeric endpoints.');
     context.emit('perpendicular', [...context.through(linePointId, otherLineEndId), ...context.through(centre, arcPointId)]);
+    // A centre that starts along the line has no side to turn to.
+    context.squareStart(arcPointId, centre, otherLineEndId);
   },
   check: (graph, relation, points) => checkCadSketchTangentJoint(graph, relation, points),
   agent: { exposed: true, summary: 'A line and an arc that share an endpoint join smoothly there.',
@@ -159,12 +161,18 @@ export const tangent: CadSketchRelationDefinition<'tangent'> = {
   withOperands: (relation, [curve, axis]) => ({ ...relation, curveIds: [curve, axis] }),
   key: relation => `tangent ${relation.curveIds[0]} ${relation.curveIds[1]}`,
   offers: [{ signature: { slots: [ROUND_SLOT, { role: 'Axis', accepts: ['axis'] }] }, plan: (planner, [curve, axis]) => planner.tangent(planner.entity(curve.id)!, planner.entity(axis.id)!) }],
-  // The span from the centre to its foot on the axis, which keeps the centre's own coordinate along the axis and the axis's 0 across
-  // it, is the arc's or circle's size, so either side of the axis holds it.
+  // Signed, on the side the centre starts on, so a centre that starts on the axis has a regular equation there. At or above 0 across
+  // the axis, the centre's coordinate across it is the size. Below, a circle's radius is that coordinate negated; an arc's size is the
+  // span from the centre to its foot on the axis, which is regular since the centre starts strictly off the axis.
   lower: (relation, context) => {
-    const curve = context.edge(relation.curveIds[0]), [cx, cy] = context.point(context.centre(curve)), [ox, oy] = context.point(CAD_SKETCH_ORIGIN_ID);
-    const foot = cadSketchAxisNormal(relation.curveIds[1] as CadSketchVirtualAxisId) === 'y' ? [cx, oy] as const : [ox, cy] as const;
-    context.equalSizes({ kind: 'span', span: [cx, cy, ...foot] }, context.size(curve));
+    const curve = context.edge(relation.curveIds[0]), centre = context.centre(curve), size = context.size(curve);
+    const axis = cadSketchAxisNormal(relation.curveIds[1] as CadSketchVirtualAxisId) === 'y' ? 1 : 0, across = context.point(centre)[axis];
+    if (context.side(centre, axis) > 0) context.equalSizes(size, { kind: 'parameter', index: across });
+    else if (size.kind === 'parameter') context.emit('midpoint', [across, size.index, context.point(CAD_SKETCH_ORIGIN_ID)[axis]]);
+    else {
+      const [cx, cy] = context.point(centre), [ox, oy] = context.point(CAD_SKETCH_ORIGIN_ID);
+      context.equalSizes({ kind: 'span', span: axis ? [cx, cy, cx, oy] : [cx, cy, ox, cy] }, size);
+    }
   },
   check: (graph, relation, points, parameters) => {
     const source = { kind: 'relation', id: relation.id } as const;
@@ -181,5 +189,5 @@ export const tangent: CadSketchRelationDefinition<'tangent'> = {
     }
   },
   agent: { exposed: true, summary: 'An arc or circle touches the H or V axis.',
-    meaning: 'Keeps the full circle of an arc or circle touching an axis, on either side of it.' }
+    meaning: 'Keeps the full circle of an arc or circle touching an axis, on the side its centre starts on.' }
 };

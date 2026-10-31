@@ -41,6 +41,16 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:saved.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(cadDocumentPath(source.id))).toBe(raw);
     const released=applyCadEdits(source,[{kind:'remove-sketch-relation',sketchId:'sketch',relationId:tangentJoint.id}]);await saveCadDocument(adapter,released,{expectedSavedVersion:saved.savedVersion});expect((await loadCadDocument(adapter,source.id)).document).toEqual(released);expect(released.features).toEqual(tangentPart().features);
   });
+  it('refuses to open a saved sketch that stores a reserved id, giving that reason and writing nothing',async()=>{
+    const source=parseCadDocument({...createCadDocument('Reserved','reserved'),schemaVersion:2,features:[{id:'sketch',name:'Sketch',kind:'sketch',suppressed:false,plane:'XY',offset:0,profiles:[],
+      graph:{points:[{id:'p',position:[0,0]},{id:'q',position:[5,0]}],entities:[{id:'edge',kind:'line',construction:false,startPointId:'p',endPointId:'q'}],relations:[]}}]});
+    await saveCadDocument(adapter,source,{expectedSavedVersion:null});
+    const path=cadDocumentPath(source.id),raw=(await adapter.readExactText?.(path))!,forged=raw.replace(/"id":\s*"edge"/,match=>match.replace('edge','@edge'));
+    expect(forged).not.toBe(raw);await adapter.writeText(path,forged);
+    const writes=vi.spyOn(adapter,'writeText');
+    await expect(loadCadDocument(adapter,source.id)).rejects.toMatchObject({code:'reserved-sketch-id'});
+    expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(path)).toBe(forged);
+  });
   it('round trips a sliding point without a cached position or forged off-guide save',async()=>{
     const base=pointOnLinePart(),sketch=pointOnLineSketch(base),source=parseCadDocument({...base,features:[{...sketch,graph:{...sketch.graph,
       points:sketch.graph.points.map(point=>point.id==='p'?{...point,position:[10,5]}:point),relations:[pointOnLineRelation]}}]});

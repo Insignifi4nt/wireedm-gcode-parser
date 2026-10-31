@@ -160,7 +160,7 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   let graph: CadSketchGraph;
   try { graph = structuredClone(value) as CadSketchGraph; } catch { throw invalid(); }
   if (!isCadImportData(graph)) throw invalid();
-  assertNoReservedIds(graph);
+  assertNoReservedCadSketchIds(graph);
   if (!Value.Check(CadSketchGraphSchema, graph)) throw invalid();
   const ids = new Set<string>(), points = new Set(graph.points.map(point => point.id));
   for (const item of [...graph.points, ...graph.entities, ...graph.relations]) {
@@ -187,9 +187,12 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
 
 /**
  * Ids starting with `@` name the origin and the H and V axes, which every sketch has and none stores, so a stored point, edge or relation
- * cannot take one, and an edge cannot end at one. Read before the schema check, which would give no reason.
+ * cannot take one, and an edge cannot end at one. Read before the schema check, which would give no reason, by every reader of stored or
+ * submitted sketch data: a graph, a document and the edits that add points, edges or relations. Anything but a graph's lists is left to
+ * the schema check.
  */
-function assertNoReservedIds(graph: unknown) {
+export function assertNoReservedCadSketchIds(graph: unknown) {
+  if (typeof graph !== 'object' || graph === null) return;
   const lists = graph as { readonly points?: unknown; readonly entities?: unknown; readonly relations?: unknown };
   for (const list of [lists.points, lists.entities, lists.relations]) if (Array.isArray(list)) for (const item of list as unknown[]) {
     if (typeof item !== 'object' || item === null) continue;

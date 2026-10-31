@@ -3,7 +3,7 @@ import { cadSketchExternalReferenceComponents } from '../cadSketchExternalRefere
 import type { CadSketchGraph } from '../cadSketchGraph';
 import { CadSketchPositions } from '../sketch-relations/cadSketchVirtualElements';
 import type { CadSketchEquationModel } from './cadSketchEquationModel';
-import { CadSketchLowering, type CadSketchRadialHold } from './cadSketchLoweringContext';
+import { CadSketchLowering, type CadSketchRadialHold, type CadSketchSquareHold } from './cadSketchLoweringContext';
 
 /** What a sketch compiles from: its graph, the parameters its expressions read, and a drag target if any. */
 export interface CadSketchEquationInput {
@@ -11,10 +11,12 @@ export interface CadSketchEquationInput {
   readonly parameters: Readonly<Record<string, number>>;
   readonly drag?: { readonly pointId: string; readonly position: readonly [number, number] };
 }
-/** A compiled sketch: its equation model, and the points its relations hold on a full circle, in relation order. */
+/** A compiled sketch: its equation model, and the holds a failed solve retries from other starts, in relation order. */
 export interface CadSketchCompiledSketch extends CadSketchEquationModel {
   /** A solve that fails retries the points sitting on their centre from off it. */
   readonly radialHolds: readonly CadSketchRadialHold[];
+  /** Then the arms that start along the support they are held square to, from starts square to it. */
+  readonly squareHolds: readonly CadSketchSquareHold[];
 }
 
 /**
@@ -48,5 +50,5 @@ export function compileCadSketchEquations(input: CadSketchEquationInput): CadSke
     if (!pointParameters.has(pointId) || position.some(value => !Number.isFinite(value) || Math.abs(value) > 1e9)) throw new Error('Invalid sketch drag target.');
     lowering.target(pointId, 0, position[0]); lowering.target(pointId, 1, position[1]);
   }
-  return { values, fixed, pointParameters, radiusParameters, equations: lowering.equations, radialHolds: lowering.radialHolds };
+  return { values, fixed, pointParameters, radiusParameters, equations: lowering.equations, radialHolds: lowering.radialHolds, squareHolds: lowering.squareHolds };
 }

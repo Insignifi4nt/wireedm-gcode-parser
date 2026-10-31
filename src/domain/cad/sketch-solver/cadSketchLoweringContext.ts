@@ -8,8 +8,13 @@ import type { Point2 } from '../../path-intel/types';
 import { cadSketchRelationDefinition } from '../sketch-relations/cadSketchRelationRegistry';
 import type { CadSketchEquation, CadSketchEquationKind, CadSketchPointParameters, CadSketchSizeParameters, CadSketchSupportParameters } from './cadSketchEquationModel';
 
-/** A point held at a size from a centre, as a point on an arc's or circle's full circle is: its x parameter, the centre's x, and the size. */
-export interface CadSketchRadialHold { readonly point: number; readonly centre: number; readonly size: CadSketchSizeParameters }
+/**
+ * A point held at a size from a centre, as a point on an arc's or circle's full circle is: the point's x and y parameters, the centre's,
+ * and the size. The origin's are the fixed parameters its values became.
+ */
+export interface CadSketchRadialHold { readonly point: CadSketchPointParameters; readonly centre: CadSketchPointParameters; readonly size: CadSketchSizeParameters }
+/** An arm from a pivot held square to the support from that pivot toward another point: the x and y parameters of the three points. */
+export interface CadSketchSquareHold { readonly pivot: CadSketchPointParameters; readonly arm: CadSketchPointParameters; readonly toward: CadSketchPointParameters }
 
 /** What a relation's lowering reads from an operand. */
 export type CadSketchLoweringCapability = 'point' | 'edge' | 'support' | 'centre' | 'size' | 'value';
@@ -50,6 +55,11 @@ export interface CadSketchLoweringContext {
    * read a direction need one to start from.
    */
   direct(fromPointId: string, towardPointId: string, message: string): void;
+  /**
+   * The side of 0 a point starts on along one axis (0 for X, 1 for Y): 1 at or above it, -1 below. A branch read from the geometry
+   * before the edit, so a relation keeps the side it was made on; refuses a point with no start value.
+   */
+  side(pointId: string, axis: 0 | 1): 1 | -1;
   /** One equation of the current relation. Each is its own constraint, unless emitted inside `together`. */
   emit(kind: CadSketchEquationKind, operands: readonly number[], value?: number): void;
   /** Runs `lower`, whose equations share one tag: one constraint of several equations. */
@@ -60,8 +70,16 @@ export interface CadSketchLoweringContext {
   hold(pointId: string, axis: 0 | 1, value: number): void;
   /** The point lies on the infinite line through the support. */
   onSupport(pointId: string, support: CadSketchSupportParameters): void;
-  /** The point lies on the full circle around the edge's centre at the edge's size. A failed solve retries such points from off the centre. */
+  /**
+   * The point lies on the full circle around the edge's centre at the edge's size. A failed solve retries a point that starts on the
+   * centre from off it, moving the point, or the centre where the point cannot move.
+   */
   onCircle(pointId: string, edge: CadSketchEdge): void;
+  /**
+   * A failed solve retries the arm from `pivotId` to `armId`, which an equation keeps square to the support from `pivotId` toward
+   * `towardId`, when it starts along that support, from starts turned square to it on either side.
+   */
+  squareStart(pivotId: string, armId: string, towardId: string): void;
   /** Two sizes are equal. */
   equalSizes(first: CadSketchSizeParameters, second: CadSketchSizeParameters): void;
   /** A size is `value`. */
@@ -152,6 +170,7 @@ function alongAxis(operands: readonly number[], parallel: boolean): Specialized 
 export class CadSketchLowering implements CadSketchLoweringContext {
   readonly equations: CadSketchEquation[] = [];
   readonly radialHolds: CadSketchRadialHold[] = [];
+  readonly squareHolds: CadSketchSquareHold[] = [];
   private tags = 0;
   private sharedTag: number | undefined;
   private relation: CadSketchGraphRelation | undefined;
@@ -173,22 +192,22 @@ export class CadSketchLowering implements CadSketchLoweringContext {
    */
   lower(relation: CadSketchGraphRelation) {
     this.relation = relation; this.sourceId = relation.id;
-    const equations = this.equations.length, radialHolds = this.radialHolds.length, tags = this.tags, made = this.fixedValues.length;
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.fixedValues.length;
     try { cadSketchRelationDefinition(relation).lower(relation, this); }
-    catch (error) { this.restore(equations, radialHolds, tags, made); throw error; }
+    catch (error) { this.restore(equations, radialHolds, squareHolds, tags, made); throw error; }
   }
   /** The equations an edge keeps by itself, under its own id, whole or not at all. */
   structure(entity: CadSketchGraphEntity) {
     const structure = capability(STRUCTURES, entity);
     if (!structure) return;
     this.relation = undefined; this.sourceId = entity.id;
-    const equations = this.equations.length, radialHolds = this.radialHolds.length, tags = this.tags, made = this.fixedValues.length;
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.fixedValues.length;
     try { structure(this, entity); }
-    catch (error) { this.restore(equations, radialHolds, tags, made); throw error; }
+    catch (error) { this.restore(equations, radialHolds, squareHolds, tags, made); throw error; }
   }
   /** Drops what was emitted since the counts were taken, and gives back the tags it took. */
-  private restore(equations: number, radialHolds: number, tags: number, made: number) {
-    this.equations.length = equations; this.radialHolds.length = radialHolds; this.tags = tags; this.sharedTag = undefined;
+  private restore(equations: number, radialHolds: number, squareHolds: number, tags: number, made: number) {
+    this.equations.length = equations; this.radialHolds.length = radialHolds; this.squareHolds.length = squareHolds; this.tags = tags; this.sharedTag = undefined;
     if (this.fixedValues.length === made) return;
     this.fixedValues.length = made;
     for (const [sentinel, index] of this.made) if (index >= this.parameterCount + made) this.made.delete(sentinel);
@@ -250,6 +269,12 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     if (!cadSketchLineDirection({ startPointId: fromPointId, endPointId: towardPointId } as Entity<'line'>, this.numericPoints)) throw new Error(message);
   }
 
+  side(pointId: string, axis: 0 | 1): 1 | -1 {
+    const start = this.numericPoints.get(pointId);
+    if (!start) throw new Error(`Sketch point "${pointId}" has no start value to take its side from.`);
+    return (axis ? start.y : start.x) >= 0 ? 1 : -1;
+  }
+
   emit(kind: CadSketchEquationKind, operands: readonly number[], value = 0) {
     if (operands.some(operand => operand < 0)) {
       const specialized = SPECIALIZATIONS[kind]?.(operands, value);
@@ -281,8 +306,14 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   onCircle(pointId: string, edge: CadSketchEdge) {
     const centre = this.centre(edge), size = this.size(edge);
     this.equalSizes(this.span(centre, pointId), size);
-    // The origin never moves, so a failed solve has nothing to retry from off the centre.
-    if (!VIRTUAL_POINTS.has(pointId)) this.radialHolds.push({ point: this.point(pointId)[0], centre: this.point(centre)[0], size });
+    this.radialHolds.push({ point: this.parametersOf(this.point(pointId)), centre: this.parametersOf(this.point(centre)), size });
+  }
+  squareStart(pivotId: string, armId: string, towardId: string) {
+    this.squareHolds.push({ pivot: this.parametersOf(this.point(pivotId)), arm: this.parametersOf(this.point(armId)), toward: this.parametersOf(this.point(towardId)) });
+  }
+  /** The parameters a point's coordinates are, the origin's as the fixed parameters its values became. */
+  private parametersOf([x, y]: CadSketchPointParameters): CadSketchPointParameters {
+    return [x < 0 ? this.fixed(x) : x, y < 0 ? this.fixed(y) : y];
   }
   /** Two spans give an equal-length equation, a span and a parameter a distance to it, and two parameters a difference. */
   equalSizes(first: CadSketchSizeParameters, second: CadSketchSizeParameters) {

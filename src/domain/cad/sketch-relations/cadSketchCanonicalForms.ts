@@ -12,7 +12,7 @@ import { CAD_SKETCH_ORIGIN_ID, cadSketchAxisNormal, cadSketchVirtualSubject, isC
 type Axis = 'x' | 'y';
 /**
  * How an existing kind keeps a condition on the origin or an axis: coordinates held at a value, as a point at the origin, on an axis,
- * level with the origin or at a set distance from either is; or a line kept level or upright, as one parallel or square to an axis is.
+ * level with the origin, mirroring the origin about an axis or at a set distance from either is; or a line kept level or upright, as one parallel or square to an axis is.
  */
 export type CadSketchCanonicalForm =
   | { readonly kind: 'hold'; readonly pointIds: readonly string[]; readonly axes: readonly Axis[]; readonly value: CadScalar; readonly target: CadSketchVirtualId;
@@ -50,6 +50,11 @@ export function cadSketchCanonicalForm(graph: CadSketchGraph, relation: CadSketc
       if (!isCadSketchVirtualAxisId(relation.lineId)) return null;
       const across = cadSketchAxisNormal(relation.lineId), left = (relation.side === 'left') === (across === 'y');
       return hold([relation.pointId], [across], left ? relation.value : negated(relation.value), relation.lineId);
+    }
+    case 'symmetric': {
+      // Only the origin mirrors the origin about an axis through it.
+      const pair = besides(relation.pointIds, isOrigin);
+      return pair && isCadSketchVirtualAxisId(relation.lineId) ? hold([pair[0]], ['x', 'y'], 0, CAD_SKETCH_ORIGIN_ID) : null;
     }
     case 'parallel': case 'perpendicular': case 'collinear': {
       const pair = besides(relation.lineIds, isCadSketchVirtualAxisId), line = pair && graph.entities.find(entity => entity.id === pair[0]);

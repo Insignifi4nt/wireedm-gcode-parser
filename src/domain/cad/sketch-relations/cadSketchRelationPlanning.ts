@@ -391,7 +391,7 @@ export function cadSketchRelationPlanner(graph: CadSketchGraph): CadSketchRelati
     mirror: (targets, line) => {
       const [first, second] = targets.map(pick => pick.kind === 'point' ? pick.id : (entity(pick.id) as Extract<Entity, { kind: 'circle' }>).centerPointId);
       const operands = { pointIds: [first, second] as const, lineId: line.id };
-      return checked({ kind: 'symmetric', ...operands }, () => resolveCadSketchSymmetryOperands(graph, operands));
+      return canonical({ kind: 'symmetric', ...operands }) ?? checked({ kind: 'symmetric', ...operands }, () => resolveCadSketchSymmetryOperands(graph, operands));
     },
     fix: pointId => {
       if (isCadSketchVirtualId(pointId)) return blocked(cadSketchCapabilityReason(CAD_SKETCH_ORIGIN, 'movable'));

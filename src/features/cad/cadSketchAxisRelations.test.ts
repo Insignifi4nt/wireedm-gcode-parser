@@ -6,9 +6,11 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchGraphSelectionSet, type CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
 import { cadSketchRelationOffers } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
+import { cadSketchRelationsLike } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { CadSketchPositions } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import { CadSketchLowering, CadSketchLoweringRefusal } from '@/domain/cad/sketch-solver/cadSketchLoweringContext';
 import { compileCadSketchEquations } from '@/domain/cad/sketch-solver/compileCadSketchEquations';
+import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { prepareCadEdits } from './cadEditPreparation';
 import { cadSketchConstraintStep, type CadSketchConstraintTool } from './cadSketchConstraintTool';
 import { cadSketchDimensionRelationsAt, planCadSketchDimension, type CadSketchAvailableDimension, type CadSketchDimensionForm } from './cadSketchDimensionPlacement';
@@ -152,6 +154,30 @@ describe('relations with the origin and the H and V axes, end to end', () => {
     }
   });
 
+  it('mirrors the origin as a point: about a line it is stored as Symmetric, about an axis its pair is held at the origin', async () => {
+    const graph = graphOf(part());
+    // The origin is offered as a point to mirror, before or after the line or axis is picked.
+    for (const picks of [[], ['p'], ['ab'], ['@h'], ['p', '@v']]) {
+      const result = cadSketchConstraintStep(graph, 'symmetric', picks.map(pick), nextId);
+      expect(result).toMatchObject({ status: 'more', pointIds: expect.arrayContaining(['@origin']) });
+    }
+    const about = step(graph, 'symmetric', '@origin', 'p', 'ab');
+    expect(about).toMatchObject([{ kind: 'symmetric', pointIds: ['@origin', 'p'], lineId: 'ab' }]);
+    expect(offer(graph, ['p', '@origin', 'ab'], 'symmetric')).toMatchObject({ state: 'available', relations: [{ kind: 'symmetric', pointIds: ['p', '@origin'], lineId: 'ab' }] });
+    const mirrored = await solve(part(), about), [a, b, p] = ['a', 'b', 'p'].map(id => at(mirrored, id));
+    // p is the reflection of the origin in the line a–b: their midpoint lies on it and their span is square to it.
+    expect((b.x - a.x) * p.x + (b.y - a.y) * p.y).toBeCloseTo(0, 6);
+    expect((b.x - a.x) * (p.y / 2 - a.y) - (b.y - a.y) * (p.x / 2 - a.x)).toBeCloseTo(0, 6);
+    for (const axis of ['@h', '@v']) {
+      const held = step(graph, 'symmetric', 'q', '@origin', axis);
+      expect(held).toMatchObject([{ kind: 'fixed-axis', pointId: 'q', axis: 'x', value: 0 }, { kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 0 }]);
+      const solved = await solve(part(), held);
+      expect(at(solved, 'q')).toEqual({ x: expect.closeTo(0, 9), y: expect.closeTo(0, 9) });
+      expect(cadSketchConstraintStep(graphOf(solved), 'symmetric', ['q', '@origin', axis].map(pick), nextId))
+        .toEqual({ status: 'invalid', reason: 'This point is already at the origin.', applied: held.map(relation => relation.id) });
+    }
+  });
+
   it('measures a point from the origin as a distance, and from an axis as a held coordinate', async () => {
     const graph = graphOf(part());
     const aligned = cadSketchDimensionRelationsAt(dimension(graph, ['q', '@origin'], 'aligned'), null).relations!;
@@ -190,14 +216,63 @@ describe('relations with the origin and the H and V axes, end to end', () => {
       expect(offer(graph, [curve, axis], 'tangent')).toMatchObject({ state: 'available', relations: [{ kind: 'tangent', curveIds: [curve, axis] }] });
       expect(relations).toMatchObject([{ kind: 'tangent', curveIds: [curve, axis] }]);
       const solved = await solve(part(), relations), low = lowered(solved, [relations[0].id]);
-      expect(low.equations).toHaveLength(1);
-      expect(low.equations[0].operands.filter(operand => operand >= low.own).map(low.fixed)).toEqual([0]);
+      // The ring starts below the H axis, so its radius is the centre's y negated; the arc starts right of the V axis, so the span to
+      // its start is the centre's x.
+      expect(low.equations.map(({ kind, operands }) => ({ kind, operands: operands.map(operand => operand >= low.own ? low.fixed(operand) : operand) }))).toEqual(curve === 'ring'
+        ? [{ kind: 'midpoint', operands: [low.param('k', 1), low.own - 1, 0] }]
+        : [{ kind: 'distance-to-parameter', operands: [low.param('m', 0), low.param('m', 1), low.param('s', 0), low.param('s', 1), low.param('m', 0)] }]);
       const c = at(solved, centre), size = sizeOf(solved, curve);
       const across = axis === '@h' ? c.y : c.x;
       expect(Math.abs(across)).toBeCloseTo(size, 9);
       // It stays on its own side: the circle below the H axis, the arc right of the V axis.
       expect(Math.sign(across)).toBe(axis === '@h' ? -1 : 1);
     }
+  });
+
+  it('solves a curve whose centre starts on the axis it is made tangent to, on the positive side', async () => {
+    // A circle with a free centre at the origin and a radius expression: the centre's y starts at 0, where the distance to a foot on the
+    // axis has no direction, so the signed form keeps it regular and moves the centre up.
+    for (const [axis, across] of [['@h', 1], ['@v', 0]] as const) {
+      const source = parseCadDocument({ ...createCadDocument('Tangent at the axis', 'tangent-at-axis'), schemaVersion: 2, features: [{
+        id: 'sketch', name: 'Axes', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+          points: [{ id: 'c', position: [0, 0] }], entities: [{ id: 'ring', kind: 'circle', construction: false, centerPointId: 'c', radius: '5' }], relations: [] } }] });
+      const solved = await solve(source, [{ id: 'touch', kind: 'tangent', curveIds: ['ring', axis] }]), low = lowered(solved, ['touch']);
+      expect(low.equations.map(({ kind, operands }) => ({ kind, operands }))).toEqual([{ kind: 'difference', operands: [2, low.param('c', across)] }]);
+      const centre = at(solved, 'c');
+      expect([centre.x, centre.y][across]).toBeCloseTo(5, 9);
+      expect([centre.x, centre.y][1 - across]).toBeCloseTo(0, 9);
+    }
+  });
+
+  it('solves a tangent joint to a fixed line from an arc centre that starts on that line', async () => {
+    // The ordinary line has no foot span: the joint keeps the radius at the joint square to the line, which is regular however far along
+    // the line the centre starts.
+    const source = parseCadDocument({ ...createCadDocument('Tangent on a fixed line', 'tangent-fixed-line'), schemaVersion: 2, features: [{
+      id: 'sketch', name: 'Line', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+        points: [{ id: 'a', position: ['0', '2'] }, { id: 'b', position: ['10', '2'] }, { id: 'c', position: [15, 2] }, { id: 'e', position: [15, 7] }],
+        entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+          { id: 'bend', kind: 'arc', construction: false, centerPointId: 'c', startPointId: 'b', endPointId: 'e', direction: 'ccw' }], relations: [] } }] });
+    const solved = await solve(source, [{ id: 'join', kind: 'tangent-joint', endpoints: [{ entityId: 'base', pointId: 'b' }, { entityId: 'bend', pointId: 'b' }] }]);
+    const centre = at(solved, 'c');
+    expect(centre.x).toBeCloseTo(10, 9);
+    expect(Math.abs(centre.y - 2)).toBeGreaterThan(1);
+  });
+
+  it('keeps a fixed point on a free curve centred on it by moving the centre off it', async () => {
+    // The origin cannot move off the centre, so the retry moves the centre: for a circle and for an arc, and for a stored point
+    // fixed by its expressions too.
+    const centred = { k: [0, 0], m: [0, 0], s: [6, 0], e: [0, 6] } as const;
+    for (const curve of ['ring', 'arc']) {
+      const relations = step(graphOf(part([], centred)), 'coincident', '@origin', curve);
+      expect(relations).toMatchObject([{ kind: 'point-on-curve', pointId: '@origin', curveId: curve }]);
+      const solved = await solve(part([], centred), relations), centre = at(solved, curve === 'ring' ? 'k' : 'm');
+      expect(Math.hypot(centre.x, centre.y)).toBeCloseTo(sizeOf(solved, curve), 9);
+      expect(sizeOf(solved, curve)).toBeGreaterThan(1);
+    }
+    const pinned = part([], { k: [2, 1], p: ['2', '1'] as never }), relations = step(graphOf(pinned), 'coincident', 'p', 'ring');
+    const solved = await solve(pinned, relations), centre = at(solved, 'k');
+    expect(at(solved, 'p')).toEqual({ x: 2, y: 1 });
+    expect(Math.hypot(centre.x - 2, centre.y - 1)).toBeCloseTo(3, 9);
   });
 
   it('centres an arc or circle on the origin, and keeps the origin on one', async () => {
@@ -274,15 +349,32 @@ describe('what the origin and the axes cannot take', () => {
       .toEqual([{ kind: 'entity', id: '@v' }, { kind: 'point', id: '@origin' }, { kind: 'point', id: 'q' }]);
   });
 
-  it('reserves ids that start with @ for them', () => {
+  it('reserves ids that start with @ for them, on every path sketch data is read by', async () => {
     for (const graph of [{ ...rawGraph(), points: [...rawGraph().points, { id: '@origin', position: [0, 0] }] },
       { ...rawGraph(), points: [...rawGraph().points, { id: '@p', position: [1, 1] }] },
       { ...rawGraph(), entities: [...ENTITIES, { id: '@h', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }] },
       rawGraph([{ id: '@r', kind: 'horizontal', pointIds: ['p', 'q'] }])]) {
+      const reserved = { code: 'reserved-sketch-id', message: expect.stringContaining('ids starting with "@" name the origin and the H and V axes') };
       const error = failure(() => parseCadSketchGraph(graph));
       expect(error).toBeInstanceOf(CadError);
-      expect(error).toMatchObject({ code: 'reserved-sketch-id', message: expect.stringContaining('ids starting with "@" name the origin and the H and V axes') });
+      expect(error).toMatchObject(reserved);
+      // A document gives the same reason, whether it is opened, imported as file text or added by an edit.
+      const sketch = { id: 'other', name: 'Other', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph };
+      const source = { ...createCadDocument('Reserved', 'reserved'), schemaVersion: 2, features: [sketch] };
+      expect(failure(() => parseCadDocument(source))).toMatchObject(reserved);
+      expect(failure(() => parseCadDocument(JSON.parse(JSON.stringify(source))))).toMatchObject(reserved);
+      expect(failure(() => applyCadEdits(part(), [{ kind: 'add-feature', feature: sketch } as never]))).toMatchObject(reserved);
+      expect(failure(() => applyCadEdits(part(), [{ kind: 'update-feature', feature: { ...sketch, id: 'sketch' } } as never]))).toMatchObject(reserved);
     }
+    const reserved = { code: 'reserved-sketch-id' };
+    expect(failure(() => applyCadEdits(part(), [{ kind: 'append-sketch-entities', sketchId: 'sketch', geometry: { points: [{ id: '@p', position: [1, 1] }], entities: [], relations: [] } } as never])))
+      .toMatchObject(reserved);
+    expect(failure(() => applyCadEdits(part(), [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: '@r', kind: 'horizontal', pointIds: ['p', 'q'] } } as never])))
+      .toMatchObject(reserved);
+    expect(failure(() => applyCadEdits(part(), [{ kind: 'mirror-sketch-geometry', sketchId: 'sketch', entityIds: ['ab'], axisLineId: '@v', idPrefix: '@flip' } as never])))
+      .toMatchObject(reserved);
+    await expect(prepareCadEdits(part(), [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: '@r', kind: 'horizontal', pointIds: ['p', 'q'] } } as never], runtime))
+      .rejects.toMatchObject(reserved);
     // A line may not end at the origin: it is no stored point.
     expect(failure(() => parseCadSketchGraph({ ...rawGraph(), entities: [...ENTITIES, { id: 'spoke', kind: 'line', construction: false, startPointId: '@origin', endPointId: 'q' }] })))
       .toMatchObject({ code: 'reserved-sketch-id' });
@@ -299,10 +391,22 @@ describe('one stored form for each condition on the origin or an axis', () => {
       [{ id: 'square', kind: 'perpendicular', lineIds: ['@h', 'ab'] }, 'a vertical relation on the line\'s ends "a" and "b"'],
       [{ id: 'lies', kind: 'collinear', lineIds: ['ab', '@v'] }, 'fixed-axis x = 0 on "a", x = 0 on "b"'],
       [{ id: 'gap', kind: 'point-line-distance', pointId: 'q', lineId: '@h', side: 'right', value: 4 }, 'fixed-axis y = -4 on "q"'],
-      [{ id: 'span', kind: 'axis-distance', pointIds: ['q', '@origin'], axis: 'x', value: 5 }, 'fixed-axis x = -5 on "q"']
+      [{ id: 'span', kind: 'axis-distance', pointIds: ['q', '@origin'], axis: 'x', value: 5 }, 'fixed-axis x = -5 on "q"'],
+      [{ id: 'twin', kind: 'symmetric', pointIds: ['@origin', 'q'], lineId: '@h' }, 'fixed-axis x = 0 on "q", y = 0 on "q"']
     ] as const) {
       expect(failure(() => parseCadSketchGraph(rawGraph([relation])))).toMatchObject({ code: 'non-canonical-sketch-relation', message: expect.stringContaining(`is stored as ${stored}.`) });
     }
+  });
+
+  it('recognises the canonical form only where it holds the same value', () => {
+    const graph = graphOf(part([{ id: 'px', kind: 'fixed-axis', pointId: 'p', axis: 'x', value: 3 }, { id: 'py', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 4 }], { p: [3, 4] }));
+    // Coordinates held at 3 and 4 do not keep the point at the origin.
+    expect(cadSketchRelationsLike(graph, { kind: 'coincident', pointIds: ['p', '@origin'] })).toEqual([]);
+    expect(cadSketchRelationsLike(graph, { kind: 'point-on-line', pointId: 'p', lineId: '@v' })).toEqual([]);
+    expect(cadSketchRelationsLike(graph, { kind: 'point-line-distance', pointId: 'p', lineId: '@h', side: 'left', value: 4 })).toEqual(['py']);
+    expect(cadSketchRelationsLike(graph, { kind: 'point-line-distance', pointId: 'p', lineId: '@h', side: 'right', value: 4 })).toEqual([]);
+    expect(cadSketchRelationsLike(graph, { kind: 'axis-distance', pointIds: ['@origin', 'p'], axis: 'x', value: ' 3.0 ' })).toEqual(['px']);
+    expect(cadSketchRelationsLike(graph, { kind: 'axis-distance', pointIds: ['p', '@origin'], axis: 'x', value: 3 })).toEqual([]);
   });
 
   it('recognises the canonical form as already applied', () => {
