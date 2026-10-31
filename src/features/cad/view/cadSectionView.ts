@@ -55,6 +55,37 @@ export function cadClipRaycaster(raycaster: THREE.Raycaster, plane: THREE.Plane 
   return raycaster;
 }
 
+/**
+ * The line hits within `threshold` of `raycaster`'s ray, for lines a section may cut. three.js measures a line's pixel tolerance to the
+ * whole segment and checks only the ray's side of it against the near and far limits, so a segment the section removes could still be
+ * picked a few pixels from the cut, and a crossing segment whose kept part is close could be lost. Here every segment is gathered along
+ * the whole ray, cut to the kept side of `plane`, and kept only when its kept part is within `threshold`; each hit's `point` becomes the
+ * closest point of that part, and `distance` its distance along the ray. Hits come back in that order, as three.js returns them. With no plane, segments
+ * are measured whole. Lines a section does not cut, such as reference geometry, need none of this.
+ */
+export function cadKeptLineHits(raycaster: THREE.Raycaster, lines: readonly THREE.Object3D[], plane: THREE.Plane | null, threshold: number): THREE.Intersection[] {
+  const whole = new THREE.Raycaster(raycaster.ray.origin, raycaster.ray.direction, 0, Infinity);
+  whole.camera = raycaster.camera; whole.layers.mask = raycaster.layers.mask; whole.params.Line.threshold = threshold;
+  const start = new THREE.Vector3(), end = new THREE.Vector3(), onRay = new THREE.Vector3();
+  const kept: THREE.Intersection[] = [];
+  for (const hit of whole.intersectObjects([...lines], false)) {
+    const geometry = (hit.object as THREE.Line).geometry, position = geometry?.getAttribute('position');
+    if (!position || typeof hit.index !== 'number') continue;
+    const a = geometry.index ? geometry.index.getX(hit.index) : hit.index, b = geometry.index ? geometry.index.getX(hit.index + 1) : hit.index + 1;
+    start.fromBufferAttribute(position, a).applyMatrix4(hit.object.matrixWorld); end.fromBufferAttribute(position, b).applyMatrix4(hit.object.matrixWorld);
+    if (plane) {
+      const from = plane.distanceToPoint(start), to = plane.distanceToPoint(end);
+      if (from < 0 && to < 0) continue;
+      if (from < 0) start.lerp(end, from / (from - to));
+      else if (to < 0) end.lerpVectors(start, end, from / (from - to));
+    }
+    const point = new THREE.Vector3();
+    if (raycaster.ray.distanceSqToSegment(start, end, onRay, point) > threshold ** 2) continue;
+    kept.push({ ...hit, point, distance: raycaster.ray.origin.distanceTo(onRay) });
+  }
+  return kept.sort((left, right) => left.distance - right.distance);
+}
+
 /** Whether every point of the box lies on the removed side, so nothing of it is drawn. */
 export function cadBoundsClipped(bounds: { readonly min: readonly number[]; readonly max: readonly number[] }, plane: THREE.Plane | null): boolean {
   if (!plane) return false;

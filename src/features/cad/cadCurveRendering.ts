@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { CadFeature } from '@/domain/cad/cadDocument';
 import { prepareCadViewportReferences, type CadViewportReference } from './cadViewportReferences';
-import { cadClipRaycaster } from './view/cadSectionView';
+import { cadClipRaycaster, cadKeptLineHits } from './view/cadSectionView';
 export type CadCurveViewportReference = CadViewportReference;
 
 /** Compatibility wrapper; world sketches use the same analytic display sampler. */
@@ -10,19 +10,20 @@ export function prepareCadCurveReferences(features: readonly CadFeature[], param
 }
 /**
  * Reference features remain pickable without an evaluated solid build. A section's `clip` keeps the removed side of every body from
- * hiding a reference; `key` names the line data returned, the feature ID unless the lines are not features.
+ * hiding a reference. Lines the section `cut`s, sketch and curve outlines, are measured to the part of them it keeps, so a removed
+ * outline is never picked from beside the cut; reference geometry, which it does not cut, is measured whole. `key` names the line data
+ * returned, the feature ID unless the lines are not features.
  */
-export function pickCadCurveReference({ raycaster, references, bodies, camera, viewportHeight, clip = null, key = 'featureId' }: {
+export function pickCadCurveReference({ raycaster, references, bodies, camera, viewportHeight, clip = null, cut = false, key = 'featureId' }: {
   raycaster: THREE.Raycaster; references: readonly THREE.LineSegments[]; bodies: readonly THREE.Mesh[];
-  camera: THREE.OrthographicCamera; viewportHeight: number; clip?: THREE.Plane | null; key?: 'featureId' | 'referenceId';
+  camera: THREE.OrthographicCamera; viewportHeight: number; clip?: THREE.Plane | null; cut?: boolean; key?: 'featureId' | 'referenceId';
 }): string | null {
   if (!viewportHeight || !references.length) return null;
   const tolerance = (camera.top - camera.bottom) / camera.zoom / viewportHeight * 6;
-  raycaster.params.Line.threshold = tolerance;
   const depthRay = new THREE.Raycaster();
   const bodyObjects = [...bodies];
-  for (const hit of raycaster.intersectObjects([...references], false)) {
-    if (!(hit.object instanceof THREE.LineSegments) || raycaster.ray.distanceSqToPoint(hit.point) > tolerance ** 2) continue;
+  for (const hit of cadKeptLineHits(raycaster, references, cut ? clip : null, tolerance)) {
+    if (!(hit.object instanceof THREE.LineSegments)) continue;
     // The pointer can miss a solid near its silhouette while the nearby outline
     // remains behind it. Check depth through the actual closest reference point.
     const projected = hit.point.clone().project(camera);

@@ -233,3 +233,32 @@ test('cuts a section view by a picked plane, caps it, flips it, picks through th
   await openViewControls(page); await expect(sectionButton).toHaveAttribute('aria-pressed', 'false');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('wire-edm:cad-preferences:v1') ?? '{}').section)).toBeUndefined();
 });
+
+test('never picks an edge the section removes from just beside the cut, and picks a kept one from just past it', async ({ page }) => {
+  // A sliver block ending 0.1 mm short of the XZ plane, wholly on the side an unflipped XZ section removes. It stays inside the model's
+  // span, so the origin planes and their labels keep their sizes.
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sliver = block('sliver', -12, -10, 4, 9.9);
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [...features, ...sliver].map(feature => ({ kind: 'add-feature', feature })) });
+  const document = await context(page);
+  expect((await call(page, 'cad_build', { expectedVersion: document.version })).bodies).toHaveLength(4);
+  await expect.poll(async () => (await viewport(page)).view).toMatchObject({ mode: 'solid', available: true, referenceVersion: document.version });
+  await call(page, 'cad_set_viewport', { expectedVersion: document.version, command: { kind: 'set-pick-mode', mode: 'edge' } });
+  const top = await projection(page, 'Top');
+  // Two pixels past the cut on the kept side, y > 0, and a few pixels from the sliver's edge at y = -0.1: within the six-pixel edge
+  // tolerance, so only the section decides.
+  const cutLine = top([-10, 0, 0]), edge = top([-10, -0.1, 0]), at = { x: cutLine.x, y: cutLine.y - 2 };
+  expect(edge.y - at.y).toBeLessThan(5);
+  const pickedBody = async () => { await pick(page, at); return (await viewport(page)).topologySelection?.bodyId ?? null; };
+  expect(await pickedBody()).toBe('sliver');
+  for (const command of [{ kind: 'select-reference-plane', plane: 'XZ' }, { kind: 'set-section', on: true, flip: false }, { kind: 'select-reference-plane', plane: null }])
+    await call(page, 'cad_set_viewport', { expectedVersion: document.version, command });
+  expect((await viewport(page)).view.section).toMatchObject({ normal: [0, 1, 0] });
+  await settled(page);
+  expect(await pickedBody()).toBeNull();
+  // Flipped, the sliver is kept and the pointer lies on the removed side, where the ray itself meets nothing; its edge is still found.
+  await call(page, 'cad_set_viewport', { expectedVersion: document.version, command: { kind: 'set-section', on: true, flip: true } });
+  await expect.poll(async () => (await viewport(page)).view.section).toMatchObject({ normal: [0, -1, 0] });
+  await settled(page);
+  expect(await pickedBody()).toBe('sliver');
+});

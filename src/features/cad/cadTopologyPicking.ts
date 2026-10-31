@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { cadClipRaycaster } from './view/cadSectionView';
+import { cadClipRaycaster, cadKeptLineHits } from './view/cadSectionView';
 import type { CadMesh, CadMeshTopologyGroup } from '@/domain/cad/cadDocument';
 import type { CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
 
@@ -55,7 +55,10 @@ export function validateTopologySelection(selection: CadTopologyPickSet, source:
   }
 }
 
-/** With a section's `clip`, `raycaster` is already limited to the kept side; the depth checks behind each edge are limited the same way. */
+/**
+ * With a section's `clip`, `raycaster` is already limited to the kept side for faces, and the depth checks behind each edge are limited
+ * the same way. Edges are measured to the part of them the section keeps, so an edge it removes is never picked from beside the cut.
+ */
 export function pickTopology({ mode, raycaster, bodies, edges, meshByObject, camera, viewportHeight, clip = null }: {
   mode: 'auto' | 'edge' | 'face'; raycaster: THREE.Raycaster; bodies: readonly THREE.Mesh[];
   edges: readonly THREE.LineSegments[]; meshByObject: ReadonlyMap<THREE.Object3D, CadMesh>;
@@ -72,9 +75,8 @@ export function pickTopology({ mode, raycaster, bodies, edges, meshByObject, cam
     return mesh && group ? { bodyId: mesh.featureId, pick: { kind: 'face', key: group.key } } : null;
   }
   const pixelSize = orthographicPixelSize(camera, viewportHeight);
-  raycaster.params.Line.threshold = pixelSize * 6;
   const depthRay = new THREE.Raycaster();
-  const candidates = raycaster.intersectObjects([...edges], false).sort((left, right) =>
+  const candidates = cadKeptLineHits(raycaster, edges, clip, pixelSize * 6).sort((left, right) =>
     raycaster.ray.distanceSqToPoint(left.point) - raycaster.ray.distanceSqToPoint(right.point) || left.distance - right.distance);
   for (const hit of candidates) {
     if (raycaster.ray.distanceSqToPoint(hit.point) > (pixelSize * 6) ** 2) continue;

@@ -132,6 +132,20 @@ describe('section view', () => {
     await show({ section: section(false, true, 0) }); await click(target); expect(handlers.onSelect).not.toHaveBeenLastCalledWith('upper');
     expect(handlers.onSelect).not.toHaveBeenLastCalledWith('lower');
   });
+
+  it('never picks an outline the section removes from just beside the cut, and still picks a kept one from just past it', async () => {
+    // A cut by YZ just left of the outline's left side at x = 5: unflipped it keeps x ≤ 4.995 and removes the whole outline.
+    const wall = (flip: boolean): CadViewportSection => Object.freeze({ frame: Object.freeze({ ...cadPrincipalFrame('YZ'), origin: [4.995, 0, 0] as const }), flip, caps: false });
+    const beside = new Vector3(4.99, 7, 6);
+    await show({ meshes: [], references: contour });
+    await act(async () => currentControls().setView?.('Top'));
+    await click(beside); expect(handlers.onSelect).toHaveBeenLastCalledWith('outline');
+    handlers.onSelect.mockClear();
+    await show({ meshes: [], references: contour, section: wall(false) }); await click(beside);
+    expect(handlers.onSelect).not.toHaveBeenCalledWith('outline');
+    await show({ meshes: [], references: contour, section: wall(true) }); await click(beside);
+    expect(handlers.onSelect).toHaveBeenLastCalledWith('outline');
+  });
 });
 
 describe('reference geometry and the selection filter', () => {

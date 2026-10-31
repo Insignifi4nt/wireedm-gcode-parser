@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import type { CadFeature } from '@/domain/cad/cadDocument';
+import type { CadFeature, CadMesh } from '@/domain/cad/cadDocument';
 import { cadPrincipalFrame } from '@/domain/cad/cadDatumPlanes';
-import { cadBoundsClipped, cadClipRaycaster, cadSectionClipPlane, cadSectionPlaneAvailable, resolveCadSectionFrame, sameCadSectionFrame } from './cadSectionView';
+import { pickCadCurveReference } from '../cadCurveRendering';
+import { pickTopology } from '../cadTopologyPicking';
+import { cadBoundsClipped, cadClipRaycaster, cadKeptLineHits, cadSectionClipPlane, cadSectionPlaneAvailable, resolveCadSectionFrame, sameCadSectionFrame } from './cadSectionView';
 
 const mount: CadFeature = { kind: 'datum-plane', id: 'mount', name: 'Mount', suppressed: false, definition: { kind: 'world', basePlane: 'XY', origin: [0, 0, 'lift'], rotation: [0, 0, 0] } };
 const kept = (plane: THREE.Plane, point: readonly [number, number, number]) => plane.distanceToPoint(new THREE.Vector3(...point)) >= 0;
@@ -49,6 +51,52 @@ describe('the pick filter through a section', () => {
     const hidden = cadClipRaycaster(along(4.5), removeAbove);
     expect(hidden.intersectObject(wall)).toHaveLength(0);
     expect(cadClipRaycaster(hidden, null).intersectObject(wall)).toHaveLength(1);
+  });
+
+  describe('lines picked within a pixel tolerance of the ray', () => {
+    // Looking down at 0.1 mm a pixel, so six pixels are 0.6 mm; the section keeps x ≤ 0.
+    const camera = new THREE.OrthographicCamera(-50, 50, 50, -50, 0.1, 1000);
+    camera.position.set(0, 0, 100); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+    const keepLeft = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
+    const segment = (start: [number, number, number], end: [number, number, number], indexed = false) => {
+      const geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(indexed ? [9, 9, 9, ...start, ...end] : [...start, ...end], 3));
+      if (indexed) geometry.setIndex([1, 2]);
+      const line = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial()); line.userData.featureId = 'outline'; line.updateMatrixWorld(); return line;
+    };
+    const pointer = (x: number, y = 0) => {
+      const caster = new THREE.Raycaster(), projected = new THREE.Vector3(x, y, 0).project(camera);
+      caster.setFromCamera(new THREE.Vector2(projected.x, projected.y), camera); return caster;
+    };
+    const across = segment([0.01, -10, 0], [0.01, 10, 0]);
+
+    it('never lands on a line the section removes, however close to the cut, and measures a crossing line to its kept part', () => {
+      expect(cadKeptLineHits(pointer(-0.01), [across], keepLeft, 0.6)).toEqual([]);
+      expect(cadKeptLineHits(pointer(-0.01), [across], null, 0.6)).toHaveLength(1);
+      for (const indexed of [false, true]) {
+        const crossing = segment([-5, 0.05, 0], [5, 0.05, 0], indexed);
+        expect(cadKeptLineHits(pointer(-0.01), [crossing], keepLeft, 0.6)[0].point.x).toBeCloseTo(-0.01, 6);
+        // From past the cut the closest kept point is the cut itself, and further than the tolerance there is no hit.
+        expect(cadKeptLineHits(pointer(0.4), [crossing], keepLeft, 0.6)[0].point.x).toBeCloseTo(0, 6);
+        expect(cadKeptLineHits(pointer(0.7), [crossing], keepLeft, 0.6)).toEqual([]);
+        expect(cadKeptLineHits(pointer(0.7), [crossing], null, 0.6)).toHaveLength(1);
+      }
+    });
+
+    it('applies to edge and outline picks, while reference geometry the section does not cut stays pickable', () => {
+      const mesh: CadMesh = { featureId: 'body', name: 'Body', positions: [], normals: [], indices: [], edges: [0.01, -10, 0, 0.01, 10, 0],
+        faceGroups: [], edgeGroups: [{ start: 0, count: 2, key: 'edge' }], volume: 0, bounds: { min: [0, -10, 0], max: [0.02, 10, 0] } };
+      const edge = (x: number, clip: THREE.Plane | null) => pickTopology({ mode: 'edge', raycaster: cadClipRaycaster(pointer(x), clip), bodies: [], edges: [across],
+        meshByObject: new Map<THREE.Object3D, CadMesh>([[across, mesh]]), camera, viewportHeight: 1000, clip });
+      expect(edge(-0.01, keepLeft)).toBeNull();
+      expect(edge(-0.01, null)).toEqual({ bodyId: 'body', pick: { kind: 'edge', key: 'edge' } });
+      const outline = (x: number, clip: THREE.Plane | null, cut: boolean) => pickCadCurveReference({ raycaster: cadClipRaycaster(pointer(x), clip), references: [across], bodies: [],
+        camera, viewportHeight: 1000, clip, cut });
+      expect(outline(-0.01, keepLeft, true)).toBeNull();
+      expect(outline(-0.01, keepLeft, false)).toBe('outline');
+      // A kept line stays pickable from just past the cut, where the ray itself lies wholly on the removed side.
+      const keptEdge = segment([-0.01, -10, 0], [-0.01, 10, 0]);
+      expect(pickCadCurveReference({ raycaster: cadClipRaycaster(pointer(0.01), keepLeft), references: [keptEdge], bodies: [], camera, viewportHeight: 1000, clip: keepLeft, cut: true })).toBe('outline');
+    });
   });
 
   it('knows a box the section removes entirely', () => {

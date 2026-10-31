@@ -684,12 +684,12 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           const reference = installedReferences.get(line.userData.referenceId)?.reference;
           return reference && isPickingSource(reference);
         });
-        const sourceId = pickCadCurveReference({ raycaster: clippedRay, references: sourceReferences, bodies: [], camera, viewportHeight: container.clientHeight });
+        const sourceId = pickCadCurveReference({ raycaster: clippedRay, references: sourceReferences, bodies: [], camera, viewportHeight: container.clientHeight, clip: pickClip(), cut: true });
         if (sourceId) return sourceId;
       }
       const clip = pickClip(), viewportHeight = container.clientHeight;
       // Sketch and curve outlines are cut with the bodies, so they are picked along the kept part of the ray only.
-      const referenceId = pickCadCurveReference({ raycaster: clippedRay, references: pickableReferences.filter(line => line.userData.contour === true), bodies: pickableBodies, camera, viewportHeight, clip });
+      const referenceId = pickCadCurveReference({ raycaster: clippedRay, references: pickableReferences.filter(line => line.userData.contour === true), bodies: pickableBodies, camera, viewportHeight, clip, cut: true });
       if (referenceId) return referenceId;
       const planes = accepts('plane');
       const datumId = planes ? pickCadCurveReference({ raycaster, references: pickableReferences.filter(line => line.userData.featureKind === 'datum-plane'), bodies: pickableBodies, camera, viewportHeight, clip }) : null;
