@@ -8,6 +8,7 @@ import { CadSketchGraphLayer } from './CadSketchGraphLayer';
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { cadSketchDefinitionMarks } from './cadSketchDefinitionMarks';
+import { cadSketchDimensionMove } from './cadSketchGraphDimensionLayout';
 
 let root: Root, container: HTMLDivElement;
 beforeEach(() => {
@@ -644,5 +645,74 @@ describe('graph definition locks and marks', () => {
     expect(state('point', 'b')).toEqual(['redundant']);
     await h.render({ controls: { ...h.props().controls, diagnosis: null } });
     expect([state('point', 'a'), state('point', 'b'), state('entity', 'edge')]).toEqual([['defined'], ['defined'], ['defined']]);
+  });
+});
+
+describe('graph dimension moves', () => {
+  /** The fixture with its edge's length dimensioned, its dimensions taking picks. */
+  async function dimensioned(value = Math.hypot(10, 5)) {
+    const h = await fixture();
+    const sketch = h.document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
+    const document = parseCadDocument({ ...h.document, features: [{ ...sketch, graph: { ...sketch.graph, relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value }] } }] });
+    await h.render({ controls: { ...h.props().controls, onConfigureRelation: vi.fn(), onSelectDimension: vi.fn() } });
+    await h.source(document);
+    const graph = document.features[0].kind === 'sketch' ? document.features[0].graph! : null;
+    const line = () => { const found = container.querySelector('[data-cad-sketch-dimension-hit="length"] line'); if (!found) throw new Error('Dimension line missing.'); return found; };
+    return { ...h, document, graph: graph!, line };
+  }
+
+  it('moves a dimension line out from its geometry as one edit of its placement alone', async () => {
+    const h = await dimensioned();
+    let finish = () => undefined as void;
+    h.edited.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; })); h.pending.mockClear();
+    await h.pointer(h.line(), 'pointerdown', { clientX: 100, clientY: 100 }, 3);
+    await h.pointer(h.line(), 'pointermove', { clientX: 100, clientY: 90 }, 3);
+    expect(h.edited).not.toHaveBeenCalled();
+    await h.pointer(h.line(), 'pointerup', { clientX: 100, clientY: 90 }, 3);
+    // The line moves 10 mm up, which only moves it away from the edge; its text keeps its place along it.
+    const move = cadSketchDimensionMove(h.graph, h.document.parameters, 1, 'length'); if (!move) throw new Error('Dimension cannot move.');
+    const relation = move.relationAt(move.placementAt('line', { x: 0, y: 0 }, { x: 0, y: 10 }));
+    expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }], expect.any(AbortSignal));
+    expect(relation).toMatchObject({ annotation: { kind: 'linear', along: move.start.kind === 'linear' ? move.start.along : NaN } });
+    expect(h.pending.mock.calls).toEqual([[true]]); expect(h.parentPointer).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(h.pending.mock.calls).toEqual([[true], [false]]); expect(h.error).not.toHaveBeenCalled();
+  });
+
+  it('accepts a move at once from a host that settles it there and then, showing nothing as pending, and reveals the drawn dimension when it is refused', async () => {
+    const h = await dimensioned(); h.pending.mockClear();
+    const drag = async (to: number) => {
+      await h.pointer(h.line(), 'pointerdown', { clientX: 100, clientY: 100 }, 3);
+      await h.pointer(h.line(), 'pointermove', { clientX: 100, clientY: to }, 3); await h.pointer(h.line(), 'pointerup', { clientX: 100, clientY: to }, 3);
+    };
+    await drag(90);
+    expect(h.edited).toHaveBeenCalledTimes(1); expect(h.pending).not.toHaveBeenCalled(); expect(h.error).not.toHaveBeenCalled();
+    // The host kept the old graph, so the released position stays drawn until it is replaced, and nothing more is taken.
+    expect(container.querySelector('[data-cad-sketch-dimension-moving]')).not.toBeNull();
+    await h.source(parseCadDocument({ ...h.document, name: 'Renamed' }));
+    expect(container.querySelector('[data-cad-sketch-dimension-moving]')).toBeNull(); h.pending.mockClear();
+    h.edited.mockImplementationOnce(() => { throw new Error('The CAD draft changed.'); });
+    await drag(80);
+    expect(h.edited).toHaveBeenCalledTimes(2); expect(h.pending).not.toHaveBeenCalled();
+    expect(h.error).toHaveBeenCalledExactlyOnceWith('The CAD draft changed.');
+    expect(container.querySelector('[data-cad-sketch-dimension-moving]')).toBeNull();
+    await drag(80);
+    expect(h.edited).toHaveBeenCalledTimes(3);
+  });
+
+  it('refuses a move of a dimension drawn from a preview that measures something else, and moves nothing during a geometry pick', async () => {
+    const h = await dimensioned(), sketch = h.document.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Sketch fixture missing.');
+    // The preview, of an edit not yet accepted, has the edge 20 mm long.
+    const previewed = { ...sketch.graph, points: sketch.graph.points.map(point => point.id === 'b' ? { ...point, position: [20, 0] as const } : point),
+      relations: [{ ...sketch.graph.relations[0], value: 20 }] as typeof sketch.graph.relations };
+    await h.render({ visual: prepareCadSketchGraphInteraction(previewed, h.document.parameters) });
+    await h.pointer(h.line(), 'pointerdown', { clientX: 100, clientY: 100 }, 3); await h.pointer(h.line(), 'pointermove', { clientX: 100, clientY: 90 }, 3);
+    await h.pointer(h.line(), 'pointerup', { clientX: 100, clientY: 90 }, 3);
+    expect(h.edited).not.toHaveBeenCalled(); expect(container.querySelector('[data-cad-sketch-dimension-moving]')).toBeNull();
+    await h.render({ visual: undefined, controls: { ...h.props().controls, geometryPick: { eligibleEntityIds: ['edge'], eligiblePointIds: [], label: 'Choose edge', dimensionsInteractive: true, onPick: vi.fn(), onCancel: vi.fn() } } });
+    await h.pointer(h.line(), 'pointerdown', { clientX: 100, clientY: 100 }, 3); await h.pointer(h.line(), 'pointermove', { clientX: 100, clientY: 90 }, 3);
+    await h.pointer(h.line(), 'pointerup', { clientX: 100, clientY: 90 }, 3);
+    expect(h.edited).not.toHaveBeenCalled(); expect(container.querySelector('[data-cad-sketch-dimension-moving]')).toBeNull();
   });
 });

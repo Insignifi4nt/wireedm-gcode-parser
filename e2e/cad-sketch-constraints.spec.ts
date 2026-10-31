@@ -848,6 +848,8 @@ test('moves selected constrained geometry privately without distortion, then fin
   expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: feature.id })).feature).toEqual(feature);
   await page.getByRole('button', { name: 'Apply', exact: true }).click();
   await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/30, 5 mm/);
+  // The preview already shows the moved point before Apply finishes, and undo waits for no pending edit, so wait for the Move panel to close.
+  await expect(page.getByRole('textbox', { name: 'Move X', exact: true })).toBeHidden();
   await page.keyboard.press('Control+z'); await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/20, 0 mm/);
   await page.keyboard.press('Control+Shift+z'); await expect(page.locator('[data-cad-sketch-point="b"] title')).toHaveText(/30, 5 mm/);
   expect(await context(page)).toMatchObject({ version: base.version, workflowOpen: true });

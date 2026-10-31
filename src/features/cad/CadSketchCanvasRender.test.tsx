@@ -2,7 +2,7 @@ import { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadSketchFeature } from '@/domain/cad/cadDocument';
-import { createCadDocument } from '@/domain/cad/cadSchema';
+import { createCadDocument, parseCadDocument, withCadSketchPlacements } from '@/domain/cad/cadSchema';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import { CadSketchCanvas } from './CadSketchCanvas';
@@ -532,6 +532,23 @@ describe('sketch canvas cursor rendering', () => {
     // Once the drag ends the moved glyph is back in its row, and both pick their own relations.
     expect(row('v1').classList.contains('is-moved')).toBe(false); expect(plateAt('v1')).toBeGreaterThanOrEqual(0);
     await press('v3'); expect(picked()).toEqual(['v3']); await press('v1'); expect(picked()).toEqual(['v1']);
+  });
+
+  it('moves a dimension without rendering a point or edge row again', async () => {
+    const accepted = parseCadDocument({ ...createCadDocument('Dimension move'), schemaVersion: 2, features: [{ id: 'sketch', name: 'Sketch', suppressed: false, kind: 'sketch', plane: 'XY', offset: 0,
+      profiles: [], graph: { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }],
+        entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'bc', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' }],
+        relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 20 }] } }] });
+    const sketchOf = (document: typeof accepted) => { const sketch = document.features[0]; if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Expected a sketch.'); return sketch; };
+    const { props, show } = await mountCanvas(sketchOf(accepted).graph!, { tool: 'select', sketch: sketchOf(accepted), parameters: accepted.parameters });
+    await show({ graphControls: { ...props().graphControls!, document: accepted } });
+    // The move a released drag makes: the accepted document with the dimension drawn 3 mm further out.
+    const moved = withCadSketchPlacements(accepted, 'sketch', [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 20, annotation: { kind: 'linear', offset: 3, along: 0.5 } }]);
+    if (!moved) throw new Error('Expected the move to be placed.');
+    const dimension = () => container.querySelector('[data-cad-sketch-dimension="length"]')?.innerHTML;
+    const before = dimension(); clearRenders();
+    await show({ sketch: sketchOf(moved), documentVersion: 'two', graphControls: { ...props().graphControls!, document: moved } });
+    expect(dimension()).not.toBe(before); expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]);
   });
 
   it('highlights the measured geometry on dimension hover and selection without rendering rows or the canvas again', async () => {

@@ -5,6 +5,7 @@ import { parseCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketch
 import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { CadSketchGraphDimensions, type CadSketchGraphDimensionsProps } from './CadSketchGraphDimensions';
 import { createCadSketchHighlightStore } from './cadSketchDimensionSelection';
+import { cadSketchDimensionMove } from './cadSketchGraphDimensionLayout';
 
 let root: Root, container: HTMLDivElement;
 beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); container = document.createElement('div'); document.body.append(container); root = createRoot(container); });
@@ -159,5 +160,85 @@ describe('graph dimension selection and editing', () => {
     expect(view.select.mock.calls).toEqual([...labels].map(() => [expect.objectContaining({ id: relation.id }), false]));
     expect(view.configure).toHaveBeenCalledTimes(labels.length); expect(view.configure.mock.calls.every(([value]) => value === relation)).toBe(true);
     expect(view.parent).not.toHaveBeenCalled(); expect(JSON.stringify(corner)).toBe(before);
+  });
+});
+
+describe('moving a dimension', () => {
+  const parameters = { length: 20 };
+  async function drag(target: Element, type: string, clientX: number, clientY: number, buttons = type === 'pointerup' ? 0 : 1) {
+    const event = new MouseEvent(type, { button: 0, buttons, clientX, clientY, bubbles: true, cancelable: true });
+    Object.defineProperties(event, { pointerId: { value: 5 }, isPrimary: { value: true } });
+    await act(async () => { target.dispatchEvent(event); });
+    return event;
+  }
+  const label = () => { const found = container.querySelector<SVGGElement>('[data-cad-sketch-dimension="dimension"] [role="button"]'); if (!found) throw new Error('Label missing.'); return found; };
+  const drawn = () => container.querySelector('[data-cad-sketch-dimension="dimension"]');
+  const moving = () => container.querySelector('[data-cad-sketch-dimension-moving]');
+  /** The relation a drag of the text by `dx`, `dy` sketch millimetres stores. */
+  const movedBy = (dx: number, dy: number) => {
+    const move = cadSketchDimensionMove(graph, parameters, .1, 'dimension'); if (!move) throw new Error('Dimension cannot move.');
+    const from = { x: move.layout.label[0], y: move.layout.label[1] };
+    return move.relationAt(move.placementAt('label', from, { x: from.x + dx, y: from.y + dy }));
+  };
+
+  it('draws only the dragged dimension while its text moves, then submits its placement once on release and selects it', async () => {
+    const onMove = vi.fn(() => true), view = mount(graph, parameters, { onMove });
+    await act(async () => view.render());
+    await drag(label(), 'pointerdown', 100, 100);
+    // Within 4 px the press is still a click.
+    await drag(label(), 'pointermove', 103, 102);
+    expect(moving()).toBeNull(); expect(drawn()?.classList.contains('is-moving')).toBe(false);
+    await drag(label(), 'pointermove', 140, 80);
+    expect(moving()?.getAttribute('data-cad-sketch-dimension-moving')).toBe('dimension'); expect(moving()?.getAttribute('pointer-events')).toBe('none');
+    expect(drawn()?.classList.contains('is-moving')).toBe(true);
+    expect(onMove).not.toHaveBeenCalled(); expect(view.select).not.toHaveBeenCalled();
+    // Screen Y runs down: 40 px right and 20 px up at 0.1 mm per pixel.
+    await drag(label(), 'pointerup', 140, 80); await click(label());
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'dimension' }), movedBy(4, 2));
+    expect(movedBy(4, 2)).toMatchObject({ annotation: { kind: 'linear', along: expect.closeTo(0.7, 9) } });
+    // The drag selects what it moved; the click after the release is its own and selects nothing more.
+    expect(view.select).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'dimension' }), false); expect(view.parent).not.toHaveBeenCalled();
+    // Until the edit applies the dimension stays where it was dropped, and picks wait for it.
+    expect(moving()).not.toBeNull();
+    await drag(label(), 'pointerdown', 140, 80); await drag(label(), 'pointermove', 180, 80); await drag(label(), 'pointerup', 180, 80);
+    expect(onMove).toHaveBeenCalledOnce();
+    const next = parseCadSketchGraph({ ...graph, relations: [movedBy(4, 2)] });
+    await act(async () => view.render({ graph: next }));
+    expect(moving()).toBeNull(); expect(drawn()?.classList.contains('is-moving')).toBe(false);
+  });
+
+  it('keeps a still press a click that selects, and keeps a selection already holding what it drags', async () => {
+    const onMove = vi.fn(() => true), view = mount(graph, parameters, { onMove, selectedIds: ['dimension', 'other'] });
+    await act(async () => view.render());
+    await drag(label(), 'pointerdown', 100, 100); await drag(label(), 'pointermove', 102, 98); await drag(label(), 'pointerup', 102, 98); await click(label());
+    expect(onMove).not.toHaveBeenCalled(); expect(view.select).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ id: 'dimension' }), false);
+    view.select.mockClear();
+    await drag(label(), 'pointerdown', 100, 100); await drag(label(), 'pointermove', 90, 100); await drag(label(), 'pointerup', 90, 100); await click(label());
+    expect(onMove).toHaveBeenCalledOnce(); expect(view.select).not.toHaveBeenCalled();
+  });
+
+  it('cancels on Escape, keeping the selection and drawing the dimension where it was, and on a release of the button elsewhere', async () => {
+    const onMove = vi.fn(() => true), view = mount(graph, parameters, { onMove, selectedIds: ['dimension'] });
+    await act(async () => view.render());
+    await drag(label(), 'pointerdown', 100, 100); await drag(label(), 'pointermove', 140, 80);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    await act(async () => { label().dispatchEvent(escape); });
+    expect(escape.defaultPrevented).toBe(true); expect(moving()).toBeNull(); expect(drawn()?.classList.contains('is-moving')).toBe(false);
+    await drag(label(), 'pointermove', 160, 80); await drag(label(), 'pointerup', 160, 80); await click(label());
+    expect(onMove).not.toHaveBeenCalled(); expect(view.select).not.toHaveBeenCalled(); expect(view.parent).not.toHaveBeenCalled();
+    // A move reporting no button held, as after a release outside the window, ends the drag unsubmitted.
+    await drag(label(), 'pointerdown', 100, 100); await drag(label(), 'pointermove', 140, 80); await drag(label(), 'pointermove', 150, 80, 0);
+    expect(moving()).toBeNull(); await drag(label(), 'pointerup', 150, 80);
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('draws the dimension where it was when the move is refused, and never drags while picks are not accepted', async () => {
+    const onMove = vi.fn(() => false), view = mount(graph, parameters, { onMove });
+    await act(async () => view.render());
+    await drag(label(), 'pointerdown', 100, 100); await drag(label(), 'pointermove', 140, 80); await drag(label(), 'pointerup', 140, 80);
+    expect(onMove).toHaveBeenCalledOnce(); expect(moving()).toBeNull(); expect(drawn()?.classList.contains('is-moving')).toBe(false);
+    await act(async () => view.render({ interactive: false }));
+    await drag(label(), 'pointerdown', 100, 100); await drag(label(), 'pointermove', 140, 80); await drag(label(), 'pointerup', 140, 80);
+    expect(moving()).toBeNull(); expect(onMove).toHaveBeenCalledOnce();
   });
 });

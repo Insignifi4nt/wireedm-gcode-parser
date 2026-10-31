@@ -1,6 +1,6 @@
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
-import type { CadSketchGraph, CadSketchGraphIssue, CadSketchPointLineDistanceRelation } from './cadSketchGraph';
+import type { CadSketchGraph, CadSketchGraphIssue, CadSketchGraphRelation, CadSketchPointLineDistanceRelation } from './cadSketchGraph';
 import { resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
 import { Value } from '@sinclair/typebox/value';
 import { CadIdentifierSchema } from './cadPrimitives';
@@ -65,22 +65,40 @@ export function checkCadSketchPointLineDistanceRelation(graph: CadSketchGraph, r
 }
 
 /**
- * An edit that turns a retained line around keeps each distance it carries over on the same physical side. A distance whose
- * line and side the edit left as they were takes the other side when the line's start and end swapped places, by point ID or
- * declared Coincident identity before or after the edit, so an end moved onto a point it was joined to is the same end. The
- * two snapshots' joins are read separately and never chained, which could merge two distinct ends. Positions play no part, so
- * the result does not depend on the order of edits in a batch or on geometry not yet solved. A side the edit changes is kept as given; a later edit can state the side for the new direction.
+ * The line a relation's side or placement is taken along, from its start to its end, and what else fixes that frame: a point to line
+ * distance, driving or reference, takes its side and its placement from its line, and a line's reference length its placement.
  */
-export function keepCadSketchPointLineSides(previous: CadSketchGraph, next: CadSketchGraph): CadSketchGraph {
-  if (previous === next || !next.relations.some(relation => relation.kind === 'point-line-distance')) return next;
-  const carried = new Map(previous.relations.flatMap(relation => relation.kind === 'point-line-distance' ? [[relation.id, relation] as const] : []));
+function orientedLineOf(relation: CadSketchGraphRelation): { readonly lineId: string; readonly frame: string } | null {
+  if (relation.kind === 'point-line-distance') return { lineId: relation.lineId, frame: `distance:${relation.pointId}` };
+  if (relation.kind !== 'reference-dimension') return null;
+  const measurement = relation.measurement;
+  return measurement.kind === 'point-line-distance' ? { lineId: measurement.lineId, frame: `reference:${measurement.pointId}` }
+    : measurement.kind === 'line-length' ? { lineId: measurement.entityId, frame: 'length' } : null;
+}
+
+/**
+ * An edit that turns a retained line around keeps each distance it carries over on the same physical side, and each dimension
+ * placed along it where it was drawn. A distance whose line and side the edit left as they were takes the other side, and a
+ * point to line distance or a line's reference length whose placement the edit left as it was is turned round with the line,
+ * when the line's start and end swapped places, by point ID or declared Coincident identity before or after the edit, so an end
+ * moved onto a point it was joined to is the same end. The two snapshots' joins are read separately and never chained, which
+ * could merge two distinct ends. Positions play no part, so the result does not depend on the order of edits in a batch or on
+ * geometry not yet solved. A side or placement the edit changes is kept as given; a later edit can state either for the new direction.
+ */
+export function keepCadSketchLineSides(previous: CadSketchGraph, next: CadSketchGraph): CadSketchGraph {
+  if (previous === next || !next.relations.some(relation => orientedLineOf(relation))) return next;
+  const carried = new Map(previous.relations.flatMap(relation => orientedLineOf(relation) ? [[relation.id, relation] as const] : []));
   const lines = (graph: CadSketchGraph) => new Map(graph.entities.flatMap(entity => entity.kind === 'line' ? [[entity.id, entity] as const] : []));
   const wereLines = lines(previous), nowLines = lines(next);
   let joins: readonly ((a: string, b: string) => boolean)[] | undefined, changed = false;
   const relations = next.relations.map(relation => {
-    if (relation.kind !== 'point-line-distance') return relation;
-    const prior = carried.get(relation.id), before = wereLines.get(relation.lineId), after = nowLines.get(relation.lineId);
-    if (prior?.lineId !== relation.lineId || prior.side !== relation.side || !before || !after || before.startPointId === after.startPointId && before.endPointId === after.endPointId) return relation;
+    const oriented = orientedLineOf(relation), prior = carried.get(relation.id), was = prior && orientedLineOf(prior);
+    if (!oriented || was?.lineId !== oriented.lineId || was.frame !== oriented.frame) return relation;
+    const before = wereLines.get(oriented.lineId), after = nowLines.get(oriented.lineId);
+    const keepsSide = relation.kind === 'point-line-distance' && prior?.kind === 'point-line-distance' && prior.side === relation.side;
+    const placement = 'annotation' in relation ? relation.annotation : undefined, priorPlacement = prior && 'annotation' in prior ? prior.annotation : undefined;
+    const keepsPlacement = placement?.kind === 'linear' && priorPlacement?.kind === 'linear' && placement.offset === priorPlacement.offset && placement.along === priorPlacement.along;
+    if (!keepsSide && !keepsPlacement || !before || !after || before.startPointId === after.startPointId && before.endPointId === after.endPointId) return relation;
     // Joins on either side of the edit count, so an end the edit replaced with a point once joined to it, even one it then
     // removed with its Coincident, is still the same end.
     joins ??= [previous, next].map(graph => {
@@ -94,7 +112,9 @@ export function keepCadSketchPointLineSides(previous: CadSketchGraph, next: CadS
     // Ends joined to each other have no direction to keep, and an end that matches both old ends is no clear swap.
     if (joinedBefore(wasStart, wasEnd) || joinedAfter(start, end) || !same(start, wasEnd) || !same(end, wasStart) || same(start, wasStart) || same(end, wasEnd)) return relation;
     changed = true;
-    return { ...relation, side: relation.side === 'left' ? 'right' as const : 'left' as const };
+    // Turned round with its line, a placement's offset is to the other side of it and its text the same way along it from the other end.
+    const turned = keepsPlacement && placement?.kind === 'linear' ? { annotation: { kind: 'linear' as const, offset: -placement.offset, along: Math.min(1e4, Math.max(-1e4, 1 - placement.along)) } } : {};
+    return { ...relation, ...turned, ...(keepsSide && relation.kind === 'point-line-distance' ? { side: relation.side === 'left' ? 'right' as const : 'left' as const } : {}) } as typeof relation;
   });
   return changed ? { ...next, relations } : next;
 }

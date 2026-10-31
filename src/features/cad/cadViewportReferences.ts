@@ -5,7 +5,7 @@ import { prepareCadDatumFrames, resolveCadSketchPlacement, resolveCadWorldDatum,
 import { cadFrameEntityBounds } from '@/domain/cad/cadFrameBounds';
 import { cadPlanePointToWorld } from '@/domain/cad/cadPlanes';
 import { cadScalarParameterNames } from '@/domain/cad/cadParameters';
-import { cadFeatureDependencies, cadFeatureProducesBody, isAcceptedCadSketchSource } from '@/domain/cad/cadSchema';
+import { cadFeatureDependencies, cadFeatureProducesBody, cadSketchPlacedFrom, isAcceptedCadSketchSource } from '@/domain/cad/cadSchema';
 import { readCadSketchGeometryParameters, sameCadSketchGeometryValues } from '@/domain/cad/cadSketchParameterReads';
 import { cadProfileToEntities, resolveCadProfile, type CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
 import { arcBounds, boundsFromPoints, emptyBounds, mergeBounds } from '@/domain/path-intel/segments';
@@ -67,7 +67,8 @@ interface PreparedSketchReferences {
   readonly references: readonly CadViewportReference[];
 }
 // An accepted sketch cannot change, so its references depend only on the values its profiles and graph read and on
-// where it is placed. A sketch that a revision leaves unchanged keeps its reference objects, and the viewport its lines.
+// where it is placed. A sketch that a revision leaves unchanged keeps its reference objects, and the viewport its lines;
+// so does one whose dimensions alone were moved, as it is held under the sketch whose geometry it keeps.
 // Only the sketches of the last two preparations that kept any are held: enough for the viewport to switch between a
 // preview and its document, while undo history never keeps sampled references alive.
 let recentSketches = new Map<CadSketchFeature, PreparedSketchReferences>(), olderSketches = recentSketches;
@@ -107,14 +108,15 @@ function prepareSketchSources(feature: CadSketchFeature, parameters: Readonly<Re
   if (!reads) return { sources: cadSketchSources(feature, parameters, place) };
   let placement: CadResolvedPlacement;
   try { placement = place(); } catch { return { sources: cadSketchSources(feature, parameters, place) }; }
-  const previous = [recentSketches.get(feature), olderSketches.get(feature)]
+  const source = cadSketchPlacedFrom(feature);
+  const previous = [recentSketches.get(source), olderSketches.get(source)]
     .find(entry => entry && sameCadSketchGeometryValues(reads.values, entry.values) && sameCadPlacement(placement, entry.placement));
   if (previous) {
-    kept.set(feature, previous);
+    kept.set(source, previous);
     return { references: previous.references };
   }
   return { sources: cadSketchSources(feature, reads.environment, () => placement),
-    remember: references => kept.set(feature, { values: reads.values, placement, references }) };
+    remember: references => kept.set(source, { values: reads.values, placement, references }) };
 }
 
 function cadSketchSources(feature: CadSketchFeature, parameters: Readonly<Record<string, number>>, place: () => CadResolvedPlacement): ReferenceSource[] {

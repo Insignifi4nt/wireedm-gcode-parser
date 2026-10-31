@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { RelationCoincidentIcon, RelationCollinearIcon, RelationConcentricIcon, RelationEqualLengthIcon, RelationEqualRadiusIcon, RelationFixIcon, RelationHorizontalIcon,
   RelationMidpointIcon, RelationParallelIcon, RelationPerpendicularIcon, RelationPointOnCurveIcon, RelationPointOnLineIcon, RelationSymmetricIcon, RelationTangentIcon,
   RelationVerticalIcon, type WorkbenchDrawnIconComponent } from '@wire-edm/icons-react';
-import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { cadSketchGraphPlacedFrom, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchDimensionPickOf, cadSketchHighlightRelationIds, cadSketchPointIdentity, createCadSketchDimensionKeys, isCadSketchGlyphRelation, type CadSketchDimensionPick,
   type CadSketchHighlightSource, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import { CAD_SKETCH_RELATION_GLYPH_PIXELS, cadSketchRelationGlyphEntries, cadSketchRelationGlyphOverlaps, cadSketchRelationGlyphPaintOrder, cadSketchRelationGlyphPixel,
@@ -226,8 +226,10 @@ function useRestingReveal(layer: SVGGElement | null, highlight: CadSketchHighlig
  * up through the shared store. Above the limit, hover changes which glyphs are drawn only once the pointer rests, so moving across a large
  * sketch renders no row.
  */
-export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ graph, topology = graph, parameters, topologyParameters = parameters, center, mmPerPixel, selectedIds,
+export const CadSketchRelationGlyphs = memo(function CadSketchRelationGlyphs({ graph: drawnGraph, topology: drawnTopology = drawnGraph, parameters, topologyParameters = parameters, center, mmPerPixel, selectedIds,
   inspectedRelationId, focus, limit, interactive, focusable = interactive, highlight, covered, onSelect, onOpen, onDelete, onMenu }: CadSketchRelationGlyphsProps) {
+  // Relations with marks hold no placement, so moving a dimension keeps every mark, its place and its row.
+  const graph = cadSketchGraphPlacedFrom(drawnGraph), topology = cadSketchGraphPlacedFrom(drawnTopology);
   // Naming and stacking follow the topology; a drag only places the shown entries again.
   const entries = useMemo(() => cadSketchRelationGlyphEntries(topology), [topology]);
   // A glyph keeps its element while the graph names the same relations; a replacement under a reused ID mounts afresh and never inherits hover or focus.

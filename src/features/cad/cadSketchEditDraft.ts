@@ -1,9 +1,9 @@
 import type { CadDocument, CadFeature, CadScalar } from '@/domain/cad/cadDocument';
 import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
-import { validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
+import { cadEditsOnlyPlaceDimensions, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
 import { CadError } from '@/domain/cad/cadError';
-import { keepCadSketchPointLineSides } from '@/domain/cad/cadSketchPointLineDistanceRelations';
+import { keepCadSketchLineSides } from '@/domain/cad/cadSketchPointLineDistanceRelations';
 import { cadSketchCellModeForAreas, prepareCadSketchCells, type CadPreparedSketchCatalog } from '@/domain/cad/cadSketchRegionInspection';
 import { resolveCadSketchRegions } from '@/domain/cad/cadSketchGeometry';
 import type { CadSketchRegionSelection } from '@/domain/cad/cadSketchRegionSelection';
@@ -137,6 +137,16 @@ export class CadSketchEditDraft {
       this.assertOpen(); assertCurrent?.(); this.assertOwnedPrefix(candidate); return candidate;
     }, combined, () => { this.assertOpen(); assertCurrent?.(); });
   }
+  /**
+   * Accepts at once a batch that only moves dimensions of the owned sketch, since nothing in it needs preparing; null for any other
+   * batch, which `editPrepared` takes. It is one undo step of the draft, as a prepared edit is.
+   */
+  editPlacements(edits: readonly CadEdit[], expectedLocalVersion = this.local.getSnapshot().version, assertCurrent?: () => void) {
+    this.validateEdits(edits);
+    if (!cadEditsOnlyPlaceDimensions(this.local.getSnapshot().document, edits)) return null;
+    assertCurrent?.();
+    return this.local.edit(structuredClone(edits), expectedLocalVersion);
+  }
   undo(expectedLocalVersion = this.local.getSnapshot().version) { this.assertOpen(); this.local.undo(expectedLocalVersion); }
   redo(expectedLocalVersion = this.local.getSnapshot().version) { this.assertOpen(); this.local.redo(expectedLocalVersion); }
   setWorkflowOpen(open: boolean) { this.assertOpen(); this.local.setWorkflowOpen(open, 'editor'); }
@@ -182,11 +192,11 @@ export class CadSketchEditDraft {
         if (retained?.kind !== 'linear-pattern' || retained.idPrefix !== relation.idPrefix || !same(retained.seed, relation.seed))
           edits.push({ kind: 'remove-sketch-relation', sketchId: feature.id, relationId: relation.id });
       }
-      // The draft's own edits already kept each distance's side. Publishing its final state as one edit would turn a side the
-      // draft deliberately restated after reversing its line, so release each such distance first: the final state then states
-      // it exactly, before any solve that edit needs.
+      // The draft's own edits already kept each distance's side and each placement along a line. Publishing its final state as one
+      // edit would turn a side or placement the draft deliberately restated after reversing its line, so release each such relation
+      // first: the final state then states it exactly, before any solve that edit needs.
       if (original.kind === 'sketch' && feature.kind === 'sketch' && original.graph && feature.graph) {
-        const graph = feature.graph, republished = keepCadSketchPointLineSides(original.graph, graph);
+        const graph = feature.graph, republished = keepCadSketchLineSides(original.graph, graph);
         if (republished !== graph) for (const [index, relation] of graph.relations.entries())
           if (republished.relations[index] !== relation) edits.push({ kind: 'remove-sketch-relation', sketchId: feature.id, relationId: relation.id });
       }

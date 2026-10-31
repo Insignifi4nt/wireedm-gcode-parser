@@ -409,4 +409,28 @@ describe('shared CAD edit preparation with the real sketch solver', () => {
     await expect(prepareCadEdits(document, [{ kind: 'set-parameter', name: 'unrelated', value: 1 }], solver)).rejects
       .toMatchObject({ diagnostics: { redundantIds: expect.arrayContaining(['distance-again']) } });
   });
+
+  it('moves a driving or reference dimension without solving its sketch, which any other change to it solves', async () => {
+    const line = source(), sketch = line.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Missing fixture graph.');
+    // Satisfied but redundant, the sketch only prepares while it is not solved.
+    const redundant = parseCadDocument({ ...line, features: [{ ...sketch, graph: { ...sketch.graph, relations: [...sketch.graph.relations,
+      { id: 'distance-again', kind: 'distance', pointIds: ['a', 'b'], value: ' length ' }, { id: 'measured', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'ab' } }] } }] });
+    const relations = graphOf(redundant).relations, distance = relations[1], measured = relations[3];
+    let solves = 0; const counting = { solve: (...args: Parameters<typeof solver.solve>) => { solves += 1; return solver.solve(...args); } };
+    for (const relation of [{ ...distance, annotation: { kind: 'linear', offset: -4, along: 0.75 } } as typeof distance, { ...measured, annotation: { kind: 'linear', offset: 6, along: 1.5 } } as typeof measured]) {
+      const edits: CadEdit[] = [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation }];
+      // The controller then takes the plain path, which accepts it at once.
+      expect(needsCadSketchPreparation(redundant, edits)).toBe(false);
+      const prepared = await prepareCadEdits(redundant, edits, counting);
+      expect(solves).toBe(0);
+      expect(graphOf(prepared.document)).toEqual({ ...graphOf(redundant), relations: relations.map(item => item.id === relation.id ? relation : item) });
+      // Nothing is parsed again: the accepted geometry is kept as it is.
+      expect(graphOf(prepared.document).points).toBe(graphOf(redundant).points);
+    }
+    // A change to what the dimension measures solves, which finds the redundancy.
+    await expect(prepareCadEdits(redundant, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { ...distance, value: ' length + 0 ', annotation: { kind: 'linear', offset: -4, along: 0.75 } } as typeof distance }], counting))
+      .rejects.toMatchObject({ diagnostics: { redundantIds: expect.arrayContaining(['distance-again']) } });
+    expect(solves).toBeGreaterThan(0);
+  });
 });

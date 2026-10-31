@@ -2,12 +2,15 @@
 import { describe, expect, it } from 'vitest';
 import type { CadDocument } from '@/domain/cad/cadDocument';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
-import { checkCadSketchGraph, type CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { createCadFreshSketchGraph } from '@/domain/cad/cadFreshSketchGraph';
+import { createCadSketchCornerTreatment } from '@/domain/cad/cadSketchCornerTreatment';
 import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { prepareCadEdits } from './cadEditPreparation';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { CadSession } from './cadSession';
 import { CadSketchEditDraft } from './cadSketchEditDraft';
+import { layoutCadSketchGraphDimensions } from './cadSketchGraphDimensionLayout';
 import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 
 const runtime = createCadSketchTestSolver();
@@ -245,5 +248,85 @@ describe('a line whose endpoints an edit swaps', () => {
     const plain = new CadSketchEditDraft(main.getSnapshot(), 'sketch');
     await plain.editPrepared([swapped(main.getSnapshot().document)], prepare);
     expect(plain.finishEdits(main.getSnapshot()).edits).toEqual([expect.objectContaining({ kind: 'update-feature' })]);
+  });
+});
+
+describe('dimensions placed along a line whose endpoints an edit swaps', () => {
+  const linear = (offset: number, along: number) => ({ kind: 'linear', offset, along } as const);
+  /**
+   * A base line (0,0) to (20,0) with a side up to (20,10) and a top back over it: the lengths of the base and the top, two distances to the
+   * base and the gap between it and the top, a distance between free points and the angle at the corner, every one of them placed.
+   */
+  const placed = () => part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'c', position: [20, 10] }, { id: 't', position: [0, 10] },
+    { id: 'p', position: [5, 4] }, { id: 'q', position: [30, -6] }],
+  entities: [{ id: 'base', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }, { id: 'side', kind: 'line', construction: false, startPointId: 'b', endPointId: 'c' },
+    { id: 'top', kind: 'line', construction: false, startPointId: 't', endPointId: 'c' }],
+  relations: [{ id: 'floor', kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] },
+    { id: 'parallel', kind: 'parallel', lineIds: ['base', 'top'] },
+    { id: 'length', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'base' }, annotation: linear(3, 0.25) },
+    { id: 'topLength', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'top' }, annotation: linear(-3, 0.9) },
+    { id: 'span', kind: 'distance', pointIds: ['a', 'b'], value: 20, annotation: linear(-4, 0.7) },
+    { ...gap(4, 'left'), annotation: linear(6, 0.3) },
+    { id: 'measured', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'q', lineId: 'base' }, annotation: linear(-2, 0.8) },
+    { id: 'between', kind: 'point-line-distance', pointId: 't', lineId: 'base', side: 'left', value: 10, annotation: linear(25, 0.6) },
+    { id: 'aligned', kind: 'distance', pointIds: ['p', 'q'], value: Math.hypot(25, 10), annotation: linear(2, 0.4) },
+    { id: 'corner', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'side', towardPointId: 'c' }], sense: 'cw', value: 90, annotation: { kind: 'angle', radius: 6, along: 0.3 } }] });
+  /** Where each drawn dimension's text is, a chamfer's setbacks one by one. */
+  const labels = (document: CadDocument) => Object.fromEntries(layoutCadSketchGraphDimensions(graphOf(document), document.parameters, .1)
+    .map(layout => [layout.kind === 'setback' ? `${layout.relation.id}:${layout.side}` : layout.relation.id, layout.label.map(value => Math.round(value * 1e6) / 1e6 + 0)]));
+  const reversing = (document: CadDocument, ids: readonly string[], relations: (graph: CadSketchGraph) => CadSketchGraph['relations'] = graph => graph.relations) => {
+    const graph = graphOf(document), sketch = document.features[0];
+    return { kind: 'update-feature', feature: { ...sketch, graph: { ...graph, relations: relations(graph),
+      entities: graph.entities.map(entity => entity.kind === 'line' && ids.includes(entity.id) ? { ...entity, startPointId: entity.endPointId, endPointId: entity.startPointId } : entity) } } } as const;
+  };
+  const relationOf = (document: CadDocument, id: string) => graphOf(document).relations.find(relation => relation.id === id);
+  /** A sketch's relations to a rounding error, which a placement turned round twice can carry. */
+  const stored = (document: CadDocument) => JSON.parse(JSON.stringify(graphOf(document).relations, (_, value) => typeof value === 'number' ? Math.round(value * 1e9) / 1e9 : value));
+
+  it('keeps every label where it was, whichever lines turn round', async () => {
+    const source = placed(), before = labels(source);
+    expect(Object.keys(before).sort()).toEqual(['aligned', 'between', 'corner', 'gap', 'length', 'measured', 'span', 'topLength']);
+    for (const ids of [['base'], ['side'], ['top'], ['base', 'side', 'top']]) {
+      const reversed = (await prepareCadEdits(source, [reversing(source, ids)], runtime)).document;
+      expect(labels(reversed)).toEqual(before);
+      // Turned round twice, each dimension is stored as it was.
+      const restored = (await prepareCadEdits(reversed, [reversing(reversed, ids)], runtime)).document;
+      expect(stored(restored)).toEqual(stored(source));
+    }
+    // Along a reversed line a placement's offset is to the other side and its text the same way along it from the other end.
+    const reversed = (await prepareCadEdits(source, [reversing(source, ['base'])], runtime)).document;
+    expect(relationOf(reversed, 'length')).toMatchObject({ annotation: linear(-3, 0.75) });
+    expect(relationOf(reversed, 'gap')).toMatchObject({ side: 'right', annotation: linear(-6, 0.7) });
+    expect(relationOf(reversed, 'measured')).toMatchObject({ annotation: linear(2, expect.closeTo(0.2, 12)) });
+    for (const id of ['span', 'aligned', 'corner', 'topLength']) expect(relationOf(reversed, id)).toEqual(relationOf(source, id));
+  });
+
+  it('keeps each chamfer setback where it was', async () => {
+    const rectangle = createCadFreshSketchGraph({ geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 }, construction: false,
+      createId: (() => { let n = 0; return () => `r_${++n}`; })() });
+    const { graph } = createCadSketchCornerTreatment({ graph: rectangle, parameters: {}, pointId: 'r_1', treatment: { kind: 'chamfer', setbacks: [2, 3] }, createId: (() => { let n = 0; return () => `c_${++n}`; })() });
+    const source = part({ ...graph, relations: graph.relations.map(relation => relation.kind === 'chamfer-corner'
+      ? { ...relation, annotation: { kind: 'setbacks', sides: [{ offset: 1.5, along: 0.2 }, { offset: -2, along: 1.4 }] } } : relation) }), before = labels(source);
+    // Both setbacks are drawn where they were put, not where they would be by default.
+    const setbacks = (labelled: Record<string, unknown>) => Object.entries(labelled).filter(([key]) => key.includes(':'));
+    expect(setbacks(before)).toHaveLength(2); expect(setbacks(labels(part(graph)))).not.toEqual(setbacks(before));
+    const reversed = (await prepareCadEdits(source, [reversing(source, graph.entities.map(entity => entity.id))], runtime)).document;
+    expect(labels(reversed)).toEqual(before);
+  });
+
+  it('keeps a placement the same edit states, and publishes a draft that restates one after reversing the line exactly', async () => {
+    const source = placed(), stated = linear(1, 0.5);
+    const restated = (await prepareCadEdits(source, [reversing(source, ['base'], graph => graph.relations.map(relation => relation.id === 'measured' ? { ...relation, annotation: stated } as CadSketchGraphRelation : relation))], runtime)).document;
+    expect(relationOf(restated, 'measured')).toMatchObject({ annotation: stated }); expect(relationOf(restated, 'length')).toMatchObject({ annotation: linear(-3, 0.75) });
+    const main = new CadSession(source), base = main.getSnapshot(), draft = new CadSketchEditDraft(base, 'sketch');
+    const prepare = async (document: CadDocument, edits: readonly Parameters<typeof prepareCadEdits>[1][number][]) => (await prepareCadEdits(document, edits, runtime)).document;
+    await draft.editPrepared([reversing(base.document, ['base'])], prepare);
+    // The draft puts the reference's text back to its old numbers, which along the reversed line is elsewhere.
+    await draft.editPrepared([set({ ...relationOf(draft.getSnapshot().document, 'measured')!, annotation: linear(-2, 0.8) } as CadSketchGraphRelation)], prepare);
+    const local = draft.getSnapshot().document, finish = draft.finishEdits(base);
+    expect(finish.edits).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'measured' }, expect.objectContaining({ kind: 'update-feature' })]);
+    await main.editPrepared(base.version, document => prepare(document, finish.edits), undefined, () => draft.assertCurrent(main.getSnapshot(), finish.localVersion));
+    expect(graphOf(main.getSnapshot().document)).toEqual(graphOf(local));
+    expect(labels(main.getSnapshot().document)).toEqual({ ...labels(source), measured: labels(local).measured });
   });
 });

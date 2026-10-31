@@ -91,6 +91,26 @@ describe.each(['browser-cache', 'directory'] as const)('CAD persistence in %s', 
     const graph=sketch.graph, values=graph.relations.filter(r=>r.kind==='reference-dimension').map(r=>measureCadSketchReferenceDimension(graph,reopened.document.parameters,r));
     expect(values[0]).toBeCloseTo(Math.sqrt(1000),12);expect(values[1]).toBeCloseTo(Math.sqrt(1000),12);expect(values[2]).toBe(8);
   });
+  it('round trips where dimensions are drawn, saves a move of one alone and refuses a placement of the wrong kind before writes', async () => {
+    const source=parseCadDocument({...createCadDocument('Placed dimensions','placed-dimensions'),schemaVersion:2,parameters:{span:40},features:[{
+      id:'sketch',kind:'sketch',name:'Sketch',suppressed:false,plane:'XY',offset:0,profiles:[],graph:{
+        points:[{id:'a',position:[0,0]},{id:'b',position:[' span ',0]},{id:'o',position:[10,10]}],
+        entities:[{id:'base',kind:'line',startPointId:'a',endPointId:'b',construction:false},{id:'hole',kind:'circle',centerPointId:'o',radius:4,construction:false}],
+        relations:[{id:'length',kind:'distance',pointIds:['a','b'],value:' span ',annotation:{kind:'linear',offset:-6.25,along:1.5}},
+          {id:'size',kind:'radial-size',entityId:'hole',quantity:'diameter',value:8,annotation:{kind:'radial',angle:-2.5,distance:12}},
+          {id:'gap',kind:'reference-dimension',measurement:{kind:'point-line-distance',pointId:'o',lineId:'base'},annotation:{kind:'linear',offset:3,along:0.25}}]}
+    }]});
+    const first=await saveCadDocument(adapter,source,{expectedSavedVersion:null});expect((await loadCadDocument(adapter,source.id)).document).toEqual(source);
+    const sketch=source.features[0];if(sketch.kind!=='sketch'||!sketch.graph)throw Error('Missing placed graph');
+    const [length,size,gap]=sketch.graph.relations;
+    const moved=applyCadEdits(source,[{kind:'set-sketch-relation',sketchId:'sketch',relation:{...length,annotation:{kind:'linear',offset:9,along:0.5}} as typeof length}]);
+    const second=await saveCadDocument(adapter,moved,{expectedSavedVersion:first.savedVersion}),reopened=(await loadCadDocument(adapter,source.id)).document;
+    expect(reopened).toEqual(moved);expect(reopened.features[0]).toMatchObject({graph:{relations:[{...length,annotation:{kind:'linear',offset:9,along:0.5}},size,gap]}});
+    const path=cadDocumentPath(source.id),raw=await adapter.readExactText?.(path),writes=vi.spyOn(adapter,'writeText');
+    const forged=structuredClone(moved),owner=forged.features[0];if(owner.kind!=='sketch'||!owner.graph)throw Error('Owner missing.');
+    Reflect.set(owner.graph.relations[1],'annotation',{kind:'linear',offset:1,along:0.5});
+    await expect(saveCadDocument(adapter,forged,{expectedSavedVersion:second.savedVersion})).rejects.toThrow();expect(writes).not.toHaveBeenCalled();expect(await adapter.readExactText?.(path)).toBe(raw);
+  });
   it('round trips exact reference witnesses and numeric snapshots and refuses a stale or forged cache before writes', async () => {
     const old = lineReferencePart(false, true), first = await saveCadDocument(adapter, old, { expectedSavedVersion: null });
     const linked = applyCadEdits(old, [lineUseReference, lineMidpoint]), second = await saveCadDocument(adapter, linked, { expectedSavedVersion: first.savedVersion });

@@ -1,8 +1,9 @@
 import { userFacingMessage } from '@/lib/userMessage';
+import { Value } from '@sinclair/typebox/value';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type MouseEvent } from 'react';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
-import type { CadEdit } from '@/domain/cad/cadOperations';
-import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import { cadEditsOnlyPlaceDimensions, type CadEdit } from '@/domain/cad/cadOperations';
+import { cadSketchGraphPlacedFrom, type CadSketchGraph, type CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import type { CadAnalyticBoundary } from '@/domain/cad/cadSketchGeometry';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
@@ -12,6 +13,7 @@ import { DRAG_GRID_CATCH_PIXELS, magnetSketchPoint, magnetSketchValue, type Sket
 import { cadArcSvgPath } from './cadSketchSvg';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { CadSketchGraphDimensions } from './CadSketchGraphDimensions';
+import { cadSketchRelationsEqualButPlacement } from '@/domain/cad/cadSketchPlacedDimensions';
 import { CadSketchRelationGlyphs, type CadSketchRelationGlyphFocus } from './CadSketchRelationGlyphs';
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
@@ -301,7 +303,9 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   }, [previewDocument, sketch.id, visual, prepared]);
   const construction = useMemo(() => new Set(sketch.graph?.entities.filter(entity => entity.construction).map(entity => entity.id)), [sketch.graph]);
   const entities = useMemo(() => new Map(sketch.graph?.entities.map(entity => [entity.id, entity])), [sketch.graph]);
-  const sourcePoints = useMemo(() => new Map(prepared.points.map(point => [point.id, point])), [prepared]);
+  const sourcePoints = useMemo(() => new Map(prepared.points.map(point => [point.id, point])), [prepared.points]);
+  // Point rows read no placement, so moving a dimension renders none of them again.
+  const pointGraph = cadSketchGraphPlacedFrom(prepared.graph);
   // Undo and selection cleanup can render one frame with an old inspector relation.
   const currentRelation = controls.relation && displayed.graph.relations.find(relation => relation.id === controls.relation?.id);
   const relatedPoints = new Set(controls.inspection?.pointIds ?? (currentRelation ? cadSketchRelationPointIds(displayed.graph, currentRelation) : []));
@@ -358,6 +362,31 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     else { cancel(); if (event.button === 0 && owned.pick) choose(owned.pick); }
   };
   const interactive = active && !locked && !submission.applying;
+  /**
+   * A released dimension drag stores its placement as one edit. It changes only where the dimension is drawn: a relation that differs
+   * from the accepted one in anything else, as a preview's might, is refused, and one that changes nothing is not submitted. The part
+   * accepts such an edit at once, so a host that settles it there and then shows nothing as pending or locked; one that returns a
+   * promise is owned and waited for like any submitted edit.
+   */
+  const moveDimension = (dimension: CadSketchDimensionPick, relation: CadSketchGraphRelation) => {
+    const accepted = sketch.graph?.relations.find(item => item.id === dimension.id);
+    if (!interactive || controls.geometryPick || drag.current || intent || !accepted || !cadSketchRelationsEqualButPlacement(accepted, relation) || Value.Equal(accepted, relation)) return false;
+    const edits: CadEdit[] = [{ kind: 'set-sketch-relation', sketchId: sketch.id, relation }];
+    const refused = (error: unknown) => callbacks.current.onError(userFacingMessage(error, 'Unable to move this dimension.'));
+    const submit = (apply: (signal: AbortSignal) => CadEditCompletion) => {
+      callbacks.current.onPendingChange(true);
+      submission.submit(apply, () => callbacks.current.onPendingChange(false), error => { callbacks.current.onPendingChange(false); refused(error); });
+    };
+    if (!cadEditsOnlyPlaceDimensions(controls.document, edits)) { submit(signal => controls.onEditMany(edits, signal)); return true; }
+    const owner = new AbortController();
+    let completion: CadEditCompletion;
+    try { completion = controls.onEditMany(edits, owner.signal); } catch (error) { refused(error); return false; }
+    if (completion && 'then' in completion) {
+      const settling = completion;
+      submit(signal => { signal.addEventListener('abort', () => owner.abort(), { once: true }); return settling; });
+    }
+    return true;
+  };
   const snapCandidate = intent?.kind === 'point' ? intent.snap : null;
   const solvedPoint = preview.kind === 'ready' && !preview.stale && intent?.kind === 'point' ? displayed.points.find(point => point.id === intent.point.id) : null;
   const attained = Boolean(snapCandidate && solvedPoint && Math.hypot(solvedPoint.position[0] - snapCandidate.point[0], solvedPoint.position[1] - snapCandidate.point[1])
@@ -496,7 +525,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       const mark = cadSketchGeometryMark('point', point.id, controls.definition, diagnosis);
       const revealed = filter === 'points' || !supportedPoints.has(point.id) || selectionPoints.has(point.id) || isSelected || relatedPoints.has(point.id) || isHighlighted
         || mark === 'conflicting' || mark === 'redundant';
-      return <GraphPointRow key={point.id} point={point} original={sourcePoints.get(point.id) ?? point} graph={prepared.graph} degreesOfFreedom={controls.degreesOfFreedom}
+      return <GraphPointRow key={point.id} point={point} original={sourcePoints.get(point.id) ?? point} graph={pointGraph} degreesOfFreedom={controls.degreesOfFreedom}
         fixed={fixedPoint(point.id)} mark={mark} index={index} sketchName={sketch.name}
         referenceCorner={referenceCorners.has(point.id)} revealed={revealed} selected={isSelected} related={relatedPoints.has(point.id)} highlighted={isHighlighted}
         interactive={pointAllowed(point.id)} active={active} center={center} scaleX={scaleX} scaleY={scaleY} actions={actions} />;
@@ -534,7 +563,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       selectedRelationId={controls.relation?.id} selectedIds={controls.dimensionSelection} highlight={highlightStore} hitLayer={dimensionHits} covered={coversDimensionLine}
       interactive={interactive && (!controls.geometryPick || controls.geometryPick.dimensionsInteractive === true) && !drag.current && Boolean(controls.onConfigureRelation)} onConfigure={relation => controls.onConfigureRelation?.(relation)}
       onSelect={(dimension, additive) => controls.onSelectDimension?.(dimension, additive)} onDelete={(dimension, key) => controls.onDeleteDimension?.(dimension, key)}
-      onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} />}
+      onMenu={(dimension, at) => controls.onDimensionMenu?.(dimension, at)} onMove={controls.geometryPick ? undefined : moveDimension} />}
     {intent && drag.current?.moved && <circle className={`cad-sketch-drag-target${rejection !== null || candidate.issue ? ' is-invalid' : ''}`}
       cx={(intent.kind === 'point' ? intent.point.position[0] + intent.translation[0] : intent.kind === 'translate' ? intent.anchor[0] + intent.translation[0] : intent.circle.center[0] + intent.radius) - center[0]}
       cy={(intent.kind === 'point' ? intent.point.position[1] + intent.translation[1] : intent.kind === 'translate' ? intent.anchor[1] + intent.translation[1] : intent.circle.center[1]) - center[1]} r={5 * scaleY}>

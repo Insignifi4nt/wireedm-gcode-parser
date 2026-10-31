@@ -3,6 +3,7 @@ import { cadSketchReferenceDimensionToDriving, resolveCadSketchReferenceDimensio
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { cadSketchExternalReferenceLockReason } from '@/domain/cad/cadSketchExternalReferences';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
+import { withCadSketchCarriedPlacement } from '@/domain/cad/cadSketchPlacedDimensions';
 
 type Measurement = CadSketchReferenceDimension['measurement'];
 /** Both relations name the same two points, in either order. */
@@ -84,7 +85,7 @@ const unavailable = (reason: string): CadSketchDimensionConversion => ({ relatio
 /** Why a distance from the origin or an axis takes no reference form, when placed and once placed. */
 export const CAD_SKETCH_NO_REFERENCE_DATUM = 'A distance from the origin or an axis has no reference form yet.';
 
-/** A driving length, distance, point to line distance, radius or diameter becomes a reference that measures the same thing and keeps its identity. */
+/** A driving length, distance, point to line distance, radius or diameter becomes a reference that measures the same thing and keeps its identity and placement. */
 export function cadSketchDimensionToReference(graph: CadSketchGraph, relation: CadSketchGraphRelation): CadSketchDimensionConversion {
   if (relation.kind === 'reference-dimension') return unavailable('This is already a reference dimension.');
   if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return unavailable('A corner treatment owns its fillet or chamfer size. Edit the corner instead.');
@@ -95,13 +96,13 @@ export function cadSketchDimensionToReference(graph: CadSketchGraph, relation: C
     : relation.kind === 'point-line-distance' ? { kind: 'point-line-distance', pointId: relation.pointId, lineId: relation.lineId }
     : line ? { kind: 'line-length', entityId: line.id } : { kind: 'point-distance', pointIds: relation.pointIds };
   if (cadSketchMatchingReference(graph, measurement)) return unavailable('A reference dimension already measures this. Delete this dimension instead.');
-  return { relation: { id: relation.id, kind: 'reference-dimension', measurement }, reason: null };
+  return { relation: withCadSketchCarriedPlacement(graph, relation, { id: relation.id, kind: 'reference-dimension', measurement }), reason: null };
 }
-/** A reference becomes the driving dimension it measures, at its current value. */
+/** A reference becomes the driving dimension it measures, at its current value and where it is placed. */
 export function cadSketchDimensionToDriving(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, relation: CadSketchGraphRelation): CadSketchDimensionConversion {
   if (relation.kind !== 'reference-dimension') return unavailable('This dimension already drives the geometry.');
   try {
     const lock = cadSketchReferenceDrivingLock(graph, relation);
-    return lock ? unavailable(lock) : { relation: cadSketchReferenceDimensionToDriving(graph, parameters, relation), reason: null };
+    return lock ? unavailable(lock) : { relation: withCadSketchCarriedPlacement(graph, relation, cadSketchReferenceDimensionToDriving(graph, parameters, relation)), reason: null };
   } catch { return unavailable('The measured geometry is no longer available.'); }
 }

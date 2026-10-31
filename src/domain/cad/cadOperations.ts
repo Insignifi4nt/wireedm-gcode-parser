@@ -2,7 +2,7 @@ import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { CadDocument, CadFeature, CadPoint2, CadScalar } from './cadDocument';
 import { CadError } from './cadError';
-import { CadFeatureSchema, cadFeatureDependencies, parseCadDocument } from './cadSchema';
+import { CadFeatureSchema, cadFeatureDependencies, parseCadDocument, withCadSketchPlacements } from './cadSchema';
 import { isCadImportData } from './cadImportData';
 import { CadPluginPackageSchema, type CadPluginPackage } from './plugins/cadPlugins';
 import { addCadPluginProfile, CadParameterGroupSchema, mapCadFeatureScalars, renameCadScalarParameter, type CadParameterGroup } from './cadParameters';
@@ -15,7 +15,8 @@ import { appendCadSketchEntities, deleteCadSketchElements, setCadSketchConstruct
 import { CadSketchCornerCommandTreatmentSchema, createCadSketchCornerTreatmentFromIds, type CadSketchCornerCommandTreatment } from './cadSketchCornerTreatment';
 import { CAD_SKETCH_SELECTION_LIMIT, CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { translateCadSketchGraph } from './cadSketchTranslation';
-import { keepCadSketchPointLineSides } from './cadSketchPointLineDistanceRelations';
+import { keepCadSketchLineSides } from './cadSketchPointLineDistanceRelations';
+import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
 import { CadSketchPlacementRequestSchema, placeCadSketchGraph, type CadSketchPlacementRequest } from './cadSketchPlacement';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
 import { CadSketchTrimTargetSchema, trimCadSketchEntity, type CadSketchTrimTarget, CadSketchExtendTargetSchema, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
@@ -101,7 +102,37 @@ export const CadEditSchema = Type.Union([
 
 /** Validates the complete final document once; a failed batch never mutates the input. */
 export function applyCadEdits(document: CadDocument, edits: readonly CadEdit[]): CadDocument {
-  return parseCadDocument(reduceCadEditIntents(document, edits));
+  return placeCadSketchDimensions(document, edits) ?? parseCadDocument(reduceCadEditIntents(document, edits));
+}
+
+/**
+ * Whether every edit only moves a dimension of `document`: it replaces a sketch relation with one that differs from it only in
+ * where it is drawn. Such a batch needs no solve, analysis or geometry check, so it is accepted at once.
+ */
+export function cadEditsOnlyPlaceDimensions(document: CadDocument, edits: readonly CadEdit[]): boolean {
+  // A malformed batch is refused by the full path, with its reason.
+  try { validateCadEditBatch(edits); } catch { return false; }
+  return edits.length > 0 && edits.every(edit => {
+    if (edit.kind !== 'set-sketch-relation') return false;
+    const sketch = document.features.find(feature => feature.id === edit.sketchId);
+    const accepted = sketch?.kind === 'sketch' ? sketch.graph?.relations.find(relation => relation.id === edit.relation.id) : undefined;
+    return Boolean(accepted && cadSketchRelationsEqualButPlacement(accepted, edit.relation));
+  });
+}
+
+/**
+ * The accepted `document` after a batch that only moves dimensions, checking only their new placements and keeping every other
+ * part and certificate; null for any other batch or a document that is not an accepted parse, which take the full path.
+ */
+export function placeCadSketchDimensions(document: CadDocument, edits: readonly CadEdit[]): CadDocument | null {
+  if (!cadEditsOnlyPlaceDimensions(document, edits)) return null;
+  let placed: CadDocument | null = document;
+  for (const edit of edits) {
+    if (edit.kind !== 'set-sketch-relation') return null;
+    placed = withCadSketchPlacements(placed, edit.sketchId, [edit.relation]);
+    if (!placed) return null;
+  }
+  return placed;
 }
 
 export function validateCadEditBatch(edits: readonly CadEdit[]): void {
@@ -330,11 +361,11 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
       }
       default: { const exhaustive: never = edit; throw exhaustive; }
     }
-    // Whatever rewrote a sketch, a line it turned around keeps its distances on their physical sides.
+    // Whatever rewrote a sketch, a line it turned around keeps its distances on their physical sides and its dimensions where they were drawn.
     features = features.map(feature => {
       const previous = before.get(feature.id);
       if (previous === feature || previous?.kind !== 'sketch' || feature.kind !== 'sketch' || !previous.graph || !feature.graph) return feature;
-      const graph = keepCadSketchPointLineSides(previous.graph, feature.graph);
+      const graph = keepCadSketchLineSides(previous.graph, feature.graph);
       return graph === feature.graph ? feature : { ...feature, graph };
     });
   }

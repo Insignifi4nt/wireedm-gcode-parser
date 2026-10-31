@@ -23,7 +23,10 @@ export type CadSketchDimensionOperand = CadSketchGraphSelection | { readonly kin
  */
 export type CadSketchDimensionForm = 'aligned' | 'horizontal' | 'vertical' | 'radius' | 'diameter' | 'point-line' | 'angle' | 'datum';
 
-/** Numeric geometry a preview draws at the pointer; nothing in it depends on the pointer, so the plan builds it once per pick. */
+/**
+ * The measurements of a candidate, and an angle's sectors that the pointer chooses among; nothing in it depends on the pointer, so the plan
+ * builds it once per pick. The preview draws the relations a click stores, not this.
+ */
 export type CadSketchDimensionPreviewSource =
   | { readonly kind: 'pair'; readonly form: 'aligned' | 'horizontal' | 'vertical'; readonly points: readonly [Point2, Point2]; readonly value: number }
   | { readonly kind: 'point-line'; readonly point: Point2; readonly line: readonly [Point2, Point2]; readonly value: number }
@@ -61,8 +64,11 @@ export interface CadSketchDimensionPlan {
   readonly pair: readonly [Point2, Point2] | null;
   /** The form placed where the pointer does not choose one. */
   readonly defaultForm: CadSketchDimensionForm | null;
+  /** The sketch and parameters the plan was made for, which a click's dimensions are placed and previewed in. */
+  readonly graph: CadSketchGraph | null;
+  readonly parameters: Readonly<Record<string, number>>;
 }
-export const NO_SKETCH_DIMENSION_PLAN: CadSketchDimensionPlan = Object.freeze({ operands: [], candidates: [], pair: null, defaultForm: null });
+export const NO_SKETCH_DIMENSION_PLAN: CadSketchDimensionPlan = Object.freeze({ operands: [], candidates: [], pair: null, defaultForm: null, graph: null, parameters: Object.freeze({}) });
 
 /**
  * The CATIA and SOLIDWORKS rule for a pair of positions, with the pair's bounding box split by its horizontal and vertical extents:
@@ -110,6 +116,23 @@ export function cadSketchDimensionRelationsAt(candidate: CadSketchAvailableDimen
   if (candidate.preview.kind !== 'angle') return { relations: candidate.relations, reason: null };
   const sector = cadSketchDimensionAngleSectorAt(candidate.preview, pointer);
   return sector ? { relations: [sector.relation], reason: null } : { relations: null, reason: 'Move the pointer into the angle to measure, then place it.' };
+}
+
+/**
+ * What a click with the pointer at `pointer` places for `candidate`, the same for its preview and for placing: `added`, the relations
+ * it adds, and `moved`, those of the sketch it moves where the pointer puts them. An existing dimension moves; an available one adds its
+ * relations and moves the one it reuses; `reference` adds the reference form instead, which a blocked candidate can only place. A
+ * reason says why the click places nothing.
+ */
+export function cadSketchDimensionBatchAt(plan: CadSketchDimensionPlan, candidate: CadSketchDimensionCandidate, pointer: Point2 | null, reference = candidate.state === 'blocked'):
+  { readonly added: readonly CadSketchGraphRelation[]; readonly moved: readonly CadSketchGraphRelation[]; readonly reason: null } | { readonly added: null; readonly moved: null; readonly reason: string } {
+  const relationsOf = (ids: readonly string[]) => ids.flatMap(id => plan.graph?.relations.find(relation => relation.id === id) ?? []);
+  if (candidate.state === 'existing') return { added: [], moved: relationsOf(candidate.relationIds), reason: null };
+  if (reference) return candidate.reference ? { added: [candidate.reference], moved: [], reason: null }
+    : { added: null, moved: null, reason: candidate.state === 'blocked' ? candidate.reason : candidate.referenceReason ?? 'This dimension has no reference form.' };
+  if (candidate.state === 'blocked') return { added: null, moved: null, reason: candidate.reason };
+  const { relations, reason } = cadSketchDimensionRelationsAt(candidate, pointer);
+  return relations ? { added: relations, moved: candidate.reuses ? relationsOf([candidate.reuses]) : [], reason: null } : { added: null, moved: null, reason: reason! };
 }
 
 /** Preparation feedback, as `CadSketchPreparationError` reports it. */
@@ -181,9 +204,9 @@ const NO_REFERENCE_PAIR ='A horizontal or vertical distance has no reference for
 const NO_REFERENCE_ANGLE = 'An angle has no reference form yet.';
 const NO_REFERENCE_DATUM = CAD_SKETCH_NO_REFERENCE_DATUM;
 /** Why placing selects a dimension that already measures the picks instead of adding one. */
-export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension.';
+export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.';
 const EXISTING = CAD_SKETCH_DIMENSION_EXISTING_REASON;
-const REUSED = 'This is already dimensioned. Placing selects that dimension and adds the relation that keeps it measuring these picks.';
+const REUSED = 'This is already dimensioned. Placing selects that dimension, moves it where the preview shows it and adds the relation that keeps it measuring these picks.';
 /**
  * What placing says when none of the relations it placed or reused is a dimension: each is a coordinate held at a plain 0, the relation that
  * keeps a point on an axis, or at the origin with both. Null when one of them is a dimension, or when they are not all such coordinates.
@@ -216,7 +239,7 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
   const points = geometry.filter(operand => operand.kind === 'point').map(operand => operand.id);
   if (geometry.length !== lines.length + curves.length + points.length) return NO_SKETCH_DIMENSION_PLAN;
   const plan = (candidates: readonly CadSketchDimensionCandidate[], defaultForm: CadSketchDimensionForm, pair: readonly [Point2, Point2] | null = null): CadSketchDimensionPlan =>
-    Object.freeze({ operands, candidates, pair, defaultForm });
+    Object.freeze({ operands, candidates, pair, defaultForm, graph, parameters });
   try {
     if (datum) {
       if (geometry.length !== 1) return NO_SKETCH_DIMENSION_PLAN;
@@ -276,7 +299,8 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
     const axisCandidate = (form: 'horizontal' | 'vertical'): CadSketchDimensionCandidate => {
       const axis = form === 'horizontal' ? 'x' : 'y', label = pairLabel(form, lineId !== null), delta = axis === 'x' ? b.x - a.x : b.y - a.y;
       if (!(Math.abs(delta) > tolerance)) return { form, label, state: 'blocked', reason: form === 'horizontal' ? 'These points are upright, so they have no horizontal distance.' : 'These points are level, so they have no vertical distance.' };
-      const preview = { kind: 'pair', form, points: [a, b], value: Math.abs(delta) } as const, existing = cadSketchDistanceForPair(graph, pointIds, axis);
+      // The preview runs between the points in the order the distance takes them, so placing keeps its drawing.
+      const preview = { kind: 'pair', form, points: (delta >= 0 ? [a, b] : [b, a]) as readonly [Point2, Point2], value: Math.abs(delta) } as const, existing = cadSketchDistanceForPair(graph, pointIds, axis);
       if (existing) return { form, label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview };
       // The distance runs from the left or lower point, so its value reads positive.
       const ordered: readonly [string, string] = delta >= 0 ? pointIds : [pointIds[1], pointIds[0]];
@@ -297,7 +321,8 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
       if (curve.kind === 'circle' && typeof curve.radius === 'string' && !existing) return { form: quantity, label, state: 'blocked', reason: 'The circle radius follows its source expression. Edit that expression instead.' };
       const measurement = { kind: 'radial-size', entityId: curve.id, quantity } as const, reference = cadSketchMatchingReference(graph, measurement);
       if (existing || reference) return { form: quantity, label, state: 'existing', relationIds: [(existing ?? reference)!.id],
-        reason: existing && (existing.kind !== 'radial-size' || existing.quantity === quantity) || reference ? EXISTING : 'An existing dimension already drives this curve. Edit that dimension instead.', preview };
+        reason: existing && (existing.kind !== 'radial-size' || existing.quantity === quantity) || reference ? EXISTING
+          : `This curve already has a ${quantity === 'radius' ? 'diameter' : 'radius'} dimension. Placing selects it and moves it where the preview shows it.`, preview };
       const id = newId();
       return { form: quantity, label, state: 'available', relations: [{ id, kind: 'radial-size', entityId: curve.id, quantity, value }], implied: null, reuses: null,
         reference: { id, kind: 'reference-dimension', measurement }, referenceReason: null, preview };

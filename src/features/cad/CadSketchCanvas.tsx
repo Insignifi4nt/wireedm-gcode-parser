@@ -1,4 +1,5 @@
 import { userFacingMessage } from '@/lib/userMessage';
+import { cadSketchGraphPlacedFrom } from '@/domain/cad/cadSketchGraph';
 import { flushSync } from 'react-dom';
 import { cadSketchLinearPatternForSelection } from '@/domain/cad/cadSketchLinearPattern';
 import { Button } from '@/components/ui/button';
@@ -411,8 +412,10 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   };
   const sourceProfiles = sourceSketch.kind === 'sketch' ? sourceSketch.profiles : NO_PROFILES;
   const profileSnapSources = useMemo(() => prepareCadSketchProfilePositionSnaps({ profiles: sourceProfiles, parameters: graphSourceParameters }), [sourceProfiles, graphSourceParameters]);
-  const drawingSnaps = useMemo(() => prepareCadSketchGeometrySnaps(sourceGraph ? { graph: sourceGraph.graph, points: sourceGraph.points, segments: sourceGraph.geometry.segments } : undefined,
-    profileSnapSources), [sourceGraph, profileSnapSources]);
+  // Snaps read no placement, so moving a dimension keeps them.
+  const snapGraph = sourceGraph ? cadSketchGraphPlacedFrom(sourceGraph.graph) : null, snapPoints = sourceGraph?.points, snapSegments = sourceGraph?.geometry.segments;
+  const drawingSnaps = useMemo(() => prepareCadSketchGeometrySnaps(snapGraph && snapPoints && snapSegments ? { graph: snapGraph, points: snapPoints, segments: snapSegments } : undefined,
+    profileSnapSources), [snapGraph, snapPoints, snapSegments, profileSnapSources]);
   const visualGraph = useMemo(() => sketch === sourceSketch && parameters === graphSourceParameters ? sourceGraph
     : sketch.kind === 'sketch' && sketch.graph ? prepareCadSketchGraphInteraction(sketch.graph, parameters) : null, [sketch, sourceSketch, parameters, graphSourceParameters, sourceGraph]);
   const graphGeometry = useMemo(() => visualGraph && sketch.kind === 'sketch' ? { ...visualGraph.geometry, constructionIds: new Set(sketch.graph?.entities.filter(entity => entity.construction).map(entity => entity.id)) } : null, [visualGraph, sketch]);
@@ -668,7 +671,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     project: projectSelection });
   const boxSelections = boxSelection.box?.selections;
   const dimensionStatus = tool === 'select' && sourceSketch.kind === 'sketch' ? cadSketchDimensionSelectionStatus(sourceSketch.graph, graphControls?.dimensionSelection ?? []) : null;
-  const relationsShown = Boolean(graphControls) && graphControls?.showRelations !== false, sourceGraphValue = sourceSketch.kind === 'sketch' ? sourceSketch.graph : undefined;
+  // Moving a dimension leaves the relation marks as they are.
+  const relationsShown = Boolean(graphControls) && graphControls?.showRelations !== false, sourceGraphValue = sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchGraphPlacedFrom(sourceSketch.graph) : undefined;
   const glyphCount = useMemo(() => relationsShown && sourceGraphValue ? countCadSketchRelationGlyphs(sourceGraphValue) : 0, [relationsShown, sourceGraphValue]);
   const glyphStatus = tool === 'select' && glyphCount > CAD_SKETCH_RELATION_GLYPH_LIMIT ? `Relations shown on selected or hovered geometry · ${glyphCount} marks in this sketch` : null;
   const contextStatus = dimensionStatus && glyphStatus ? `${dimensionStatus} · ${glyphStatus}` : dimensionStatus ?? glyphStatus;
@@ -1215,7 +1219,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           if (datum) { chooseDatum(datum, false); return; }
           acceptDrawingPick(getDrawingPick(event), event); return;
         }
-        if (event.button === 0 && geometryPick?.pointer && !interactionLocked) { const raw = getRawPoint(event); if (raw) geometryPick.pointer.set({ x: raw[0], y: raw[1] }); }
+        if (event.button === 0 && geometryPick?.pointer && !interactionLocked) { const raw = getRawPoint(event); if (raw) geometryPick.pointer.set({ x: raw[0], y: raw[1] }, overlayFrame.mmPerPixel); }
         // A cancelled graph drag can release over empty canvas; its trailing click still belongs to the handle.
         if (event.button === 0 && event.target instanceof Element && event.target.closest('.cad-sketch-graph')) suppressProfileClick.current = true;
       }}
@@ -1440,7 +1444,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
           const onLine = event.target instanceof Element && event.target.closest('[data-cad-sketch-dimension-hit]') !== null;
           // The Dimension tool's preview follows the pointer through its own store, so the move renders the preview alone.
           const pointer = geometryPick?.pointer, raw = pointer ? getRawPoint(event) : null;
-          if (pointer && raw) pointer.set({ x: raw[0], y: raw[1] });
+          if (pointer && raw) pointer.set({ x: raw[0], y: raw[1] }, overlayFrame.mmPerPixel);
           if (!onLine && !geometryPick?.dimensionPreview) getDrawingPick(event);
           if (tool === 'trim') {
             const preview = interactionLocked || viewLocked ? null : trimAt(event);

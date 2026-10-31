@@ -3,7 +3,7 @@ import { beforeAll, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
 import { setOC } from 'replicad';
-import { createCadDocument } from '../../../domain/cad/cadSchema';
+import { createCadDocument, parseCadDocument } from '../../../domain/cad/cadSchema';
 import type { CadDocument } from '../../../domain/cad/cadDocument';
 import { createCadKernelRuntime } from './cadKernelRuntime';
 import { prepareCadSolidImport } from './cadKernelImport';
@@ -103,6 +103,29 @@ it('adds and removes sketch dimension intent without rebuilding exact geometry w
     expect(changed.result.buildId).not.toBe(first.result.buildId); expect(changed.result.meshes[0].volume).toBeCloseTo(1500, 7);
     expect(await runtime.evaluate({ id: 11, kind: 'inspect-topology', document: constrained, inspection })).toMatchObject({ kind: 'error', code: 'STALE_BUILD' });
     expect(JSON.stringify(document)).toBe(originalBytes); expect(JSON.stringify(constrained)).toBe(constrainedBytes);
+  } finally { runtime.dispose(); }
+});
+
+it('keeps the exact build when only where a sketch dimension is drawn changes', async () => {
+  const runtime = createCadKernelRuntime(async () => undefined);
+  const block = (width: number, annotation?: object) => parseCadDocument({ ...createCadDocument('Placed', 'runtime_placed'), schemaVersion: 2, features: [
+    { id: 'sketch', name: 'Outline', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [width, 0] }, { id: 'c', position: [width, 10] }, { id: 'd', position: [0, 10] }],
+      entities: ['a', 'b', 'c', 'd'].map((id, index) => ({ id: `edge-${id}`, kind: 'line', construction: false, startPointId: id, endPointId: ['b', 'c', 'd', 'a'][index] })),
+      relations: [{ id: 'width', kind: 'distance', pointIds: ['a', 'b'], value: width, ...annotation ? { annotation } : {} }] } },
+    { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: 5, symmetric: false, operation: 'new', targetId: null }
+  ] });
+  try {
+    const first = await runtime.evaluate({ id: 1, kind: 'build', document: block(20) });
+    if (first.kind !== 'built') throw new Error('Expected the block');
+    for (const [id, annotation] of [[2, { kind: 'linear', offset: -6, along: 0.25 }], [3, { kind: 'linear', offset: 4, along: 1.5 }], [4, undefined]] as const) {
+      const moved = await runtime.evaluate({ id, kind: 'build', document: block(20, annotation) });
+      if (moved.kind !== 'built') throw new Error('Expected the moved dimension');
+      expect(moved.result.buildId).toBe(first.result.buildId); expect(moved.result.meshes).toBe(first.result.meshes);
+    }
+    const resized = await runtime.evaluate({ id: 5, kind: 'build', document: block(30, { kind: 'linear', offset: -6, along: 0.25 }) });
+    if (resized.kind !== 'built') throw new Error('Expected the resized block');
+    expect(resized.result.buildId).not.toBe(first.result.buildId); expect(resized.result.meshes[0].volume).toBeCloseTo(1500, 7);
   } finally { runtime.dispose(); }
 });
 

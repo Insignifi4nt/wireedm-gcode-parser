@@ -20,7 +20,7 @@ import { CadFeatureBaseSchemaFields, CadIdentifierSchema, CadLabelSchema, CadNum
 import { CadDatumPlaneFeatureSchema, resolveCadWorldDatum, resolveCadSketchPlacement, resolveCadExtrudeRevolvePlacement, type CadResolvedFrame } from './cadDatumPlanes';
 import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './cadFeatureInputs';
 import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
-import { CadSketchGraphSchema, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
+import { CadSketchGraphSchema, cadSketchGraphWithPlacements, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
 import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
 import { sameCadSketchGeometryParameters } from './cadSketchParameterReads';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
@@ -91,6 +91,28 @@ const isAcceptedFeature = (item: unknown): item is CadFeature => typeof item ===
 // values skips them. Those names are collected only when a parse lists the sketch again. Failures are never kept.
 const validSketches = new WeakMap<CadSketchFeature, CadDocument['parameters']>();
 const usableSketches = new WeakMap<CadFeature, { readonly sketch: CadSketchFeature; readonly parameters: CadDocument['parameters'] }>();
+// An accepted sketch that differs from an earlier accepted one only in where its dimensions are drawn, mapped to the first of that
+// line, whose geometry it shares. The region checks above key on that sketch, so moving a dimension keeps them.
+const geometrySources = new WeakMap<CadSketchFeature, CadSketchFeature>();
+const geometrySource = (sketch: CadSketchFeature) => geometrySources.get(sketch) ?? sketch;
+
+/**
+ * The accepted sketch `sketch` was made from by moving its dimensions alone, the first of that line, or `sketch` itself. It differs
+ * only in where dimensions are drawn, so a result that never reads placement can be kept with it across those moves.
+ */
+export function cadSketchPlacedFrom(sketch: CadSketchFeature): CadSketchFeature {
+  return geometrySource(sketch);
+}
+/**
+ * Whether `to` holds the parameters and features of `from` but for dimensions of sketch `sketchId` moved from one to the other, known
+ * from identity alone: a result that never reads placement, such as freedom analysis, holds for both. False is no proof of a difference.
+ */
+export function cadDocumentsPlacedAlike(from: CadDocument, to: CadDocument, sketchId: string): boolean {
+  return from === to || from.parameters === to.parameters && from.features.length === to.features.length && from.features.every((feature, index) => {
+    const next = to.features[index];
+    return feature === next || feature.id === sketchId && feature.kind === 'sketch' && next.kind === 'sketch' && geometrySource(feature) === geometrySource(next);
+  });
+}
 // The document schema with its features left to `CadFeatureSchema`, one by one.
 const CadDocumentEnvelopeSchema = { ...CadDocumentSchema, properties: { ...CadDocumentSchema.properties, features: Type.Array(Type.Unknown()) } };
 
@@ -251,10 +273,10 @@ export function parseCadDocument(value: unknown): CadDocument {
         if (!feature.suppressed) {
           // Only an active sketch with regions is kept, so the same sketch object is still active.
           const usable = usableSketches.get(feature);
-          if (usable?.sketch !== sketch || !sameCadSketchGeometryParameters(sketch, usable.parameters, document.parameters)) {
+          if (usable?.sketch !== geometrySource(sketch) || !sameCadSketchGeometryParameters(sketch, usable.parameters, document.parameters)) {
             if (sketch.suppressed || !resolveCadSketchRegions(sketch, document.parameters,
               feature.kind === 'extrude' ? feature.regionSelection : undefined).length) throw new CadError('empty-sketch', `Feature "${feature.name}" needs an active nonempty sketch.`);
-            certificates.push(() => usableSketches.set(feature, { sketch, parameters: document.parameters }));
+            certificates.push(() => usableSketches.set(feature, { sketch: geometrySource(sketch), parameters: document.parameters }));
           }
         }
         if (feature.kind === 'extrude') {
@@ -324,6 +346,29 @@ export function parseCadDocument(value: unknown): CadDocument {
   certificates.forEach(certify => certify());
   acceptedDocuments.add(document);
   return document;
+}
+
+/**
+ * The accepted `document` with the sketch `sketchId` drawing the dimensions `relations` name where they say, each differing from its
+ * accepted relation only in its placement. Placement is display data that no document check reads, so only the new placements are
+ * checked: every other feature stays as it is, and the sketch keeps its geometry's certificates. Null when `document` is not an
+ * accepted parse, or a relation is new or changes more than its placement; such an edit takes the full parse.
+ */
+export function withCadSketchPlacements(document: CadDocument, sketchId: string, relations: readonly unknown[]): CadDocument | null {
+  if (!acceptedDocuments.has(document)) return null;
+  const index = document.features.findIndex(feature => feature.id === sketchId), sketch = document.features[index];
+  if (sketch?.kind !== 'sketch' || !sketch.graph) return null;
+  const graph = cadSketchGraphWithPlacements(sketch.graph, relations);
+  if (!graph) return null;
+  if (graph === sketch.graph) return document;
+  const placed: CadSketchFeature = Object.freeze({ ...sketch, graph });
+  const next: CadDocument = Object.freeze({ ...document, features: Object.freeze(document.features.map((feature, at) => at === index ? placed : feature)) });
+  acceptedFeatures.add(placed); acceptedSketchSources.add(placed);
+  const checked = validSketches.get(sketch);
+  if (checked) validSketches.set(placed, checked);
+  geometrySources.set(placed, geometrySource(sketch));
+  acceptedDocuments.add(next);
+  return next;
 }
 
 export function createCadDocument(name = 'Untitled part', id = `cad_${crypto.randomUUID()}`): CadDocument {

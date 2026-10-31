@@ -1,7 +1,7 @@
 import { memo, useSyncExternalStore } from 'react';
 import type { Point2 } from '@/domain/path-intel/types';
-import { cadSketchDimensionCandidateAt, type CadSketchDimensionPlan } from './cadSketchDimensionPlacement';
-import { cadSketchGraphDimensionLabel, layoutCadSketchDimensionPreview } from './cadSketchGraphDimensionLayout';
+import { cadSketchDimensionBatchAt, cadSketchDimensionCandidateAt, type CadSketchDimensionPlan } from './cadSketchDimensionPlacement';
+import { cadSketchDimensionArcPath, cadSketchGraphDimensionLabel, placeCadSketchDimensions } from './cadSketchGraphDimensionLayout';
 import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import './cad-sketch-graph-dimensions.css';
@@ -9,15 +9,19 @@ import './cad-sketch-graph-dimensions.css';
 /** The last sketch position of the pointer over the canvas. Only the preview subscribes, so moving the pointer renders nothing else. */
 export interface CadSketchPointerStore {
   get(): Point2 | null;
-  set(point: Point2 | null): void;
+  /** Millimetres per screen pixel of the view the pointer was last over, which a dimension placed at the pointer is drawn with. */
+  scale(): number | null;
+  set(point: Point2 | null, mmPerPixel?: number): void;
   subscribe(listener: () => void): () => void;
 }
 export function createCadSketchPointerStore(): CadSketchPointerStore {
-  let current: Point2 | null = null;
+  let current: Point2 | null = null, scale: number | null = null;
   const listeners = new Set<() => void>();
   return {
     get: () => current,
-    set: point => {
+    scale: () => scale,
+    set: (point, mmPerPixel) => {
+      if (mmPerPixel !== undefined) scale = mmPerPixel;
       if (point === current || point && current && point.x === current.x && point.y === current.y) return;
       current = point; for (const listener of [...listeners]) listener();
     },
@@ -32,16 +36,17 @@ export const CadSketchPointerReadout = memo(function CadSketchPointerReadout({ p
 });
 
 /**
- * The dimension the Dimension tool would place, drawn at the pointer in the placed dimensions' thin style. It runs no solve or analysis:
- * the plan holds every measurement, so a pointer move only lays out the marks again.
+ * The dimension the Dimension tool would place, drawn at the pointer in the placed dimensions' thin style from the relations a click there
+ * stores, placed as the click places them: an existing or reused dimension where it would move, keeping the sector or side it measures.
+ * It runs no solve or analysis: the plan holds every measurement, so a pointer move only lays out the marks again.
  */
 export const CadSketchDimensionPreview = memo(function CadSketchDimensionPreview({ plan, pointer, center, mmPerPixel }: {
   readonly plan: CadSketchDimensionPlan; readonly pointer: CadSketchPointerStore; readonly center: SketchPoint; readonly mmPerPixel: number;
 }) {
   const at = useSyncExternalStore(pointer.subscribe, pointer.get);
-  const candidate = at ? cadSketchDimensionCandidateAt(plan, at) : null;
-  if (!at || !candidate?.preview) return null;
-  const marks = layoutCadSketchDimensionPreview(candidate.preview, at, mmPerPixel);
+  const candidate = at ? cadSketchDimensionCandidateAt(plan, at) : null, batch = at && candidate ? cadSketchDimensionBatchAt(plan, candidate, at) : null;
+  if (!at || !candidate || !batch?.added || !plan.graph) return null;
+  const { marks } = placeCadSketchDimensions(plan.graph, plan.parameters, [...batch.added, ...batch.moved], at, mmPerPixel);
   if (!marks.length) return null;
   const segment = (points: readonly [SketchPoint, SketchPoint], className?: string) => <line className={className} x1={points[0][0] - center[0]} y1={points[0][1] - center[1]}
     x2={points[1][0] - center[0]} y2={points[1][1] - center[1]} />;
@@ -52,7 +57,7 @@ export const CadSketchDimensionPreview = memo(function CadSketchDimensionPreview
       return <g key={index} className="cad-sketch-graph-dimension is-preview" data-cad-dimension-kind={mark.kind}>
         <g className="cad-sketch-graph-dimension-lines">
           {mark.extensions.map((extension, part) => <g key={part}>{segment(extension, 'cad-sketch-graph-dimension-extension')}</g>)}
-          {mark.arc ? <path className="cad-sketch-graph-dimension-line" d={`M ${mark.arc.start[0] - center[0]} ${mark.arc.start[1] - center[1]} A ${mark.arc.radius} ${mark.arc.radius} 0 0 ${mark.arc.clockwise ? 0 : 1} ${mark.arc.end[0] - center[0]} ${mark.arc.end[1] - center[1]}`} />
+          {mark.arc ? <path className="cad-sketch-graph-dimension-line" d={cadSketchDimensionArcPath(mark.arc, center)} />
             : segment(mark.line, 'cad-sketch-graph-dimension-line')}
           {mark.arrows.map((arrow, part) => <polygon key={part} className="cad-sketch-graph-dimension-arrow" points={arrow.map(point => `${point[0] - center[0]},${point[1] - center[1]}`).join(' ')} />)}
         </g>

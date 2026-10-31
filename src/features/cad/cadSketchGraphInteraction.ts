@@ -1,4 +1,4 @@
-import { checkCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
+import { cadSketchGraphPlacedFrom, checkCadSketchGraph, isAcceptedCadSketchGraph, type CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import { CadError } from '@/domain/cad/cadError';
@@ -70,8 +70,24 @@ function boundsCorners(bounds: Readonly<Bounds2>): readonly Point2[] {
     { x: bounds.maxX, y: bounds.maxY }, { x: bounds.minX, y: bounds.maxY }];
 }
 
+type CadSketchGraphInteraction = ReturnType<typeof prepareInteraction>;
+// The interaction last prepared for an accepted graph, under these parameters, kept for the graphs made from it by moving dimensions.
+const preparedInteractions = new WeakMap<CadSketchGraph, { readonly parameters: Readonly<Record<string, number>>; readonly interaction: CadSketchGraphInteraction }>();
+
+/**
+ * The sketch geometry's points, edges, snaps and picks, with `graph` itself. None of them reads where dimensions are drawn, so a graph
+ * made by moving dimensions of one already prepared under the same parameters takes that preparation with its own graph.
+ */
+export function prepareCadSketchGraphInteraction(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): CadSketchGraphInteraction {
+  const source = cadSketchGraphPlacedFrom(graph), kept = preparedInteractions.get(source);
+  if (kept?.parameters === parameters) return kept.interaction.graph === graph ? kept.interaction : { ...kept.interaction, graph };
+  const interaction = prepareInteraction(graph, parameters);
+  if (isAcceptedCadSketchGraph(graph) && Object.isFrozen(parameters)) preparedInteractions.set(source, { parameters, interaction });
+  return interaction;
+}
+
 /** One immutable preparation supplies exact drawing and point/edge picking, without a profile fallback. */
-export function prepareCadSketchGraphInteraction(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>) {
+function prepareInteraction(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>) {
   const geometry = compileCadSketchGraph(graph, parameters);
   const fixed = new Map<string, Set<number>>();
   for (const id of cadSketchExternalReferenceComponents(graph).pointIds) fixed.set(id, new Set([0, 1]));
