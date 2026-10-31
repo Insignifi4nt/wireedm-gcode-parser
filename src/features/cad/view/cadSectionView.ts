@@ -60,25 +60,28 @@ export function cadClipRaycaster(raycaster: THREE.Raycaster, plane: THREE.Plane 
  * whole segment and checks only the ray's side of it against the near and far limits, so a segment the section removes could still be
  * picked a few pixels from the cut, and a crossing segment whose kept part is close could be lost. Here every segment is gathered along
  * the whole ray, cut to the kept side of `plane`, and kept only when its kept part is within `threshold`; each hit's `point` becomes the
- * closest point of that part, and `distance` its distance along the ray. Hits come back in that order, as three.js returns them. With no plane, segments
- * are measured whole. Lines a section does not cut, such as reference geometry, need none of this.
+ * closest point of that part, and `distance` its distance along the ray. Hits come back in that order, as three.js returns them.
+ *
+ * With no plane nothing is cut, as for reference geometry, which a section does not cut. three.js's own hits along the whole ray are
+ * then the answer, already measured to the whole segment and in order; only the world-space tolerance is checked again, since three.js
+ * scales it by an object's average scale. A view without a section, or uncut lines, pay nothing more per hit.
  */
 export function cadKeptLineHits(raycaster: THREE.Raycaster, lines: readonly THREE.Object3D[], plane: THREE.Plane | null, threshold: number): THREE.Intersection[] {
   const whole = new THREE.Raycaster(raycaster.ray.origin, raycaster.ray.direction, 0, Infinity);
   whole.camera = raycaster.camera; whole.layers.mask = raycaster.layers.mask; whole.params.Line.threshold = threshold;
+  const hits = whole.intersectObjects(lines as THREE.Object3D[], false);
+  if (!plane) return hits.filter(hit => raycaster.ray.distanceSqToPoint(hit.point) <= threshold ** 2);
   const start = new THREE.Vector3(), end = new THREE.Vector3(), onRay = new THREE.Vector3();
   const kept: THREE.Intersection[] = [];
-  for (const hit of whole.intersectObjects([...lines], false)) {
+  for (const hit of hits) {
     const geometry = (hit.object as THREE.Line).geometry, position = geometry?.getAttribute('position');
     if (!position || typeof hit.index !== 'number') continue;
     const a = geometry.index ? geometry.index.getX(hit.index) : hit.index, b = geometry.index ? geometry.index.getX(hit.index + 1) : hit.index + 1;
     start.fromBufferAttribute(position, a).applyMatrix4(hit.object.matrixWorld); end.fromBufferAttribute(position, b).applyMatrix4(hit.object.matrixWorld);
-    if (plane) {
-      const from = plane.distanceToPoint(start), to = plane.distanceToPoint(end);
-      if (from < 0 && to < 0) continue;
-      if (from < 0) start.lerp(end, from / (from - to));
-      else if (to < 0) end.lerpVectors(start, end, from / (from - to));
-    }
+    const from = plane.distanceToPoint(start), to = plane.distanceToPoint(end);
+    if (from < 0 && to < 0) continue;
+    if (from < 0) start.lerp(end, from / (from - to));
+    else if (to < 0) end.lerpVectors(start, end, from / (from - to));
     const point = new THREE.Vector3();
     if (raycaster.ray.distanceSqToSegment(start, end, onRay, point) > threshold ** 2) continue;
     kept.push({ ...hit, point, distance: raycaster.ray.origin.distanceTo(onRay) });

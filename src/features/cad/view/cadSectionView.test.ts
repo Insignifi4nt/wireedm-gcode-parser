@@ -82,6 +82,21 @@ describe('the pick filter through a section', () => {
       }
     });
 
+    it('with no plane takes three.js hits along the whole ray as they are, as a plane keeping everything would measure them', () => {
+      const deep = segment([-5, 0.2, -30], [5, 0.2, -30]), nearer = segment([0.3, -5, 20], [0.3, 5, 20], true), far = segment([-5, 0.9, 0], [5, 0.9, 0]);
+      // Scaled to 10, 10 and 0.1, three.js would take this line from 0.8 mm away: its tolerance is divided by the average scale.
+      const scaled = segment([-0.5, 0.08, 0], [0.5, 0.08, 0]); scaled.scale.set(10, 10, 0.1); scaled.updateMatrixWorld();
+      const keepAll = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 1000), caster = cadClipRaycaster(pointer(0), new THREE.Plane(new THREE.Vector3(0, 0, -1), 0));
+      const fast = cadKeptLineHits(caster, [deep, nearer, far, scaled], null, 0.6), measured = cadKeptLineHits(caster, [deep, nearer, far, scaled], keepAll, 0.6);
+      // The caller's ray starts at z = 0, where a section would cut it; lines it does not cut are measured along the whole ray.
+      expect(fast.map(hit => hit.object)).toEqual([nearer, deep]);
+      expect(fast.map(hit => hit.object)).toEqual(measured.map(hit => hit.object));
+      fast.forEach((hit, index) => {
+        expect(hit.point.distanceTo(measured[index].point)).toBeLessThan(1e-9);
+        expect(hit.distance).toBeCloseTo(measured[index].distance, 9);
+      });
+    });
+
     it('applies to edge and outline picks, while reference geometry the section does not cut stays pickable', () => {
       const mesh: CadMesh = { featureId: 'body', name: 'Body', positions: [], normals: [], indices: [], edges: [0.01, -10, 0, 0.01, 10, 0],
         faceGroups: [], edgeGroups: [{ start: 0, count: 2, key: 'edge' }], volume: 0, bounds: { min: [0, -10, 0], max: [0.02, 10, 0] } };
