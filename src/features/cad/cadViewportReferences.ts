@@ -11,6 +11,7 @@ import { cadProfileToEntities, resolveCadProfile, type CadAnalyticBoundary } fro
 import { arcBounds, boundsFromPoints, emptyBounds, mergeBounds } from '@/domain/path-intel/segments';
 import type { Bounds2 } from '@/domain/path-intel/types';
 import { compileCadSketchGraph } from '@/domain/cad/cadSketchGraphGeometry';
+import type { CadOriginAxis } from './view/cadReferenceSelection';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 
 interface CadViewportReferenceGeometry {
@@ -33,7 +34,24 @@ export interface CadViewportPrincipalPlaneReference extends CadViewportReference
   readonly featureKind: 'principal-plane';
   readonly plane: CadPlane;
 }
-export type CadViewportReference = CadViewportFeatureReference | CadViewportPrincipalPlaneReference;
+/** An origin axis, drawn as a line through the origin across the model. */
+export interface CadViewportOriginAxisReference extends CadViewportReferenceGeometry {
+  readonly featureId: null;
+  readonly featureKind: 'origin-axis';
+  readonly axis: CadOriginAxis;
+  readonly plane?: undefined;
+}
+/** The origin point, drawn as a marker the view keeps a few pixels across at every zoom. */
+export interface CadViewportOriginPointReference extends CadViewportReferenceGeometry {
+  readonly featureId: null;
+  readonly featureKind: 'origin-point';
+  readonly plane?: undefined;
+}
+export type CadViewportReference = CadViewportFeatureReference | CadViewportPrincipalPlaneReference | CadViewportOriginAxisReference | CadViewportOriginPointReference;
+/** Sketch and curve outlines: the references that are model geometry rather than the planes, axes and point it is built on. */
+export const isCadContourReference = (reference: CadViewportReference) => reference.featureKind === 'sketch' || reference.featureKind === 'curve';
+/** The origin axes and point, which mark where the model is but never frame it. */
+export const isCadOriginMarker = (reference: CadViewportReference) => reference.featureKind === 'origin-axis' || reference.featureKind === 'origin-point';
 interface ReferenceSource extends Omit<CadViewportFeatureReference, 'positions'> {
   readonly frame: CadResolvedFrame;
   readonly offset: number;
@@ -194,17 +212,20 @@ export function cadReferenceFeatureIds(references: readonly CadViewportReference
   return Object.freeze(ids);
 }
 
-/** Bounded view-only plane patch and local axes; authored geometry stays infinite. */
-function cadPlaneGlyph(frame: CadResolvedFrame) {
+interface CadPlaneExtent { readonly minU: number; readonly maxU: number; readonly minV: number; readonly maxV: number }
+const GLYPH_HALF = 12.5;
+const GLYPH_EXTENT: CadPlaneExtent = Object.freeze({ minU: -GLYPH_HALF, maxU: GLYPH_HALF, minV: -GLYPH_HALF, maxV: GLYPH_HALF });
+/** Bounded view-only plane patch and local axes; authored geometry stays infinite. The patch covers `extent` of the plane, the label its corner. */
+function cadPlaneGlyph(frame: CadResolvedFrame, extent: CadPlaneExtent = GLYPH_EXTENT) {
   const at = (x: number, y: number, n = 0) => cadFramePointToWorld(frame, n, [x, y]);
-  const corners = [at(-12.5, -12.5), at(12.5, -12.5), at(12.5, 12.5), at(-12.5, 12.5)];
+  const corners = [at(extent.minU, extent.minV), at(extent.maxU, extent.minV), at(extent.maxU, extent.maxV), at(extent.minU, extent.maxV)];
   const positions: number[] = [];
   for (let index = 0; index < 4; index++) positions.push(...corners[index], ...corners[(index + 1) % 4]);
   for (const end of [at(10, 0), at(0, 10), at(0, 0, 10)]) positions.push(...frame.origin, ...end);
   positions.push(...at(0, 0, 10), ...at(2, 0, 7), ...at(0, 0, 10), ...at(-2, 0, 7));
   const all = [...corners, frame.origin, at(0, 0, 10)];
   const component = (axis: number, reducer: typeof Math.min) => reducer(...all.map(point => point[axis]));
-  return Object.freeze({ labelPosition: Object.freeze(at(10, 10)),
+  return Object.freeze({ labelPosition: Object.freeze(at(extent.maxU - 2.5, extent.maxV - 2.5)),
     positions: Object.freeze(positions), planePatch: Object.freeze([...corners[0], ...corners[1], ...corners[2], ...corners[0], ...corners[2], ...corners[3]]),
     bounds: Object.freeze({ min: Object.freeze([component(0, Math.min), component(1, Math.min), component(2, Math.min)] as const), max: Object.freeze([component(0, Math.max), component(1, Math.max), component(2, Math.max)] as const) }) });
 }
@@ -214,10 +235,84 @@ function cadDatumReference(feature: Extract<CadFeature, { kind: 'datum-plane' }>
     plane: Object.freeze({ kind: 'datum-plane', featureId: feature.id }) });
 }
 
+const principalPlane = (plane: CadPlane, extent?: CadPlaneExtent): CadViewportPrincipalPlaneReference => Object.freeze({ ...cadPlaneGlyph(cadPrincipalFrame(plane), extent),
+  referenceId: `principal:${plane}`, featureId: null, featureKind: 'principal-plane', plane, name: `${plane} plane`, construction: false });
 /** World reference planes are display resources, never document feature IDs. */
-export const CAD_PRINCIPAL_PLANE_REFERENCES: readonly CadViewportPrincipalPlaneReference[] = Object.freeze(
-  (['XY', 'XZ', 'YZ'] as const).map(plane => Object.freeze({ ...cadPlaneGlyph(cadPrincipalFrame(plane)), referenceId: `principal:${plane}`,
-    featureId: null, featureKind: 'principal-plane', plane, name: `${plane} plane`, construction: false })));
+export const CAD_PRINCIPAL_PLANE_REFERENCES: readonly CadViewportPrincipalPlaneReference[] = Object.freeze((['XY', 'XZ', 'YZ'] as const).map(plane => principalPlane(plane)));
+
+const AXIS_HALF = 30;
+const AXIS_INDEX: Readonly<Record<CadOriginAxis, number>> = { x: 0, y: 1, z: 2 };
+const point3 = (value: readonly number[]) => Object.freeze([value[0], value[1], value[2]] as const);
+const originAxis = (axis: CadOriginAxis, min = -AXIS_HALF, max = AXIS_HALF): CadViewportOriginAxisReference => {
+  const start = [0, 0, 0], end = [0, 0, 0]; start[AXIS_INDEX[axis]] = min; end[AXIS_INDEX[axis]] = max;
+  return Object.freeze({ referenceId: `origin:${axis}`, featureId: null, featureKind: 'origin-axis', axis, name: `${axis.toUpperCase()} axis`, construction: false,
+    positions: Object.freeze([...start, ...end]), bounds: Object.freeze({ min: point3(start), max: point3(end) }) });
+};
+/** A unit three-armed marker; the view scales it to a few pixels on screen. */
+export const CAD_ORIGIN_POINT_REFERENCE: CadViewportOriginPointReference = Object.freeze({ referenceId: 'origin:point', featureId: null, featureKind: 'origin-point',
+  name: 'Origin', construction: false, positions: Object.freeze([-1, 0, 0, 1, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, -1, 0, 0, 1]),
+  bounds: Object.freeze({ min: point3([0, 0, 0]), max: point3([0, 0, 0]) }) });
+export const CAD_ORIGIN_AXIS_REFERENCES: readonly CadViewportOriginAxisReference[] = Object.freeze((['x', 'y', 'z'] as const).map(axis => originAxis(axis)));
+
+/** Rounds a span outward to a step that grows with it, so small changes in the model keep the same reference geometry. */
+function steppedSpan(min: number, max: number, floor: number): readonly [number, number] {
+  if (min >= -floor && max <= floor) return [-floor, floor];
+  const margin = (max - min) * 0.1, step = 2 ** Math.ceil(Math.log2(Math.max(max - min, 1) / 16));
+  return [Math.min(-floor, Math.floor((min - margin) / step) * step), Math.max(floor, Math.ceil((max + margin) / step) * step)];
+}
+// Sized references are kept by size, so a model that returns to a size gets the same objects and the view keeps their lines.
+const sized = new Map<string, CadViewportReference>();
+const sizedReference = <T extends CadViewportReference>(key: string, make: () => T): T => {
+  const known = sized.get(key);
+  if (known) return known as T;
+  if (sized.size > 64) sized.clear();
+  const made = make(); sized.set(key, made); return made;
+};
+let lastOrigin: readonly CadViewportReference[] | null = null;
+
+/**
+ * The origin planes, axes and point, sized to the model: each plane covers the model's extent in that plane and each axis its extent
+ * along that axis, with a margin, and never less than an empty model shows. Sizes change in steps, and the same sizes return the same
+ * list, so the view rebuilds them only when the model outgrows a step.
+ */
+export function cadOriginReferences(bounds: CadBounds3 | null): readonly CadViewportReference[] {
+  const valid = bounds && bounds.min.every((value, index) => Number.isFinite(value) && Number.isFinite(bounds.max[index]) && value <= bounds.max[index]) ? bounds : null;
+  const corners = valid ? Array.from({ length: 8 }, (_, index) => [index & 1 ? valid.max[0] : valid.min[0], index & 2 ? valid.max[1] : valid.min[1], index & 4 ? valid.max[2] : valid.min[2]]) : [];
+  const span = (direction: readonly number[], floor: number): readonly [number, number] => {
+    if (!corners.length) return [-floor, floor];
+    const values = corners.map(corner => corner[0] * direction[0] + corner[1] * direction[1] + corner[2] * direction[2]);
+    return steppedSpan(Math.min(...values), Math.max(...values), floor);
+  };
+  const planes = CAD_PRINCIPAL_PLANE_REFERENCES.map(reference => {
+    const frame = cadPrincipalFrame(reference.plane), [minU, maxU] = span(frame.u, GLYPH_HALF), [minV, maxV] = span(frame.v, GLYPH_HALF);
+    if (minU === -GLYPH_HALF && maxU === GLYPH_HALF && minV === -GLYPH_HALF && maxV === GLYPH_HALF) return reference;
+    return sizedReference(`${reference.referenceId}/${minU}/${maxU}/${minV}/${maxV}`, () => principalPlane(reference.plane, Object.freeze({ minU, maxU, minV, maxV })));
+  });
+  const axes = CAD_ORIGIN_AXIS_REFERENCES.map(reference => {
+    const direction = [0, 0, 0]; direction[AXIS_INDEX[reference.axis]] = 1;
+    const [min, max] = span(direction, AXIS_HALF);
+    return min === -AXIS_HALF && max === AXIS_HALF ? reference : sizedReference(`${reference.referenceId}/${min}/${max}`, () => originAxis(reference.axis, min, max));
+  });
+  const next = [...planes, ...axes, CAD_ORIGIN_POINT_REFERENCE];
+  if (lastOrigin && lastOrigin.length === next.length && lastOrigin.every((reference, index) => reference === next[index])) return lastOrigin;
+  lastOrigin = Object.freeze(next);
+  return lastOrigin;
+}
+
+/**
+ * The box the reference geometry is sized to: every body of the model and every sketch and curve outline. `null` when the model is empty,
+ * so the reference geometry keeps its smallest size.
+ */
+export function cadModelBounds(meshes: readonly { readonly bounds: CadBounds3 }[], references: readonly CadViewportReference[]): CadBounds3 | null {
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  const add = (bounds: CadBounds3) => {
+    if (!bounds.min.every((value, index) => Number.isFinite(value) && Number.isFinite(bounds.max[index]) && value <= bounds.max[index])) return;
+    for (let index = 0; index < 3; index++) { min[index] = Math.min(min[index], bounds.min[index]); max[index] = Math.max(max[index], bounds.max[index]); }
+  };
+  meshes.forEach(mesh => add(mesh.bounds));
+  references.forEach(reference => { if (isCadContourReference(reference)) add(reference.bounds); });
+  return min[0] <= max[0] ? Object.freeze({ min: Object.freeze([min[0], min[1], min[2]] as const), max: Object.freeze([max[0], max[1], max[2]] as const) }) : null;
+}
 
 /** Principal-plane membership supplements feature IDs without duplicating datum IDs. */
 export function cadReferencePlanes(references: readonly CadViewportReference[]): readonly CadPlane[] {
@@ -229,9 +324,10 @@ export function cadSameReferencePlane(a: CadSketchPlane | null, b: CadSketchPlan
 }
 
 /** A plane hovered in the tree joins the design area so it can be found there; a datum keeps its feature identity. */
-export function cadReferencesWithHoveredPlane(references: readonly CadViewportReference[], prepared: readonly CadViewportReference[], hovered: CadSketchPlane | null): readonly CadViewportReference[] {
+export function cadReferencesWithHoveredPlane(references: readonly CadViewportReference[], prepared: readonly CadViewportReference[], hovered: CadSketchPlane | null,
+  principal: readonly CadViewportReference[] = CAD_PRINCIPAL_PLANE_REFERENCES): readonly CadViewportReference[] {
   if (!hovered || references.some(reference => reference.plane && cadSameReferencePlane(reference.plane, hovered))) return references;
-  const extra = typeof hovered === 'string' ? CAD_PRINCIPAL_PLANE_REFERENCES.find(reference => reference.plane === hovered)
+  const extra = typeof hovered === 'string' ? principal.find(reference => reference.featureKind === 'principal-plane' && reference.plane === hovered)
     : prepared.find(reference => reference.featureKind === 'datum-plane' && reference.featureId === hovered.featureId);
   return extra ? Object.freeze([...references, extra]) : references;
 }

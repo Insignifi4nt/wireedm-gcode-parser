@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { FitViewIcon, GridIcon, ViewIcon } from '@wire-edm/icons-react';
 import { CadContextHelp } from './CadContextHelp';
 import { CadViewTools } from './CadCommandDock';
@@ -15,7 +15,7 @@ import { pickTopology, topologyGroupAt, type CadPickMode, type CadTopologyHit } 
 import { cadBoxSelectedBody, cadProjectedBounds, cadScreenBox } from './cadBoxSelection';
 import { createCadTopologyHighlights } from './cadTopologyHighlights';
 import { pickCadCurveReference } from './cadCurveRendering';
-import { cadReferenceFeatureIds, cadReferencePlanes, cadSameReferencePlane, type CadViewportReference } from './cadViewportReferences';
+import { cadReferenceFeatureIds, cadReferencePlanes, cadSameReferencePlane, isCadContourReference, isCadOriginMarker, type CadViewportReference } from './cadViewportReferences';
 import { cadLocalRenderPositions, cadRenderOrigin } from './cadRenderCoordinates';
 import { prepareCadMeshDisplay } from './cadMeshDisplay';
 import { createCadRegionSelectionOverlay } from './cadRegionSelectionOverlay';
@@ -28,8 +28,23 @@ import './cad-depth-handle.css';
 import { cadViewBackground } from './cadViewBackground';
 import { cadSketchClipPlane, cadSketchClipTolerance, syncCadSketchCamera, type CadSketchCameraLink, type CadSketchPlacementFrame } from './view/cadSketchCamera';
 import { CAD_SKETCH_DIM_AMOUNT, createCadBackgroundDim } from './view/cadSketchBackgroundStyle';
+import type { CadResolvedFrame } from '@/domain/cad/cadDatumPlanes';
+import { cadBoundsClipped, cadClipRaycaster, cadSectionClipPlane } from './view/cadSectionView';
+import { cadCapBodySolids, createCadSectionCaps } from './view/cadSectionCaps';
+import { CAD_DEFAULT_SELECTION_FILTER, cadSelectionAccepts, type CadSelectionFilter, type CadSelectionKind } from './view/cadSelectionFilter';
+import type { CadOriginSelection } from './view/cadReferenceSelection';
 const NO_REFERENCES: readonly CadViewportReference[] = Object.freeze([]);
 const NO_SOURCE_PICK_IDS: readonly string[] = Object.freeze([]);
+/** An origin axis or the origin point picked in the model view. */
+export type { CadOriginSelection };
+const originSelection = (reference: CadViewportReference): CadOriginSelection | null => reference.featureKind === 'origin-axis'
+  ? { kind: 'axis', axis: reference.axis } : reference.featureKind === 'origin-point' ? { kind: 'point' } : null;
+const sameOrigin = (reference: CadViewportReference, selection: CadOriginSelection | null) => {
+  const own = originSelection(reference);
+  return Boolean(own && selection && own.kind === selection.kind && (own.kind === 'point' || selection.kind === 'axis' && own.axis === selection.axis));
+};
+/** Origin axes in the colours of the axis triad, a little muted so a model in front stays the focus. */
+const ORIGIN_AXIS_COLORS = { x: 0xd9776e, y: 0x86c979, z: 0x6f9be0 } as const;
 export interface CadViewportContextMenuRequest {
   readonly clientX: number;
   readonly clientY: number;
@@ -48,9 +63,20 @@ export interface CadSketchBackgroundView {
   readonly camera: CadSketchCameraLink;
 }
 
+/**
+ * The section the model view cuts by, resolved to its plane in the world. Bodies, their edges and sketch outlines are clipped; the
+ * planes, axes and points stay whole so another one can be picked. Picks never land on the removed side.
+ */
+export interface CadViewportSection {
+  readonly frame: CadResolvedFrame;
+  readonly flip: boolean;
+  readonly caps: boolean;
+}
+
 export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersion = null, selectedId, onSelect, onControlsReady, interactionLocked = false,
   navigationLocked = interactionLocked, navigationMode = 'mouse', onContextMenu, pickMode = 'body', topologySelection = null, onTopologyPick, pickingEnabled = true, getFitArea,
-  selectedReferencePlane = null, hoveredReferencePlane = null, onSelectPlane, onHoverPlane, planePickingOnly = false, sourceReferencePickIds = NO_SOURCE_PICK_IDS, regionSelection = null, depthControl = null, busyInputLocked = false, hidden = false, sketchView = null }: {
+  selectedReferencePlane = null, hoveredReferencePlane = null, onSelectPlane, onHoverPlane, planePickingOnly = false, sourceReferencePickIds = NO_SOURCE_PICK_IDS, regionSelection = null, depthControl = null, busyInputLocked = false, hidden = false, sketchView = null,
+  section = null, selectionFilter = CAD_DEFAULT_SELECTION_FILTER, selectedOrigin = null, onSelectOrigin, viewControls }: {
   meshes: readonly CadMesh[];
   references?: readonly CadViewportReference[];
   referenceVersion?: string | null;
@@ -86,6 +112,14 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   hidden?: boolean;
   /** Draws the model behind the covering sketch with the sketch's own camera. The model camera stays untouched, so leaving restores it exactly. */
   sketchView?: CadSketchBackgroundView | null;
+  /** Cuts the model view by a plane. While a sketch background is drawn, the sketch's own cut applies instead. */
+  section?: CadViewportSection | null;
+  /** Kinds a free pick may land on. Picks a command owns, such as a sketch plane or a source, ignore it. */
+  selectionFilter?: CadSelectionFilter;
+  selectedOrigin?: CadOriginSelection | null;
+  onSelectOrigin?(selection: CadOriginSelection): void;
+  /** Part view controls the workbench owns, shown with the navigation controls. */
+  viewControls?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const planeLabels = useRef<HTMLDivElement>(null);
@@ -107,12 +141,13 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
   const sourceInteraction = ownedRegions?.sketchId ?? sourceReferenceIds;
   const meshInteraction = ownedRegions?.cells ?? meshes;
   const referenceVersionInteraction = ownedRegions?.expectedVersion ?? referenceVersion;
-  const data = useRef({ meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, hoveredReferencePlane, onSelectPlane, onHoverPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked, hidden, sketchView });
-  data.current = { meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, hoveredReferencePlane, onSelectPlane, onHoverPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked, hidden, sketchView };
+  const data = useRef({ meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, hoveredReferencePlane, onSelectPlane, onHoverPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked, hidden, sketchView, section, selectionFilter, selectedOrigin, onSelectOrigin });
+  data.current = { meshes, references, referenceVersion, selectedId, onSelect, pickMode, topologySelection, onTopologyPick, interactionLocked, navigationLocked, navigationMode, onContextMenu, pickingEnabled, getFitArea, selectedReferencePlane, hoveredReferencePlane, onSelectPlane, onHoverPlane, planePickingOnly, sourceReferenceIds, regionSelection: ownedRegions, depthControl: ownedDepth, busyInputLocked, hidden, sketchView, section, selectionFilter, selectedOrigin, onSelectOrigin };
   const present = useRef<((hidden: boolean, sketch: CadSketchBackgroundView | null) => void) | null>(null);
   const redraw = useRef<(() => void) | null>(null);
   const recolor = useRef<(() => void) | null>(null);
   const highlight = useRef<(() => void) | null>(null);
+  const applySection = useRef<(() => void) | null>(null);
   const cancelInteraction = useRef<((preserveDepth?: boolean, preserveHover?: boolean) => void) | null>(null);
   const preserveIdleHover = useRef(false);
   const interactionOwner = useRef<{ scene: readonly unknown[]; busy: boolean } | null>(null);
@@ -134,7 +169,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const container = host.current;
     if (!container) return;
     let renderer: THREE.WebGLRenderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    // Section caps count how the cut winds round each point in the stencil buffer.
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, stencil: true }); }
     catch { setGraphicsFailure('unavailable'); return; }
     setGraphicsFailure(null); setGridVisible(true); setViewName('Isometric');
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -192,6 +228,18 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     // Behind an open sketch the view draws through the sketch's camera, so the model camera keeps its exact place for the return.
     const sketchCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const sketchClip = new THREE.Plane(), sketchClipPlanes = [sketchClip];
+    // A section cuts the model view while no sketch covers it; an open sketch's own cut replaces it.
+    const sectionClip = new THREE.Plane(), sectionClipPlanes = [sectionClip];
+    let sectionShown = false;
+    // The caps join the scene only while a capped section shows, so a view without one draws and walks nothing extra. Caps of large
+    // bodies finish in later slices, and then draw.
+    const caps = createCadSectionCaps({ onChange: () => { if (!disposed) { placeCaps(); render(); } } });
+    const placeCaps = () => { if (!caps.group.visible) scene.remove(caps.group); else if (caps.group.parent !== scene) scene.add(caps.group); };
+    const solidBounds = new THREE.Box3();
+    /** The clip a pick honours: the section's in the model view, none otherwise. */
+    const pickClip = () => sectionShown && !sketch ? sectionClip : null;
+    // Picks of bodies, edges and outlines use this copy of the pointer ray, limited to the kept side of a section.
+    const clippedRay = new THREE.Raycaster();
     const dim = createCadBackgroundDim();
     // Covered by a sketch, the view draws only as that sketch's background. Otherwise, while hidden, it neither draws nor sizes itself, and
     // model uploads wait until it is shown again.
@@ -275,11 +323,14 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           if (depth.hitTest(localPixel(event))) { setHover(null); setFeatureHover(null); }
           else if (data.current.interactionLocked) { setHover(null); setFeatureHover(null); }
           else if (data.current.regionSelection) setRegionHover(raycaster.ray);
-          else if (data.current.pickMode === 'body' || data.current.planePickingOnly || data.current.pickMode === 'auto' && !data.current.pickingEnabled) setFeatureHover(data.current.planePickingOnly ? null : hitFeature(), hitPlane()?.referenceId ?? null);
+          else if (data.current.pickMode === 'body' || data.current.planePickingOnly || data.current.pickMode === 'auto' && !data.current.pickingEnabled) {
+            const feature = data.current.planePickingOnly ? null : hitFeature(false), origin = feature ? null : hitOrigin();
+            setFeatureHover(data.current.planePickingOnly ? null : feature ?? (origin ? null : hitFeature()), (origin ?? hitPlane())?.referenceId ?? null);
+          }
           else if (data.current.pickMode === 'auto') {
-            // A reference, datum or sketch in front wins; otherwise the nearest edge or the face under the pointer.
-            const feature = hitFeature(false), topology = feature ? null : hitTopology();
-            setHover(topology); setFeatureHover(feature, feature || topology ? null : hitPlane()?.referenceId ?? null);
+            // A reference, datum or sketch in front wins, then an origin axis or point; otherwise the nearest edge or the face under the pointer.
+            const feature = hitFeature(false), origin = feature ? null : hitOrigin(), topology = feature || origin ? null : hitTopology();
+            setHover(topology); setFeatureHover(feature, feature || topology ? null : (origin ?? hitPlane())?.referenceId ?? null);
           }
           else if (data.current.pickingEnabled) setHover(hitTopology());
         }
@@ -313,7 +364,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     // While a sketch surface covers the view the model camera stays where the sketch found it, so leaving returns to it exactly. A first
     // fit asked for meanwhile waits, and runs on leaving only when the view had nothing but planes to show before the sketch opened.
     let cover: { geometryBefore: boolean; fitWaiting: boolean } | null = data.current.hidden ? { geometryBefore: false, fitWaiting: false } : null;
-    const showsGeometry = () => solids.children.length > 0 || [...installedReferences.values(), ...setAsideReferences.values()].some(({ reference }) => !reference.planePatch);
+    const showsGeometry = () => solids.children.length > 0 || [...installedReferences.values(), ...setAsideReferences.values()].some(({ reference }) => isCadContourReference(reference));
     const fitFirst = () => {
       if (userFramed) return;
       if (cover) cover.fitWaiting = true; else fit(true);
@@ -328,8 +379,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         if (!automatic && data.current.regionSelection) {
           const regionBounds = regions.getBounds(); if (regionBounds) bounds.union(regionBounds);
         } else {
-          const contours = data.current.references.filter(reference => !reference.planePatch);
-          const fitReferences = !bounds.isEmpty() || contours.length ? contours : data.current.references;
+          const contours = data.current.references.filter(isCadContourReference);
+          // With nothing else to show, the planes frame the view; the origin axes and point never do.
+          const fitReferences = !bounds.isEmpty() || contours.length ? contours : data.current.references.filter(reference => !isCadOriginMarker(reference));
           for (const reference of fitReferences) bounds.union(new THREE.Box3(new THREE.Vector3(...reference.bounds.min), new THREE.Vector3(...reference.bounds.max)));
         }
         const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
@@ -375,11 +427,13 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       referenceLines.remove(line);
     };
     const referenceSelected = (reference: CadViewportReference) => reference.plane ? cadSameReferencePlane(reference.plane, data.current.selectedReferencePlane)
-      || reference.featureId !== null && reference.featureId === data.current.selectedId : reference.featureId === data.current.selectedId;
+      || reference.featureId !== null && reference.featureId === data.current.selectedId
+      : isCadOriginMarker(reference) ? sameOrigin(reference, data.current.selectedOrigin) : reference.featureId === data.current.selectedId;
     const referenceHovered = (reference: CadViewportReference) => reference.referenceId === hoveredPlaneReference || reference.featureId !== null && reference.featureId === hoveredFeatureId
       || Boolean(reference.plane) && cadSameReferencePlane(reference.plane ?? null, data.current.hoveredReferencePlane);
     const referenceColor = (reference: CadViewportReference) => referenceSelected(reference) ? 0xf0c779 : referenceHovered(reference) ? 0x91edff
-      : reference.featureKind === 'principal-plane' ? ({ XY: 0x80b7d4, XZ: 0x94cda4, YZ: 0xd2aaa0 }[reference.plane]) : reference.construction ? 0x698594 : 0x89b9c6;
+      : reference.featureKind === 'principal-plane' ? ({ XY: 0x80b7d4, XZ: 0x94cda4, YZ: 0xd2aaa0 }[reference.plane])
+        : reference.featureKind === 'origin-axis' ? ORIGIN_AXIS_COLORS[reference.axis] : reference.featureKind === 'origin-point' ? 0xe7edf2 : reference.construction ? 0x698594 : 0x89b9c6;
     const isPickingSource = (reference: CadViewportReference) => (data.current.pickMode === 'body' || data.current.pickMode === 'auto') && !data.current.planePickingOnly
       && (reference.featureKind === 'sketch' || reference.featureKind === 'curve') && reference.featureId !== null && data.current.sourceReferenceIds.has(reference.featureId);
     const updateReferenceStyles = () => {
@@ -397,22 +451,32 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           line.material.depthWrite = !pickingSource && !reference.construction;
         }
         if (line.material instanceof THREE.LineDashedMaterial) { line.material.dashSize = worldPerPixel * 6; line.material.gapSize = worldPerPixel * 4; }
+        // The origin marker keeps five pixels per arm at every zoom; only its scale changes, never its buffers.
+        if (reference.featureKind === 'origin-point' && line.scale.x !== worldPerPixel * 5) { line.scale.setScalar(worldPerPixel * 5); line.updateMatrixWorld(); }
       }
     };
     // Every model material carries the dim, at zero outside a sketch, so switching Normal and Dimmed compiles nothing.
-    const styleMaterial = <T extends THREE.Material>(material: T): T => {
+    /** The cut the model's materials carry: the open sketch's, else the section's. */
+    const modelClip = () => sketch ? sketch.cutBySketchPlane ? sketchClipPlanes : null : sectionShown ? sectionClipPlanes : null;
+    /** Behind a sketch every line follows its cut; in the model view a section leaves planes, axes and points whole. */
+    const referenceClip = (contour: boolean) => sketch || contour ? modelClip() : null;
+    const styleMaterial = <T extends THREE.Material>(material: T, contour = true): T => {
       dim.install(material);
-      material.clippingPlanes = sketch?.cutBySketchPlane ? sketchClipPlanes : null;
+      material.clippingPlanes = referenceClip(contour);
       return material;
     };
     /** Applies the open sketch's background and cut, or the plain model view when no sketch is open. */
     const applySketchStyle = () => {
-      const clip = sketch?.cutBySketchPlane ? sketchClipPlanes : null;
+      const clip = modelClip();
       for (const group of [solids, referenceLines]) for (const child of group.children) {
         if (!(child instanceof THREE.Mesh || child instanceof THREE.LineSegments)) continue;
         // three.js compiles the cut into the program and recompiles when the number of planes changes.
-        for (const material of Array.isArray(child.material) ? child.material : [child.material]) material.clippingPlanes = clip;
+        const planes = group === solids ? clip : referenceClip(child.userData.contour === true);
+        for (const material of Array.isArray(child.material) ? child.material : [child.material]) material.clippingPlanes = planes;
       }
+      highlights.setClippingPlanes(sketch ? null : clip);
+      caps.setPlane(sectionShown && !sketch && data.current.section?.caps ? sectionClip : null);
+      placeCaps();
       dim.setAmount(sketch?.background === 'dimmed' ? CAD_SKETCH_DIM_AMOUNT : 0);
       // The grid, axes and pick highlights belong to the model view; the sketch draws its own.
       grid.visible = !sketch && viewState.gridVisible; axes.visible = !sketch; highlights.objects.visible = !sketch;
@@ -438,7 +502,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           if (next !== kept.reference) { disposeReference(kept.line, kept.patch); continue; }
           // The cut as the view stands; when a sketch closes, the style pass that follows sets it for every line again.
           for (const object of kept.patch ? [kept.line, kept.patch] : [kept.line]) {
-            for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.clippingPlanes = sketch?.cutBySketchPlane ? sketchClipPlanes : null;
+            for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.clippingPlanes = referenceClip(object.userData.contour === true);
             referenceLines.add(object);
           }
           installedReferences.set(id, kept);
@@ -450,15 +514,18 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           // in double precision before uploading the model-view matrix.
           const origin = cadRenderOrigin(reference.bounds);
           const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(reference.positions, origin), 3));
-          const material = styleMaterial(reference.construction ? new THREE.LineDashedMaterial({ color: referenceColor(reference), depthWrite: false }) : new THREE.LineBasicMaterial({ color: referenceColor(reference) }));
+          const contour = isCadContourReference(reference);
+          const material = styleMaterial(reference.construction ? new THREE.LineDashedMaterial({ color: referenceColor(reference), depthWrite: false }) : new THREE.LineBasicMaterial({ color: referenceColor(reference) }), contour);
           const line = new THREE.LineSegments(geometry, material);
+          line.userData.contour = contour;
           if (reference.construction) line.computeLineDistances();
           line.position.set(origin[0], origin[1], origin[2]);
           line.userData.featureKind = reference.featureKind; line.userData.featureId = reference.featureId; line.userData.referenceId = reference.referenceId; referenceLines.add(line); line.updateMatrixWorld(true);
           let patch: THREE.Mesh | undefined;
           if (reference.planePatch) {
             const patchGeometry = new THREE.BufferGeometry(); patchGeometry.setAttribute('position', new THREE.BufferAttribute(cadLocalRenderPositions(reference.planePatch, origin), 3));
-            patch = new THREE.Mesh(patchGeometry, styleMaterial(new THREE.MeshBasicMaterial({ color: referenceColor(reference), transparent: true, opacity: .055, side: THREE.DoubleSide, depthWrite: false })));
+            // A flat patch shows one side per pixel, so one pass draws what three.js's back-then-front passes would, without looking up its program twice a frame.
+            patch = new THREE.Mesh(patchGeometry, styleMaterial(new THREE.MeshBasicMaterial({ color: referenceColor(reference), transparent: true, opacity: .055, side: THREE.DoubleSide, depthWrite: false, forceSinglePass: true }), false));
             patch.position.set(...origin); patch.userData.featureId = reference.featureId; patch.userData.referenceId = reference.referenceId; referenceLines.add(patch); patch.updateMatrixWorld(true);
           }
           installedReferences.set(reference.referenceId, { reference, line, patch });
@@ -518,6 +585,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         solids.add(outline);
       }
       sceneBoundsCurrent = false;
+      solidBounds.makeEmpty(); solidBounds.expandByObject(solids);
+      caps.setBodies(pickableBodies, body => { const mesh = meshByObject.get(body); return mesh && cadCapBodySolids(mesh); });
+      syncSection(); applySketchStyle();
       if (!fittedSolid && data.current.meshes.length) {
         fittedSolid = true;
         fitFirst();
@@ -526,6 +596,18 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       hoveredFeatureId = null;
       updateHighlights();
       render();
+    };
+    /** Places the section plane for the model as it stands; the tolerance follows the model's size. */
+    const syncSection = () => {
+      const next = data.current.section;
+      sectionShown = Boolean(next);
+      if (next) cadSectionClipPlane(next.frame, next.flip, cadSketchClipTolerance(solidBounds.isEmpty() ? null : solidBounds), sectionClip);
+    };
+    const updateSection = () => {
+      syncSection(); applySketchStyle();
+      // A hover on the side just removed must not stay lit; the next pointer move finds what is under it now.
+      pendingHover = null; setHover(null); setFeatureHover(null);
+      viewState.revision++; render();
     };
     const updateHighlights = () => {
       if (highlights.update({ meshes: data.current.meshes, selection: data.current.topologySelection, hover: viewState.hoveredTopology })) {
@@ -581,10 +663,22 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     const setRay = (event: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
       raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / Math.max(1, rect.width) * 2 - 1, -(event.clientY - rect.top) / Math.max(1, rect.height) * 2 + 1), camera);
+      clippedRay.ray.copy(raycaster.ray); clippedRay.camera = camera; cadClipRaycaster(clippedRay, pickClip());
+    };
+    /** A command that owns the pick, such as a sketch-plane request, a source or a region pick, is not filtered. */
+    const accepts = (kind: CadSelectionKind) => data.current.planePickingOnly || data.current.sourceReferenceIds.size > 0 || Boolean(data.current.regionSelection)
+      || cadSelectionAccepts(data.current.selectionFilter, kind);
+    /** The topology a free pick may land on: Auto narrows to edges or faces when the filter leaves only one of them. */
+    const topologyMode = (): 'auto' | 'edge' | 'face' | null => {
+      const mode = data.current.pickMode;
+      if (mode === 'body') return null;
+      if (mode !== 'auto') return mode;
+      const edges = accepts('edge'), faces = accepts('face');
+      return edges && faces ? 'auto' : edges ? 'edge' : faces ? 'face' : null;
     };
     const localPixel = (event: PointerEvent) => { const rect = renderer.domElement.getBoundingClientRect(); return { x: event.clientX - rect.left, y: event.clientY - rect.top }; };
-    const hitTopology = () => data.current.pickMode === 'body' ? null : pickTopology({ mode: data.current.pickMode,
-      raycaster, bodies: pickableBodies, edges: pickableEdges, meshByObject, camera, viewportHeight: container.clientHeight });
+    const hitTopology = () => { const mode = topologyMode(); return mode === null ? null : pickTopology({ mode,
+      raycaster: clippedRay, bodies: pickableBodies, edges: pickableEdges, meshByObject, camera, viewportHeight: container.clientHeight, clip: pickClip() }); };
     /** Without `includeBodies`, only features drawn over the solid (references, datums, sketches) are returned. */
     const hitFeature = (includeBodies = true): string | null => {
       if (data.current.sourceReferenceIds.size && !data.current.planePickingOnly) {
@@ -592,21 +686,35 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
           const reference = installedReferences.get(line.userData.referenceId)?.reference;
           return reference && isPickingSource(reference);
         });
-        const sourceId = pickCadCurveReference({ raycaster, references: sourceReferences, bodies: [], camera, viewportHeight: container.clientHeight });
+        const sourceId = pickCadCurveReference({ raycaster: clippedRay, references: sourceReferences, bodies: [], camera, viewportHeight: container.clientHeight, clip: pickClip(), cut: true });
         if (sourceId) return sourceId;
       }
-      const referenceId = pickCadCurveReference({ raycaster, references: pickableReferences.filter(line => line.userData.featureKind !== 'datum-plane' && line.userData.featureKind !== 'principal-plane'), bodies: pickableBodies, camera, viewportHeight: container.clientHeight });
+      const clip = pickClip(), viewportHeight = container.clientHeight;
+      // Sketch and curve outlines are cut with the bodies, so they are picked along the kept part of the ray only.
+      const referenceId = pickCadCurveReference({ raycaster: clippedRay, references: pickableReferences.filter(line => line.userData.contour === true), bodies: pickableBodies, camera, viewportHeight, clip, cut: true });
       if (referenceId) return referenceId;
-      const datumId = pickCadCurveReference({ raycaster, references: pickableReferences.filter(line => line.userData.featureKind === 'datum-plane'), bodies: pickableBodies, camera, viewportHeight: container.clientHeight });
+      const planes = accepts('plane');
+      const datumId = planes ? pickCadCurveReference({ raycaster, references: pickableReferences.filter(line => line.userData.featureKind === 'datum-plane'), bodies: pickableBodies, camera, viewportHeight, clip }) : null;
       if (datumId) return datumId;
-      const patches = [...installedReferences.values()].flatMap(entry => entry.patch && entry.reference.featureId !== null ? [entry.patch] : []);
-      const patchHit = raycaster.intersectObjects(patches, false)[0];
-      const surface = raycaster.intersectObjects(pickableBodies, false)[0];
+      const patches = planes ? [...installedReferences.values()].flatMap(entry => entry.patch && entry.reference.featureId !== null ? [entry.patch] : []) : [];
+      const patchHit = patches.length ? raycaster.intersectObjects(patches, false)[0] : undefined;
+      const surface = clippedRay.intersectObjects(pickableBodies, false)[0];
       if (patchHit && (!surface || patchHit.distance <= surface.distance + 1e-7)) return patchHit.object.userData.featureId;
-      const id: unknown = data.current.pickingEnabled && includeBodies ? surface?.object.userData.featureId : null;
+      const id: unknown = data.current.pickingEnabled && includeBodies && accepts('body') ? surface?.object.userData.featureId : null;
       return typeof id === 'string' ? id : null;
     };
+    /** The origin point, else an origin axis, near the pointer and not behind kept material. */
+    const hitOrigin = (): CadViewportReference | null => {
+      if (data.current.planePickingOnly || data.current.sourceReferenceIds.size || data.current.regionSelection) return null;
+      const options = { raycaster, bodies: pickableBodies, camera, viewportHeight: container.clientHeight, clip: pickClip(), key: 'referenceId' as const };
+      const lines = (kind: 'origin-point' | 'origin-axis') => pickableReferences.filter(line => line.userData.featureKind === kind);
+      const id = (accepts('point') ? pickCadCurveReference({ ...options, references: lines('origin-point') }) : null)
+        ?? (accepts('axis') ? pickCadCurveReference({ ...options, references: lines('origin-axis') }) : null);
+      return id ? installedReferences.get(id)?.reference ?? null : null;
+    };
+    const selectOrigin = (reference: CadViewportReference) => { const selection = originSelection(reference); if (selection) data.current.onSelectOrigin?.(selection); };
     const hitPlane = (): CadViewportReference | null => {
+      if (!accepts('plane')) return null;
       const planeLines = pickableReferences.filter(line => installedReferences.get(line.userData.referenceId)?.reference.plane);
       raycaster.params.Line.threshold = (camera.top - camera.bottom) / camera.zoom / Math.max(1, container.clientHeight) * 5;
       const patches = [...installedReferences.values()].flatMap(entry => entry.patch && entry.reference.plane ? [entry.patch] : []);
@@ -628,7 +736,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     // A press on the Pad's end face waits for a real drag; a plain click still picks that face.
     let facePress: { pointerId: number; x: number; y: number; ray: THREE.Ray; point: [number, number, number]; normal: [number, number, number] } | null = null;
     const endFaceHit = () => {
-      const hit = data.current.depthControl?.ownsEndFace ? raycaster.intersectObjects(pickableBodies.filter(body => body.visible), false)[0] : undefined;
+      const hit = data.current.depthControl?.ownsEndFace ? clippedRay.intersectObjects(pickableBodies.filter(body => body.visible), false)[0] : undefined;
       const mesh = hit && meshByObject.get(hit.object);
       const group = mesh && typeof hit.faceIndex === 'number' ? topologyGroupAt(mesh.faceGroups, hit.faceIndex * 3) : null;
       // The face must belong to this Pad, not merely line up with its end cap.
@@ -729,8 +837,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       if (Math.hypot(end.x - start.x, end.y - start.y) <= 4) {
         // A Shift click without a drag stays an ordinary pick.
         setRay(event);
-        const id = hitFeature(false), hit = id ? null : hitTopology();
+        const id = hitFeature(false), origin = id ? null : hitOrigin(), hit = id || origin ? null : hitTopology();
         if (id) data.current.onSelect(id);
+        else if (origin) selectOrigin(origin);
         else if (hit) data.current.onTopologyPick?.(hit, true);
         return;
       }
@@ -740,7 +849,10 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         point.set(x, y, z).project(camera);
         return point.z < -1 || point.z > 1 ? null : { x: (point.x + 1) / 2 * width, y: (1 - point.y) / 2 * height };
       };
-      const bodies = pickableBodies.filter(body => body.visible).map(body => ({ featureId: String(body.userData.featureId), bounds: cadProjectedBounds(meshByObject.get(body)?.positions ?? [], project) }));
+      // A body the section removes entirely is not drawn, so the box cannot choose it.
+      const clip = pickClip();
+      const bodies = accepts('body') ? pickableBodies.filter(body => body.visible && !cadBoundsClipped(meshByObject.get(body)?.bounds ?? { min: [0, 0, 0], max: [0, 0, 0] }, clip))
+        .map(body => ({ featureId: String(body.userData.featureId), bounds: cadProjectedBounds(meshByObject.get(body)?.positions ?? [], project) })) : [];
       const selected = cadBoxSelectedBody(cadScreenBox(start, end), bodies);
       data.current.onSelect(selected);
     };
@@ -799,6 +911,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       if (data.current.pickMode === 'auto' && !data.current.planePickingOnly && data.current.pickingEnabled) {
         const id = hitFeature(false);
         if (id) { data.current.onSelect(id); return; }
+        const origin = hitOrigin();
+        if (origin) { selectOrigin(origin); return; }
         const hit = hitTopology();
         if (hit) { data.current.onTopologyPick?.(hit, event.ctrlKey || event.metaKey); return; }
         const plane = hitPlane();
@@ -810,8 +924,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       if (data.current.pickMode === 'body' || data.current.pickMode === 'auto') {
         const plane = hitPlane();
         if (data.current.planePickingOnly) { if (plane?.plane) data.current.onSelectPlane?.(plane.plane); return; }
-        const id = hitFeature();
+        const overlay = hitFeature(false), origin = overlay ? null : hitOrigin(), id = overlay ?? (origin ? null : hitFeature());
         if (id) data.current.onSelect(id);
+        else if (origin) selectOrigin(origin);
         else if (plane?.plane) data.current.onSelectPlane?.(plane.plane);
         else data.current.onSelect(null);
         return;
@@ -925,10 +1040,12 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       updateHighlights();
     };
     cancelInteraction.current = cancelPointerInteraction;
+    applySection.current = updateSection;
     cancelDepth.current = () => depth.cancel();
     updateHighlights();
     controller.current = {
       getState: () => Object.freeze({ mode: 'solid', available: !disposed && !renderer.getContext().isContextLost(), view: viewState.view, gridVisible: viewState.gridVisible, zoom: camera.zoom, revision: viewState.revision, referenceVersion: installedReferenceVersion, referenceFeatureIds: installedReferenceFeatureIds, referencePlanes: installedReferencePlanes,
+        ...(sectionShown && !sketch ? { section: Object.freeze({ caps: data.current.section?.caps === true, normal: Object.freeze([sectionClip.normal.x + 0, sectionClip.normal.y + 0, sectionClip.normal.z + 0] as const), constant: sectionClip.constant }) } : {}),
         hoveredTopology: viewState.hoveredTopology ? Object.freeze({ ...viewState.hoveredTopology, pick: Object.freeze({ ...viewState.hoveredTopology.pick }) }) : null }),
       // Only a shown model view publishes these; a covered one also refuses them, so nothing moves the camera a sketch will return to.
       fit() { if (!cover) fit(); },
@@ -1045,6 +1162,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       if (reportedPlaneHover !== null) { reportedPlaneHover = null; data.current.onHoverPlane?.(null); }
       disposeSolids();
       disposeReferences();
+      caps.dispose();
+      applySection.current = null;
       regions.dispose();
       highlights.dispose();
       grid.geometry.dispose();
@@ -1090,6 +1209,10 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
     busyInputLocked, ownedDepth, selectedId, selectedReferencePlane, topologySelection, planePickingOnly]);
   useLayoutEffect(() => { cancelDepth.current?.(); }, [navigationLocked, navigationMode]);
   useLayoutEffect(() => { present.current?.(hidden, sketchView); }, [hidden, sketchView]);
+  useLayoutEffect(() => { applySection.current?.(); }, [section]);
+  useEffect(() => { recolor.current?.(); }, [selectedOrigin]);
+  // A filter change drops a hover the filter now refuses; the next pointer move finds what may be picked.
+  useLayoutEffect(() => { cancelInteraction.current?.(true); }, [selectionFilter]);
   // Behind a sketch the same graphics host draws under the sketch canvas and takes no input; the sketch owns every control.
   // Inert also releases focus the 3D canvas already had, which a negative tab index alone would leave inside the hidden layer.
   if (hidden && sketchView) return <div className="cad-viewport is-sketch-background" aria-hidden="true" inert><div className="cad-webgl" ref={host} /></div>;
@@ -1115,6 +1238,7 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
       <span className="cad-divider" />
       <Button title="Fit model" aria-label="Fit model" disabled={depthDragging || navigationLocked || unavailable} onClick={() => controller.current?.fit()}><FitViewIcon size={14} /></Button>
       <Button title="Toggle grid" aria-label="Toggle grid" disabled={navigationLocked || unavailable} aria-pressed={gridVisible} onClick={() => controller.current?.setGrid(!gridVisible)}><GridIcon size={14} /></Button>
+      {viewControls}
       <CadContextHelp label="Model navigation">{navigationMode === 'trackpad' ? 'Use two-finger scrolling to pan, pinch to zoom, and Alt + scroll to orbit.' : 'Drag to orbit, drag with the right mouse button to pan, and use the wheel to zoom.'} Clicking picks the edge, face or reference under the pointer. Shift + drag a box around a whole body to select it. Ctrl or Command + click toggles individual edge selections.</CadContextHelp>
     </CadViewTools>
     {unavailable ? <div className="cad-view-message" role="status"><strong>{graphicsFailure === 'lost' ? 'The 3D graphics context was interrupted.' : '3D graphics are unavailable in this browser.'}</strong><span>{graphicsFailure === 'lost' ? 'Waiting for recovery. Retry the view if it stays blank; your CAD document is retained.' : 'Sketch editing and document operations remain available. Enable WebGL to view solids.'}</span><Button type="button" disabled={interactionLocked} onClick={() => setContextGeneration(generation => generation + 1)}>Retry 3D view</Button></div> : null}

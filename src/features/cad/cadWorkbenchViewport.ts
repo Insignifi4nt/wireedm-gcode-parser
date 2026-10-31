@@ -7,6 +7,8 @@ import { ToolError } from '@/features/webmcp/siteTools';
 import { CadViewportCommandSchema, cadViewportVisualIdentity, type CadSketchGraphSelection, type CadRenderedViewControls, type CadViewportCapture, type CadViewportState, type CadWorkbenchViewportControls } from './cadViewportControls';
 import { validateTopologySelection, type CadPickMode } from './cadTopologyPicking';
 import { cadSketchGraphSelectionSet } from './cadSketchGraphSelection';
+import type { CadSectionView } from './view/cadViewState';
+import { cadSameReferencePlane } from './cadViewportReferences';
 
 export interface CadViewportBindings extends Omit<CadViewportState, 'documentId' | 'view' | 'selectedSketchGeometry'> {
   readonly document: CadDocument;
@@ -17,6 +19,8 @@ export interface CadViewportBindings extends Omit<CadViewportState, 'documentId'
   readonly visibleReferencePlanes: readonly CadPlane[];
   selectFeature(id: string | null): void;
   selectReferencePlane(plane: CadSketchPlane | null): void;
+  /** Sets or clears the part view's section through the same operation as the view controls. */
+  setSection?(section: CadSectionView | null): void;
   editSketch(id: string): void;
   editCurve(id: string): void;
   selectProfile(id: string | null): void;
@@ -44,6 +48,8 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
       selectedSketchGeometrySet,
       ...(selectedSketchGeometrySet.length === 1 ? { selectedSketchGeometry: selectedSketchGeometrySet[0] } : {}),
       selectedReferencePlane: typeof bindings.selectedReferencePlane === 'object' && bindings.selectedReferencePlane !== null ? Object.freeze({ ...bindings.selectedReferencePlane }) : bindings.selectedReferencePlane,
+      ...(bindings.selectedOrigin ? { selectedOrigin: Object.freeze({ ...bindings.selectedOrigin }) } : {}),
+      section: bindings.section ? Object.freeze({ ...bindings.section, plane: typeof bindings.section.plane === 'string' ? bindings.section.plane : Object.freeze({ ...bindings.section.plane }) }) : null,
       awaitingSketchPlane: bindings.awaitingSketchPlane,
       workflowOpen: bindings.workflowOpen, busy: bindings.busy, buildVersion: bindings.buildVersion,
       buildId: bindings.buildId, pickMode: bindings.pickMode, topologySelection: bindings.topologySelection ? parseCadTopologyPickSet(bindings.topologySelection) : null,
@@ -126,6 +132,18 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
             bindings.selectTopology(selection, command.additive); return;
           }
           case 'clear-topology': bindings.selectTopology(null, false); return;
+          case 'set-section': {
+            if (bindings.sketchId || bindings.curveId) throw new ToolError('WRONG_VIEW', 'Finish sketch or curve editing before changing the section view; an open sketch shows its own cut.');
+            if (!bindings.setSection || !rendered) throw new ToolError('VIEW_UNAVAILABLE', 'Wait for the solid viewport to load.');
+            if (!command.on) { bindings.setSection(null); return; }
+            // The selected plane, or the section's own plane to change only its side or caps.
+            const plane = bindings.selectedReferencePlane ?? bindings.section?.plane ?? null;
+            if (!plane) throw new ToolError('INVALID_INPUT', 'Select an origin or datum plane with select-reference-plane before turning the section view on.');
+            if (typeof plane === 'object' && !bindings.document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && !feature.suppressed))
+              throw new ToolError('NOT_FOUND', 'Choose an origin plane or an active datum plane in the current CAD draft.');
+            const current = bindings.section && cadSameReferencePlane(bindings.section.plane, plane) ? bindings.section : null;
+            bindings.setSection({ plane, flip: command.flip ?? current?.flip ?? false, caps: command.caps ?? current?.caps ?? true }); return;
+          }
           case 'set-view':
             if (bindings.sketchId || bindings.curveId || !rendered?.setView) throw new ToolError('WRONG_VIEW', 'Finish sketch or curve editing before selecting a named solid view.');
             rendered.setView(command.view); return;
