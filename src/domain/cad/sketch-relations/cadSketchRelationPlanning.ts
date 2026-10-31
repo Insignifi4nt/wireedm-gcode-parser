@@ -272,6 +272,8 @@ export function cadSketchRelationPlanner(graph: CadSketchGraph): CadSketchRelati
     },
     coincide: pair => identity(pair[0]) === identity(pair[1]) ? held('These points are already joined.', cadSketchRelationsLike(graph, { kind: 'coincident', pointIds: pair }))
       : checked({ kind: 'coincident', pointIds: [pair[0], pair[1]] }),
+    // Two curves on one centre point name no relation: a Coincident joining that point to another one does not make them concentric,
+    // and removing it would delete an unrelated relation. The whole key is matched, so a centre given twice matches nothing stored.
     concentric: (first, second) => {
       const centers = [first.centerPointId, second.centerPointId] as const;
       return identity(centers[0]) === identity(centers[1]) ? held('These already share a center.', cadSketchRelationsLike(graph, { kind: 'coincident', pointIds: centers }))
@@ -295,6 +297,8 @@ export function cadSketchRelationPlanner(graph: CadSketchGraph): CadSketchRelati
     },
     equal: (a, b) => isLine(a) && isLine(b) ? checked({ kind: 'equal-length', lineIds: [a.id, b.id] })
       : isCurve(a) && isCurve(b) ? checked({ kind: 'equal-radius', curveIds: [a.id, b.id] }) : blocked('Choose two lines, or two arcs or circles.'),
+    // A point with its own circle, or two circles on one centre, are one point given twice: the check refuses it, and no Symmetric of
+    // that point with another one is named as holding it.
     mirror: (targets, line) => {
       const [first, second] = targets.map(pick => pick.kind === 'point' ? pick.id : (entity(pick.id) as Extract<Entity, { kind: 'circle' }>).centerPointId);
       const operands = { pointIds: [first, second] as const, lineId: line.id };

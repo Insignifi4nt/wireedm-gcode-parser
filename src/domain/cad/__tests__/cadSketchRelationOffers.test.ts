@@ -8,7 +8,7 @@ const point = (id: string): CadSketchGraphSelection => ({ kind: 'point', id });
 const edge = (id: string): CadSketchGraphSelection => ({ kind: 'entity', id });
 const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line', construction: false, startPointId, endPointId });
 // A square a-b-c-d with a loose point m, an axis line u-v, two circles and an arc that starts where line bc ends.
-const sketch = (relations: readonly unknown[] = [], extraPoints: readonly unknown[] = []) => parseCadSketchGraph({
+const sketch = (relations: readonly unknown[] = [], extraPoints: readonly unknown[] = [], extraEntities: readonly unknown[] = []) => parseCadSketchGraph({
   points: [
     { id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }, { id: 'c', position: [10, 10] }, { id: 'd', position: [0, 10] },
     { id: 'm', position: [5, 3] }, { id: 'u', position: [-5, -5] }, { id: 'v', position: [-5, 15] },
@@ -18,7 +18,7 @@ const sketch = (relations: readonly unknown[] = [], extraPoints: readonly unknow
   entities: [
     line('ab', 'a', 'b'), line('bc', 'b', 'c'), line('cd', 'c', 'd'), line('axis', 'u', 'v'),
     { id: 'c1', kind: 'circle', construction: false, centerPointId: 'o1', radius: 2 }, { id: 'c2', kind: 'circle', construction: false, centerPointId: 'o2', radius: 3 },
-    { id: 'arc1', kind: 'arc', construction: false, centerPointId: 'q', startPointId: 'c', endPointId: 'g', direction: 'cw' }
+    { id: 'arc1', kind: 'arc', construction: false, centerPointId: 'q', startPointId: 'c', endPointId: 'g', direction: 'cw' }, ...extraEntities
   ],
   relations
 });
@@ -152,6 +152,23 @@ describe('sketch relation offers', () => {
     expectAddable(graph, offers);
     expect(find(cadSketchRelationOffers(graph, [point('a'), point('u'), edge('axis')]), 'symmetric')).toMatchObject({ state: 'blocked',
       reason: 'Symmetric points and axis endpoints need four distinct declared identities.' });
+  });
+
+  it('never name a relation of a centre two picks share as holding Concentric or Symmetric, so removing it cannot delete an unrelated one', () => {
+    // c2 and c3 are both centred on o2. Coincident r joins o2 to m, and Symmetric s mirrors o2 and a about the axis line.
+    const graph = sketch([{ id: 'r', kind: 'coincident', pointIds: ['o2', 'm'] }, { id: 's', kind: 'symmetric', pointIds: ['o2', 'a'], lineId: 'axis' }], [],
+      [{ id: 'c3', kind: 'circle', construction: false, centerPointId: 'o2', radius: 5 }]);
+    for (const selection of [[edge('c2'), edge('c3')], [edge('c3'), edge('c2')]]) {
+      expect(find(cadSketchRelationOffers(graph, selection), 'coincident')).toEqual({ kind: 'coincident', state: 'blocked', reason: 'These already share a center.',
+        operands: [selection], relations: [], relationIds: [] });
+    }
+    const mirror = 'Symmetric points and axis endpoints need four distinct declared identities.';
+    for (const selection of [[point('o2'), edge('c2'), edge('axis')], [edge('c3'), edge('axis'), point('o2')], [edge('c2'), edge('c3'), edge('axis')]]) {
+      expect(find(cadSketchRelationOffers(graph, selection), 'symmetric'), selection.map(pick => pick.id).join(' ')).toMatchObject({ state: 'blocked', reason: mirror, relations: [], relationIds: [] });
+    }
+    // Two distinct places still name the relations that hold them, and only those.
+    expect(find(cadSketchRelationOffers(graph, [point('o2'), point('m')]), 'coincident')).toMatchObject({ state: 'applied', relationIds: ['r'] });
+    expect(find(cadSketchRelationOffers(graph, [edge('c3'), point('a'), edge('axis')]), 'symmetric')).toMatchObject({ state: 'applied', relationIds: ['s'] });
   });
 
   it('fix a point where it is, or each numeric coordinate that nothing holds yet, and never one joined to a fixed point', () => {

@@ -137,6 +137,9 @@ describe('sketch relation definitions against the recorded per-kind outputs', ()
     });
   }, 120_000);
 
+  // The recorded errors are the behaviour at the source commit, not invariants. Some swaps put an edge's id in a point slot or a point's
+  // id in an edge slot, refused there because each slot took points or edges but not both. A slot that takes a point or a curve will
+  // change those answers on purpose, and should then set those entries apart by name rather than record them from its own code.
   it('refuse the same operand swaps with the same parse errors', () => {
     let refused = 0;
     for (const [graphIndex, relationIndex, path, value, error] of baseline.mutations) {

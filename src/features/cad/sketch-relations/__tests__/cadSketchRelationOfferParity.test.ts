@@ -164,4 +164,41 @@ describe('sketch relation offers against the Constrain tool', () => {
     }
     expect(tally.get('parts several')).toBeGreaterThan(5_000);
   }, 600_000);
+
+  // The one intended change from the tool as it was before the shared planning. It matched a stored pair to the picks by membership
+  // alone, so one centre picked twice, as two arcs or circles on it or a point with its own circle, matched any Coincident joining that
+  // centre to another point, or any Symmetric mirroring it about the same line. It reported Concentric or Symmetric applied, naming that
+  // relation, and Remove deleted it. Neither relation holds what was asked, so both the tool and the offers now refuse with the reason.
+  it('never name a relation of a centre two picks share, the one answer that changed: every such case in the recorded sketches and the corpus', () => {
+    const center = 'These already share a center.', mirror = 'Symmetric points and axis endpoints need four distinct declared identities.';
+    const concentric: number[] = [], symmetric: number[] = [];
+    for (const [at, source] of [...baseline, ...corpus].entries()) {
+      const graph = parseCadSketchGraph(source), rounds = graph.entities.filter(entity => entity.kind === 'arc' || entity.kind === 'circle');
+      const named = (choices: readonly CadSketchConstraintChoice[]) => choices.flatMap(choice => choice.state === 'applied' ? choice.relationIds : []);
+      for (const [index, first] of rounds.entries()) for (const second of rounds.slice(index + 1).filter(item => item.centerPointId === first.centerPointId)) {
+        // What the tool named before: any Coincident on the shared centre. No choice names one now; Equal still names an equal radius.
+        const before = graph.relations.filter(relation => relation.kind === 'coincident' && relation.pointIds.includes(first.centerPointId)).map(relation => relation.id);
+        if (!before.length) continue;
+        const picks = [E(first.id), E(second.id)], where = `${first.id}, ${second.id} in graph ${at}`;
+        expect(cadSketchConstraintChoices(graph, picks, () => 'new').find(choice => choice.tool === 'concentric'), where).toEqual({ tool: 'concentric', state: 'blocked', reason: center });
+        expect(cadSketchRelationOffers(graph, picks).find(offer => offer.kind === 'coincident'), where).toMatchObject({ state: 'blocked', reason: center, relationIds: [] });
+        expect(named(cadSketchConstraintChoices(graph, picks, () => 'new')).filter(id => before.includes(id)), where).toEqual([]);
+        if (!concentric.includes(at)) concentric.push(at);
+      }
+      for (const relation of graph.relations) if (relation.kind === 'symmetric') for (const centre of relation.pointIds) {
+        // What the tool named before: this Symmetric, for its point with a circle centred on it, or two such circles, about its line.
+        const circles = graph.entities.filter(entity => entity.kind === 'circle' && entity.centerPointId === centre).map(entity => E(entity.id));
+        for (const picks of [...circles.map(circle => [P(centre), circle, E(relation.lineId)]), ...circles.length > 1 ? [[circles[0], circles[1], E(relation.lineId)]] : []]) {
+          const where = `${picks.map(pick => pick.id).join(', ')} in graph ${at}`;
+          expect(cadSketchConstraintChoices(graph, picks, () => 'new'), where).toEqual([{ tool: 'symmetric', state: 'blocked', reason: mirror }]);
+          expect(cadSketchRelationOffers(graph, picks).find(offer => offer.kind === 'symmetric'), where).toMatchObject({ state: 'blocked', reason: mirror, relationIds: [] });
+          if (!symmetric.includes(at)) symmetric.push(at);
+        }
+      }
+    }
+    // Baseline graph 1350, two circles on p4 with Coincident r10 joining p4 to p9, is the case the review found.
+    expect(concentric).toEqual([1350, 1392, 1638, 2101, 2442, 2456, 2506, 3241, 3336, 3623]);
+    expect(symmetric).toContain(10);
+    expect(symmetric).toHaveLength(61);
+  }, 300_000);
 });

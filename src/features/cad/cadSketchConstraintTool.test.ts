@@ -313,6 +313,31 @@ describe('cadSketchConstraintChoices', () => {
     expect(choices(graph, 'e', 'arc')).toEqual([{ tool: 'coincident', state: 'blocked',
       reason: 'The point must be distinct from the curve center, its arc endpoints and their declared coincident aliases.' }]);
   });
+
+  it('never names a relation of a centre two picks share as holding Concentric or Symmetric, so removing it cannot delete an unrelated one', () => {
+    // The arc, c2 and c3 are all centred on o2. Coincident r joins o2 to another point q, and Symmetric s mirrors o2 and a about cd.
+    const shared: CadSketchGraph = { ...graph, points: [...graph.points, { id: 'q', position: [30, 10] }],
+      entities: [...graph.entities, { id: 'c3', kind: 'circle', construction: false, centerPointId: 'o2', radius: 6 }],
+      relations: [...graph.relations, { id: 'r', kind: 'coincident', pointIds: ['o2', 'q'] }, { id: 's', kind: 'symmetric', pointIds: ['o2', 'a'], lineId: 'cd' }] };
+    const center = 'These already share a center.', mirror = 'Symmetric points and axis endpoints need four distinct declared identities.';
+    const names = (source: CadSketchGraph, ...ids: string[]) => cadSketchConstraintChoices(source, ids.map(id => operand(id, source)), () => 'new')
+      .flatMap(choice => choice.state === 'applied' ? choice.relationIds : []);
+    // One centre is not two to join: r joins o2 to q, not to itself, so it is not Concentric, and Remove would delete it.
+    for (const [first, second] of [['c2', 'c3'], ['c3', 'c2'], ['arc', 'c3']]) {
+      expect(stepIn(shared, 'concentric', first, second)).toEqual({ status: 'invalid', reason: center });
+      expect(choices(shared, first, second).find(choice => choice.tool === 'concentric')).toEqual({ tool: 'concentric', state: 'blocked', reason: center });
+      expect(names(shared, first, second)).toEqual([]);
+    }
+    // One point is not two to mirror: s mirrors o2 with a, not with itself.
+    for (const picks of [['o2', 'c2', 'cd'], ['c3', 'o2', 'cd'], ['c2', 'c3', 'cd'], ['cd', 'c3', 'c2']]) {
+      expect(stepIn(shared, 'symmetric', ...picks), picks.join(' ')).toEqual({ status: 'invalid', reason: mirror });
+      expect(choices(shared, ...picks), picks.join(' ')).toEqual([{ tool: 'symmetric', state: 'blocked', reason: mirror }]);
+    }
+    // The relations two distinct places do take are still named, and only those.
+    expect(stepIn(shared, 'symmetric', 'a', 'cd', 'c2')).toEqual({ status: 'invalid', reason: 'Symmetric is already applied here.', applied: ['s'] });
+    expect(choices(shared, 'c3', 'a', 'cd')).toEqual([{ tool: 'symmetric', state: 'applied', ids: ['s'] }]);
+    expect(names(shared, 'o2', 'q')).toEqual(['r']);
+  });
 });
 
 describe('pickCadSketchDatum', () => {

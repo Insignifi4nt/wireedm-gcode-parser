@@ -8,6 +8,7 @@ import type { CadTopologyDescriptor, CadTopologyResolvePicksResult } from '@/dom
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
+import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { prepareCadSketchCells } from '@/domain/cad/cadSketchRegionInspection';
 import { CadWorkbench, type CadWorkbenchProps } from './CadWorkbench';
@@ -3766,6 +3767,54 @@ describe('CAD sketch interaction', () => {
     await select(); const applied = await menuItem('menuitemcheckbox', 'Coincident');
     expect(applied.getAttribute('aria-checked')).toBe('true'); await act(async () => applied.click());
     expect(relations()).toEqual([expect.objectContaining({ curveId: 'bow' })]);
+    expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  it('never offers to remove Concentric or Symmetric through an unrelated relation on a centre two picks share', async () => {
+    // Both circles are centred on o. Coincident r joins o to q, and Symmetric s mirrors o and a about the axis line.
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Rings', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'o', position: [0, 0] }, { id: 'q', position: [0, 0] }, { id: 'a', position: [-12, 0] }, { id: 'u', position: [-6, -20] }, { id: 'v', position: [-6, 20] }],
+      entities: [{ id: 'inner', kind: 'circle', construction: false, centerPointId: 'o', radius: 3 }, { id: 'outer', kind: 'circle', construction: false, centerPointId: 'o', radius: 6 },
+        { id: 'axis', kind: 'line', construction: false, startPointId: 'u', endPointId: 'v' }],
+      relations: [{ id: 'r', kind: 'coincident', pointIds: ['o', 'q'] }, { id: 's', kind: 'symmetric', pointIds: ['o', 'a'], lineId: 'axis' }] } }] });
+    await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const relations = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.relations; };
+    const select = (...selections: CadSketchGraphSelection[]) => act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections }));
+    const offered = async (label: string) => {
+      await click('Constrain');
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]')].find(entry => entry.textContent?.trim() === label);
+      if (!item) throw new Error(`${label} missing.`); return item;
+    };
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    const contextMenu = async (entityId: string) => {
+      const target = container.querySelector<SVGGElement>(`[data-cad-sketch-entity="${entityId}"]`); if (!target) throw new Error(`${entityId} missing.`);
+      await act(async () => { target.focus(); target.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+      return [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    };
+    const close = () => act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    const cases = [
+      { label: 'Concentric', picks: [{ kind: 'entity', id: 'inner' }, { kind: 'entity', id: 'outer' }], reason: 'These already share a center.' },
+      { label: 'Symmetric', picks: [{ kind: 'point', id: 'o' }, { kind: 'entity', id: 'outer' }, { kind: 'entity', id: 'axis' }], reason: 'Symmetric points and axis endpoints need four distinct declared identities.' }
+    ] as const;
+    for (const { label, picks, reason } of cases) {
+      await select(...picks);
+      const item = await offered(label);
+      expect(item.getAttribute('aria-checked'), label).toBe('false'); expect(item.disabled, label).toBe(true); expect(item.getAttribute('aria-description'), label).toBe(reason);
+      await act(async () => item.click()); expect(currentDocument, label).toBe(source); await close();
+      await select(...picks);
+      const items = (await contextMenu('outer')).map(entry => entry.textContent?.trim());
+      // The selection's own menu, without the constraint or a Remove for it.
+      expect(items, label).toContain('Move selection'); expect(items, label).not.toContain(`Remove ${label.toLowerCase()}`); expect(items, label).not.toContain(label);
+      await close();
+    }
+    // Two distinct places still name the relation that holds them, and Remove deletes only that one.
+    await select({ kind: 'entity', id: 'outer' }, { kind: 'point', id: 'a' }, { kind: 'entity', id: 'axis' });
+    expect((await offered('Symmetric')).getAttribute('aria-checked')).toBe('true'); await close();
+    await select({ kind: 'entity', id: 'outer' }, { kind: 'point', id: 'a' }, { kind: 'entity', id: 'axis' });
+    const remove = (await contextMenu('outer')).find(entry => entry.textContent?.trim() === 'Remove symmetric'); if (!remove) throw new Error('Remove symmetric missing.');
+    await act(async () => remove.click());
+    expect(relations()).toEqual([{ id: 'r', kind: 'coincident', pointIds: ['o', 'q'] }]);
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
   });
 
