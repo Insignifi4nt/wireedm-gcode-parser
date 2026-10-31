@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CadFeature, CadSketchFeature, CadSketchPlane } from '@/domain/cad/cadDocument';
-import { cadFeatureWithReference, cadReferenceInput, type CadReferenceCommand, type CadReferenceSelection } from './cadReferenceSelection';
+import { cadFeatureWithReference, cadReferenceInput, cadSameLine, type CadReferenceCommand, type CadReferenceSelection } from './cadReferenceSelection';
 
 const mount: CadFeature = { kind: 'datum-plane', id: 'mount', name: 'Mount', suppressed: false, definition: { kind: 'world', basePlane: 'XZ', origin: [0, 0, 5], rotation: [0, 15, 0] } };
 const profile = { id: 'p', name: 'P', construction: false, geometry: { kind: 'rectangle', x: 20, y: 0, width: 5, height: 5, cornerRadius: 0 } } as const;
@@ -42,6 +42,35 @@ describe('selection to command mapping', () => {
     // A sketch lifted off the origin has its own axes beside the world ones, not on them.
     expect(cadReferenceInput(axis('x'), 'revolve', { ...context, sketch: raised })).toMatchObject({ kind: 'unavailable' });
     expect(cadReferenceInput(axis('x'), 'revolve', context)).toEqual({ kind: 'none' });
+  });
+
+  it('refuses a sketch axis a hair off the origin axis in angle or position, at native placement precision', () => {
+    const on = (id: string, definition: Extract<CadFeature, { kind: 'datum-plane' }>['definition'], offset = 0) => {
+      const placed: CadFeature = { kind: 'datum-plane', id, name: id, suppressed: false, definition };
+      const sketch = sketchOn(`${id}-sketch`, { kind: 'datum-plane', featureId: id }, offset);
+      return (name: 'x' | 'y' | 'z') => cadReferenceInput(axis(name), 'revolve', { features: [placed, sketch], parameters: {}, sketch });
+    };
+    // Turned 0.002° about Z: at 100 mm its X axis is 0.0035 mm from world X, so it is another line.
+    expect(on('tilted', { kind: 'world', basePlane: 'XZ', origin: [0, 0, 0], rotation: [0, 0, 0.002] })('x')).toMatchObject({ kind: 'unavailable', reason: expect.stringContaining('the X axis') });
+    // Far out along X, 0.005 mm off the axis: a scale-relative tolerance would have taken it.
+    expect(on('far', { kind: 'world', basePlane: 'XZ', origin: [6000000, 0.005, 0], rotation: [0, 0, 0] })('x')).toMatchObject({ kind: 'unavailable' });
+    expect(on('offset', { kind: 'world', basePlane: 'XZ', origin: [0, 0, 0], rotation: [0, 0, 0] }, 1e-6)('x')).toMatchObject({ kind: 'unavailable' });
+    // The same far line exactly, a quarter turn that lays the sketch X axis on world Y, and a turn that is not a quarter but keeps X.
+    expect(on('far-on', { kind: 'world', basePlane: 'XZ', origin: [6000000, 0, 0], rotation: [0, 0, 0] })('x')).toEqual({ kind: 'revolve-axis', axis: 'x' });
+    expect(on('quarter', { kind: 'world', basePlane: 'XZ', origin: [0, 0, 0], rotation: [0, 0, 90] })('y')).toEqual({ kind: 'revolve-axis', axis: 'x' });
+    expect(on('rolled', { kind: 'world', basePlane: 'XZ', origin: [0, 0, 0], rotation: [30, 0, 0] })('x')).toEqual({ kind: 'revolve-axis', axis: 'x' });
+  });
+
+  it('compares lines by direction either way round and by perpendicular distance, counting the angle over the distance between them', () => {
+    const line = (point: readonly number[], direction: readonly number[], angularUncertainty = 0) => ({ point, direction, angularUncertainty });
+    expect(cadSameLine(line([0, 0, 0], [1, 0, 0]), line([-25, 0, 0], [-1, 0, 0]))).toBe(true);
+    expect(cadSameLine(line([0, 0, 0], [1, 0, 0]), line([0, 5e-8, 0], [1, 0, 0]))).toBe(true);
+    expect(cadSameLine(line([0, 0, 0], [1, 0, 0]), line([0, 2e-7, 0], [1, 0, 0]))).toBe(false);
+    const tilt = 1e-13;
+    expect(cadSameLine(line([0, 0, 0], [1, 0, 0]), line([0, 0, 0], [Math.cos(tilt), Math.sin(tilt), 0], 1e-12))).toBe(true);
+    // The same small angle within the frames' uncertainty still separates the lines too far 10 km away.
+    expect(cadSameLine(line([0, 0, 0], [1, 0, 0]), line([1e7, 0, 0], [Math.cos(tilt), Math.sin(tilt), 0], 1e-12))).toBe(false);
+    expect(cadSameLine(line([0, 0, 0], [1, 0, 0]), line([0, 0, 0], [Math.cos(tilt), Math.sin(tilt), 0]))).toBe(false);
   });
 
   it('leaves commands a selection does not feed as they start, and refuses a datum plane that is gone', () => {

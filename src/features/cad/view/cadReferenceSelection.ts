@@ -1,5 +1,5 @@
 import type { CadDatumPlaneFeature, CadFeature, CadPlane, CadSketchFeature, CadSketchPlane } from '@/domain/cad/cadDocument';
-import { prepareCadDatumFrames, resolveCadSketchPlacement } from '@/domain/cad/cadDatumPlanes';
+import { CAD_DATUM_NATIVE_PLACEMENT_PRECISION_MM, CAD_DATUM_ORTHONORMAL_RESIDUAL, prepareCadDatumFrames, resolveCadSketchPlacement } from '@/domain/cad/cadDatumPlanes';
 
 /**
  * A reference picked in the model view: an origin plane or datum plane, an origin axis, or the origin point. Documents cannot name these
@@ -42,21 +42,41 @@ const activeDatum = (plane: CadSketchPlane, features: readonly CadFeature[]): Ca
   return feature?.kind === 'datum-plane' && !feature.suppressed ? feature : null;
 };
 
+/** A line through `point` along the unit `direction`, known to the frame's angular uncertainty. */
+export interface CadReferenceLine {
+  readonly point: readonly number[];
+  readonly direction: readonly number[];
+  readonly angularUncertainty: number;
+}
+const dot3 = (a: readonly number[], b: readonly number[]) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/**
+ * Whether two lines are the same line, at the precision every other CAD placement check uses. Their directions, either way round, may
+ * differ only by the frames' angular uncertainty, as loft sections' axes may, and the lines may lie apart only by native placement
+ * precision, counting what that angle opens up between their points. A line a hair off in angle or position is another line however
+ * small the difference, so a command never builds on a line the user did not pick.
+ */
+export function cadSameLine(a: CadReferenceLine, b: CadReferenceLine): boolean {
+  const sine = Math.hypot(a.direction[1] * b.direction[2] - a.direction[2] * b.direction[1], a.direction[2] * b.direction[0] - a.direction[0] * b.direction[2],
+    a.direction[0] * b.direction[1] - a.direction[1] * b.direction[0]);
+  if (!(sine <= Math.max(CAD_DATUM_ORTHONORMAL_RESIDUAL, a.angularUncertainty + b.angularUncertainty))) return false;
+  const delta = [0, 1, 2].map(index => b.point[index] - a.point[index]), along = dot3(delta, a.direction);
+  const apart = Math.hypot(...delta.map((value, index) => value - along * a.direction[index]));
+  return apart + sine * Math.abs(along) <= CAD_DATUM_NATIVE_PLACEMENT_PRECISION_MM;
+}
+
 /**
  * Which of the sketch's own axes, through the sketch origin, is the selected origin axis. Revolve turns about the sketch's X or Y axis,
- * so the origin axis must be the same line: it lies in the sketch plane and passes through the sketch origin. Either direction is the
- * same line.
+ * so the origin axis must be the same line by `cadSameLine`.
  */
 function sketchAxisFor(axis: CadOriginAxis, sketch: CadSketchFeature, features: readonly CadFeature[], parameters: Readonly<Record<string, number>>): 'x' | 'y' | null {
   let placement;
   try { placement = resolveCadSketchPlacement(sketch, parameters, prepareCadDatumFrames(features, parameters)); } catch { return null; }
-  const { frame, offsetMm } = placement, direction = AXIS_DIRECTIONS[axis];
+  const { frame, offsetMm } = placement;
   const origin = frame.origin.map((value, index) => value + frame.normal[index] * offsetMm);
-  const scale = Math.max(1, ...origin.map(Math.abs)), tolerance = 1e-9 * scale;
-  // The sketch origin must lie on the world axis: no component off that axis.
-  if (origin.some((value, index) => direction[index] === 0 && Math.abs(value) > tolerance)) return null;
-  const along = (vector: readonly number[]) => Math.abs(Math.abs(vector[0] * direction[0] + vector[1] * direction[1] + vector[2] * direction[2]) - 1) <= 1e-9;
-  return along(frame.u) ? 'x' : along(frame.v) ? 'y' : null;
+  const world: CadReferenceLine = { point: ORIGIN, direction: AXIS_DIRECTIONS[axis], angularUncertainty: 0 };
+  const own = (direction: readonly number[]): CadReferenceLine => ({ point: origin, direction, angularUncertainty: frame.precision.angularUncertainty });
+  return cadSameLine(world, own(frame.u)) ? 'x' : cadSameLine(world, own(frame.v)) ? 'y' : null;
 }
 
 /**
@@ -66,6 +86,8 @@ function sketchAxisFor(axis: CadOriginAxis, sketch: CadSketchFeature, features: 
  * - Mirror takes an origin plane.
  * - Revolve takes an origin axis that is one of its sketch's own axes.
  * - Circular pattern takes an origin axis, about the origin.
+ * Planes are matched by identity, an origin plane's name or a datum plane's feature, never by where they lie, so two planes are never
+ * mistaken for each other; the only geometric match is Revolve's, by `cadSameLine`.
  */
 export function cadReferenceInput(selection: CadReferenceSelection | null, command: CadReferenceCommand, context: {
   readonly features: readonly CadFeature[]; readonly parameters: Readonly<Record<string, number>>;
