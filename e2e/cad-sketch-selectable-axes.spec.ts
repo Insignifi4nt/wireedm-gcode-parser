@@ -125,7 +125,9 @@ test('mirrors two lines about the V axis with Symmetric, then removes it', async
   }
   // Its marks sit on the two lines; the axis draws as before.
   await expect(page.locator(`[data-cad-sketch-relation-glyph="${(graph.relations[0] as { id: string }).id}"]`)).toHaveCount(2);
-  await sketch.clickAt(-19, 14); await sketch.clickAt(0, 14, true); await sketch.clickAt(17.5, 12.5, true);
+  // Picked again in another order on the solved lines, away from their marks at the middles, the mirror shows as applied.
+  const along = (p: string, q: string) => [0, 1].map(index => .7 * sketch.position(graph, p)[index] + .3 * sketch.position(graph, q)[index]) as [number, number];
+  await sketch.clickAt(...along('b1', 'b2')); await sketch.clickAt(0, 14, true); await sketch.clickAt(...along('a1', 'a2'), true);
   await removeSymmetric(page);
 });
 
@@ -147,10 +149,10 @@ test('mirrors two circles about a construction line with Symmetric, giving them 
   const along = [m2[0] - m1[0], m2[1] - m1[1]], middle = [(k1[0] + k2[0]) / 2 - m1[0], (k1[1] + k2[1]) / 2 - m1[1]];
   expect(along[0] * middle[1] - along[1] * middle[0]).toBeCloseTo(0, 6);
   expect(along[0] * (k2[0] - k1[0]) + along[1] * (k2[1] - k1[1])).toBeCloseTo(0, 6);
-  // Its marks sit on both circles and on the mirror line.
+  // Its marks sit on both circles and on the mirror line. Picked again away from them, at the circles' sides, the mirror shows as applied.
   await expect(page.locator(`[data-cad-sketch-relation-glyph="${(graph.relations[0] as { id: string }).id}"]`)).toHaveCount(3);
   const [left, right] = [k1[0] - radii[0], k2[0] + radii[1]];
-  await sketch.clickAt(right, k2[1]); await sketch.clickAt(left, k1[1], true); await sketch.clickAt((m1[0] + m2[0]) / 2, (m1[1] + m2[1]) / 2, true);
+  await sketch.clickAt(right, k2[1]); await sketch.clickAt(left, k1[1], true); await sketch.clickAt(.7 * m1[0] + .3 * m2[0], .7 * m1[1] + .3 * m2[1], true);
   await removeSymmetric(page);
 });
 
