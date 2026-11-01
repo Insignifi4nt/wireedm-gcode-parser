@@ -159,6 +159,27 @@ describe('feature activity scanner', () => {
     ]);
   });
 
+  it('reads a constant key from the declaration its name is bound to, past inner and outer declarations of the same name', () => {
+    // An outer key naming the flag, with an unrelated inner constant, parameter and loop variable of the same name.
+    expect(scan([
+      "const KEY = 'suppressed';",
+      "function label(feature: CadFeature) { const KEY = 'name'; return feature[KEY]; }",
+      'const read = feature[KEY];',
+      'const pick = (KEY: string) => feature[KEY];',
+      "for (const KEY of ['name']) void feature[KEY];",
+      'const { [KEY]: off } = feature;'
+    ].join('\n'))).toEqual([{ spelling: "['suppressed']", line: 3 }, { spelling: '{ suppressed }', line: 6 }]);
+    // An outer key naming something else, with an inner constant naming the flag, declared before or after it is read.
+    expect(scan([
+      "const KEY = 'name';",
+      "function active(feature: CadFeature) { const KEY = 'suppressed'; return feature[KEY]; }",
+      'const label = feature[KEY];',
+      "function late(feature: CadFeature) { if (feature) return Reflect.get(feature, KEY); const KEY = 'suppressed'; }",
+      "{ const KEY = 'suppressed'; ({ [KEY]: off } = feature); }",
+      'const name = feature[KEY];'
+    ].join('\n'))).toEqual([{ spelling: "['suppressed']", line: 2 }, { spelling: "get('suppressed')", line: 4 }, { spelling: '{ suppressed } =', line: 5 }]);
+  });
+
   it('ignores writes of the flag, other names, comments, text and types', () => {
     const source = [
       '// feature.suppressed is read through cadFeatureActive',

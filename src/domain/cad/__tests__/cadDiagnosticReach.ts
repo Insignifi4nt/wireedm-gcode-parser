@@ -12,20 +12,28 @@ import ts from '@typescript/typescript6';
  * declares that name. A used class runs its constructor and field initializers; its methods are walked only when called. An overload
  * signature stands for its implementation.
  *
- * It collects the first argument of each `CadError` and the `code` of each object literal, which carries a refusal to the `CadError` an
- * inspection raises. A code is read through each branch of a conditional, constants, properties of object literals (an absent one holds
- * none), elements of list literals, `for…of` variables and the first parameter of a list iteration's callback, and a parameter at each
- * call of its function the walk reaches. A template code is expanded through `templates`, the values each substitution takes keyed by
- * `file: source text`. Two codes are taken where they were written: a caught error's `code`, which its `CadError` in the walked `try`
- * block gave, and the `code` of what a function of the source returns, which an object literal it builds holds; both are listed as
- * `taken`. Any other code is reported: a template `templates` does not expand, a variable that is not constant, another call's result,
- * a property a spread may replace, and a parameter of a function passed on as a value, whose calls the walk cannot see.
+ * It collects the first argument of each `CadError` and the `code` of each object literal, written plainly, quoted or as a computed
+ * literal key, which carries a refusal to the `CadError` an inspection raises. A code is read through:
+ * - each branch of a conditional and each side of `??`, `||` and `&&`;
+ * - constants, properties of object literals (from the last: a spread or a computed key it cannot tell may hold one, and an absent one
+ *   holds none) and elements of list literals, by a literal key or, for a key it cannot tell, through every element and property;
+ * - `for…of` variables, the first parameter of a list iteration's callback, and names destructured from a constant, a `for…of` list or
+ *   a parameter, with any default;
+ * - a parameter, at each call of its function the walk reaches;
+ * - a call, through what each `return` of the function it names gives, a function of the source or one held by a constant or a
+ *   property it reads.
+ *
+ * A template code is expanded through `templates`, the values each substitution takes keyed by `file: source text`. A caught error's
+ * `code` is taken where it is read: the `CadError` in the walked `try` block that raised it gave it. Each such site is listed as
+ * `taken`. Any other code is reported: a template `templates` does not expand, a variable that is not constant, a call of a function
+ * outside the source, a member of a value it cannot read, and a parameter of a function passed on as a value, whose calls the walk
+ * cannot see.
  */
 export interface CadDiagnosticReach {
   readonly codes: ReadonlySet<string>;
   /** Codes it could not read, as `file: text`, followed by `, from file: text` where the reading stopped elsewhere. */
   readonly unexpanded: readonly string[];
-  /** Codes taken where they were written, a caught error's or a function's result, in the same form. */
+  /** Where it took a caught error's code, as `file: text`. */
   readonly taken: readonly string[];
   /** The named functions, variables, classes and members it walked, as `file:name`. */
   readonly declarations: ReadonlySet<string>;
@@ -53,8 +61,36 @@ function isFunctionLike(node: ts.Node): node is ts.FunctionLikeDeclaration {
   return ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isMethodDeclaration(node)
     || ts.isConstructorDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node);
 }
+/** A property's name, written plainly, quoted or as a computed literal key (`['code']`). */
 function propertyName(name: ts.PropertyName | ts.DeclarationName | undefined): string | undefined {
-  return name && (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isPrivateIdentifier(name)) ? name.text : undefined;
+  if (name && ts.isComputedPropertyName(name)) {
+    const key = bareExpression(name.expression);
+    return ts.isStringLiteralLike(key) ? key.text : undefined;
+  }
+  return name && (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isPrivateIdentifier(name) || ts.isNumericLiteral(name)) ? name.text : undefined;
+}
+/** The element of a destructuring pattern that binds `name`, at any depth. */
+function elementNamed(pattern: ts.BindingName, name: string): ts.BindingElement | undefined {
+  if (ts.isIdentifier(pattern)) return undefined;
+  for (const element of pattern.elements) {
+    if (ts.isOmittedExpression(element)) continue;
+    const found = ts.isIdentifier(element.name) ? element.name.text === name ? element : undefined : elementNamed(element.name, name);
+    if (found) return found;
+  }
+  return undefined;
+}
+/** What a function returns: the expression of each `return` in its own body, or its expression body. */
+function returnsOf(owner: ts.FunctionLikeDeclaration): readonly ts.Expression[] {
+  if (!owner.body) return [];
+  if (!ts.isBlock(owner.body)) return [owner.body];
+  const found: ts.Expression[] = [];
+  const visit = (node: ts.Node) => {
+    if (isFunctionLike(node) || ts.isClassLike(node)) return;
+    if (ts.isReturnStatement(node) && node.expression) found.push(node.expression);
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(owner.body, visit);
+  return found;
 }
 function binds(name: ts.BindingName, wanted: string): boolean {
   return ts.isIdentifier(name) ? name.text === wanted : name.elements.some(element => !ts.isOmittedExpression(element) && binds(element.name, wanted));
@@ -70,15 +106,21 @@ export function bareExpression(node: ts.Expression): ts.Expression {
 
 /**
  * A name that is no declaration the walk can enter: a function's parameter, a caught error, an element of a list (a `for…of` variable,
- * or the first parameter of a callback given to a list's iteration method), or another loop or destructured variable.
+ * or the first parameter of a callback given to a list's iteration method), or another loop or destructured variable, with the pattern
+ * element that binds it when it is destructured from a declaration, a parameter or a `for…of` list.
  */
 type Binding =
   | { readonly kind: 'parameter'; readonly owner: ts.FunctionLikeDeclaration; readonly position: number }
   | { readonly kind: 'caught' }
   | { readonly kind: 'element'; readonly of: ts.Expression }
-  | { readonly kind: 'variable' };
-/** The path segment that reads any element of a list. */
+  | { readonly kind: 'variable'; readonly element?: ts.BindingElement };
+const destructuring = (pattern: ts.BindingName, name: string): Binding => ({ kind: 'variable', element: elementNamed(pattern, name) });
+/** The path segment that reads any element of a list, or any property of an object read by a key the walk cannot tell. */
 const ELEMENT = '[]';
+/** The path segment that calls a function and reads what it returns. */
+const CALL = '()';
+/** The longest path read; a function returning a member of its own result would grow it without end. */
+const DEPTH = 24;
 /** List methods whose callback's first parameter is each element. */
 const ITERATIONS = new Set(['map', 'flatMap', 'forEach', 'some', 'every', 'find', 'findLast', 'filter', 'findIndex', 'findLastIndex']);
 
@@ -101,7 +143,7 @@ function binding(identifier: ts.Identifier): ts.Node | Binding | undefined {
       if ((ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name?.text === name) return statement;
       if (ts.isVariableStatement(statement)) for (const declaration of statement.declarationList.declarations) {
         if (ts.isIdentifier(declaration.name) && declaration.name.text === name) return declaration;
-        if (!ts.isIdentifier(declaration.name) && binds(declaration.name, name)) return variable;
+        if (!ts.isIdentifier(declaration.name) && binds(declaration.name, name)) return destructuring(declaration.name, name);
       }
     }
     return undefined;
@@ -110,7 +152,7 @@ function binding(identifier: ts.Identifier): ts.Node | Binding | undefined {
     if (isFunctionLike(scope)) {
       const position = scope.parameters.findIndex(parameter => binds(parameter.name, name));
       if (position >= 0) {
-        if (!ts.isIdentifier(scope.parameters[position].name)) return variable;
+        if (!ts.isIdentifier(scope.parameters[position].name)) return destructuring(scope.parameters[position].name, name);
         const call = scope.parent;
         if (position === 0 && ts.isCallExpression(call) && call.arguments[0] === scope && ts.isPropertyAccessExpression(call.expression) && ITERATIONS.has(call.expression.name.text))
           return { kind: 'element', of: call.expression.expression };
@@ -120,9 +162,11 @@ function binding(identifier: ts.Identifier): ts.Node | Binding | undefined {
     }
     if (ts.isCatchClause(scope) && scope.variableDeclaration && binds(scope.variableDeclaration.name, name))
       return ts.isIdentifier(scope.variableDeclaration.name) ? { kind: 'caught' } : variable;
-    if ((ts.isForStatement(scope) || ts.isForOfStatement(scope) || ts.isForInStatement(scope)) && scope.initializer && ts.isVariableDeclarationList(scope.initializer)
-      && scope.initializer.declarations.some(declaration => binds(declaration.name, name)))
-      return ts.isForOfStatement(scope) && ts.isIdentifier(scope.initializer.declarations[0].name) ? { kind: 'element', of: scope.expression } : variable;
+    if ((ts.isForStatement(scope) || ts.isForOfStatement(scope) || ts.isForInStatement(scope)) && scope.initializer && ts.isVariableDeclarationList(scope.initializer)) {
+      const declaration = scope.initializer.declarations.find(declaration => binds(declaration.name, name));
+      if (declaration) return !ts.isForOfStatement(scope) ? variable : ts.isIdentifier(declaration.name) ? { kind: 'element', of: scope.expression }
+        : destructuring(declaration.name, name);
+    }
     if (ts.isClassExpression(scope) && scope.name?.text === name) return scope;
     const found = ts.isBlock(scope) || ts.isSourceFile(scope) || ts.isModuleBlock(scope) ? inStatements(scope.statements)
       : ts.isCaseBlock(scope) ? scope.clauses.map(clause => inStatements(clause.statements)).find(Boolean) : undefined;
@@ -283,44 +327,76 @@ export function cadDiagnosticReach(index: CadSourceIndex, roots: readonly CadDia
   /** Parameters that carry a code, read at the function's walked calls once the walk is complete. */
   const passed: { readonly file: string; readonly owner: ts.FunctionLikeDeclaration; readonly position: number; readonly path: readonly string[]; readonly at: string }[] = [];
   const read = new Set<string>();
-  /** Whether `callee` names a function of the source, which the walk enters. */
-  const declared = (file: string, callee: ts.Expression): boolean => {
-    const value = bareExpression(callee);
-    if (ts.isIdentifier(value)) return index.resolve(file, value).length > 0;
-    const namespace = ts.isPropertyAccessExpression(value) && ts.isIdentifier(value.expression) ? index.namespace(file, value.expression.text) : undefined;
-    return !!namespace && index.exported(namespace, (value as ts.PropertyAccessExpression).name.text, new Set()).length > 0;
+  const isConstant = (declaration: ts.VariableDeclaration) => (ts.getCombinedNodeFlags(declaration) & ts.NodeFlags.Const) !== 0;
+  /** The string a key names: a literal, or a constant of the source initialized to one. */
+  const keyText = (file: string, key: ts.Expression): string | undefined => {
+    const value = bareExpression(key);
+    if (ts.isStringLiteralLike(value)) return value.text;
+    if (!ts.isIdentifier(value)) return undefined;
+    const [found] = index.resolve(file, value);
+    const initializer = found && ts.isVariableDeclaration(found.node) && isConstant(found.node) && found.node.initializer && bareExpression(found.node.initializer);
+    return initializer && ts.isStringLiteralLike(initializer) ? initializer.text : undefined;
   };
-  /** Collects the codes `expression` gives once the properties `path` names are read off it; `at` is the site reported if it cannot. */
+  /** Collects the codes `expression` gives once `path` is read off it; `at` is the site reported if it cannot. */
   const codesOf = (file: string, expression: ts.Expression, path: readonly string[] = [], at = `${file}: ${expression.getText()}`): void => {
     const value = bareExpression(expression), key = `${file}:${value.pos}:${value.end}:${path.join('.')}`;
     if (read.has(key)) return;
     read.add(key);
-    // Where the reading stopped, if not at the site itself; a call is shown by its callee.
-    const site = (text = expression.getText()) => {
-      const here = `${file}: ${text}${path.map(name => name === ELEMENT ? ELEMENT : `.${name}`).join('')}`;
-      return here === at ? at : `${at}, from ${here}`;
+    // Where the reading is, shown after the site when it went elsewhere; a call's arguments are left out.
+    const here = (text = expression.getText()) => `${file}: ${text}${path.map(name => name === ELEMENT ? ELEMENT : name === CALL ? '(…)' : `.${name}`).join('')}`;
+    const unread = () => { const reached = here(); unexpanded.add(reached === at ? at : `${at}, from ${reached}`); };
+    /** What `rest` reads off a function of `owned`: each result of a call, read on. A function holds no code of its own. */
+    const called = (owned: string, owner: ts.FunctionLikeDeclaration, rest: readonly string[]) => {
+      if (rest[0] === CALL) for (const result of returnsOf(owner)) codesOf(owned, result, rest.slice(1), at);
     };
-    const unread = () => { unexpanded.add(site()); };
+    /** What a declaration of the source gives: a constant's value, or a function's results. */
+    const declared = ({ file: owned, node }: CadDiagnosticRoot, rest: readonly string[]) => {
+      if (ts.isVariableDeclaration(node) && node.initializer && isConstant(node)) codesOf(owned, node.initializer, rest, at);
+      else if (isFunctionLike(node)) called(owned, node, rest);
+      else unread();
+    };
+    if (path.length > DEPTH) { unread(); return; }
     if (ts.isConditionalExpression(value)) { codesOf(file, value.whenTrue, path, at); codesOf(file, value.whenFalse, path, at); return; }
-    if (!path.length && ts.isStringLiteralLike(value)) { codes.add(value.text); return; }
-    // Expanded once the walk is complete, when every declaration a substitution's values may depend on is known.
-    if (!path.length && ts.isTemplateExpression(value)) { templated.push({ file, value }); return; }
-    if (ts.isPropertyAccessExpression(value)) { codesOf(file, value.expression, [value.name.text, ...path], at); return; }
-    if (ts.isElementAccessExpression(value) && (ts.isStringLiteralLike(value.argumentExpression) || ts.isNumericLiteral(value.argumentExpression))) {
-      codesOf(file, value.expression, [ts.isNumericLiteral(value.argumentExpression) ? ELEMENT : value.argumentExpression.text, ...path], at);
+    if (ts.isBinaryExpression(value) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(value.operatorToken.kind)) {
+      codesOf(file, value.left, path, at); codesOf(file, value.right, path, at);
       return;
     }
+    if (value.kind === ts.SyntaxKind.NullKeyword || ts.isIdentifier(value) && value.text === 'undefined') return;
+    if (ts.isStringLiteralLike(value) || ts.isTemplateExpression(value)) {
+      if (!path.length && ts.isStringLiteralLike(value)) codes.add(value.text);
+      // Expanded once the walk is complete, when every declaration a substitution's values may depend on is known.
+      else if (!path.length && ts.isTemplateExpression(value)) templated.push({ file, value });
+      // A string's members hold no code, but what its methods return is built at run time.
+      else if (path.includes(CALL)) unread();
+      return;
+    }
+    if (ts.isPropertyAccessExpression(value)) { codesOf(file, value.expression, [value.name.text, ...path], at); return; }
+    if (ts.isElementAccessExpression(value)) {
+      // A numeric index reads any element; a key the walk cannot tell reads any element or property.
+      codesOf(file, value.expression, [keyText(file, value.argumentExpression) ?? ELEMENT, ...path], at);
+      return;
+    }
+    if (ts.isCallExpression(value)) { codesOf(file, value.expression, [CALL, ...path], at); return; }
+    if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) { called(file, value, path); return; }
     if (ts.isArrayLiteralExpression(value) && path[0] === ELEMENT) {
       for (const element of value.elements) if (!ts.isOmittedExpression(element))
         codesOf(file, ts.isSpreadElement(element) ? element.expression : element, ts.isSpreadElement(element) ? path : path.slice(1), at);
       return;
     }
     if (ts.isObjectLiteralExpression(value) && path.length) {
-      // The last property of that name, unless a spread after it may replace it. An absent property holds no code.
-      const [name, ...rest] = path, property = [...value.properties].reverse().find(property => ts.isSpreadAssignment(property) || propertyName(property.name) === name);
-      if (property && ts.isPropertyAssignment(property)) codesOf(file, property.initializer, rest, at);
-      else if (property && ts.isShorthandPropertyAssignment(property)) codesOf(file, property.name, rest, at);
-      else if (property) unread();
+      // From the last property: one of that name replaces those before it, and a spread or a computed key may hold it. An absent property
+      // holds no code.
+      const [name, ...rest] = path;
+      for (const property of [...value.properties].reverse()) {
+        if (ts.isSpreadAssignment(property)) { codesOf(file, property.expression, path, at); continue; }
+        const key = propertyName(property.name), named = name === ELEMENT || key === name;
+        if (!named && !(key === undefined && property.name && ts.isComputedPropertyName(property.name))) continue;
+        if (ts.isPropertyAssignment(property)) codesOf(file, property.initializer, rest, at);
+        else if (ts.isShorthandPropertyAssignment(property)) codesOf(file, property.name, rest, at);
+        else if (ts.isMethodDeclaration(property)) called(file, property, rest);
+        else unread();
+        if (named && name !== ELEMENT) return;
+      }
       return;
     }
     if (ts.isIdentifier(value)) {
@@ -329,18 +405,43 @@ export function cadDiagnosticReach(index: CadSourceIndex, roots: readonly CadDia
         if (bound.kind === 'parameter') passed.push({ file, owner: bound.owner, position: bound.position, path, at });
         else if (bound.kind === 'element') codesOf(file, bound.of, [ELEMENT, ...path], at);
         // A caught error's code was collected at the `CadError` that raised it, in the walked `try` block.
-        else if (bound.kind === 'caught' && path.length === 1 && path[0] === 'code') taken.add(site());
+        else if (bound.kind === 'caught' && path.length === 1 && path[0] === 'code') taken.add(here());
+        else if (bound.kind === 'variable' && bound.element) destructured(file, bound.element, path, at, unread);
         else unread();
         return;
       }
-      const constant = index.resolve(file, value).find(found => ts.isVariableDeclaration(found.node) && found.node.initializer
-        && (ts.getCombinedNodeFlags(found.node) & ts.NodeFlags.Const) !== 0);
-      if (constant) codesOf(constant.file, (constant.node as ts.VariableDeclaration).initializer!, path, at);
-      else unread();
+      const namespace = index.namespace(file, value.text);
+      if (namespace) {
+        const found = path[0] === ELEMENT || path[0] === CALL || !path.length ? [] : index.exported(namespace, path[0], new Set());
+        if (found.length) found.forEach(declaration => declared(declaration, path.slice(1))); else unread();
+        return;
+      }
+      const found = index.resolve(file, value);
+      if (found.length) found.forEach(declaration => declared(declaration, path)); else unread();
       return;
     }
-    // What an inspection returns: the code of each object it builds is collected where that object is written.
-    if (ts.isCallExpression(value) && path.at(-1) === 'code' && declared(file, value.expression)) taken.add(site(`${value.expression.getText()}(…)`));
+    unread();
+  };
+  /**
+   * What a destructured name gives: the path its pattern reads off the value destructured, a `const` declaration's initializer, each
+   * element of a `for…of` list or a parameter, and any default along the way.
+   */
+  const destructured = (file: string, element: ts.BindingElement, path: readonly string[], at: string, unread: () => void) => {
+    let node: ts.Node = element, below = path;
+    while (ts.isBindingElement(node)) {
+      if (node.initializer) codesOf(file, node.initializer, below, at);
+      const pattern: ts.BindingPattern = node.parent;
+      // A rest element holds the remaining elements or properties, read by the same path.
+      if (!node.dotDotDotToken) {
+        const key = ts.isArrayBindingPattern(pattern) ? ELEMENT : propertyName(node.propertyName ?? node.name);
+        if (key === undefined) { unread(); return; }
+        below = [key, ...below];
+      }
+      node = pattern.parent;
+    }
+    if (ts.isParameter(node) && isFunctionLike(node.parent)) passed.push({ file, owner: node.parent, position: node.parent.parameters.indexOf(node), path: below, at });
+    else if (ts.isVariableDeclaration(node) && ts.isForOfStatement(node.parent.parent) && isConstant(node)) codesOf(file, node.parent.parent.expression, [ELEMENT, ...below], at);
+    else if (ts.isVariableDeclaration(node) && node.initializer && isConstant(node)) codesOf(file, node.initializer, below, at);
     else unread();
   };
   const member = (file: string, access: ts.PropertyAccessExpression) => {

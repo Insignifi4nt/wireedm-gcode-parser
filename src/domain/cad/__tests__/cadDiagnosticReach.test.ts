@@ -31,7 +31,7 @@ describe('CAD diagnostic reach', () => {
       if (kind === 'b') throw new CadError(codeFor(kind), '');
       const refusal = { code: 'hidden', ...extra(kind) };
       throw new CadError(refusal.code, '');
-    }`).unexpanded).toEqual([`${FILE}: code`, `${FILE}: codeFor(kind)`, `${FILE}: refusal.code, from ${FILE}: { code: 'hidden', ...extra(kind) }.code`]);
+    }`).unexpanded).toEqual([`${FILE}: code`, `${FILE}: codeFor(kind), from ${FILE}: codeFor(…)`, `${FILE}: refusal.code, from ${FILE}: extra(…).code`]);
   });
 
   it('reads a parameter at each call the walk reaches, and reports a function passed on', () => {
@@ -49,15 +49,48 @@ describe('CAD diagnostic reach', () => {
     expect(reach(source.replace('TABLE.slots.forEach(', 'later(refuse); TABLE.slots.forEach(')).unexpanded).toEqual([`${FILE}: refuse passed on`]);
   });
 
-  it('takes a caught error\'s code and an inspection\'s from where they are written, and lists both', () => {
-    const found = walk(`function inspect(kind: string) { return kind ? { eligible: false, code: 'inspected-refusal' } : { eligible: true }; }
-      function parse() { throw new CadError('parse-refusal', ''); }
-      export function check(kind: string) {
-        try { parse(); } catch (error) { if (error instanceof CadError) return { code: error.code }; }
-        const inspection = inspect(kind);
-        if (!inspection.eligible) throw new CadError(inspection.code, '');
-      }`);
-    expect({ codes: [...found.codes].sort(), unexpanded: found.unexpanded }).toEqual({ codes: ['inspected-refusal', 'parse-refusal'], unexpanded: [] });
-    expect(found.taken).toEqual([`${FILE}: error.code`, `${FILE}: inspection.code, from ${FILE}: inspect(…).code`]);
+  it('takes a caught error\'s code where it is read, and lists the site', () => {
+    const found = walk(`function parse() { throw new CadError('parse-refusal', ''); }
+      export function check() { try { parse(); } catch (error) { if (error instanceof CadError) return { code: error.code }; } }`);
+    expect({ codes: [...found.codes], unexpanded: found.unexpanded, taken: found.taken })
+      .toEqual({ codes: ['parse-refusal'], unexpanded: [], taken: [`${FILE}: error.code`] });
+  });
+
+  it('reads the code of what a call returns through the function it calls, computed literal keys included', () => {
+    const check = `export function check(sketch: { name: string }) {
+      const inspection = inspect(sketch);
+      if (!inspection.eligible) throw new CadError(inspection.code, inspection.message);
+    }`;
+    expect(walk(`function inspect(sketch: { name: string }) {
+        if (!sketch.name) return { eligible: false, ['code']: 'new-loft-refusal', message: 'failure' };
+        return Object.freeze({ eligible: true, section: sketch });
+      }
+      ${check}`)).toMatchObject({ codes: new Set(['new-loft-refusal']), unexpanded: [], taken: [] });
+    // A key named by a constant is no `code` property where it is written, but may be the one a call's result is read by.
+    expect(reach(`const CODE = 'code';
+      function inspect(sketch: { name: string }) { return sketch.name ? { eligible: true } : { eligible: false, [CODE]: 'keyed-refusal', message: 'failure' }; }
+      ${check}`)).toEqual({ codes: ['keyed-refusal'], unexpanded: [] });
+    // Through a helper, a table entry read by a key it cannot tell, a destructured constant and a function the table holds.
+    expect(reach(`const missing = (message: string) => ({ code: 'missing-point', message });
+      const KINDS = {
+        pair: { stored: { refusal: { code: 'pair-refusal' } } },
+        point: { stored: (fixed: boolean) => fixed ? { refusal: missing('none') } : { refusal: { code: 'point-refusal' } } }
+      } as const;
+      function signature(kind: keyof typeof KINDS) { const { stored } = KINDS[kind]; return typeof stored === 'function' ? stored(true) : stored; }
+      export function check(kind: keyof typeof KINDS) { throw new CadError(signature(kind).refusal.code, ''); }`))
+      .toEqual({ codes: ['missing-point', 'pair-refusal', 'point-refusal'], unexpanded: [] });
+  });
+
+  it('reports what a call returns when it cannot read it', () => {
+    const check = `export function check(sketch: { name: string }) {
+      const inspection = inspect(sketch);
+      if (!inspection.eligible) throw new CadError(inspection.code, inspection.message);
+    }`;
+    expect(reach(`function inspect(sketch: { name: string }) { return cache.get(sketch.name); }\n${check}`).unexpanded)
+      .toEqual([`${FILE}: inspection.code, from ${FILE}: cache.get(…).code`]);
+    expect(reach(`function inspect(sketch: { name: string }) { let result = { eligible: true }; if (!sketch.name) result = { eligible: false, code: 'empty' }; return result; }\n${check}`).unexpanded)
+      .toEqual([`${FILE}: inspection.code, from ${FILE}: result.code`]);
+    expect(reach(`function inspect(sketch: { name: string }) { return new Inspection(sketch); }\n${check}`).unexpanded)
+      .toEqual([`${FILE}: inspection.code, from ${FILE}: new Inspection(sketch).code`]);
   });
 });

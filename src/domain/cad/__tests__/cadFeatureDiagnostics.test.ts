@@ -7,7 +7,6 @@ import { CAD_FEATURE_SHARED_DIAGNOSTICS, cadFeatureDefinition, cadFeatureKinds }
 
 const FEATURES = 'src/domain/cad/features/', SCHEMA = 'src/domain/cad/cadSchema.ts', KERNEL = 'src/features/cad/kernel/cadKernelModel.ts';
 const EVIDENCE = 'src/features/cad/kernel/cadKernelCutEvidence.ts';
-const SIGNATURES = 'src/domain/cad/sketch-relations/cadSketchOperandSignatures.ts', REGISTRY = 'src/domain/cad/sketch-relations/cadSketchRelationRegistry.ts';
 
 /**
  * Functions that evaluate one input feature from its own data: a sketch's contours, solved graph and placement, a curve's geometry and
@@ -34,22 +33,13 @@ const NOT_REFUSALS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Where the walk takes a code from where it was written: a caught `CadError`'s code, passed on as an inspection's refusal, and the code of
- * what an inspection returns, which is one of the refusals it builds. A new site is read by hand before it is listed here.
+ * Where the walk takes a caught `CadError`'s code, which the `CadError` its `try` block raised gave: a loft section's inspection and a
+ * section pair's pass it on as their refusal, and the rebuild reports it. A new site is read by hand before it is listed here.
  */
 const TAKEN = [
   'src/domain/cad/cadLoft.ts: error.code',
-  'src/domain/cad/cadLoft.ts: inspection.code, from src/domain/cad/cadLoft.ts: inspectCadLoftSketch(…).code',
   'src/domain/cad/cadLoftPlacement.ts: error.code',
-  'src/domain/cad/cadLoftPlacement.ts: inspection.code, from src/domain/cad/cadLoftPlacement.ts: inspectSectionPair(…).code',
-  "src/domain/cad/cadSweep.ts: inspection.code === 'unsupported-loft-section' ? 'unsupported-sweep-section' : inspection.code, from src/domain/cad/cadSweep.ts: inspectCadLoftSketch(…).code",
-  'src/domain/cad/cadSweep.ts: sectionInspection.code, from src/domain/cad/cadSweep.ts: inspectCadSweepSketch(…).code',
-  // A relation's operands are refused with its signature's refusals, built by these functions or written in the signature tables.
-  `${SIGNATURES}: refusal.code, from ${SIGNATURES}: cadSketchCapabilityRefusal(…).code`,
-  `${SIGNATURES}: refusal.code, from ${SIGNATURES}: missingPoint(…).code`,
-  `${SIGNATURES}: refusal.code, from ${REGISTRY}: cadSketchRelationSignature(…).distinct.refusal.code`,
-  `${SIGNATURES}: refusal.code, from ${REGISTRY}: cadSketchRelationSignature(…).slots[].refusal.code`,
-  `${KERNEL}: error instanceof CadError ? error.code : 'kernel-operation-failed', from ${KERNEL}: error.code`
+  `${KERNEL}: error.code`
 ];
 
 let index: CadSourceIndex;
@@ -132,7 +122,7 @@ describe('CAD feature diagnostics', () => {
     for (const [name, owners] of Object.entries(INPUT_EVALUATIONS)) if (owners.includes(kind)) expect(reach.declarations, name).toContain(name);
   }, 30_000);
 
-  it('take codes from where they were written only at the sites read by hand', () => {
+  it('take a caught error\'s code only at the sites read by hand', () => {
     const groups = Object.keys(CAD_FEATURE_SHARED_DIAGNOSTICS) as (keyof typeof CAD_FEATURE_SHARED_DIAGNOSTICS)[];
     const taken = [...groups.map(sharedReach), ...cadFeatureKinds().map(kindReach)].flatMap(reach => reach.taken);
     expect(sorted(new Set(taken))).toEqual(sorted(TAKEN));

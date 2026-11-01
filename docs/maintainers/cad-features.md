@@ -39,9 +39,10 @@ Its presentation, one entry per kind in `CAD_FEATURE_PRESENTATION`, owns:
 6. Decide its agent exposure, in the same entry. Initial agent discovery must stay within 51,200 UTF-8 bytes (`cadAgentJourney.test.tsx`), so keep the
    description short. Update `docs/site/agents.md` if agents gain the kind.
 7. List its `diagnostics`. `cadFeatureDiagnostics.test.ts` reads the kind's definition and its kernel case, follows the calls they
-   make, and fails unless the list holds exactly the refusal codes found, less the shared ones. It also fails on a code it cannot trace
-   to where it was written, and on a new site where it takes a caught or returned code on trust, until that site is read and listed in
-   the test. `cadFeatureQuantities.test.ts` fails until every number its schema accepts has exactly one declared quantity.
+   make, and fails unless the list holds exactly the refusal codes found, less the shared ones. A code returned by a call is traced
+   through the function's returns. The test also fails on a code it cannot trace to where it was written, and on a new site where it
+   takes a caught error's code on trust, until that site is read and listed in the test. `cadFeatureQuantities.test.ts` fails until
+   every number its schema accepts has exactly one declared quantity.
 8. Regenerate the table below with `UPDATE_CAD_FEATURE_TABLE=1 npm test -- --run src/domain/cad/__tests__/cadFeatureTable.test.ts`.
    Without the variable the test fails while the table differs from the definitions.
 

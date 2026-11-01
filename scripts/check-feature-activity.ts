@@ -19,7 +19,8 @@ import ts from '@typescript/typescript6';
  * - reflective reads by a literal key: `Reflect.get`, `Reflect.has` and `Reflect.getOwnPropertyDescriptor`, `Object.hasOwn` and
  *   `Object.getOwnPropertyDescriptor`, and `hasOwnProperty` or `propertyIsEnumerable` on any receiver, called directly or through
  *   `.call` or `.apply`, each method named after a dot or by a literal key (`Reflect['get']`, `Reflect.get['call']`).
- * A literal key is a string or a template without substitutions, or a `const` of this file initialized to one.
+ * A literal key is a string or a template without substitutions, or a name the TypeScript checker binds, in its scope, to a `const` of
+ * this file initialized to one; an inner declaration of the same name, constant or not, shadows an outer one.
  *
  * Writing the stored flag in an object literal (`{ ...feature, suppressed: true }`) is not a read, and neither are types. Other state
  * that suppresses something else takes a name of its own, such as `snapSuppressed`, so the check needs no exceptions.
@@ -47,19 +48,28 @@ function bare(node: ts.Expression): ts.Expression {
   return node;
 }
 
-/** The strings `const` names of this file are bound to, as `const KEY = 'suppressed'` binds `KEY`. */
-function stringConstants(source: ts.SourceFile): ReadonlyMap<string, string> {
-  const names = new Map<string, string>();
-  const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && ts.isVariableDeclarationList(node.parent)
-      && node.parent.flags & ts.NodeFlags.Const) {
-      const value = bare(node.initializer);
-      if (ts.isStringLiteralLike(value)) names.set(node.name.text, value.text);
-    }
-    ts.forEachChild(node, visit);
+/**
+ * The string a name stands for where it is used: the declaration the checker binds it to, in its own scope, when that is a `const` of
+ * this file initialized to a literal, as `const KEY = 'suppressed'` binds `KEY`. An inner declaration of the same name shadows it.
+ */
+function constantStrings(source: ts.SourceFile): (name: ts.Identifier) => string | undefined {
+  let checker: ts.TypeChecker | undefined;
+  return name => {
+    // The file alone, with no library or imports: a name is bound to a declaration of its own scope, or to none.
+    checker ??= ts.createProgram({
+      rootNames: [source.fileName],
+      options: { noLib: true, noResolve: true, allowJs: true, types: [] },
+      host: {
+        getSourceFile: file => file === source.fileName ? source : undefined, fileExists: file => file === source.fileName, readFile: () => undefined,
+        getDefaultLibFileName: () => 'lib.d.ts', writeFile: () => undefined, getCurrentDirectory: () => '', getCanonicalFileName: file => file,
+        useCaseSensitiveFileNames: () => true, getNewLine: () => '\n'
+      }
+    }).getTypeChecker();
+    const declaration = checker.getSymbolAtLocation(name)?.valueDeclaration;
+    if (!declaration || !ts.isVariableDeclaration(declaration) || !(ts.getCombinedNodeFlags(declaration) & ts.NodeFlags.Const) || !declaration.initializer) return undefined;
+    const value = bare(declaration.initializer);
+    return ts.isStringLiteralLike(value) ? value.text : undefined;
   };
-  visit(source);
-  return names;
 }
 
 function isTarget(node: ts.Node): boolean {
@@ -75,11 +85,11 @@ function isTarget(node: ts.Node): boolean {
 
 export function featureActivityReadsIn(file: string, text: string): FeatureActivityRead[] {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-  const constants = stringConstants(source);
+  const constant = constantStrings(source);
   /** The text of a literal key. */
   const literal = (node: ts.Expression | undefined) => {
     const value = node && bare(node);
-    return !value ? undefined : ts.isStringLiteralLike(value) ? value.text : ts.isIdentifier(value) ? constants.get(value.text) : undefined;
+    return !value ? undefined : ts.isStringLiteralLike(value) ? value.text : ts.isIdentifier(value) ? constant(value) : undefined;
   };
   const isKey = (node: ts.Expression | undefined) => literal(node) === FIELD;
   const isName = (name: ts.PropertyName | ts.BindingName) =>
