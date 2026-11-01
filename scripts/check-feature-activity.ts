@@ -18,7 +18,7 @@ import ts from '@typescript/typescript6';
  * - `'suppressed' in feature`;
  * - reflective reads by a literal key: `Reflect.get`, `Reflect.has` and `Reflect.getOwnPropertyDescriptor`, `Object.hasOwn` and
  *   `Object.getOwnPropertyDescriptor`, and `hasOwnProperty` or `propertyIsEnumerable` on any receiver, called directly or through
- *   `.call` or `.apply`.
+ *   `.call` or `.apply`, each method named after a dot or by a literal key (`Reflect['get']`, `Reflect.get['call']`).
  * A literal key is a string or a template without substitutions, or a `const` of this file initialized to one.
  *
  * Writing the stored flag in an object literal (`{ ...feature, suppressed: true }`) is not a read, and neither are types. Other state
@@ -47,14 +47,14 @@ function bare(node: ts.Expression): ts.Expression {
   return node;
 }
 
-/** `const` names of this file bound to the flag's name, as `const KEY = 'suppressed'` is. */
-function flagConstants(source: ts.SourceFile): ReadonlySet<string> {
-  const names = new Set<string>();
+/** The strings `const` names of this file are bound to, as `const KEY = 'suppressed'` binds `KEY`. */
+function stringConstants(source: ts.SourceFile): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
   const visit = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && ts.isVariableDeclarationList(node.parent)
       && node.parent.flags & ts.NodeFlags.Const) {
       const value = bare(node.initializer);
-      if (ts.isStringLiteralLike(value) && value.text === FIELD) names.add(node.name.text);
+      if (ts.isStringLiteralLike(value)) names.set(node.name.text, value.text);
     }
     ts.forEachChild(node, visit);
   };
@@ -75,12 +75,13 @@ function isTarget(node: ts.Node): boolean {
 
 export function featureActivityReadsIn(file: string, text: string): FeatureActivityRead[] {
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-  const constants = flagConstants(source);
-  const isKey = (node: ts.Expression | undefined) => {
-    if (!node) return false;
-    const value = bare(node);
-    return ts.isStringLiteralLike(value) ? value.text === FIELD : ts.isIdentifier(value) && constants.has(value.text);
+  const constants = stringConstants(source);
+  /** The text of a literal key. */
+  const literal = (node: ts.Expression | undefined) => {
+    const value = node && bare(node);
+    return !value ? undefined : ts.isStringLiteralLike(value) ? value.text : ts.isIdentifier(value) ? constants.get(value.text) : undefined;
   };
+  const isKey = (node: ts.Expression | undefined) => literal(node) === FIELD;
   const isName = (name: ts.PropertyName | ts.BindingName) =>
     ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text === FIELD : ts.isComputedPropertyName(name) && isKey(name.expression);
   const found: FeatureActivityRead[] = [];
@@ -93,7 +94,7 @@ export function featureActivityReadsIn(file: string, text: string): FeatureActiv
       && isName(node.name)) add(`{ ${FIELD} } =`);
     else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.InKeyword && isKey(node.left)) add(`'${FIELD}' in`);
     else if (ts.isCallExpression(node)) {
-      const method = reflectiveRead(node);
+      const method = reflectiveRead(node, literal);
       if (method?.args.some(isKey)) add(`${method.name}('${FIELD}')`);
     }
     ts.forEachChild(node, visit);
@@ -107,16 +108,21 @@ const BY_RECEIVER: Readonly<Record<string, ReadonlySet<string>>> = {
   Reflect: new Set(['get', 'has', 'getOwnPropertyDescriptor']),
   Object: new Set(['hasOwn', 'getOwnPropertyDescriptor'])
 };
+/** A member access and the name it reads, after a dot or by a literal key. */
+function member(node: ts.Expression, literal: (key: ts.Expression) => string | undefined) {
+  const name = ts.isPropertyAccessExpression(node) ? node.name.text : ts.isElementAccessExpression(node) ? literal(node.argumentExpression) : undefined;
+  return name === undefined ? undefined : { name, receiver: bare((node as ts.PropertyAccessExpression | ts.ElementAccessExpression).expression) };
+}
 /** The reflective method a call reads a property with, and the arguments that may name it. */
-function reflectiveRead(call: ts.CallExpression): { readonly name: string; readonly args: readonly ts.Expression[] } | undefined {
-  let callee = bare(call.expression), args: readonly ts.Expression[] = call.arguments;
-  if (ts.isPropertyAccessExpression(callee) && (callee.name.text === 'call' || callee.name.text === 'apply')) {
-    const listed = callee.name.text === 'apply' ? call.arguments[1] && bare(call.arguments[1]) : undefined;
-    args = callee.name.text === 'call' ? call.arguments.slice(1) : listed && ts.isArrayLiteralExpression(listed) ? listed.elements : [];
-    callee = bare(callee.expression);
+function reflectiveRead(call: ts.CallExpression, literal: (key: ts.Expression) => string | undefined): { readonly name: string; readonly args: readonly ts.Expression[] } | undefined {
+  let method = member(bare(call.expression), literal), args: readonly ts.Expression[] = call.arguments;
+  if (method && (method.name === 'call' || method.name === 'apply')) {
+    const listed = method.name === 'apply' ? call.arguments[1] && bare(call.arguments[1]) : undefined;
+    args = method.name === 'call' ? call.arguments.slice(1) : listed && ts.isArrayLiteralExpression(listed) ? listed.elements : [];
+    method = member(method.receiver, literal);
   }
-  if (!ts.isPropertyAccessExpression(callee)) return undefined;
-  const name = callee.name.text, receiver = bare(callee.expression);
+  if (!method) return undefined;
+  const { name, receiver } = method;
   if (OWN.has(name) || ts.isIdentifier(receiver) && BY_RECEIVER[receiver.text]?.has(name)) return { name, args };
   return undefined;
 }

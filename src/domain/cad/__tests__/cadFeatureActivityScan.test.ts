@@ -135,6 +135,30 @@ describe('feature activity scanner', () => {
     ]);
   });
 
+  it('finds reflective reads whose method is named by a literal key, directly or through call and apply', () => {
+    expect(each([
+      "const a = Reflect['get'](feature, 'suppressed');",
+      "const b = Reflect[`has`](feature, 'suppressed');",
+      "const c = Object['hasOwn' as const](feature, 'suppressed');",
+      "const d = feature?.['hasOwnProperty']('suppressed');",
+      "const GET = 'get'; const e = Reflect[GET](feature, 'suppressed');",
+      "const f = Reflect['get']['call'](undefined, feature, 'suppressed');",
+      "const g = Reflect.get['apply'](undefined, [feature, 'suppressed']);",
+      "const h = Object.prototype['propertyIsEnumerable'].call(feature, 'suppressed');",
+      "const i = Object['prototype']['hasOwnProperty'][`apply`](feature, ['suppressed']);"
+    ])).toEqual([
+      ["const a = Reflect['get'](feature, 'suppressed');", ["get('suppressed')"]],
+      ["const b = Reflect[`has`](feature, 'suppressed');", ["has('suppressed')"]],
+      ["const c = Object['hasOwn' as const](feature, 'suppressed');", ["hasOwn('suppressed')"]],
+      ["const d = feature?.['hasOwnProperty']('suppressed');", ["hasOwnProperty('suppressed')"]],
+      ["const GET = 'get'; const e = Reflect[GET](feature, 'suppressed');", ["get('suppressed')"]],
+      ["const f = Reflect['get']['call'](undefined, feature, 'suppressed');", ["get('suppressed')"]],
+      ["const g = Reflect.get['apply'](undefined, [feature, 'suppressed']);", ["get('suppressed')"]],
+      ["const h = Object.prototype['propertyIsEnumerable'].call(feature, 'suppressed');", ["propertyIsEnumerable('suppressed')"]],
+      ["const i = Object['prototype']['hasOwnProperty'][`apply`](feature, ['suppressed']);", ["hasOwnProperty('suppressed')"]]
+    ]);
+  });
+
   it('ignores writes of the flag, other names, comments, text and types', () => {
     const source = [
       '// feature.suppressed is read through cadFeatureActive',
@@ -151,7 +175,7 @@ describe('feature activity scanner', () => {
       'const byName = feature[suppressed];',
       "let key = 'suppressed'; const byVariable = feature[key];",
       'const inner = { suppressed: true }.suppressedCount;',
-      "const lookup = params.get('suppressed') ?? cache.has('suppressed');",
+      "const lookup = params.get('suppressed') ?? cache.has('suppressed') ?? params['get']('suppressed');",
       "if (issue === 'suppressed') report(issue);",
       "switch (issue) { case 'suppressed': break; }",
       'const keys = Object.keys(feature); const copy = { ...feature };',

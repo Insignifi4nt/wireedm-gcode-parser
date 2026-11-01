@@ -1,12 +1,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 // TypeScript 7 ships no compiler API yet; AST tooling uses the TypeScript 6 package.
 import ts from '@typescript/typescript6';
-import { CadSourceIndex, cadDiagnosticReach, type CadDiagnosticReachOptions, type CadDiagnosticRoot } from './cadDiagnosticReach';
+import { CadSourceIndex, cadDiagnosticReach, type CadDiagnosticReach, type CadDiagnosticReachOptions, type CadDiagnosticRoot } from './cadDiagnosticReach';
 import type { CadFeatureKind } from '../features/cadFeatureDefinitionTypes';
 import { CAD_FEATURE_SHARED_DIAGNOSTICS, cadFeatureDefinition, cadFeatureKinds } from '../features/cadFeatureRegistry';
 
 const FEATURES = 'src/domain/cad/features/', SCHEMA = 'src/domain/cad/cadSchema.ts', KERNEL = 'src/features/cad/kernel/cadKernelModel.ts';
 const EVIDENCE = 'src/features/cad/kernel/cadKernelCutEvidence.ts';
+const SIGNATURES = 'src/domain/cad/sketch-relations/cadSketchOperandSignatures.ts', REGISTRY = 'src/domain/cad/sketch-relations/cadSketchRelationRegistry.ts';
 
 /**
  * Functions that evaluate one input feature from its own data: a sketch's contours, solved graph and placement, a curve's geometry and
@@ -19,10 +20,37 @@ const INPUT_EVALUATIONS: Readonly<Record<string, readonly CadFeatureKind[]>> = {
   'src/domain/cad/cadDatumPlanes.ts:resolveCadSketchPlacement': ['sketch', 'curve'],
   'src/domain/cad/cadCurve.ts:resolveCadCurveGeometry': ['curve']
 };
+/**
+ * Issue codes: a sketch graph's issues carry them, and so do a sketch arrangement's. A check that finds an issue refuses with its own
+ * code (invalid-sketch-graph-geometry, invalid-corner-geometry, unsupported-sketch-cells and others) and the issue's message.
+ */
+const GRAPH_ISSUE = 'A sketch graph issue, refused with the code of the check that finds it.';
+const ARRANGEMENT_ISSUE = 'A sketch arrangement issue. Cells refuse an arrangement with issues as unsupported-sketch-cells.';
 /** Codes the walk finds that are no refusal of a feature, and why. */
 const NOT_REFUSALS: Readonly<Record<string, string>> = {
-  STALE_BUILD: 'A topology snapshot refuses use once disposed. A rebuild selects edges and faces on the snapshot of its own build, before disposing it.'
+  STALE_BUILD: 'A topology snapshot refuses use once disposed. A rebuild selects edges and faces on the snapshot of its own build, before disposing it.',
+  'relation-residual': GRAPH_ISSUE, 'invalid-coordinate': GRAPH_ISSUE, 'degenerate-entity': GRAPH_ISSUE, 'arc-radius-mismatch': GRAPH_ISSUE,
+  overlap: ARRANGEMENT_ISSUE, 'ambiguous-tangency': ARRANGEMENT_ISSUE, precision: ARRANGEMENT_ISSUE, 'non-simple-boundary': ARRANGEMENT_ISSUE
 };
+
+/**
+ * Where the walk takes a code from where it was written: a caught `CadError`'s code, passed on as an inspection's refusal, and the code of
+ * what an inspection returns, which is one of the refusals it builds. A new site is read by hand before it is listed here.
+ */
+const TAKEN = [
+  'src/domain/cad/cadLoft.ts: error.code',
+  'src/domain/cad/cadLoft.ts: inspection.code, from src/domain/cad/cadLoft.ts: inspectCadLoftSketch(…).code',
+  'src/domain/cad/cadLoftPlacement.ts: error.code',
+  'src/domain/cad/cadLoftPlacement.ts: inspection.code, from src/domain/cad/cadLoftPlacement.ts: inspectSectionPair(…).code',
+  "src/domain/cad/cadSweep.ts: inspection.code === 'unsupported-loft-section' ? 'unsupported-sweep-section' : inspection.code, from src/domain/cad/cadSweep.ts: inspectCadLoftSketch(…).code",
+  'src/domain/cad/cadSweep.ts: sectionInspection.code, from src/domain/cad/cadSweep.ts: inspectCadSweepSketch(…).code',
+  // A relation's operands are refused with its signature's refusals, built by these functions or written in the signature tables.
+  `${SIGNATURES}: refusal.code, from ${SIGNATURES}: cadSketchCapabilityRefusal(…).code`,
+  `${SIGNATURES}: refusal.code, from ${SIGNATURES}: missingPoint(…).code`,
+  `${SIGNATURES}: refusal.code, from ${REGISTRY}: cadSketchRelationSignature(…).distinct.refusal.code`,
+  `${SIGNATURES}: refusal.code, from ${REGISTRY}: cadSketchRelationSignature(…).slots[].refusal.code`,
+  `${KERNEL}: error instanceof CadError ? error.code : 'kernel-operation-failed', from ${KERNEL}: error.code`
+];
 
 let index: CadSourceIndex;
 let options: CadDiagnosticReachOptions;
@@ -76,20 +104,26 @@ beforeAll(() => {
 }, 60_000);
 
 const sorted = (codes: Iterable<string>) => [...codes].sort();
+const reaches = new Map<string, CadDiagnosticReach>();
+const sharedReach = (group: keyof typeof CAD_FEATURE_SHARED_DIAGNOSTICS) => reaches.get(group)
+  ?? reaches.set(group, cadDiagnosticReach(index, sharedRoots[group], options)).get(group)!;
+const kindReach = (kind: CadFeatureKind) => {
+  const stop = new Set([...options.stop!, ...Object.entries(INPUT_EVALUATIONS).filter(([, owners]) => !owners.includes(kind)).map(([name]) => name)]);
+  return reaches.get(kind) ?? reaches.set(kind, cadDiagnosticReach(index, kindRoots(kind), { ...options, stop })).get(kind)!;
+};
 const shared = () => new Set(Object.values(CAD_FEATURE_SHARED_DIAGNOSTICS).flat());
 
 describe('CAD feature diagnostics', () => {
   it('list the codes of the steps every feature goes through as shared', () => {
     for (const [group, codes] of Object.entries(CAD_FEATURE_SHARED_DIAGNOSTICS)) {
-      const reach = cadDiagnosticReach(index, sharedRoots[group as keyof typeof CAD_FEATURE_SHARED_DIAGNOSTICS], options);
+      const reach = sharedReach(group as keyof typeof CAD_FEATURE_SHARED_DIAGNOSTICS);
       expect(reach.unexpanded, group).toEqual([]);
       expect(sorted(reach.codes), group).toEqual(sorted(codes));
     }
   }, 30_000);
 
   it.each(cadFeatureKinds())('list every code a %s feature can be refused with by its checks and evaluation', kind => {
-    const stop = new Set([...options.stop!, ...Object.entries(INPUT_EVALUATIONS).filter(([, owners]) => !owners.includes(kind)).map(([name]) => name)]);
-    const reach = cadDiagnosticReach(index, kindRoots(kind), { ...options, stop });
+    const reach = kindReach(kind);
     expect(reach.unexpanded).toEqual([]);
     const declared = cadFeatureDefinition(kind).diagnostics, common = shared();
     expect(new Set(declared).size, 'listed once').toBe(declared.length);
@@ -97,4 +131,10 @@ describe('CAD feature diagnostics', () => {
     // An input's own kind walks the evaluations other kinds stop at, so their codes are listed there.
     for (const [name, owners] of Object.entries(INPUT_EVALUATIONS)) if (owners.includes(kind)) expect(reach.declarations, name).toContain(name);
   }, 30_000);
+
+  it('take codes from where they were written only at the sites read by hand', () => {
+    const groups = Object.keys(CAD_FEATURE_SHARED_DIAGNOSTICS) as (keyof typeof CAD_FEATURE_SHARED_DIAGNOSTICS)[];
+    const taken = [...groups.map(sharedReach), ...cadFeatureKinds().map(kindReach)].flatMap(reach => reach.taken);
+    expect(sorted(new Set(taken))).toEqual(sorted(TAKEN));
+  }, 60_000);
 });
