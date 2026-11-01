@@ -26,8 +26,8 @@ import { exportCadKernelStep } from './cadKernelExport';
 import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
-import { createCadBodyLineage, type CadBodyKey } from '../../../domain/cad/cadBodies';
-import { cadKernelSolidOrigins } from './cadKernelBodyPieces';
+import { createCadBodyLineage, type CadBodyKey, type CadBodySource } from '../../../domain/cad/cadBodies';
+import { createCadKernelFaceSources, type CadKernelFaceSources } from './cadKernelBodyPieces';
 import { cadFeatureActive } from '../../../domain/cad/features/cadFeatureActivity';
 import { cadFeatureScalar, cadFeatureScalarAccepts } from '../../../domain/cad/features/cadFeatureRegistry';
 import { cadKernelBounds, cadKernelVolume } from './cadKernelQueries';
@@ -168,10 +168,15 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
 
   for (const [featureIndex, feature] of document.features.entries()) {
     if (!cadFeatureActive(feature, document)) { lineage.apply(feature, document); continue; }
+    // A pattern records each copy's faces before releasing it, so the copies' solids can be traced in its result.
+    let copyFaces: CadKernelFaceSources | undefined;
     try {
       let result: Shape3D;
       // Whether the feature takes material from its target, and so may split it, and whether its result lists solids as its source did.
       let removesMaterial = false, sameSolidOrder = false;
+      // The tool a join or union fused into its target, and the copies a pattern made, whose faces the result may keep.
+      let fusedTool: Shape3D | undefined;
+      const copies: CadBodySource[] = [];
       // True only when result itself was just validated, with no kernel operation on it since.
       let topologyChecked = false;
       let instances = 1;
@@ -195,6 +200,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
             const target = body(feature.targetId);
             removesMaterial = feature.operation === 'cut';
+            if (feature.operation === 'join') fusedTool = result;
             result = own(feature.operation === 'join' ? cadKernelBuilders.fuse(target, result)
               : cutCadKernelConfirmedMaterial(target, result, { toolConfirmed: sketched.checked }));
             topologyChecked = feature.operation === 'cut';
@@ -209,6 +215,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             instances = checkedInstances(1 + instancesOf(feature.targetId));
             const loft = own(buildCadLoftSolid(sections, feature.ruled));
             removesMaterial = feature.operation === 'cut';
+            if (feature.operation === 'join') fusedTool = loft;
             result = own(feature.operation === 'join' ? cadKernelBuilders.fuse(target, loft) : cutCadKernelConfirmedMaterial(target, loft));
             topologyChecked = feature.operation === 'cut';
           } else result = own(buildCadLoftSolid(sections, feature.ruled));
@@ -222,6 +229,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             instances = checkedInstances(1 + instancesOf(feature.targetId));
             const sweep = own(buildCadSweepSolid(inputs));
             removesMaterial = feature.operation === 'cut';
+            if (feature.operation === 'join') fusedTool = sweep;
             result = own(feature.operation === 'join' ? cadKernelBuilders.fuse(target, sweep) : cutCadKernelConfirmedMaterial(target, sweep));
             topologyChecked = feature.operation === 'cut';
           } else result = own(buildCadSweepSolid(inputs));
@@ -260,6 +268,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           const target = body(feature.targetId); const tool = body(feature.toolId);
           instances = checkedInstances(instancesOf(feature.targetId) + instancesOf(feature.toolId));
           removesMaterial = feature.operation !== 'union';
+          if (feature.operation === 'union') fusedTool = tool;
           result = own(feature.operation === 'union' ? cadKernelBuilders.fuse(target, tool) : feature.operation === 'cut' ? cutCadKernelConfirmedMaterial(target, tool) : cadKernelBuilders.common(target, tool));
           topologyChecked = feature.operation === 'cut';
           break;
@@ -284,9 +293,11 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           instances = checkedPatternInstances(instancesOf(feature.sourceId) * feature.count);
           const spacing = feature.spacing.map(number);
           result = source;
+          copyFaces = createCadKernelFaceSources(); copyFaces.add(source);
           for (let index = 1; index < feature.count; index++) {
             // Keep only the original seed and current union while building, just as for circular patterns.
             const instance = replace(own(source.clone()), shape => cadKernelBuilders.translate(shape, [spacing[0] * index, spacing[1] * index, spacing[2] * index]));
+            copyFaces.add(instance); copies.push({ kind: 'copy', i: index, j: 0 });
             const previous = result;
             result = own(cadKernelBuilders.fuse(previous, instance));
             release(instance);
@@ -300,9 +311,11 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           instances = checkedPatternInstances(instancesOf(feature.sourceId) * pattern.count);
           const center: SimplePoint = [...pattern.center]; const direction: SimplePoint = [...pattern.direction];
           result = source;
-          for (const angle of pattern.angles.slice(1)) {
+          copyFaces = createCadKernelFaceSources(); copyFaces.add(source);
+          for (const [place, angle] of pattern.angles.slice(1).entries()) {
             // Keep only the original seed and current union while constructing the pattern.
             const instance = replace(own(source.clone()), shape => cadKernelBuilders.rotate(shape, angle, center, direction));
+            copyFaces.add(instance); copies.push({ kind: 'copy', i: place + 1, j: 0 });
             const previous = result;
             result = own(cadKernelBuilders.fuse(previous, instance));
             release(instance);
@@ -319,10 +332,20 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         // Every kind the switch builds makes or changes a body, so this cannot happen; it adds no diagnostic code of its own.
         if (key === undefined) throw new Error('The feature made no body.');
         const mesh = shapeMesh(result, feature, key, topology, measured);
-        const made = result, previous = bodies.get(key);
-        // The lineage settles the body's pieces before it changes, so a failure here leaves it and the built bodies as they were.
-        const change = lineage.apply(feature, document, { solids: measured.solidCount, removesMaterial, sameSolidOrder,
-          origins: state => cadKernelSolidOrigins(bodies.get(state.key)!.shape, made) })!;
+        const made = result, previous = bodies.get(key), recorded = copyFaces, tool = fusedTool;
+        const sources: CadBodySource[] = [{ kind: 'target' }, ...tool ? [{ kind: 'tool' } as const] : [], ...copies];
+        // The lineage settles the body's parts before it changes, so a failure here leaves it and the built bodies as they were.
+        const change = lineage.apply(feature, document, { solids: measured.solidCount, removesMaterial, sameSolidOrder, sources,
+          provenance: () => {
+            if (recorded) return recorded.trace(made);
+            if (!previous) throw new Error('The feature kept no body.');
+            const traced = createCadKernelFaceSources();
+            try {
+              traced.add(previous.shape);
+              if (tool) traced.add(tool);
+              return traced.trace(made);
+            } finally { traced.dispose(); }
+          } })!;
         for (const consumed of change.consumed) { bodies.get(consumed)?.topology.dispose(); bodies.delete(consumed); }
         previous?.topology.dispose();
         bodies.set(key, { shape: result, feature, mesh, instances, topology });
@@ -334,7 +357,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         message: error instanceof Error ? error.message : 'OpenCascade could not construct this feature. Reduce its dimensions or revise the sketch.' });
       diagnostics.push({ code: 'rebuild-stopped', featureId: feature.id, message: 'Rebuild stopped here. The preview shows the preceding valid features; downstream features have not been evaluated.' });
       break;
-    }
+    } finally { copyFaces?.dispose(); }
   }
   let disposed = false;
   const built = lineage.bodies().filter(state => bodies.has(state.key));

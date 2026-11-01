@@ -1,5 +1,5 @@
 import type { CadBuildResult, CadDocument, CadMesh, CadMeshTopologyGroup } from '../../../domain/cad/cadDocument';
-import { cadBodyFeatureId, isCadBodyIssue, isCadBodyKey, isCadBodyState } from '../../../domain/cad/cadBodies';
+import { cadBodyFeatureId, isCadBodyIssue, isCadBodyKey, isCadBodyState, MAX_CAD_BODY_ISSUES } from '../../../domain/cad/cadBodies';
 import { isCadSectionResult, type CadSectionRequest, type CadSectionResult } from '../../../domain/cad/cadSection';
 import { isCadTopologyInspectResult, isCadTopologyResolvePicksResult, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
@@ -54,16 +54,17 @@ export function isCadKernelReply(value: unknown): value is CadKernelReply {
     bodyIds.add(mesh.featureId);
     if (mesh.bodyKey !== undefined) bodyKeys.add(mesh.bodyKey);
   }
-  // Body states, when given, describe the meshes one for one.
+  // Body states, when given, describe the meshes one for one, and a body with parts keys each of its mesh's solids.
   if ('bodies' in result && result.bodies !== undefined) {
     if (!Array.isArray(result.bodies) || result.bodies.length !== result.meshes.length) return false;
     for (const [index, body] of result.bodies.entries()) {
       const mesh = result.meshes[index] as CadMesh;
       if (!isCadBodyState(body) || body.key !== mesh.bodyKey || cadBodyFeatureId(body) !== mesh.featureId) return false;
+      if (body.pieces !== undefined && body.pieces.length !== (mesh.solidCount ?? 1)) return false;
     }
   }
   if ('bodyIssues' in result && result.bodyIssues !== undefined
-    && (!Array.isArray(result.bodyIssues) || result.bodyIssues.length > 512 || !result.bodyIssues.every(isCadBodyIssue))) return false;
+    && (!Array.isArray(result.bodyIssues) || result.bodyIssues.length > MAX_CAD_BODY_ISSUES || !result.bodyIssues.every(isCadBodyIssue))) return false;
   for (const diagnostic of result.diagnostics) {
     if (typeof diagnostic !== 'object' || diagnostic === null || typeof diagnostic.code !== 'string'
       || diagnostic.code.length > 128 || typeof diagnostic.message !== 'string' || diagnostic.message.length > 8192

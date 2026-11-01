@@ -75,16 +75,34 @@ every build (`CadBuildResult.bodies`, `CadMesh.bodyKey`). A kind's `body` behavi
 | `new-or-modify` | as `modify-target` when it names a target, otherwise as `new` | the body made or modified |
 | `consume-tools` | the key of its target. Each tool body is consumed and records the feature as `consumedBy` | the target body |
 
-- A kind's repeating counts (`repeats`) record pattern copies as `inst(i,j)` occurrences inside the body, such as `box/inst(2,0)`. Nested
-  patterns nest them.
-- A feature that removes material and leaves more solids than its target had splits the body. The solids become pieces, `box/split(k)`,
-  numbered by the first face of the body before that each piece keeps unchanged (`cadKernelSolidOrigins`), never by position or size.
-  Later features follow each piece by the faces it keeps, and a piece split again becomes `box/split(k)/split(q)`. A solid that keeps no
-  face takes the one piece left, or else a new number. When two or more solids keep no face, the kernel might list them in another order
-  for the same input: they are numbered in the kernel's order, marked `ambiguous`, and reported as an `ambiguous-split-order` issue in
-  `CadBuildResult.bodyIssues` for D1 to adopt. Two cases are reported this way today. A fillet or chamfer of every edge rebuilds
-  every face, so the pieces it changes keep none. A pattern of a body already split places its copies' faces elsewhere, so the original
-  pieces keep their keys and each copy's piece gets a new number until K5 names pieces through copies.
+- A body whose solids are told apart has `pieces`: one key for each solid, in `CadMesh.faceSolids` order. A body stays whole, with no
+  pieces, until one of its solids splits or a pattern leaves a copy apart from the originals; a fused tool keeps it whole. A body that has
+  pieces keeps them, even when one solid is left.
+- The kernel traces each solid of a feature's result to every source solid it keeps a face of unchanged (`createCadKernelFaceSources`):
+  the solids of the target, of each pattern copy and of a fused tool. A key is inherited only when continuity is certain. Anything else
+  gets a fresh key, a reported ambiguity or a reported loss, never a guess. Each solid of the result:
+  - continues the one target piece it keeps faces of. A Boolean keeps its target's key, whatever tool or copies it absorbs;
+  - keeping no target face, continues the one pattern copy it keeps faces of, keyed `inst(i,j)` after the piece copied, such as
+    `box/inst(2,0)`. The copied piece itself becomes `inst(0,0)`, and nested patterns nest them. A solid of the fused tool alone gets a
+    fresh key;
+  - keeping faces of several target pieces, or of several copies and no target, merges them. It gets a fresh key, and the merged pieces are
+    reported lost;
+  - keeping no face at all, descends from the target's one key when the target has one key and the feature has no tool or copies.
+    Otherwise it gets a fresh key, and the pieces before that no solid continues can't be identified, so they and it are ambiguous.
+- A key that one solid continues stays. When several solids continue it, each becomes `key/split(q)`, numbered by the first face of the
+  body before that it keeps, never by position or size, then the solids that keep no face in the kernel's order. Fresh keys are
+  `feature/split(k)`: solids of the tool, then merges, then solids that keep no face. When two or more solids are numbered in the kernel's
+  order, the kernel might list them in another order for the same input, so they are marked `ambiguous`. A solid that descends from an
+  ambiguous key is ambiguous too, until K5 can establish identity. A piece no solid continues is lost, and references to it resolve as
+  missing.
+- Each feature reports these in `CadBuildResult.bodyIssues` for D1 to adopt: `ambiguous-body-parts` for keys it makes ambiguous,
+  `lost-body-parts` for pieces it removes or merges into another solid, and `untracked-body-parts` when a body gets more than
+  `MAX_CAD_BODY_LIST` (4,096) parts. Its parts are then no longer tracked, and references to them resolve as missing. A message gives
+  counts, never keys; `pieces` lists the keys, at most 4,096. A build lists at most `MAX_CAD_BODY_ISSUES` (512) issues, and the last
+  becomes `more-body-issues`, which counts the rest. Two cases are reported today: a fillet or chamfer of every edge rebuilds every face,
+  so the pieces it changes keep none; and the kernel simplifies the result of a Boolean, which can merge faces, so a solid that continues
+  a piece can keep none of its faces. Precise lineage through Booleans and splits waits for the kernel's own history (K3: modified,
+  generated and deleted shapes).
 - An inactive feature changes no body. Under `pass-through` its id leads to the body it would have changed, so selecting it selects that
   body; under `no-output` it leads nowhere. Validation and the kernel resolve a stored target strictly (`at`): it names the feature whose
   result the body now is, as before.

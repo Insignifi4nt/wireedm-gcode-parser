@@ -115,7 +115,7 @@ export interface CadBuildResult {
   readonly diagnostics: readonly CadDiagnostic[];
   /** The identity of each current body, in mesh order: key, kind, creator, modifiers and pieces; absent in older build DTOs. */
   readonly bodies?: readonly CadBodyState[];
-  /** Body facts the rebuild could not settle, such as split pieces the kernel might list in another order; absent in older build DTOs. */
+  /** Body parts the rebuild could not tell apart, lost or stopped tracking, feature by feature; absent in older build DTOs. */
   readonly bodyIssues?: readonly CadBodyIssue[];
   readonly durationMs: number;
 }

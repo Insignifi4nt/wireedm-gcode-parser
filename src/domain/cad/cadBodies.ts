@@ -80,24 +80,36 @@ export interface CadBodyState {
   readonly createdBy: string;
   readonly modifiedBy: readonly string[];
   readonly consumedBy?: string;
-  /** Each copy a pattern made of the body, by logical key in the order the patterns made them; absent until a pattern modifies it. */
-  readonly occurrences?: readonly CadBodyKey[];
-  /** The key of each of the body's solids, by the solid numbers `CadMesh.faceSolids` uses, once a feature split it; absent while whole. */
+  /**
+   * The key of each of the body's solids, by the solid numbers `CadMesh.faceSolids` uses, once a split or a pattern's separate copy gave
+   * it parts; absent while the body is whole. A body with parts keeps them until K5, even when one solid is left.
+   */
   readonly pieces?: readonly CadBodyKey[];
-  /** Pieces the kernel might list in another order for the same input, so references to them are ambiguous. */
+  /**
+   * Keys no build ties to one solid with certainty: pieces the kernel might list in another order, their descendants, and earlier pieces
+   * of the body that can't be found among its solids. A reference to one resolves as ambiguous.
+   */
   readonly ambiguous?: readonly CadBodyKey[];
+  /** The body has more parts than the lineage tracks, so it keeps none, and references to its parts resolve as missing. */
+  readonly untracked?: true;
 }
 
-/** The most entries a body list holds across the worker boundary: modifiers, pattern copies or pieces. */
-const MAX_CAD_BODY_LIST = 4096;
+/** The most part keys a body tracks: pieces, or ambiguous keys. Past it the body's parts are untracked, never a rejected build. */
+export const MAX_CAD_BODY_LIST = 4096;
 
 function isFeatureId(value: unknown): value is string { return typeof value === 'string' && FEATURE_ID.test(value); }
 
-/** Keys of parts of the body `key`: pattern copies or pieces, each starting with the body's key. */
-function isPartKeys(value: unknown, key: string): value is CadBodyKey[] {
+/**
+ * Part keys of the body `key`: keys other than its own, each made by the body's creator or one of its modifiers, as every piece, copy
+ * and fresh key is. `makers` is built only for a body with parts.
+ */
+function isPartKeys(value: unknown, key: string, makers: () => ReadonlySet<string>): value is CadBodyKey[] {
   if (!Array.isArray(value) || value.length > MAX_CAD_BODY_LIST) return false;
-  const prefix = `${key}/`;
-  for (const part of value) if (!isCadBodyKey(part) || !part.startsWith(prefix)) return false;
+  for (const part of value) {
+    if (!isCadBodyKey(part)) return false;
+    const slash = part.indexOf('/');
+    if (slash < 0 || part === key || !makers().has(part.slice(0, slash))) return false;
+  }
   return true;
 }
 
@@ -109,20 +121,27 @@ export function isCadBodyState(value: unknown): value is CadBodyState {
   const slash = key.indexOf('/'), modifiedBy = body.modifiedBy;
   if (body.createdBy !== (slash < 0 ? key : key.slice(0, slash))) return false;
   if (body.kind !== 'solid' && body.kind !== 'sheet' && body.kind !== 'wire') return false;
-  if (!Array.isArray(modifiedBy) || modifiedBy.length > MAX_CAD_BODY_LIST) return false;
+  // As long as the history: a body may be modified by any number of features.
+  if (!Array.isArray(modifiedBy)) return false;
   for (const id of modifiedBy) if (!isFeatureId(id)) return false;
-  return (body.consumedBy === undefined || isFeatureId(body.consumedBy))
-    && (body.occurrences === undefined || isPartKeys(body.occurrences, key))
-    && (body.pieces === undefined || isPartKeys(body.pieces, key))
-    && (body.ambiguous === undefined || isPartKeys(body.ambiguous, key));
+  if (body.consumedBy !== undefined && !isFeatureId(body.consumedBy)) return false;
+  if (body.untracked !== undefined) return body.untracked === true && body.pieces === undefined && body.ambiguous === undefined;
+  let makers: ReadonlySet<string> | undefined;
+  const made = () => makers ??= new Set([body.createdBy as string, ...modifiedBy as string[]]);
+  return (body.pieces === undefined || isPartKeys(body.pieces, key, made))
+    && (body.ambiguous === undefined || isPartKeys(body.ambiguous, key, made));
 }
+
+const BODY_ISSUE_CODES: ReadonlySet<unknown> = new Set<CadBodyIssue['code']>(['ambiguous-body-parts', 'lost-body-parts', 'untracked-body-parts', 'more-body-issues']);
 
 /** Checks a body issue received across the worker boundary. */
 export function isCadBodyIssue(value: unknown): value is CadBodyIssue {
   if (typeof value !== 'object' || value === null) return false;
-  const issue = value as Readonly<Record<string, unknown>>;
-  return issue.code === 'ambiguous-split-order' && isFeatureId(issue.featureId) && isCadBodyKey(issue.body) && isPartKeys(issue.pieces, issue.body)
-    && typeof issue.message === 'string' && issue.message.length <= 8192;
+  const issue = value as Readonly<Record<string, unknown>>, pieces = issue.pieces;
+  if (!BODY_ISSUE_CODES.has(issue.code) || !isFeatureId(issue.featureId) || !isCadBodyKey(issue.body)) return false;
+  if (!Array.isArray(pieces) || pieces.length > MAX_CAD_BODY_LIST) return false;
+  for (const piece of pieces) if (!isCadBodyKey(piece)) return false;
+  return typeof issue.message === 'string' && issue.message.length <= MAX_CAD_BODY_ISSUE_MESSAGE;
 }
 
 /** The feature whose result the body now is: its last modifier, or its creator. */
@@ -131,26 +150,43 @@ export function cadBodyFeatureId(state: Pick<CadBodyState, 'createdBy' | 'modifi
 }
 
 /**
- * A body fact a rebuild could not settle, for D1 to adopt as an issue: after `featureId`, the kernel might list `pieces` of `body` in
- * another order for the same input, because none of them keeps a face of the body before it, so a key may name a different piece.
+ * A body fact a rebuild could not settle, for D1 to adopt as an issue. `pieces` lists every key it is about, in full; the message names
+ * only their count, so its length is bounded by the body key's.
+ * - `ambiguous-body-parts`: after `featureId`, no build ties `pieces` of `body` to one solid each with certainty. References to them
+ *   resolve as ambiguous.
+ * - `lost-body-parts`: `featureId` removed `pieces` of `body`, or merged them into another solid. References to them resolve as missing.
+ * - `untracked-body-parts`: after `featureId`, `body` has more parts than the lineage tracks, so it keeps none from then on.
+ * - `more-body-issues`: the issues from `featureId` on did not fit in the list; the message gives how many were left out.
  */
 export interface CadBodyIssue {
-  readonly code: 'ambiguous-split-order';
+  readonly code: 'ambiguous-body-parts' | 'lost-body-parts' | 'untracked-body-parts' | 'more-body-issues';
   readonly featureId: string;
   readonly body: CadBodyKey;
   readonly pieces: readonly CadBodyKey[];
   readonly message: string;
 }
 
-/** Where a solid of a result came from: the solid of the body before it that holds the first of its faces it keeps unchanged, and that face's rank. */
-export interface CadBodySolidOrigin {
-  /** The solid's number in the previous result. */
+/** The most issues one build lists: the last place goes to a `more-body-issues` summary when there are more. */
+export const MAX_CAD_BODY_ISSUES = 512;
+/** The longest issue message: a body key and a sentence. */
+const MAX_CAD_BODY_ISSUE_MESSAGE = 8192;
+
+/**
+ * A shape whose faces a feature's result may keep: the target before the feature, a pattern's copy of it, at `inst(i,j)`, or a tool the
+ * feature fused into it. A pattern's copy at `inst(0,0)` is the target itself.
+ */
+export type CadBodySource = { readonly kind: 'target' } | { readonly kind: 'copy'; readonly i: number; readonly j: number } | { readonly kind: 'tool' };
+
+/** A solid of a source that a solid of the result keeps a face of unchanged, with the first such face's place in the source's face order, from 1. */
+export interface CadBodySolidSource {
+  /** The source's place in `CadBodyKernelFacts.sources`. */
+  readonly source: number;
+  /** The solid's number in the source, as `CadMesh.faceSolids` numbers a result's solids; a copy numbers its solids as the target does. */
   readonly solid: number;
-  /** The kept face's place in the previous result's face order, from 1. */
   readonly rank: number;
 }
 
-/** What only the kernel knows about a feature's result, which the body's pieces depend on. */
+/** What only the kernel knows about a feature's result, which the body's parts depend on. */
 export interface CadBodyKernelFacts {
   /** The result's solid count. */
   readonly solids: number;
@@ -158,8 +194,10 @@ export interface CadBodyKernelFacts {
   readonly removesMaterial: boolean;
   /** The result lists its solids exactly as its target did, as a moved copy does. */
   readonly sameSolidOrder?: boolean;
-  /** For each solid of the result, its origin, or `null` where it keeps no face; called only while pieces are tracked. */
-  origins(previous: CadBodyState): readonly (CadBodySolidOrigin | null)[];
+  /** The shapes the feature combined, its target first. */
+  readonly sources: readonly CadBodySource[];
+  /** For each solid of the result, every source solid it keeps a face of; called only when the body's parts depend on it. */
+  provenance(): readonly (readonly CadBodySolidSource[])[];
 }
 
 /** How one feature changed the bodies: the body it made or kept, and the keys it consumed. */
@@ -177,8 +215,9 @@ export interface CadBodyChange {
  * - `modify-target`: its target or source keeps its key and records the feature as a modifier;
  * - `new-or-modify`: as `modify-target` when it names a target, otherwise as `new`;
  * - `consume-tools`: as `modify-target` for its target; each tool is consumed by it.
- * A kind's repeating counts (`repeats`) make `inst(i,j)` occurrences. An inactive feature changes no body. Its suppression decides what
- * its own id stands for meanwhile: `pass-through` passes on the body it would have changed (`of`); `no-output` stands for nothing.
+ * With the kernel's facts, the kept body's parts follow its solids (`cadBodyParts`): a pattern's separate copies are `inst(i,j)` parts and
+ * split pieces `split(k)` parts. An inactive feature changes no body. Its suppression decides what its own id stands for meanwhile:
+ * `pass-through` passes on the body it would have changed (`of`); `no-output` stands for nothing.
  */
 export interface CadBodyLineage {
   /** Applies the next feature. The kernel passes facts about its result; without them the lineage tracks no pieces. */
@@ -219,89 +258,176 @@ function bodyInputs(feature: CadFeature): { readonly kept: string | undefined; r
 
 function withSplit(key: CadBodyKey, k: number): CadBodyKey { return cadBodyKeyWith(key, { kind: 'split', k }); }
 
-/** The next free piece number directly under `key` among `keys`. */
-function nextSplit(key: CadBodyKey, keys: readonly (CadBodyKey | undefined)[]): number {
-  let next = 0; const prefix = `${key}/split(`;
-  for (const piece of keys) {
-    if (!piece?.startsWith(prefix) || piece.indexOf('/', prefix.length) >= 0) continue;
-    next = Math.max(next, Number(piece.slice(prefix.length, -1)) + 1);
-  }
-  return next;
-}
-
-/**
- * The pieces of a body after a feature that kept its key, from where each solid of the result came from. A body is split when a feature
- * that removes material leaves more solids than the body had; from then on its solids are pieces until it is whole again.
- * - On the first split, each piece is `key/split(k)`, k counting pieces by the rank of the first face they keep of the body before.
- * - Later, a solid keeping a face of piece P is P again, or `P/split(q)` when P left several, q by rank. A solid keeping no face takes
- *   the one previous piece no solid kept a face of, or else a new number under the body.
- * Two or more solids keeping no face, or one with several candidates, cannot be told apart: the kernel might list them in another order
- * for the same input. They are numbered in the kernel's order and reported, never ordered by where they lie.
- */
-export function cadBodyPieces(input: {
-  readonly key: CadBodyKey;
-  readonly before: readonly CadBodyKey[] | undefined;
-  readonly beforeSolids: number | undefined;
-  readonly facts: CadBodyKernelFacts;
-  readonly previous: CadBodyState;
-}): { readonly pieces?: readonly CadBodyKey[]; readonly ambiguous: readonly CadBodyKey[] } {
-  const { key, before, facts } = input, count = facts.solids;
-  if (count <= 1) return { ambiguous: [] };
-  if (!before && !(facts.removesMaterial && count > (input.beforeSolids ?? 1))) return { ambiguous: [] };
-  if (before && facts.sameSolidOrder && before.length === count) return { pieces: before, ambiguous: input.previous.ambiguous ?? [] };
-  const origins = facts.origins(input.previous);
-  if (origins.length !== count) throw new Error('Each solid of the result needs an origin.');
-  const pieces = new Array<CadBodyKey>(count), ambiguous: CadBodyKey[] = [];
-  const groups = new Map<CadBodyKey, { solid: number; rank: number }[]>(), unmatched: number[] = [];
-  origins.forEach((origin, solid) => {
-    if (!origin) { unmatched.push(solid); return; }
-    const parent = before ? before[origin.solid] ?? key : key;
-    const group = groups.get(parent);
-    if (group) group.push({ solid, rank: origin.rank }); else groups.set(parent, [{ solid, rank: origin.rank }]);
-  });
-  const byRank = (a: { rank: number }, b: { rank: number }) => a.rank - b.rank;
-  if (!before) {
-    const ranked = (groups.get(key) ?? []).sort(byRank);
-    ranked.forEach((entry, k) => { pieces[entry.solid] = withSplit(key, k); });
-    unmatched.forEach((solid, index) => { pieces[solid] = withSplit(key, ranked.length + index); });
-    if (unmatched.length > 1) ambiguous.push(...unmatched.map(solid => pieces[solid]));
-  } else {
-    const kept = new Set<CadBodyKey>();
-    for (const [parent, children] of groups) {
-      kept.add(parent);
-      children.sort(byRank);
-      if (children.length === 1) pieces[children[0].solid] = parent;
-      else children.forEach((child, q) => { pieces[child.solid] = withSplit(parent, q); });
-    }
-    const orphans = before.filter(piece => !kept.has(piece));
-    let fresh = nextSplit(key, [...before, ...pieces]);
-    unmatched.forEach((solid, index) => { pieces[solid] = index < orphans.length ? orphans[index] : withSplit(key, fresh++); });
-    if (unmatched.length > 1 || unmatched.length === 1 && orphans.length > 1) ambiguous.push(...unmatched.map(solid => pieces[solid]));
-  }
-  return { pieces, ambiguous };
-}
-
 function freeze<T extends object>(value: T): T { return Object.freeze(value); }
 
-function state(fields: { key: CadBodyKey; createdBy: string; modifiedBy: readonly string[]; consumedBy?: string; occurrences?: readonly CadBodyKey[];
-  pieces?: readonly CadBodyKey[]; ambiguous?: readonly CadBodyKey[] }): CadBodyState {
+/** How a feature that kept a body's key changed its parts. */
+export interface CadBodyParts {
+  readonly pieces?: readonly CadBodyKey[];
+  readonly ambiguous?: readonly CadBodyKey[];
+  readonly untracked?: true;
+  /** Keys the feature left ambiguous that were not before it, for an `ambiguous-body-parts` issue. */
+  readonly ambiguousNow: readonly CadBodyKey[];
+  /** Pieces of the body before the feature that it removed or merged into another solid, for a `lost-body-parts` issue. */
+  readonly lost: readonly CadBodyKey[];
+  /** The feature gave the body more parts than the lineage tracks, for an `untracked-body-parts` issue. */
+  readonly overflowed?: true;
+}
+
+const NONE: readonly CadBodyKey[] = freeze([]);
+const WHOLE: CadBodyParts = freeze({ ambiguousNow: NONE, lost: NONE });
+const UNTRACKED: CadBodyParts = freeze({ untracked: true as const, ambiguousNow: NONE, lost: NONE });
+const OVERFLOWED: CadBodyParts = freeze({ untracked: true as const, ambiguousNow: NONE, lost: NONE, overflowed: true as const });
+/** What every tool solid passes on: never a key, since a key is never empty. Solids of a fused tool alone get fresh keys. */
+const TOOL = '' as CadBodyKey;
+
+/** A key a solid of the result continues, with where it came from: `rank` orders the solids continuing the same key. */
+interface Continuation { readonly solid: number; readonly rank: number }
+
+/**
+ * The parts of a body after a feature that kept its key, from every source solid each solid of the result keeps a face of. A key is
+ * inherited only when continuity is certain; anything else gets a fresh key, a reported ambiguity or a reported loss. Precise lineage
+ * through Booleans and splits waits for the kernel's own history (K3).
+ *
+ * A whole body stays whole until one of its solids splits (one leaves several solids, or a feature without a tool or copies leaves more
+ * solids than it had), or a pattern leaves a copy apart from the originals. A tool fused into a whole body keeps it whole.
+ *
+ * Each source solid passes on a key: a target solid its piece's key, or the body's while whole; a pattern's copy `inst(i,j)` of it, the
+ * target itself being `inst(0,0)`; a tool solid no key. Then each solid of the result:
+ * - continues the one target key it keeps faces of: a Boolean keeps its target's key;
+ * - keeping no target face, continues the one copy key it keeps faces of, or the tool;
+ * - keeping faces of several target keys, or of several copies and no target, merges them: it gets a fresh key, and the merged pieces
+ *   are reported lost;
+ * - keeping no face at all, descends from the target's one key when the target has one and the feature added no material; otherwise it
+ *   gets a fresh key, and pieces of the body before that no solid continues can't be identified, so they are ambiguous, as is it.
+ * A key continued by one solid stays; continued by several, each is `key/split(q)`, q by the rank of the first face it keeps, then the
+ * solids keeping none in the kernel's order. Fresh keys are `feature/split(k)`: solids continuing the tool by rank, merges by rank, then
+ * solids keeping no face in the kernel's order. Solids numbered in the kernel's order are ambiguous when there are two or more of them,
+ * never ordered by where they lie. A solid descending from an ambiguous key is ambiguous too, until K5 can establish identity.
+ * A piece no solid continues or merges is lost, unless pieces can't be identified.
+ */
+export function cadBodyParts(input: {
+  readonly featureId: string;
+  readonly previous: CadBodyState;
+  readonly beforeSolids: number | undefined;
+  readonly facts: CadBodyKernelFacts;
+}): CadBodyParts {
+  const { featureId, previous, facts } = input, key = previous.key, count = facts.solids, before = previous.pieces;
+  if (previous.untracked) return UNTRACKED;
+  if (before && facts.sameSolidOrder && before.length === count) return freeze({ pieces: before, ambiguous: previous.ambiguous, ambiguousNow: NONE, lost: NONE });
+  const patterned = facts.sources.some(source => source.kind === 'copy'), fused = facts.sources.some(source => source.kind === 'tool');
+  const beforeSolids = input.beforeSolids ?? 1;
+  if (!before && (count <= 1 || fused && !patterned || !patterned && !facts.removesMaterial && count <= beforeSolids)) return WHOLE;
+  if (count > MAX_CAD_BODY_LIST) return OVERFLOWED;
+  const traced = facts.provenance();
+  if (traced.length !== count) throw new Error('Each solid of the result needs its sources.');
+  if (!before && (patterned ? traced.every(sources => sources.some(entry => entry.source === 0)) : !splits(traced, count, beforeSolids))) return WHOLE;
+
+  // The key each source solid passes on, and for a target solid or a copy the piece before it came from.
+  const previousKey = (solid: number) => {
+    const found = before ? before[solid] : key;
+    if (found === undefined) throw new Error('A source solid the body did not have.');
+    return found;
+  };
+  const targetFrom = new Map<CadBodyKey, CadBodyKey>();
+  const continued = new Map<CadBodyKey, Continuation[]>(), merged: Continuation[] = [], orphans: number[] = [];
+  const continuedFrom = new Set<CadBodyKey>(), mergedFrom = new Set<CadBodyKey>(), descends: (readonly CadBodyKey[])[] = [];
+  const add = (into: Map<CadBodyKey, number>, passed: CadBodyKey, rank: number) => { const known = into.get(passed); if (known === undefined || rank < known) into.set(passed, rank); };
+  const push = (passed: CadBodyKey, entry: Continuation) => { const list = continued.get(passed); if (list) list.push(entry); else continued.set(passed, [entry]); };
+  traced.forEach((sources, solid) => {
+    const targets = new Map<CadBodyKey, number>(), added = new Map<CadBodyKey, number>(), from: CadBodyKey[] = [];
+    for (const entry of sources) {
+      const source = facts.sources[entry.source];
+      if (!source) throw new Error('A source the feature did not combine.');
+      // Ranks of different sources compare source first.
+      const rank = entry.source * 2 ** 32 + entry.rank;
+      if (source.kind === 'tool') { add(added, TOOL, rank); continue; }
+      const origin = previousKey(entry.solid);
+      from.push(origin);
+      if (source.kind === 'copy') { add(added, cadBodyKeyWith(origin, { kind: 'inst', i: source.i, j: source.j }), rank); continue; }
+      const passed = patterned ? cadBodyKeyWith(origin, { kind: 'inst', i: 0, j: 0 }) : origin;
+      targetFrom.set(passed, origin);
+      add(targets, passed, rank);
+    }
+    descends[solid] = from;
+    if (targets.size === 1) {
+      const [[passed, rank]] = targets;
+      push(passed, { solid, rank }); continuedFrom.add(targetFrom.get(passed)!);
+    } else if (targets.size === 0 && added.size === 1) {
+      const [[passed, rank]] = added;
+      push(passed, { solid, rank });
+    } else if (targets.size || added.size) {
+      merged.push({ solid, rank: Math.min(...targets.values(), ...added.values()) });
+      for (const passed of targets.keys()) mergedFrom.add(targetFrom.get(passed)!);
+    } else orphans.push(solid);
+  });
+
+  const pieces = new Array<CadBodyKey>(count), ordered = new Set<number>();
+  // A solid keeping no face descends from the target's one key when nothing else could have made it.
+  if (orphans.length && !patterned && !fused && (!before || before.length === 1)) {
+    const origin = before ? before[0] : key;
+    for (const solid of orphans) { push(origin, { solid, rank: Infinity }); descends[solid] = [origin]; if (orphans.length > 1) ordered.add(solid); }
+    continuedFrom.add(origin);
+    orphans.length = 0;
+  }
+  const byRank = (a: Continuation, b: Continuation) => a.rank - b.rank || a.solid - b.solid;
+  const fresh: number[] = [];
+  for (const [passed, list] of continued) {
+    list.sort(byRank);
+    if (passed === TOOL) { fresh.push(...list.map(entry => entry.solid)); continue; }
+    if (list.length === 1 && passed !== key) pieces[list[0].solid] = passed;
+    else list.forEach((entry, q) => { pieces[entry.solid] = withSplit(passed, q); });
+  }
+  fresh.push(...merged.sort(byRank).map(entry => entry.solid), ...orphans);
+  fresh.forEach((solid, k) => { pieces[solid] = cadBodyKey(featureId, [{ kind: 'split', k }]); });
+
+  // Pieces before that no solid continues: lost when merged, or when no solid keeping no face could be one of them; else unidentified.
+  const gone = (before ?? []).filter(piece => !continuedFrom.has(piece));
+  const unidentified = orphans.length ? gone.filter(piece => !mergedFrom.has(piece)) : [];
+  const lost = orphans.length ? gone.filter(piece => mergedFrom.has(piece)) : gone;
+  if (orphans.length > 1 || unidentified.length) for (const solid of orphans) ordered.add(solid);
+
+  const was = new Set(previous.ambiguous ?? []), uncertain = new Set<CadBodyKey>();
+  pieces.forEach((piece, solid) => { if (ordered.has(solid) || descends[solid].some(origin => was.has(origin))) uncertain.add(piece); });
+  if (uncertain.size) {
+    const pieceSet = new Set(before ?? []);
+    // Earlier keys that were already unidentified stay so while a solid they could be remains ambiguous.
+    for (const earlier of previous.ambiguous ?? []) if (!pieceSet.has(earlier)) uncertain.add(earlier);
+  }
+  for (const earlier of unidentified) uncertain.add(earlier);
+  if (uncertain.size > MAX_CAD_BODY_LIST || pieces.some(piece => piece.length > MAX_CAD_BODY_KEY_LENGTH)) return OVERFLOWED;
+  const ambiguous = [...uncertain];
+  return freeze({ pieces: freeze(pieces), ...(ambiguous.length ? { ambiguous: freeze(ambiguous) } : {}),
+    ambiguousNow: freeze(ambiguous.filter(piece => !was.has(piece))), lost: freeze(lost) });
+}
+
+/** Whether a whole body split: one of its solids leaves several solids, or there are more solids than it had. */
+function splits(traced: readonly (readonly CadBodySolidSource[])[], count: number, beforeSolids: number): boolean {
+  if (count > beforeSolids) return true;
+  const reached = new Map<number, number>();
+  for (const [solid, sources] of traced.entries()) {
+    for (const entry of sources) {
+      if (entry.source !== 0) continue;
+      const last = reached.get(entry.solid);
+      if (last !== undefined && last !== solid) return true;
+      reached.set(entry.solid, solid);
+    }
+  }
+  return false;
+}
+
+function state(fields: { key: CadBodyKey; createdBy: string; modifiedBy: readonly string[]; consumedBy?: string;
+  pieces?: readonly CadBodyKey[]; ambiguous?: readonly CadBodyKey[]; untracked?: true }): CadBodyState {
   return freeze({
     key: fields.key, kind: 'solid' as const, createdBy: fields.createdBy, modifiedBy: freeze([...fields.modifiedBy]),
     ...(fields.consumedBy !== undefined ? { consumedBy: fields.consumedBy } : {}),
-    ...(fields.occurrences ? { occurrences: freeze([...fields.occurrences]) } : {}),
-    ...(fields.pieces ? { pieces: freeze([...fields.pieces]) } : {}),
-    ...(fields.ambiguous?.length ? { ambiguous: freeze([...fields.ambiguous]) } : {})
+    ...(fields.untracked ? { untracked: true as const } : {}),
+    ...(fields.pieces && !fields.untracked ? { pieces: freeze([...fields.pieces]) } : {}),
+    ...(fields.ambiguous?.length && !fields.untracked ? { ambiguous: freeze([...fields.ambiguous]) } : {})
   });
 }
 
-/** The pattern copies of a body with `key` and `occurrences` after `feature`, from its repeating counts. */
-function patterned(feature: CadFeature, key: CadBodyKey, occurrences: readonly CadBodyKey[] | undefined): readonly CadBodyKey[] | undefined {
-  const counts = cadFeatureLayout(feature).repeats.map(name => (feature as unknown as Readonly<Record<string, number>>)[name]);
-  if (!counts.length) return occurrences;
-  const [first, second = 1] = counts, bases = occurrences ?? [key], copies: CadBodyKey[] = [];
-  for (let i = 0; i < first; i++) for (let j = 0; j < second; j++) for (const base of bases) copies.push(cadBodyKeyWith(base, { kind: 'inst', i, j }));
-  return copies;
-}
+/** `n` pieces, in words. */
+function piecesOf(n: number): string { return n === 1 ? '1 piece' : `${n} pieces`; }
 
 export function createCadBodyLineage(): CadBodyLineage {
   /** Current bodies by the feature whose result each now is, in the order meshes list them. */
@@ -337,11 +463,10 @@ export function createCadBodyLineage(): CadBodyLineage {
       const { kept, tools, target, key } = step;
       const previous = target?.state;
       // Settle everything that can fail before changing the lineage.
-      const split = previous && facts ? cadBodyPieces({ key, before: previous.pieces, beforeSolids: target!.solids, facts, previous }) : undefined;
+      const parts = previous && facts ? cadBodyParts({ featureId: feature.id, previous, beforeSolids: target!.solids, facts }) : undefined;
       const next = state({
         key, createdBy: previous?.createdBy ?? feature.id, modifiedBy: previous ? [...previous.modifiedBy, feature.id] : [],
-        occurrences: patterned(feature, key, previous?.occurrences),
-        pieces: split ? split.pieces : previous?.pieces, ambiguous: split ? split.ambiguous : previous?.ambiguous
+        pieces: (parts ?? previous)?.pieces, ambiguous: (parts ?? previous)?.ambiguous, untracked: (parts ?? previous)?.untracked
       });
       const gone: CadBodyKey[] = [];
       if (kept !== undefined && target) current.delete(kept);
@@ -353,8 +478,14 @@ export function createCadBodyLineage(): CadBodyLineage {
       }
       current.set(feature.id, { state: next, solids: facts?.solids, order: applied });
       byKey.set(key, feature.id); owners.set(feature.id, key);
-      if (split?.ambiguous.length) issues.push(freeze({ code: 'ambiguous-split-order' as const, featureId: feature.id, body: key, pieces: freeze([...split.ambiguous]),
-        message: `The kernel might list pieces ${split.ambiguous.join(', ')} in another order, because none keeps a face of the body before. References to them are ambiguous.` }));
+      const report = (code: CadBodyIssue['code'], pieces: readonly CadBodyKey[], message: string) => {
+        issues.push(freeze({ code, featureId: feature.id, body: key, pieces, message }));
+      };
+      if (parts?.overflowed) report('untracked-body-parts', NONE, `Body ${key} has more parts than are tracked after ${feature.id}, so references to its parts resolve as missing.`);
+      if (parts?.ambiguousNow.length) report('ambiguous-body-parts', parts.ambiguousNow,
+        `${piecesOf(parts.ambiguousNow.length)} of body ${key} can't be told apart after ${feature.id}, so references to them are ambiguous.`);
+      if (parts?.lost.length) report('lost-body-parts', parts.lost,
+        `${piecesOf(parts.lost.length)} of body ${key} no longer exist as separate solids after ${feature.id}, which removed them or merged them into another.`);
       return freeze({ state: next, kept: previous !== undefined, consumed: freeze(gone) });
     },
     keyFor(feature, scope) { return plan(feature, scope)?.key; },
@@ -371,7 +502,12 @@ export function createCadBodyLineage(): CadBodyLineage {
       for (const entry of current.values()) if (!latest || entry.order > latest.order) latest = entry;
       return latest?.state;
     },
-    issues() { return [...issues]; }
+    issues() {
+      if (issues.length <= MAX_CAD_BODY_ISSUES) return [...issues];
+      const listed = issues.slice(0, MAX_CAD_BODY_ISSUES - 1), first = issues[listed.length];
+      return [...listed, freeze({ code: 'more-body-issues' as const, featureId: first.featureId, body: first.body, pieces: NONE,
+        message: `${issues.length - listed.length} more body issues, from feature ${first.featureId} on, are not listed.` })];
+    }
   };
 }
 
@@ -412,16 +548,22 @@ export type CadBodyRefResolution =
   | { readonly status: 'missing'; readonly consumedBy?: string }
   | { readonly status: 'ambiguous'; readonly body: CadBodyState; readonly candidates: readonly CadBodyKey[] };
 
-/** Resolves `ref` against `lineage` as it stands before the referring feature. */
-export function resolveCadBodyRef(ref: CadBodyRef, lineage: CadBodyLineage): CadBodyRefResolution {
+/**
+ * Resolves `ref` against `lineage` as it stands before the referring feature. A whole body's key resolves to it, and a piece's to that
+ * part. An ambiguous key resolves as ambiguous, with the body's ambiguous pieces as candidates, or as missing once none is left. Anything
+ * else is missing: a lost piece, a split piece's old key, a part of an untracked body, or a consumed body or one of its parts.
+ */
+export function resolveCadBodyRef(ref: CadBodyRef, lineage: Pick<CadBodyLineage, 'get' | 'bodies' | 'consumed'>): CadBodyRefResolution {
   const whole = lineage.get(ref.key);
   if (whole) return { status: 'resolved', body: whole };
   for (const body of lineage.bodies()) {
-    if (!ref.key.startsWith(`${body.key}/`)) continue;
-    if (body.ambiguous?.includes(ref.key)) return { status: 'ambiguous', body, candidates: body.ambiguous };
-    if (body.pieces?.includes(ref.key) || body.occurrences?.includes(ref.key)) return { status: 'resolved', body, part: ref.key };
+    if (body.ambiguous?.includes(ref.key)) {
+      const uncertain = new Set(body.ambiguous), candidates = (body.pieces ?? []).filter(piece => uncertain.has(piece));
+      if (candidates.length) return { status: 'ambiguous', body, candidates };
+    }
+    if (body.pieces?.includes(ref.key)) return { status: 'resolved', body, part: ref.key };
   }
-  const gone = lineage.consumed().find(body => body.key === ref.key);
+  const gone = lineage.consumed().find(body => body.key === ref.key || body.pieces?.includes(ref.key));
   return gone?.consumedBy !== undefined ? { status: 'missing', consumedBy: gone.consumedBy } : { status: 'missing' };
 }
 
