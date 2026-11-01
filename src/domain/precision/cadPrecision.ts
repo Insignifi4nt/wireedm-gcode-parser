@@ -7,7 +7,7 @@
  * page `docs/maintainers/precision.md` explains how to add a role. Rebuild caches key on
  * `CAD_PRECISION_VERSION`: bump it whenever a role's value or meaning changes.
  */
-export const CAD_PRECISION_VERSION = 1;
+export const CAD_PRECISION_VERSION = 2;
 
 /** OpenCascade's `Precision::Confusion()`, the smallest distance the kernel tells apart. */
 const KERNEL_CONFUSION_MM = 1e-7;
@@ -119,9 +119,25 @@ const roles = {
   /** Floor for comparing UPID recorded lengths and bounds with recomputed values. */
   upidRecordedValueFloorMm: 1e-9,
 
-  // Output.
-  /** Absolute guard added to the post's coordinate rounding when output motion is audited against the plan. */
-  outputRoundingGuardMm: Number.EPSILON,
+  // Output. The audit compares emitted coordinates, parsed back from the post's decimal text, with the
+  // planned doubles. Each arithmetic step may round by half an ulp of the values it handles, so the
+  // audit allows a count of ulps of the magnitudes a comparison reads (`cadOutputPointRoundoff`,
+  // `cadOutputDerivedRoundoff`), per axis wherever the comparison separates the axes. A fixed guard
+  // cannot replace it: half an ulp of a coordinate exceeds `Number.EPSILON` from 8 mm upwards.
+  /**
+   * Ulps the output audit allows on each axis when it compares an emitted endpoint or arc centre with the plan, of the largest
+   * coordinate it reads on that axis. Parsing the emitted decimal, the quantum's own double and the difference cost 1/2 ulp each;
+   * an incremental centre adds the post's centre minus start, its parse and the runtime's start plus offset, at most 3/2 ulps.
+   * At most 3; 4 keeps a margin.
+   */
+  outputPointRoundoffUlps: 4,
+  /**
+   * Ulps per summed term the output audit allows for a distance from a planned line, a radial distance from a planned arc, a path
+   * length or an arc sweep. Parsing, subtraction, direction normalisation (a hypot and a division), products and sums give at most
+   * 13 for a line distance and 17 for a radial distance, each per axis and weighted by that axis's share of the distance, 12 per
+   * length term and 35 per sweep term, whose magnitude includes a full turn's arc length. 32 covers each with a margin.
+   */
+  outputDerivedRoundoffUlps: 32,
 
   // Imports and approximation.
   /** Default largest chord deviation when DXF splines and ellipses are approximated. */
@@ -172,9 +188,28 @@ export function cadSupportedLength(value: number): boolean {
   return value > CAD_PRECISION.minimumLengthMm && value <= CAD_PRECISION.modelExtentMm;
 }
 
-/** Output fitting: how far audited controller motion may differ from planned motion. */
+/**
+ * Output audit roundoff of one axis of an emitted endpoint or arc centre compared with the plan: `outputPointRoundoffUlps` ulps
+ * of `magnitudeMm`, the largest coordinate the comparison reads on that axis. Magnitudes below 1 mm count as 1 mm, so the
+ * allowance never falls below the fixed guard of one ulp of 1 mm that the audit used before.
+ */
+export function cadOutputPointRoundoff(magnitudeMm: number): number {
+  return cadRoundoff(CAD_PRECISION.outputPointRoundoffUlps, Math.max(1, magnitudeMm));
+}
+
+/**
+ * Output audit roundoff of a distance, length or sweep derived from emitted coordinates: `outputDerivedRoundoffUlps` ulps of
+ * `magnitudeMm` for each of `terms` summed values (a path length or sweep sums the planned value and each emitted motion). A line
+ * or radial distance asks once per axis, with that axis's largest coordinate, and weights the result by that axis's share.
+ * Magnitudes below 1 mm count as 1 mm.
+ */
+export function cadOutputDerivedRoundoff(magnitudeMm: number, terms = 1): number {
+  return cadRoundoff(CAD_PRECISION.outputDerivedRoundoffUlps * terms, Math.max(1, magnitudeMm));
+}
+
+/** Output fitting for motion without per-axis rounding: how far audited controller motion may differ from planned motion. */
 export interface CadOutputFitting {
-  /** Rounded endpoints and centres. */
+  /** Rounded endpoints and centres, and the distance from a planned line. */
   readonly pointMm: number;
   /** Lengths and arc endpoint radii, whose two rounded ends both contribute. */
   readonly lengthMm: number;
@@ -182,12 +217,14 @@ export interface CadOutputFitting {
   readonly arcSweepMm: number;
 }
 
-/** The plan's endpoint tolerance, or the post's coordinate rounding plus the guard, whichever is larger. */
-export function cadOutputFitting(sourceToleranceMm: number, coordinateQuantumMm: number): CadOutputFitting {
-  const guard = CAD_PRECISION.outputRoundingGuardMm;
+/**
+ * The plan's endpoint tolerance, or the post's coordinate rounding plus `roundoffMm`, whichever is larger. The caller passes the
+ * roundoff of the comparison it makes, from `cadOutputPointRoundoff` or `cadOutputDerivedRoundoff`.
+ */
+export function cadOutputFitting(sourceToleranceMm: number, coordinateQuantumMm: number, roundoffMm: number): CadOutputFitting {
   return {
-    pointMm: Math.max(sourceToleranceMm, coordinateQuantumMm / Math.SQRT2 + guard),
-    lengthMm: Math.max(sourceToleranceMm, coordinateQuantumMm * Math.SQRT2 + guard),
-    arcSweepMm: Math.max(sourceToleranceMm, coordinateQuantumMm * 4 + guard)
+    pointMm: Math.max(sourceToleranceMm, coordinateQuantumMm / Math.SQRT2 + roundoffMm),
+    lengthMm: Math.max(sourceToleranceMm, coordinateQuantumMm * Math.SQRT2 + roundoffMm),
+    arcSweepMm: Math.max(sourceToleranceMm, coordinateQuantumMm * 4 + roundoffMm)
   };
 }

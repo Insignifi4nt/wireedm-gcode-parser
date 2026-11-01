@@ -4,6 +4,8 @@ The survey behind [the precision policy](precision.md). It lists every candidate
 
 437 candidates: 247 moved behind roles and policy functions, 190 stay.
 
+Release 0.0.792 (precision version 2) later replaced `outputRoundingGuardMm` with `outputPointRoundoffUlps` and `outputDerivedRoundoffUlps`, read through `cadOutputPointRoundoff` and `cadOutputDerivedRoundoff`; `cadOutputFitting` now takes the roundoff of each comparison. The rows below record the survey as it was.
+
 A literal stays as view or pointer space only if its value never ends up in model coordinates, saved placements, CAM or output. Sketch snap intersections and dimension placement fail that test, so their tolerances are roles.
 
 ## Literals that stay

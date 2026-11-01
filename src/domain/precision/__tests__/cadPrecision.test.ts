@@ -9,14 +9,19 @@ import {
   CAD_PRECISION as P,
   CAD_PRECISION_VERSION,
   cadClosureTolerance,
+  cadOutputDerivedRoundoff,
   cadOutputFitting,
+  cadOutputPointRoundoff,
   cadRoundoff,
   cadSupportedLength,
   type CadPrecisionRole
 } from '../cadPrecision';
 
-/** The values this version shipped with. Changing one means bumping `CAD_PRECISION_VERSION`. */
-const VERSION_1: Readonly<Record<CadPrecisionRole, number>> = {
+/**
+ * The values this version shipped with. Changing one means bumping `CAD_PRECISION_VERSION`. Version 2 replaced the output
+ * audit's fixed guard (`outputRoundingGuardMm`, one ulp of 1 mm) with ulp counts that scale with the compared values.
+ */
+const VERSION_2: Readonly<Record<CadPrecisionRole, number>> = {
   solverResidualMm: 1e-10, solverDragReachedMm: 1e-8, angularAccuracyRad: 1e-12, angularRoundoffCapRad: 1e-9,
   closureFloorMm: 1e-12, closureUlps: 8, solverCollapsedStartRelative: 1e-12, solverAlongSupportStartRelative: 1e-12, parallelCrossFloorMm2: 1e-14, pointerMinimumSizeMm: 0.001,
   snapLineSpanSlack: 1e-9, snapArcSweepSlackRad: 1e-9, snapParallelRelative: 1e-12, snapTangentRelative: 1e-12,
@@ -28,13 +33,16 @@ const VERSION_1: Readonly<Record<CadPrecisionRole, number>> = {
   camHandoffEndpointMm: 1e-7, camHandoffCoincidenceMm: 1e-9, camDefaultEndpointMm: 0.001, camDefaultCoincidenceMm: 1e-5,
   dxfCamCoincidenceMm: 0.000002, camDegenerateAreaMm2: 1e-9, camClosingDuplicateMm: 1e-9, camTieMm: 1e-12,
   camRankRelative: 1e-9, camRankAbsoluteMm: 1e-12, zeroLengthMm: 1e-12, pathInsideSlackMm: 1e-9,
-  upidRecordedValueFloorMm: 1e-9, outputRoundingGuardMm: Number.EPSILON, approximationChordMm: 0.001,
+  upidRecordedValueFloorMm: 1e-9, outputPointRoundoffUlps: 4, outputDerivedRoundoffUlps: 32, approximationChordMm: 0.001,
   dxfPlanarNormal: 1e-12, dxfPlanarZMm: 1e-9, gcodePositionMm: 1e-9, gcodeLineMatchMm: 1e-6, gcodeStructureMatchMm: 1e-4, gcodeArcChordMm: 1e-12,
   simulationContactMm: 1e-8, simulationDegenerateAreaMm2: 1e-12, simulationObstructionMm: 1e-7, simulationMachineGeometryMm: 1e-7
 };
 
 /** Largest sketch coordinate magnitude the graph accepts (`cadSketchGraph` and the construction schemas). */
 const COORDINATE_BUDGET_MM = 1e9;
+
+/** Coordinate magnitudes the output audit compares: below its 1 mm floor, at it, and up to the model extent. */
+const OUTPUT_MAGNITUDES_MM = [0, 0.5, 1, 8, 1000, 1e6];
 
 interface Order {
   readonly name: string;
@@ -65,10 +73,24 @@ const ORDERING: readonly Order[] = [
   { name: 'closure across the model extent stays within the CAD handoff endpoint and kernel confusion',
     holds: () => cadClosureTolerance(P.modelExtentMm) <= P.camHandoffEndpointMm && cadClosureTolerance(P.modelExtentMm) <= P.kernelConfusionMm },
   { name: 'output fitting never narrows the plan tolerance and grows point <= length <= arc sweep',
-    holds: () => [0, 1e-4, 1e-3].every(quantum => {
-      const fit = cadOutputFitting(P.camHandoffEndpointMm, quantum);
+    holds: () => [0, 1e-4, 1e-3].every(quantum => OUTPUT_MAGNITUDES_MM.every(magnitude => {
+      const fit = cadOutputFitting(P.camHandoffEndpointMm, quantum, cadOutputPointRoundoff(magnitude));
       return fit.pointMm >= P.camHandoffEndpointMm && fit.pointMm <= fit.lengthMm && fit.lengthMm <= fit.arcSweepMm;
-    }) },
+    })) },
+  { name: 'output point roundoff <= output derived roundoff per term',
+    holds: () => P.outputPointRoundoffUlps <= P.outputDerivedRoundoffUlps
+      && OUTPUT_MAGNITUDES_MM.every(magnitude => cadOutputPointRoundoff(magnitude) <= cadOutputDerivedRoundoff(magnitude)) },
+  { name: 'output roundoff covers an ulp of every compared magnitude and never falls below the fixed guard it replaced',
+    holds: () => OUTPUT_MAGNITUDES_MM.every(magnitude => cadOutputPointRoundoff(magnitude) >= cadRoundoff(1, magnitude)
+      && cadOutputPointRoundoff(magnitude) >= Number.EPSILON) },
+  { name: 'one emitted motion’s output roundoff across the model extent stays below half a 6-decimal quantum',
+    // The largest single-motion comparison is a sweep: two terms over coordinates and a full turn of a model-extent radius.
+    holds: () => cadOutputDerivedRoundoff(P.modelExtentMm * (1 + 2 * Math.PI), 2) < 1e-6 / 2
+      && cadOutputPointRoundoff(P.modelExtentMm) < 1e-6 / 2 },
+  { name: 'output point roundoff across the model extent stays below half the finest quantum a post may declare (12 decimals)',
+    holds: () => cadOutputPointRoundoff(P.modelExtentMm) < 1e-12 / 2,
+    known: 'Post packages may emit up to 12 decimals, but a 1e-12 mm quantum is below the output point roundoff above about 563 mm, '
+      + 'and below one ulp of the coordinate itself from 8,192 mm. There a wrong last digit near half-way passes the audit.' },
   { name: 'every converged solver residual passes structural closure at sketch scales',
     holds: () => [1, 100, 10_000].every(scale => cadClosureTolerance(scale) >= P.solverResidualMm),
     known: 'Closure stays at its 1e-12 floor up to about 563 mm and reaches the solver’s 1e-10 only at about 56,295 mm. '
@@ -87,8 +109,8 @@ const ORDERING: readonly Order[] = [
 
 describe('CAD precision policy', () => {
   it('pins this version’s values so a change must bump CAD_PRECISION_VERSION', () => {
-    expect(CAD_PRECISION_VERSION).toBe(1);
-    expect(P).toEqual(VERSION_1);
+    expect(CAD_PRECISION_VERSION).toBe(2);
+    expect(P).toEqual(VERSION_2);
     expect(Object.isFrozen(P)).toBe(true);
   });
 
@@ -111,12 +133,21 @@ describe('CAD precision policy', () => {
     for (const value of [Number.NaN, -1, 0, 1e-7, 1.0000001e-7, 1, 1e6, 1.000001e6, Infinity]) {
       expect(cadSupportedLength(value)).toBe(value > 1e-7 && value <= 1e6);
     }
-    for (const [source, quantum] of [[1e-7, 0], [1e-7, 1e-4], [0.001, 0.001], [0, 0.0005]]) {
-      expect(cadOutputFitting(source, quantum)).toEqual({
-        pointMm: Math.max(source, quantum / Math.SQRT2 + Number.EPSILON),
-        lengthMm: Math.max(source, quantum * Math.SQRT2 + Number.EPSILON),
-        arcSweepMm: Math.max(source, quantum * 4 + Number.EPSILON)
+    for (const [source, quantum, roundoff] of [[1e-7, 0, Number.EPSILON], [1e-7, 1e-4, 4 * Number.EPSILON * 1000],
+      [0.001, 0.001, 64 * Number.EPSILON * 8], [0, 0.0005, 4 * Number.EPSILON]]) {
+      expect(cadOutputFitting(source, quantum, roundoff)).toEqual({
+        pointMm: Math.max(source, quantum / Math.SQRT2 + roundoff),
+        lengthMm: Math.max(source, quantum * Math.SQRT2 + roundoff),
+        arcSweepMm: Math.max(source, quantum * 4 + roundoff)
       });
+    }
+    // The output audit's scaled roundoff, as the audit wrote it before it moved here.
+    for (const magnitude of [0, 0.25, 1, 8.0015, 1000, 1e6, 2 * Math.PI * 1e6]) {
+      expect(cadOutputPointRoundoff(magnitude)).toBe(4 * Number.EPSILON * Math.max(1, magnitude));
+      for (const terms of [1, 2, 3, 5]) {
+        expect(cadOutputDerivedRoundoff(magnitude, terms)).toBe(32 * terms * Number.EPSILON * Math.max(1, magnitude));
+      }
+      expect(cadOutputDerivedRoundoff(magnitude)).toBe(cadOutputDerivedRoundoff(magnitude, 1));
     }
   });
 
@@ -145,6 +176,16 @@ describe('closure crossovers', () => {
       expect(cadClosureTolerance(below)).toBeLessThan(value);
       expect(cadClosureTolerance(above)).toBeGreaterThan(value);
     }
+  });
+});
+
+describe('output roundoff crossovers', () => {
+  it('passes half a 12-decimal quantum from about 563 mm, where that quantum is still about 9 ulps of the coordinate', () => {
+    expect(cadOutputPointRoundoff(562)).toBeLessThan(1e-12 / 2);
+    expect(cadOutputPointRoundoff(563)).toBeGreaterThan(1e-12 / 2);
+    // One ulp of a coordinate in [4096, 8192) mm is 2^-40 (9.1e-13); from 8192 mm it is 2^-39 (1.8e-12), above the quantum.
+    expect(2 ** -40).toBeLessThan(1e-12);
+    expect(2 ** -39).toBeGreaterThan(1e-12);
   });
 });
 
