@@ -86,11 +86,15 @@ it('prepares a committed draft edit with its solve warnings and tells them once 
   await act(async () => { await h.editing().prepare([rectangle(base.document, 25)], new AbortController().signal); });
   expect(warn).not.toHaveBeenCalled(); expect(prepareCommit).not.toHaveBeenCalled(); expect(h.preparing).toHaveBeenCalledOnce();
   await act(async () => h.editing().edit([rectangle(base.document, 30)]));
-  expect(prepareCommit).toHaveBeenCalledOnce(); expect(warn).toHaveBeenCalledExactlyOnceWith([warning]); expect(h.preparing).toHaveBeenCalledOnce();
+  expect(prepareCommit).toHaveBeenCalledOnce(); expect(warn).toHaveBeenCalledExactlyOnceWith([warning], expect.any(String)); expect(h.preparing).toHaveBeenCalledOnce();
   // A refused edit tells nothing.
   prepareCommit.mockRejectedValueOnce(new Error('Refused.'));
   await act(async () => { await expect(h.editing().edit([rectangle(base.document, 35)])).rejects.toThrow('Refused.'); });
   expect(warn).toHaveBeenCalledOnce();
+  // An accepted edit without warnings tells none, with its own version, so the sketch's issues drop the earlier ones.
+  prepareCommit.mockImplementationOnce(async (document, edits, signal) => ({ document: await prepare(document, edits, signal), sketchWarnings: [] }));
+  await act(async () => h.editing().edit([rectangle(base.document, 40)]));
+  expect(warn).toHaveBeenCalledTimes(2); expect(warn.mock.lastCall?.[0]).toEqual([]); expect(warn.mock.lastCall?.[1]).not.toBe(warn.mock.calls[0][1]);
 });
 
 it('refuses stale local repair revisions and invalid, empty, duplicate or unrelated choices without committing', async () => {

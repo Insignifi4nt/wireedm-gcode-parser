@@ -67,6 +67,7 @@ function choicesFor(graph: CadSketchGraph, picks: readonly Selected[]) {
 }
 /** What the tool gives the selection for this kind, part by part, or null where the tool takes none of it. */
 function expected(graph: CadSketchGraph, selection: readonly Selected[], types: readonly Type[], kind: CadSketchRelationKind): Expected | null {
+  if (kind === 'fixed-point' && types.some(type => type === 'line' || type === 'arc')) return expectedEdgeFix(graph, selection, types);
   const found = rule(kind, types);
   if (!found) return null;
   const relations: CadSketchRelationIntent[] = [], held = new Set<string>();
@@ -78,6 +79,35 @@ function expected(graph: CadSketchGraph, selection: readonly Selected[], types: 
     if (choice.state === 'applied') { for (const id of choice.relationIds) if (!id.startsWith(PENDING)) held.add(id); continue; }
     relations.push(...choice.relations.map(relation => Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id')) as CadSketchRelationIntent));
     current = { ...current, relations: [...current.relations, ...choice.relations] };
+  }
+  const relationIds = graph.relations.filter(relation => held.has(relation.id)).map(relation => relation.id);
+  if (reason !== undefined) return { state: 'blocked', reason, relations: [], relationIds };
+  return { state: relations.length ? 'available' : 'applied', reason: undefined, relations, relationIds };
+}
+
+/**
+ * Fix also takes a line or an arc, which the tool does not: each pick is a part, and an edge's part is the tool's Fix used on each of its
+ * points one after another, a point that adds nothing skipped, refused only when every point is. A circle is never fixed, since its
+ * radius is no point.
+ */
+function expectedEdgeFix(graph: CadSketchGraph, selection: readonly Selected[], types: readonly Type[]): Expected | null {
+  if (types.includes('circle')) return null;
+  const relations: CadSketchRelationIntent[] = [], held = new Set<string>();
+  let current = graph, reason: string | undefined;
+  for (const pick of selection) {
+    const edge = pick.kind === 'entity' ? graph.entities.find(entity => entity.id === pick.id) : undefined;
+    const ids = !edge ? [pick.id] : edge.kind === 'line' ? [edge.startPointId, edge.endPointId] : edge.kind === 'arc' ? [edge.centerPointId, edge.startPointId, edge.endPointId] : [];
+    const refused: string[] = [], kept: string[] = [], before = relations.length;
+    for (const id of ids) {
+      const choice = choicesFor(current, [P(id)]).find(item => item.tool === 'fix');
+      if (!choice) return null;
+      if (choice.state === 'blocked') { refused.push(choice.reason); continue; }
+      if (choice.state === 'applied') { kept.push(...choice.relationIds.filter(id => !id.startsWith(PENDING))); continue; }
+      relations.push(...choice.relations.map(relation => Object.fromEntries(Object.entries(relation).filter(([key]) => key !== 'id')) as CadSketchRelationIntent));
+      current = { ...current, relations: [...current.relations, ...choice.relations] };
+    }
+    if (refused.length === ids.length) reason ??= refused[0];
+    else if (relations.length === before) for (const id of kept) held.add(id);
   }
   const relationIds = graph.relations.filter(relation => held.has(relation.id)).map(relation => relation.id);
   if (reason !== undefined) return { state: 'blocked', reason, relations: [], relationIds };
@@ -150,7 +180,7 @@ describe('sketch relation offers against the Constrain tool', () => {
           expect(offer, where).toBeDefined();
           expect({ state: offer!.state, reason: offer!.reason === undefined ? undefined : readableMessage(offer!.reason), relations: offer!.relations, relationIds: offer!.relationIds }, where).toEqual(want);
           if (offer!.reason !== undefined && offer!.reason !== readableMessage(offer!.reason)) precise++;
-          count(`${kind} ${want.state}`); count(`parts ${rule(kind, kinds)!.parts.length > 1 ? 'several' : 'one'}`);
+          count(`${kind} ${want.state}`); count(`parts ${(rule(kind, kinds)?.parts.length ?? selection.length) > 1 ? 'several' : 'one'}`); if (!rule(kind, kinds)) count(`${kind} edge ${want.state}`);
           compared++;
         }
       }

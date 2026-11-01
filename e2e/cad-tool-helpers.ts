@@ -88,15 +88,19 @@ export async function enableGridSnap(page: Page) {
   if (opened) await view.click();
 }
 
-/** Selected sketch geometry lists and edits its relations from its context menu; the target defaults to the first selected item. */
+/** Selected sketch geometry lists only its own relations under the sketch in the feature tree, from its context menu; the target defaults to the first selected item. */
 export async function openSketchRelations(page: Page, target?: Locator) {
   await (target ?? page.locator('[data-cad-sketch-entity].is-selected, [data-cad-sketch-point][aria-pressed="true"]').first()).press('Shift+F10');
   await page.getByRole('menuitem', { name: 'Constraints and dimensions', exact: true }).click();
 }
 
-/** A relations-panel control for the current selection, opening the panel first when it is closed. */
-export async function relationControl(page: Page, role: 'checkbox' | 'button' | 'textbox', name: string | RegExp): Promise<Locator> {
-  const control = page.getByRole(role, typeof name === 'string' ? { name, exact: true } : { name });
-  if (!await control.isVisible()) await openSketchRelations(page);
-  return control;
+/** A relation the selection can take, in the icon row beside it: pressing it applies the relation, or removes it once applied. */
+export function relationOffer(page: Page, name: string): Locator {
+  return page.getByRole('toolbar', { name: 'Relations for the selection', exact: true }).getByRole('button', { name, exact: true });
+}
+
+/** A relation's row under the sketch being edited, in the feature tree, by the start of its name, such as "Radius relation". */
+export function relationRow(page: Page, name: string | RegExp): Locator {
+  const pattern = typeof name === 'string' ? new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) : name;
+  return page.getByRole('list', { name: 'Sketch relations', exact: true }).getByRole('button', { name: pattern });
 }

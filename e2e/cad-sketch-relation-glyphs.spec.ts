@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures/native-sketch-solver';
 import type { Page } from '@playwright/test';
-import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, openSketchRelations, relationRow } from './cad-tool-helpers';
 
 const edge = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line', startPointId, endPointId, construction: false });
 /** A 40 × 20 plate held by Horizontal, Vertical, Parallel and a fixed corner, with one Length dimension. */
@@ -43,9 +43,9 @@ test('marks the relations of a rectangle, lights their geometry on hover and del
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(glyph('level')).toHaveCount(1); await expect(glyph('across')).toHaveCount(2);
 
-  // Double-click opens the relations list on the relation's row.
+  // Double-click selects the relation, its row under the sketch in the feature tree too.
   await glyph('upright').dblclick();
-  await expect(page.locator('ul[aria-label="Sketch relations"] button[aria-pressed="true"][aria-label^="Inspect Vertical "]')).toHaveCount(1);
+  await expect(relationRow(page, 'Vertical relation 2 ·')).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
@@ -291,9 +291,9 @@ test('draws on top the mark the pointer picks where two marks overlap, with the 
     { name: 'related to selected geometry', enter: selectPoint },
     // Hovered where the other mark leaves it alone, so the pointer stays on it while the overlap is read.
     { name: 'lit by hover', enter: async id => { const at = (await places()).alone[id]; await page.mouse.move(at.x, at.y); await expect(ring(id)).toHaveCount(1); } },
-    // Focused in the relations list of its selected point, which lights it until the list row loses focus.
+    // Focused in the tree's relations, listed for its selected point alone, which lights it until the row loses focus.
     { name: 'lit by its relations list row', enter: async id => {
-      await selectPoint(id); const row = await relationControl(page, 'button', /^Inspect Fixed/);
+      await selectPoint(id); await openSketchRelations(page); const row = relationRow(page, /^Fixed/);
       await expect(page.locator('ul[aria-label="Sketch relations"] li')).toHaveCount(1); await row.focus(); await expect(ring(id)).toHaveCount(1);
     } }
   ];

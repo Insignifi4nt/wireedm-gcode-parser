@@ -26,7 +26,7 @@ import { createCadFeaturePreviewCoordinator, type CadFeaturePreviewState } from 
 import { CadSketchRegionReadTargetSchema, type CadSketchRegionReadTarget, type CadSketchRegionInspectionInput, type CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
 import { Value } from '@sinclair/typebox/value';
 import { isCadImportData } from '@/domain/cad/cadImportData';
-import { needsCadSketchPreparation, prepareCadEdits, type CadSketchEditWarning } from './cadEditPreparation';
+import { needsCadSketchPreparation, prepareCadEdits, type CadSketchEditWarning, type CadSketchWarningsRecord } from './cadEditPreparation';
 import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
 import { useCadSketchEditing } from './useCadSketchEditing';
@@ -62,6 +62,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   const [buildVersion, setBuildVersion] = useState<string | null>(null);
   const [buildState, setBuildState] = useState<'idle' | 'building' | 'ready' | 'error'>('idle');
   const [featurePreview, setFeaturePreview] = useState<CadFeaturePreviewState>({ kind: 'idle' });
+  const [sketchWarnings, setSketchWarnings] = useState<CadSketchWarningsRecord | null>(null);
   const liveBuild = useRef({ result: build, version: buildVersion, state: buildState });
   liveBuild.current = { result: build, version: buildVersion, state: buildState };
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -138,9 +139,13 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     return needsCadSketchPreparation(document, edits)
       ? prepareCadEdits(document, edits, await getSketchSolver(), signal, { warnings: true }) : { document: applyCadEdits(document, edits), sketchWarnings: [] };
   }
-  /** Shows each warning of an accepted edit's solves as a status toast that names its sketch. */
-  function showSketchWarnings(warnings: readonly CadSketchEditWarning[]) {
+  /**
+   * Shows each warning of an accepted edit's solves as a status toast that names its sketch, and keeps them with the version that edit made, so
+   * the sketch being edited lists them among its issues until another version is shown.
+   */
+  function showSketchWarnings(warnings: readonly CadSketchEditWarning[], version: string) {
     for (const warning of warnings) current.current.app.showStatusToast?.(`${warning.sketchName}: ${warning.message}`, 'warning');
+    setSketchWarnings(warnings.length ? Object.freeze({ version, warnings }) : null);
   }
   async function readSketchConstraintInspection(source: CadDocument, sketchId: string, signal?: AbortSignal) {
     let inspection = constraintInspections.current.get(source)?.get(sketchId);
@@ -279,7 +284,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       }, combined, () => {
         if (!current.current.open || current.current.app.connectedWorkbench !== workbench || current.current.app.workbenchInteractionLocked)
           throw new ToolError('STALE_STATE', 'The CAD workspace changed while the sketch was being solved.');
-      }).then(accepted => { showSketchWarnings(warnings); warned?.(warnings); return accepted; }).finally(() => {
+      }).then(accepted => { showSketchWarnings(warnings, session.getSnapshot().version); warned?.(warnings); return accepted; }).finally(() => {
         if (preparing.current === owner) { preparing.current = null; session.setWorkflowOpen(false, 'preparation'); }
       });
     }
@@ -811,7 +816,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   }
   function back() { connected(); session.assertWorkflowClosed(); changeOpen(false); }
   const isBusy = () => busy.current || preparing.current !== null;
-  return { session, snapshot, sketchEditing, open, enter, edit, preparePreviewEdits, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
+  return { session, snapshot, sketchEditing, sketchWarnings, open, enter, edit, preparePreviewEdits, save, list, projectActions, plugins, installPlugin, showLibrary, library, libraryLoading, libraryDiagnostic, closeLibrary,
     openDocument, newDocument, importDocument, importDocumentValue, importSolidSource, importDxfSource, importDxfCurveSource, importFile, confirmImport, cancelImport, measureSketch, inspectSketchConstraints, inspectSketchHandles, measureCurve, inspectSketchRegions, readSketchRegionReference, inspectPlugin, inspectParameters, inspectPlane, inspectLoft, inspectSweep, exportDocument, exportSolid, exportDxf, exportCurveDxf, exportSectionDxf, inspectBuild, inspectSection, sendSectionToCam, sendToCam, back,
     setViewportControls, readViewport: (expectedVersion: string) => getViewport(expectedVersion).getState(), changeViewport, captureViewport, previewArtifact,
     inspectTopology, resolveTopologyPicks, buildFeatureInput: featureInputCoordinator.build, releaseFeatureInput,

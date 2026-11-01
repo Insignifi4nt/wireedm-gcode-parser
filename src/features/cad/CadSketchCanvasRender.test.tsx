@@ -15,6 +15,8 @@ import { cadSketchGraphDimensionLabel } from './cadSketchGraphDimensionLayout';
 import { cadSketchRelationGlyphPlate } from './cadSketchRelationGlyphLayout';
 import { joinedPathData } from './cadSketchRelationGlyphDrawing';
 import { CAD_SKETCH_RELATION_GLYPH_REVEAL_MS } from './CadSketchRelationGlyphs';
+import { cadSketchRelationOffers } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
+import type { CadSketchSelectionActionsModel } from './CadSketchSelectionActions';
 import type { CadRenderedViewControls } from './cadViewportControls';
 
 // Every graph point row asks for its pattern lock reason once per render, so the call count tracks row renders.
@@ -297,6 +299,34 @@ describe('sketch canvas cursor rendering', () => {
     await pointer('pointermove', 95, 57, pressed, 1); await pointer('pointerup', 95, 57, pressed); await elapse(rest * 2); expect(shownGlyphs()).toEqual([]);
     // And unmounting the canvas.
     pending = await arm('s48a'); await act(async () => root.render(<></>)); expect(cleared(pending)).toBe(true);
+  });
+
+  it('shows the selection icon row only in Select at rest, hides it while drawing, dragging or locked, and renders it no more as the pointer moves', async () => {
+    const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
+    const graph = { points: [{ id: 'a', position: [0, 0] as [number, number] }, { id: 'b', position: [40, 0] as [number, number] }, { id: 'e', position: [10, 8] as [number, number] },
+      { id: 'f', position: [16, 8] as [number, number] }], entities: [line('bottom', 'a', 'b'), line('loose', 'e', 'f')], relations: [] };
+    const { props, show, pointer, move } = await mountCanvas(graph, { tool: 'select' });
+    // Each render of the row reads the model's offers once, so the reads count its renders.
+    const selection = [{ kind: 'entity' as const, id: 'loose' }], offers = cadSketchRelationOffers(graph, selection);
+    let reads = 0;
+    const model: CadSketchSelectionActionsModel = { graph, selection, dimensionAvailable: true, disabled: false, onOffer: vi.fn(), onDimension: vi.fn(), get offers() { reads += 1; return offers; } };
+    await show({ graphControls: { ...props().graphControls!, selection, selectionActions: model } });
+    const row = () => container.querySelector('[data-cad-sketch-selection-actions]');
+    expect([...row()!.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Horizontal', 'Vertical', 'Fix', 'Dimension the selection']);
+    reads = 0; canvasRenders.mockClear();
+    await move(5, 5); await move(8, 6); await move(13, 8); await move(30, 2);
+    expect(canvasRenders).toHaveBeenCalled(); expect(reads).toBe(0);
+    // A drag hides the row until the pointer is released.
+    const loose = container.querySelector<SVGGElement>('[data-cad-sketch-entity="loose"]')!;
+    let captured: number | null = null;
+    Object.assign(loose, { setPointerCapture: (id: number) => { captured = id; }, hasPointerCapture: (id: number) => captured === id, releasePointerCapture: () => { captured = null; } });
+    await pointer('pointerdown', 13, 8, loose); await pointer('pointermove', 14, 9, loose, 1);
+    expect(row()).toBeNull();
+    await pointer('pointerup', 14, 9, loose); expect(row()).not.toBeNull();
+    // A drawing tool, or a lock, hides it too.
+    await show({ tool: 'line' }); expect(row()).toBeNull();
+    await show({ tool: 'select' }); expect(row()).not.toBeNull();
+    await show({ interactionLocked: true }); expect(row()).toBeNull();
   });
 
   it('drags geometry without rendering the relation glyphs it does not move, when the drag starts or ends', async () => {

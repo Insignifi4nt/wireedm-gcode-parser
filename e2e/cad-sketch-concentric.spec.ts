@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures/native-sketch-solver';
-import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationOffer } from './cad-tool-helpers';
 
 test('aligns curve centers privately and keeps the annular part associative through agent parity, Undo and reopen',async({page})=>{
   await prepareCadTools(page);await call(page,'cad_open_workspace');
@@ -13,10 +13,11 @@ test('aligns curve centers privately and keeps the annular part associative thro
   const base=await context(page);await call(page,'cad_build',{expectedVersion:base.version});
   await (await historyRow(page, 'Ring')).dblclick();await expect(page.getByRole('button',{name:'Cancel sketch edits',exact:true})).toBeVisible();
   await page.locator('[data-cad-sketch-entity="rim"]').press('Enter');await page.locator('[data-cad-sketch-entity="bore"]').press('Shift+Enter');
-  await (await relationControl(page, 'checkbox', 'Concentric')).check();await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  // The icon row applies Concentric to the private sketch draft at once; pressing it again removes it, and the part waits for Finish.
+  const concentric=relationOffer(page,'Concentric');await concentric.click();await expect(concentric).toHaveAttribute('aria-pressed','true');
+  await concentric.click();await expect(concentric).toHaveAttribute('aria-pressed','false');
   expect((await call(page,'cad_get_feature',{expectedVersion:base.version,featureId:'ring'})).feature).toEqual(sketch);
-  await (await relationControl(page, 'checkbox', 'Concentric')).check();await page.getByRole('button',{name:'Apply',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Apply',exact:true})).toHaveCount(0);
+  await concentric.click();await expect(concentric).toHaveAttribute('aria-pressed','true');
   expect((await call(page,'cad_get_feature',{expectedVersion:base.version,featureId:'ring'})).feature).toEqual(sketch);
   await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);
   let current=await context(page);const human=(await call(page,'cad_get_feature',{expectedVersion:current.version,featureId:'ring'})).feature;

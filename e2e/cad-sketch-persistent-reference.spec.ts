@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures/native-sketch-solver';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow, relationOffer } from './cad-tool-helpers';
 
 test('uses a layout edge on a raised sketch, follows source edits and explicitly detaches without losing its bore', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -40,8 +40,7 @@ test('uses a layout edge on a raised sketch, follows source edits and explicitly
   expect(referenceId).toBeTruthy();
   await page.locator('[data-cad-sketch-point="center"]').press('Enter');
   await page.locator('[data-cad-sketch-entity="' + referenceId + '"]').press('Shift+Enter');
-  await (await relationControl(page, 'checkbox', 'Midpoint')).check();
-  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await relationOffer(page, 'Midpoint').click(); await expect(relationOffer(page, 'Midpoint')).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toHaveCount(0); current = await context(page);
   const linked = await read(plate.id), reference = linked.graph.relations.find((relation: { kind: string }) => relation.kind === 'external-reference');

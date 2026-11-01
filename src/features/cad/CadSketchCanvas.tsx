@@ -34,6 +34,7 @@ import { formatCadLocalizedQuantity, formatCadQuantity } from './cadDisplayQuant
 import { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
 import { cadSketchExternalReferenceForSelection } from '@/domain/cad/cadSketchExternalReferences';
 import { CadSketchLinearPatternPreview } from './CadSketchLinearPatternPreview';
+import { CadSketchSelectionActions } from './CadSketchSelectionActions';
 import { CAD_SKETCH_RELATION_GLYPH_LIMIT, CadSketchGraphLayer, type CadSketchGraphControls } from './CadSketchGraphLayer';
 import { countCadSketchRelationGlyphs } from './cadSketchRelationGlyphLayout';
 import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
@@ -249,6 +250,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const chainOpen = chainTool && sourceSketch.kind === 'sketch' && Boolean(onAddPath);
   const idlePathDraft = () => createCadPathDraft(tool === 'arc' ? 'arc' : 'line');
   const svg = useRef<SVGSVGElement>(null);
+  /** Hands focus back to the canvas; stable, so the icon row renders again only when its own inputs change. */
+  const focusCanvas = useCallback(() => svg.current?.focus(), []);
   const host = useRef<HTMLDivElement>(null);
   const instructionsId = useId();
   const [picks, setPicks] = useState<readonly CadFreshSketchPick[]>([]);
@@ -1695,6 +1698,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       : !isPreview && contextStatus && <div className="cad-sketch-context" role="status" data-cad-dimension-status="">{contextStatus}</div>}
     <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : currentTrim?.kind === 'ready' ? `${instruction}. ${currentTrim.help}` : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter adds a point or finishes a line chain, Backspace undoes the last point or segment, Escape finishes a line chain or cancels drawing and, with nothing pending, returns to Select, F fits the sketch.</p>
     {viewTools}
+    {graphControls?.selectionActions && sourceGraph && tool === 'select' && !geometryPick && !positionPick && !isPreview && !interactionLocked && !submission.applying && !graphPending && !boxPending
+      && dragPreview === null && points.length === 0 && !pathPending && <CadSketchSelectionActions model={graphControls.selectionActions} prepared={sourceGraph} center={center} width={width} span={span}
+        pixelWidth={viewportSize.width} pixelHeight={viewportSize.height} onEscape={focusCanvas} />}
     {/* A chain that can stay open keeps the toolbar in view, since a tool switch saves it; its tools wait for a completed segment. */}
     {!externalInteractionLocked && (tool !== 'select' || points.length > 0) && <CadDrawingTools active={points.length > 0 || pathPending && !chainOpen}><div className={`cad-sketch-instruction ${chainTool ? 'cad-path-instruction' : ''}`} onKeyDown={event => {
       if (event.nativeEvent.isComposing) return;

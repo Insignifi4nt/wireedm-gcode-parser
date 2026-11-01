@@ -26,6 +26,7 @@ import { cadSketchDimensionSelectionStatus } from './cadSketchDimensionSelection
 import { useCadSketchEditing } from './useCadSketchEditing';
 import { pairedBoreMirrorPart } from '@/domain/cad/__tests__/cadSketchMirrorFixtures';
 import { cadSketchSourceAvailability, cadSketchSourceIssue } from '@/domain/cad/cadSketchSources';
+import { cadSketchRelationOffers } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
 
 let requestViewportMenu: ((request: CadViewportContextMenuRequest) => void) | undefined;
 let pickViewportFeature: ((id: string | null) => void) | undefined;
@@ -71,6 +72,12 @@ vi.mock('./cadSketchDimensionSelection', async (importOriginal) => {
   return { ...actual, cadSketchDimensionSelectionStatus: vi.fn(actual.cadSketchDimensionSelectionStatus) };
 });
 const canvasRenders = vi.mocked(cadSketchDimensionSelectionStatus);
+// The icon row's offers keep their behavior; tests count how often the workbench asks for them.
+vi.mock('@/domain/cad/sketch-relations/cadSketchRelationOffers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/domain/cad/sketch-relations/cadSketchRelationOffers')>();
+  return { ...actual, cadSketchRelationOffers: vi.fn(actual.cadSketchRelationOffers) };
+});
+const offerRequests = vi.mocked(cadSketchRelationOffers);
 
 let container: HTMLDivElement;
 let root: Root;
@@ -105,7 +112,7 @@ function PreviousEditorHeader() {
   return <div>Previous editor content</div>;
 }
 
-async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'onBeginSketchEdit' | 'sketchEdit'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
+async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'onBeginSketchEdit' | 'sketchEdit' | 'onInspectSketchConstraints'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
   const session = new CadSession(initial);
   currentSession = session;
   function Harness() {
@@ -793,12 +800,13 @@ describe('CAD sketch interaction', () => {
     expect(viewport().getState().selectedSketchGeometrySet).toEqual(selections);
   });
 
-  it('finishes the active sketch from its inspector without changing geometry or history', async () => {
+  it('finishes the active sketch from its header without changing geometry or history', async () => {
     const original = solidDocument();
     await mount(original);
     await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
-    const inspector = container.querySelector('[aria-label="Feature properties"]');
-    const finish = inspector?.querySelector<HTMLButtonElement>('button[aria-label="Finish sketch"]');
+    const header = container.querySelector('[data-cad-sketch-header]');
+    expect(header?.getAttribute('aria-label')).toBe('Sketch editing');
+    const finish = header?.querySelector<HTMLButtonElement>('button[aria-label="Finish sketch"]');
     expect(finish).toBeTruthy();
     const before = currentSession.getSnapshot();
     await act(async () => finish?.click());
@@ -1597,14 +1605,15 @@ describe('CAD sketch interaction', () => {
     await act(async () => center.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'center' }]);
     expect(() => field('Plane offset')).toThrow('missing');
-    // Selection alone leaves relations closed; the geometry context menu opens them.
-    expect(container.querySelector('form[aria-label="Sketch relations"]')).toBeNull();
+    // Selection alone leaves the relations tree listing every relation; the geometry context menu lists only the selection's.
+    const only = () => container.querySelector('[data-cad-sketch-relation-list] button[aria-label="Only the selection"]')?.getAttribute('aria-pressed');
+    expect(only()).toBe('false');
     const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Canvas missing.');
     vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
     await act(async () => { (center as SVGGElement).focus(); center.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
     const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent === 'Constraints and dimensions'); if (!item) throw new Error('Missing Constraints and dimensions.');
     await act(async () => item.click());
-    expect(container.querySelector('form[aria-label="Sketch relations"]')).not.toBeNull();
+    expect(only()).toBe('true');
     await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: null }));
     expect(field('Plane offset')).toBeTruthy();
   });
@@ -1998,14 +2007,17 @@ describe('CAD sketch interaction', () => {
     const swap = (relation: Relation) => replace(current => current.map(item => item.id === relation.id ? relation : item));
     const entities = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.entities.map(entity => entity.id); };
     const geometry = () => viewport().getState().selectedSketchGeometrySet;
-    const relationsPanel = () => container.querySelector('form[aria-label="Sketch relations"]');
-    /** A relations panel row, named by the start of its relation label, such as `Angle` or `Distance relation 2`. */
+    /** The value editor open at a dimension, or null. */
+    const valueEditor = () => container.querySelector<HTMLFormElement>('form[data-cad-sketch-value-editor]');
+    /** A relations tree row, named by the start of its relation label, such as `Angle` or `Distance relation 2`. */
     const relationRow = (name: string) => {
-      const rows = [...container.querySelectorAll<HTMLButtonElement>('ul[aria-label="Sketch relations"] > li button[aria-label^="Inspect "]')];
-      const found = rows.find(row => row.getAttribute('aria-label')?.startsWith(`Inspect ${name} `)); if (!found) throw new Error(`${name} row missing from ${rows.map(row => row.getAttribute('aria-label')).join(', ')}.`);
+      const rows = [...container.querySelectorAll<HTMLButtonElement>('ul[aria-label="Sketch relations"] > li button[data-cad-sketch-relation-row]')];
+      const found = rows.find(row => row.getAttribute('aria-label')?.startsWith(`${name} `)); if (!found) throw new Error(`${name} row missing from ${rows.map(row => row.getAttribute('aria-label')).join(', ')}.`);
       return found;
     };
-    const editRow = (name: string) => act(async () => relationRow(name).click());
+    /** Double-clicks a tree row: a dimension's value editor, or its relation selected. */
+    const editRow = (name: string) => act(async () => relationRow(name).dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true })));
+    const onlySelection = () => container.querySelector<HTMLButtonElement>('[data-cad-sketch-relation-list] button[aria-label="Only the selection"]');
     /** Opens a sketch edge's context menu from the keyboard and chooses an item. */
     const geometryMenu = async (id: string, item: string) => {
       const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Canvas missing.');
@@ -2032,11 +2044,10 @@ describe('CAD sketch interaction', () => {
       vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
       await act(async () => { point.focus(); point.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
       await act(async () => menuItem('Constraints and dimensions').click());
-      const row = [...container.querySelectorAll('ul[aria-label="Sketch relations"] > li')].find(item => item.querySelector('button[aria-label^="Inspect Distance relation 5 · "]'));
-      if (!row) throw new Error('Axis distance row missing.');
-      await act(async () => row.dispatchEvent(new FocusEvent('focusin', { bubbles: true })));
+      const row = relationRow('Distance relation 5');
+      await act(async () => row.focus());
       expect([highlighted('point'), highlighted('entity')]).toEqual([['o'], ['@v']]);
-      await act(async () => row.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
+      await act(async () => row.blur());
       expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
       expect(currentDocument).toBe(source); expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'o' }]);
     });
@@ -2142,8 +2153,9 @@ describe('CAD sketch interaction', () => {
       // A distance to a side kept upright edits on that side with the V axis it is measured from, so another row returns the selection to both.
       await replace(current => [...current, { id: 'up', kind: 'vertical', pointIds: ['b', 'c'] }, { id: 'bx', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 }]);
       await press('bx', 'Enter'); expect(field('Distance').value).toBe('40'); expect(selectedDimensions()).toEqual(['bx']);
-      await editRow('Vertical'); expect(geometry()).toEqual([{ kind: 'entity', id: 'side' }, { kind: 'entity', id: '@v' }]);
-      expect(container.querySelector('[data-cad-sketch-fixed="@v"]')?.getAttribute('aria-pressed')).toBe('true');
+      // Another row that is no dimension closes the value editor and selects its own relation.
+      await editRow('Vertical'); expect(valueEditor()).toBeNull(); expect(relationRow('Vertical').getAttribute('aria-pressed')).toBe('true');
+      expect(selectedDimensions()).toEqual([]); expect(geometry()).toEqual([]);
       expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
     });
 
@@ -2203,7 +2215,10 @@ describe('CAD sketch interaction', () => {
       expect(relations().some(relation => relation.id === 'size')).toBe(true); expect(selectedDimensions()).toEqual(['size']);
     });
 
-    it('lights the geometry from relation and issue rows in the dock without rendering the sketch canvas again', async () => {
+    /** Opens the header's constraint issues. */
+    const openIssues = async () => { const trigger = container.querySelector<HTMLButtonElement>('[data-cad-sketch-issues]'); if (!trigger) throw new Error('Issues button missing.'); await act(async () => trigger.click()); };
+    const rowKey = (row: HTMLElement, key: string) => act(async () => { row.focus(); row.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); });
+    it('lights the geometry from relation tree rows and header issue rows without rendering the sketch canvas again', async () => {
       await open({ build: null, buildState: 'idle', onEditMany: () => {
         const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
         throw new CadSketchPreparationError({ sketchId: 'sketch', sketchName: 'Bracket', graph: feature.graph, rejection: { kind: 'rejected', reason: 'conflicting', message: 'Over-defined.',
@@ -2213,14 +2228,20 @@ describe('CAD sketch interaction', () => {
       vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
       await act(async () => { point.focus(); point.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
       await act(async () => menuItem('Constraints and dimensions').click());
-      // A refused apply lists the conflicting relations as issue rows.
-      const remove = container.querySelector<HTMLButtonElement>('ul[aria-label="Sketch relations"] > li button[aria-label^="Remove "]'); if (!remove) throw new Error('Remove button missing.');
-      await act(async () => remove.click()); await click('Apply');
-      const issues = [...container.querySelectorAll('ul[aria-label="Constraint issues"] > li')], rows = [...container.querySelectorAll('ul[aria-label="Sketch relations"] > li'), ...issues];
+      expect(onlySelection()?.getAttribute('aria-pressed')).toBe('true');
+      // A refused Delete lists the conflicting relations as issues in the header, and marks their tree rows.
+      const first = container.querySelector<HTMLButtonElement>('ul[aria-label="Sketch relations"] > li button'); if (!first) throw new Error('Relation row missing.');
+      await rowKey(first, 'Delete');
+      expect(container.querySelector('[data-cad-sketch-issues]')?.getAttribute('data-cad-sketch-issues')).toBe('2');
+      await act(async () => onlySelection()!.click());
+      expect(relationRow('Distance relation 1').getAttribute('aria-label')).toMatch(/ · Conflict$/);
+      await openIssues();
+      const issues = [...container.querySelectorAll<HTMLElement>('ul[aria-label="Constraint issues"] > li button')], rows = [...container.querySelectorAll<HTMLElement>('ul[aria-label="Sketch relations"] > li button'), ...issues];
       expect(issues).toHaveLength(2);
-      const panel = rows[0].closest('form')!, lit: (string | null)[][] = [];
+      const lit: (string | null)[][] = [];
       canvasRenders.mockClear();
       for (const row of rows) {
+        const panel = row.closest('[data-cad-sketch-relation-list], .cad-sketch-header-issue-list')!;
         await act(async () => panel.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row })));
         for (const offset of [0, 4, 9]) await act(async () => {
           const event = new MouseEvent('pointermove', { bubbles: true, clientX: 700 + offset, clientY: 100 + offset }); Object.defineProperties(event, { pointerId: { value: 1 }, isPrimary: { value: true } });
@@ -2239,10 +2260,10 @@ describe('CAD sketch interaction', () => {
       expect(canvasRenders).toHaveBeenCalled();
     });
 
-    describe('a dock row highlight after an outside edit, which sends the row no blur or pointer leave', () => {
+    describe('a tree or issue row highlight after an outside edit, which sends the row no blur or pointer leave', () => {
       const shown = () => [highlighted('point'), highlighted('entity')];
       const enter = async (kind: 'focused' | 'hovered', row: HTMLElement) => act(async () => {
-        if (kind === 'focused') row.focus(); else row.closest('form')!.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row }));
+        if (kind === 'focused') row.focus(); else row.closest('[data-cad-sketch-relation-list], .cad-sketch-header-issue-list')!.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row }));
       });
 
       it.each(['focused', 'hovered'] as const)('hides the highlight of a %s relation row that the edit removes', async kind => {
@@ -2251,29 +2272,32 @@ describe('CAD sketch interaction', () => {
         expect(shown()).toEqual([['a', 'b'], ['base']]);
         let left = 0; for (const name of ['blur', 'focusout', 'pointerout', 'pointerleave']) row.addEventListener(name, () => { left += 1; });
         await replace(current => current.filter(relation => relation.id !== 'length'));
-        expect(row.isConnected).toBe(false); expect(left).toBe(0); expect(relationsPanel()).not.toBeNull();
+        expect(row.isConnected).toBe(false); expect(left).toBe(0); expect(container.querySelector('[data-cad-sketch-relation-list]')).not.toBeNull();
         expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
       });
 
-      // An outside edit resets the panel, which mounts its rows afresh: the pointer stays over the row, while focus goes to the body.
-      it.each([['hovered', [['b', 'c'], ['side']]], ['focused', [[], []]]] as const)('follows a %s relation row whose operands the edit changes', async (kind, after) => {
+      // The row keeps its relation's ID, so it stays mounted: the pointer stays over it and focus stays in it, and its highlight follows the edit.
+      it.each(['hovered', 'focused'] as const)('follows a %s relation row whose operands the edit changes', async kind => {
         await open(); await geometryMenu('base', 'Constraints and dimensions');
         const row = relationRow('Distance relation 1'); await enter(kind, row);
         expect(shown()).toEqual([['a', 'b'], ['base']]);
         await swap({ id: 'length', kind: 'distance', pointIds: ['b', 'c'], value: 30 });
-        expect(row.isConnected).toBe(false); expect(relationRow('Distance relation 1').getAttribute('aria-label')).toContain('Point 2 and Point 3');
-        expect(shown()).toEqual(after);
+        expect(row.isConnected).toBe(true); expect(relationRow('Distance relation 1').getAttribute('aria-label')).toContain('Point 2 and Point 3');
+        expect(shown()).toEqual([['b', 'c'], ['side']]);
       });
 
-      it.each(['focused', 'hovered'] as const)('draws the highlight of a %s relation row again when the panel converts its relation in place', async kind => {
+      it('draws the highlight of a hovered relation row again when its value editor converts the relation in place', async () => {
         await open(); await geometryMenu('base', 'Constraints and dimensions'); await editRow('Reference dimension relation 6');
-        const row = relationRow('Reference dimension relation 6'); await enter(kind, row);
+        expect(valueEditor()?.getAttribute('aria-label')).toBe('Reference dimension value');
+        const row = relationRow('Reference dimension relation 6'); await enter('hovered', row);
         expect(shown()).toEqual([[], ['side']]);
-        // Make driving turns the draft into a driving length between the line's ends, in the same row; the drawn sketch,
-        // and with it the selected dimension's own highlight, keeps the reference until Apply.
+        // Make driving turns the draft into a driving length between the line's ends; the tree names the accepted sketch, so its row
+        // and highlight keep the reference until Apply, then follow the same relation in place.
         await click('Make driving');
-        expect(row.isConnected).toBe(true); if (kind === 'focused') expect(document.activeElement).toBe(row);
-        expect(row.getAttribute('aria-label')).toMatch(/^Inspect Distance relation 6 /);
+        expect(row.getAttribute('aria-label')).toMatch(/^Reference dimension relation 6 /); expect(shown()).toEqual([[], ['side']]);
+        await click('Apply');
+        expect(valueEditor()).toBeNull(); expect(row.isConnected).toBe(true);
+        expect(row.getAttribute('aria-label')).toMatch(/^Distance relation 6 · Point 2 and Point 3 · 30 mm/);
         expect(shown()).toEqual([['b', 'c'], ['side']]);
       });
 
@@ -2284,12 +2308,12 @@ describe('CAD sketch interaction', () => {
             diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length', 'diagonal'], redundantIds: [], partiallyRedundantIds: [], issues: [] } } });
         } });
         await geometryMenu('base', 'Constraints and dimensions');
-        await act(async () => relationsPanel()!.querySelector<HTMLButtonElement>('button[aria-label^="Remove Angle"]')!.click()); await click('Apply');
-        const issue = container.querySelector<HTMLElement>('ul[aria-label="Constraint issues"] > li'); if (!issue) throw new Error('Issue row missing.');
+        await rowKey(relationRow('Angle'), 'Delete'); await act(async () => relationRow('Angle').blur()); await openIssues();
+        const issue = container.querySelector<HTMLElement>('ul[aria-label="Constraint issues"] > li button'); if (!issue) throw new Error('Issue row missing.');
         await enter('hovered', issue); expect(shown()).toEqual([['a', 'b'], []]);
-        // The unapplied removal keeps the draft, and the issues belong to the document the Apply was refused for.
+        // The issues belong to the document the Delete was refused for; the Angle stays.
         await replace(current => [...current, { id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }]);
-        expect(issue.isConnected).toBe(false); expect(relationsPanel()).not.toBeNull();
+        expect(issue.isConnected).toBe(false); expect(relationRow('Angle')).toBeTruthy();
         expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
       });
     });
@@ -2353,7 +2377,7 @@ describe('CAD sketch interaction', () => {
       // Delete with the editor open removes the dimension drawn selected, not the line it measures, and closes its editor.
       await canvasKey('Delete');
       expect(relations().map(relation => relation.id)).toEqual(['diagonal', 'angle', 'size', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
-      expect(container.querySelector('ul[aria-label="Sketch relations"]')).toBeNull();
+      expect(valueEditor()).toBeNull();
       // Cancel and Apply keep the edited dimension selected.
       await edit('size'); await input(field('Diameter'), '9'); await click('Cancel');
       expect(selectedDimensions()).toEqual(['size']); expect(viewport().getState().selectedSketchGeometrySet).toEqual([]);
@@ -2399,14 +2423,14 @@ describe('CAD sketch interaction', () => {
       expect(document.querySelector('[role="menu"]')).not.toBeNull(); expect(selectedDimensions()).toEqual(['size']);
     });
 
-    it('moves the selection to the dimension row that the relations panel switches to, so Delete removes the dimension its editor shows', async () => {
+    it('moves the selection to the dimension whose tree row opens its value editor, so Delete removes the dimension the editor shows', async () => {
       await open();
       await press('length', 'Enter'); expect(field('Length').value).toBe('40'); expect(selectedDimensions()).toEqual(['length']);
       await editRow('Angle'); expect(field('Angle').value).toBe('90');
       expect(relationRow('Angle').getAttribute('aria-pressed')).toBe('true'); expect(selectedDimensions()).toEqual(['angle']); expect(geometry()).toEqual([]);
       await canvasKey('Delete');
       expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'size', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
-      expect(relationsPanel()).toBeNull();
+      expect(valueEditor()).toBeNull();
     });
 
     it('selects the dimension, not the geometry, that a geometry menu opens for editing', async () => {
@@ -2435,14 +2459,15 @@ describe('CAD sketch interaction', () => {
       expect(selectedDimensions()).toEqual(['diagonal']); expect(geometry()).toEqual([]);
       // A row that is not a canvas dimension returns the selection to the geometry the panel works on; a dimension row takes it back.
       await press('size', 'Enter'); expect(selectedDimensions()).toEqual(['size']);
-      await editRow('Fixed point'); expect(relationsPanel()).not.toBeNull();
-      expect(selectedDimensions()).toEqual([]); expect(geometry()).toEqual([{ kind: 'entity', id: 'hole' }]);
+      // A fixed point's row opens its value editor on its mark; a dimension row takes the selection back.
+      await editRow('Fixed point'); expect(valueEditor()?.getAttribute('aria-label')).toBe('Fixed point value'); expect(field('Fixed X').value).toBe('10');
+      expect(selectedDimensions()).toEqual([]); expect(relationRow('Fixed point').getAttribute('aria-pressed')).toBe('true'); expect(geometry()).toEqual([]);
       await editRow('Diameter'); expect(field('Diameter').value).toBe('8'); expect(selectedDimensions()).toEqual(['size']); expect(geometry()).toEqual([]);
       // Geometry or another dimension taking the selection closes the editor.
       await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'point', id: 'o' } }));
-      expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]);
-      await press('length', 'Enter'); expect(relationsPanel()).not.toBeNull();
-      await pick('angle'); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual(['angle']);
+      expect(valueEditor()).toBeNull(); expect(selectedDimensions()).toEqual([]);
+      await press('length', 'Enter'); expect(valueEditor()).not.toBeNull();
+      await pick('angle'); expect(valueEditor()).toBeNull(); expect(selectedDimensions()).toEqual(['angle']);
     });
 
     it('closes a dimension editor when a legacy profile takes the selection', async () => {
@@ -2453,7 +2478,7 @@ describe('CAD sketch interaction', () => {
       await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
       await press('size', 'Enter'); expect(field('Diameter').value).toBe('8');
       await act(async () => viewport().apply({ kind: 'select-profile', profileId: 'plate' }));
-      expect(viewport().getState().selectedProfileId).toBe('plate'); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]);
+      expect(viewport().getState().selectedProfileId).toBe('plate'); expect(valueEditor()).toBeNull(); expect(selectedDimensions()).toEqual([]);
       expect(container.querySelector('button[aria-label="Add dimension"]')).not.toBeNull();
     });
 
@@ -2461,19 +2486,19 @@ describe('CAD sketch interaction', () => {
       await open(); await replace(current => [...current, { id: 'pin', kind: 'fixed-point', pointId: 'o', position: [10, 10] }]);
       await press('size', 'Enter'); expect(field('Diameter').value).toBe('8');
       // The editor never renders against the new document, even before the switch clears the selection, so none of its fields takes focus there.
-      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
+      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[data-cad-sketch-value-editor]')) refocused += 1; };
       container.addEventListener('focusin', record);
       await act(async () => replaceDocument({ ...currentDocument, id: 'other-document' }));
       container.removeEventListener('focusin', record);
-      expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]); expect(refocused).toBe(0);
+      expect(valueEditor()).toBeNull(); expect(selectedDimensions()).toEqual([]); expect(refocused).toBe(0);
       // The new document's dimension opens its own editor.
       await press('size', 'Enter'); expect(field('Diameter').value).toBe('8'); expect(selectedDimensions()).toEqual(['size']);
-      // A row that is not a dimension, open on the geometry the editor measured, never mounts in another part either.
-      await editRow('Fixed point'); expect(relationRow('Fixed point').getAttribute('aria-pressed')).toBe('true'); expect(geometry()).toEqual([{ kind: 'entity', id: 'hole' }]);
+      // A fixed point's editor, opened from its row, never mounts in another part either.
+      await editRow('Fixed point'); expect(relationRow('Fixed point').getAttribute('aria-pressed')).toBe('true'); expect(field('Fixed X').value).toBe('10');
       container.addEventListener('focusin', record);
       await act(async () => replaceDocument({ ...currentDocument, id: 'third-document' }));
       container.removeEventListener('focusin', record);
-      expect(relationsPanel()).toBeNull(); expect(geometry()).toEqual([]); expect(refocused).toBe(0);
+      expect(valueEditor()).toBeNull(); expect(geometry()).toEqual([]); expect(refocused).toBe(0);
     });
 
     it('deletes the selection, not a focused label or edge outside it, so Delete removes what is drawn selected', async () => {
@@ -2487,7 +2512,7 @@ describe('CAD sketch interaction', () => {
       // Length's editor is open and keyboard focus moves to the unselected Diagonal label: Delete removes Length and closes its editor.
       await press('length', 'Enter'); expect(field('Length').value).toBe('40');
       await press('diagonal', 'Delete');
-      expect(ids()).toEqual(['diagonal', 'angle', 'size', 'x', 'measured']); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]);
+      expect(ids()).toEqual(['diagonal', 'angle', 'size', 'x', 'measured']); expect(valueEditor()).toBeNull(); expect(selectedDimensions()).toEqual([]);
       // A focused edge removes the dimension selection, never itself.
       await pick('size'); await pressGeometry('[data-cad-sketch-entity="base"]', 'Delete');
       expect(ids()).toEqual(['diagonal', 'angle', 'x', 'measured']); expect(entities()).toEqual(['base', 'side', 'hole']);
@@ -2536,7 +2561,7 @@ describe('CAD sketch interaction', () => {
       // Enter edits it on its center and line and keeps it selected.
       await press(id, 'Enter'); expect(field('Point to line distance').value).toBe('10');
       expect(selectedDimensions()).toEqual([id]); expect(geometry()).toEqual([]);
-      expect(relationsPanel()?.querySelector('.cad-property-title')?.textContent).toBe('2 selected');
+      expect(valueEditor()?.getAttribute('aria-label')).toBe('Point to line distance value');
       await input(field('Point to line distance'), '12'); await click('Apply');
       expect(relations().find(relation => relation.id === id)).toEqual({ ...created, value: 12 }); expect(selectedDimensions()).toEqual([id]);
       // Make reference measures the same point and line under the same ID, and Make driving restores the distance on the same side.
@@ -2638,7 +2663,7 @@ describe('CAD sketch interaction', () => {
       await pick('angle', true); expect(selectedDimensions()).toEqual(['angle']); expect(pressed()).toEqual([]);
       // An axis closes an open dimension editor.
       await press('length', 'Enter'); expect(field('Length').value).toBe('40');
-      await chooseFixed('@h'); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]); expect(pressed()).toEqual(['@h']);
+      await chooseFixed('@h'); expect(valueEditor()).toBeNull(); expect(selectedDimensions()).toEqual([]); expect(pressed()).toEqual(['@h']);
       // With an axis selected, Delete or Backspace on a focused label removes nothing and keeps the axis.
       const before = relations();
       await press('diagonal', 'Delete'); await press('length', 'Backspace');
@@ -2859,30 +2884,32 @@ describe('CAD sketch interaction', () => {
         expect(annotationOf('length')).toBeUndefined();
       });
     });
-    it('never replays a cancelled dimension editor when Escape later cancels the relations panel', async () => {
+    it('never replays a cancelled value editor when Escape later clears the selection', async () => {
       await open();
-      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
+      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[data-cad-sketch-value-editor]')) refocused += 1; };
       const escapeFrom = (target: Element) => act(async () => { target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
-      for (const from of ['body', 'dock'] as const) {
+      for (const from of ['body', 'tree'] as const) {
         await press('length', 'Enter'); await input(field('Length'), '45'); await click('Cancel');
-        expect(relationsPanel()).not.toBeNull(); expect(selectedDimensions()).toEqual(['length']); expect(relationRow('Distance relation 1').getAttribute('aria-pressed')).toBe('false');
+        // Cancel closes the editor and keeps its dimension selected, mark and row alike.
+        expect(valueEditor()).toBeNull(); expect(selectedDimensions()).toEqual(['length']); expect(relationRow('Distance relation 1').getAttribute('aria-pressed')).toBe('true');
         container.addEventListener('focusin', record);
         await escapeFrom(from === 'body' ? document.body : relationRow('Angle'));
         container.removeEventListener('focusin', record);
-        expect(refocused).toBe(0); expect(relationsPanel()).toBeNull(); expect(selectedDimensions()).toEqual([]);
+        expect(refocused).toBe(0); expect(valueEditor()).toBeNull(); expect(selectedDimensions()).toEqual([]);
         expect(relations().find(relation => relation.id === 'length')).toMatchObject({ value: 40 });
       }
     });
 
-    it('keeps a closed row closed when an edit remounts the relations panel', async () => {
+    it('keeps a tree row selected, or cleared, when an agent edit removes other relations', async () => {
       await open();
       await replace(current => [...current, { id: 'ay', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }]);
-      // On the H axis, opened from the diagonal's editor, selects the two points the diagonal measures; a second press closes the row.
-      await press('diagonal', 'Enter'); expect(field('Distance').value).toBe('50');
-      await editRow('Coincident'); expect(geometry()).toEqual([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'c' }]);
-      await editRow('Coincident'); expect(relationRow('Coincident').getAttribute('aria-pressed')).toBe('false');
-      // An agent removes point c with what depends on it, so the selection, and the panel, change to point a alone.
-      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('form[aria-label="Sketch relations"]')) refocused += 1; };
+      // A click on the H axis row selects its mark; a Shift click clears it again.
+      const shiftClick = (row: HTMLElement) => act(async () => row.dispatchEvent(new MouseEvent('click', { button: 0, shiftKey: true, bubbles: true, cancelable: true })));
+      await act(async () => relationRow('Coincident').click()); expect(relationRow('Coincident').getAttribute('aria-pressed')).toBe('true');
+      await shiftClick(relationRow('Coincident')); expect(relationRow('Coincident').getAttribute('aria-pressed')).toBe('false');
+      await act(async () => relationRow('Coincident').click());
+      // An agent removes point c with what depends on it; the H axis row stays selected and nothing takes focus.
+      let refocused = 0; const record = (event: FocusEvent) => { if (event.target instanceof Element && event.target.closest('[data-cad-sketch-relation-list], form[data-cad-sketch-value-editor]')) refocused += 1; };
       container.addEventListener('focusin', record);
       await act(async () => {
         const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.');
@@ -2890,21 +2917,21 @@ describe('CAD sketch interaction', () => {
           entities: feature.graph.entities.filter(entity => entity.id !== 'side'), relations: feature.graph.relations.filter(relation => !['diagonal', 'angle', 'measured'].includes(relation.id)) } }] });
       });
       container.removeEventListener('focusin', record);
-      expect(geometry()).toEqual([{ kind: 'point', id: 'a' }]); expect(relationsPanel()).not.toBeNull();
-      expect(relationRow('Coincident').getAttribute('aria-pressed')).toBe('false'); expect(refocused).toBe(0);
+      expect(relationRow('Coincident').getAttribute('aria-pressed')).toBe('true'); expect(refocused).toBe(0);
+      expect(() => relationRow('Angle')).toThrow('missing');
     });
 
-    it('never places a dimension whose picks Escape dropped, and opens no relations panel for it', async () => {
+    it('never places a dimension whose picks Escape dropped, and opens no value editor for it', async () => {
       await open();
       await replace(current => current.filter(relation => relation.id !== 'measured'));
       await geometryMenu('side', 'Dimension');
       expect(pickInstruction()).toBe('Length · Click or press Enter to place; right-click for its horizontal or vertical distance · Or choose a second line, a point, a curve or an axis · Escape drops the picks');
-      expect(relationsPanel()).toBeNull();
+      expect(valueEditor()).toBeNull();
       await canvasKey('Escape'); await canvasKey('Enter');
       expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'angle', 'size', 'x']);
       // An Escape outside the canvas with nothing picked leaves the tool through the shared Escape, which places nothing either.
       await windowEscape(); expect(button('Dimension').getAttribute('aria-pressed')).toBe('false');
-      await canvasKey('Enter'); expect(relationsPanel()).toBeNull();
+      await canvasKey('Enter'); expect(valueEditor()).toBeNull();
       expect(relations().map(relation => relation.id)).toEqual(['length', 'diagonal', 'angle', 'size', 'x']);
     });
 
@@ -2936,6 +2963,47 @@ describe('CAD sketch interaction', () => {
       const selectedGlyphs = () => [...new Set([...container.querySelectorAll('[data-cad-sketch-relation-glyph].is-selected')].map(item => item.getAttribute('data-cad-sketch-relation-glyph')))];
       const litGlyphs = () => [...container.querySelectorAll('[data-cad-highlight-glyph]')].map(item => item.getAttribute('data-cad-highlight-glyph'));
       const relationIds = () => relations().map(relation => relation.id);
+
+      it('offers the selection\'s relations as an icon row that applies and removes them, and asks for no offers, analysis or render as the pointer moves', async () => {
+        const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+        // An analysis that never answers counts the requests alone.
+        const inspect = vi.fn<NonNullable<CadWorkbenchProps['onInspectSketchConstraints']>>(() => new Promise<never>(() => undefined));
+        await openPlate({ build: null, buildState: 'idle', onEditMany, onInspectSketchConstraints: inspect });
+        const row = () => container.querySelector<HTMLElement>('[data-cad-sketch-selection-actions]');
+        const offer = (name: string) => { const found = row()?.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`); if (!found) throw new Error(`${name} offer missing.`); return found; };
+        const parallels = () => relations().filter(relation => relation.kind === 'parallel' && relation.lineIds.includes('left'));
+        expect(row()).toBeNull();
+        offerRequests.mockClear();
+        await act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'entity', id: 'right' }, { kind: 'entity', id: 'left' }] }));
+        expect(row()?.getAttribute('role')).toBe('toolbar'); expect(row()?.getAttribute('aria-label')).toBe('Relations for the selection');
+        expect([...row()!.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(expect.arrayContaining(['Parallel', 'Perpendicular', 'Equal length', 'Dimension the selection']));
+        expect(offer('Parallel').getAttribute('aria-pressed')).toBe('false');
+        const asked = offerRequests.mock.calls.length; expect(asked).toBeGreaterThan(0);
+        // Pointer moves over the canvas render it, never the workbench: no offers, analysis or preparation are asked for.
+        const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]')!, inspected = inspect.mock.calls.length;
+        workbenchRenders = 0; canvasRenders.mockClear();
+        for (const offset of [0, 7, 19, 40]) await act(async () => pointer(canvas, 'pointermove', { clientX: 200 + offset, clientY: 150 + offset }));
+        expect(canvasRenders).toHaveBeenCalled(); expect(workbenchRenders).toBe(0);
+        expect(offerRequests).toHaveBeenCalledTimes(asked); expect(inspect).toHaveBeenCalledTimes(inspected);
+        // Parallel adds one relation through the edit path, and shows pressed; pressing it again removes that relation.
+        await act(async () => offer('Parallel').click());
+        expect(parallels()).toHaveLength(1); expect(offer('Parallel').getAttribute('aria-pressed')).toBe('true');
+        const added = parallels()[0].id;
+        await act(async () => offer('Parallel').click());
+        expect(onEditMany.mock.lastCall?.[0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: added }]);
+        expect(parallels()).toEqual([]); expect(offer('Parallel').getAttribute('aria-pressed')).toBe('false');
+        // An edge alone takes Fix; Escape on the row hands focus back to the canvas and keeps the selection.
+        await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'top' } }));
+        expect(offer('Fix').disabled).toBe(false);
+        await act(async () => { offer('Fix').focus(); offer('Fix').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+        expect(document.activeElement).toBe(canvas); expect(geometry()).toEqual([{ kind: 'entity', id: 'top' }]);
+        // Dimension starts the Dimension tool on the selection, and the row stays hidden while another tool draws.
+        await act(async () => offer('Dimension the selection').click());
+        expect(button('Dimension').getAttribute('aria-pressed')).toBe('true'); expect(row()).toBeNull();
+        await canvasKey('Escape'); await canvasKey('Escape');
+        await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'top' } })); expect(row()).not.toBeNull();
+        await click('Line'); expect(row()).toBeNull();
+      });
 
       it('marks every relation on the geometry it holds, names it by its operands and lights its geometry and sibling glyphs on hover without rendering the canvas', async () => {
         const source = await openPlate();
@@ -3003,8 +3071,8 @@ describe('CAD sketch interaction', () => {
       it('opens the relations list on its row from a double-click or Enter, and offers Show in relations list and Delete in its menu', async () => {
         const source = await openPlate();
         await doubleClickGlyph('across');
-        expect(relationsPanel()).not.toBeNull(); expect(relationRow('Parallel').getAttribute('aria-pressed')).toBe('true');
-        // The relation stays the selection while its row is open, and the list works on the lines it holds.
+        expect(valueEditor()).toBeNull(); expect(relationRow('Parallel').getAttribute('aria-pressed')).toBe('true');
+        // The relation stays the selection, mark and row alike.
         expect(selectedGlyphs()).toEqual(['across']); expect(geometry()).toEqual([]); expect(currentDocument).toBe(source);
         await canvasKey('Escape'); await canvasKey('Escape');
         await glyphKey('upright', 'Enter'); expect(relationRow('Vertical').getAttribute('aria-pressed')).toBe('true');
@@ -3028,7 +3096,7 @@ describe('CAD sketch interaction', () => {
         // Every mark of the bottom edge's relations lights, the Parallel's mark on the top edge too.
         expect([...container.querySelectorAll('[data-cad-sketch-relation-glyph].is-related')].map(item => item.getAttribute('data-cad-sketch-relation-glyph'))).toEqual(['level', 'across', 'across']);
         await geometryMenu('bottom', 'Constraints and dimensions');
-        const row = relationRow('Parallel').closest('li')!, panel = row.closest('form')!;
+        const row = relationRow('Parallel'), panel = row.closest('[data-cad-sketch-relation-list]')!;
         await act(async () => panel.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row })));
         expect(litGlyphs()).toEqual(['across', 'across']); expect(highlighted('entity')).toEqual(['bottom', 'top']);
         await act(async () => row.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: panel })));
@@ -3120,7 +3188,7 @@ describe('CAD sketch interaction', () => {
         await click('Dimension'); expect(inert()).toBe(true); expect(label('length').getAttribute('tabindex')).toBe('0');
         await clickGlyph('level'); expect(selectedGlyphs()).toEqual([]); expect(status()).toBeNull();
         await act(async () => keyboardPick(container.querySelector('[data-cad-sketch-entity="right"]')!));
-        expect(inert()).toBe(true); await glyphKey('upright', 'Enter'); expect(selectedGlyphs()).toEqual([]); expect(relationsPanel()).toBeNull();
+        expect(inert()).toBe(true); await glyphKey('upright', 'Enter'); expect(selectedGlyphs()).toEqual([]); expect(valueEditor()).toBeNull();
         await canvasKey('Escape'); await canvasKey('Escape'); expect(toolButton('Select').getAttribute('aria-pressed')).toBe('true'); expect(inert()).toBe(false);
       });
     });
@@ -4688,8 +4756,10 @@ describe('sketch definition colours and locks', () => {
     await click('Dimension'); await canvasKey('Enter'); await canvasKey('Enter'); const length = container.querySelector<HTMLInputElement>('input[aria-label="Length mm"]'); if (!length) throw new Error('Length field missing.'); await input(length, '40');
     for (let turn = 0; turn < 3; turn++) await act(async () => new Promise(resolve => setTimeout(resolve, 125)));
     expect(prepare).toHaveBeenCalled();
-    // All ten redundant relations hold their lines, though the feedback lists eight subjects.
-    expect(container.textContent).toContain('more');
+    // All ten redundant relations hold their lines, though the header lists eight subjects and counts the rest.
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-cad-sketch-issues]')!.click());
+    expect(container.querySelectorAll('ul[aria-label="Constraint issues"] > li > button')).toHaveLength(8);
+    expect(container.querySelector('.cad-sketch-header-issue-more')?.textContent).toMatch(/^\d+ more affected items$/);
     expect(marked('redundant')).toEqual([...rungs.flatMap(index => [`point l${index}`, `point r${index}`]), ...rungs.map(index => `rung${index}`)].sort());
     expect(marked('conflicting')).toEqual(['point t0', 'point t1']);
     expect(point('t0').classList.contains('is-revealed')).toBe(true);
