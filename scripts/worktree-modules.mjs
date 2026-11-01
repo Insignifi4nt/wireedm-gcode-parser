@@ -39,15 +39,33 @@ const removeLink = (target) => {
   }
 };
 
+// Every link under a folder, found by walking real directories only: a link is listed, never entered.
 const linksIn = (folder) => {
   const found = [];
-  if (!fs.existsSync(folder) || isLink(folder)) return found;
-  for (const name of fs.readdirSync(folder)) {
-    const full = path.join(folder, name);
-    if (isLink(full)) found.push(full);
-    else if (name.startsWith('@') && fs.lstatSync(full).isDirectory()) found.push(...linksIn(full));
-  }
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      const stat = fs.lstatSync(full);
+      if (stat.isSymbolicLink()) found.push(full);
+      else if (stat.isDirectory()) walk(full);
+    }
+  };
+  if (fs.existsSync(folder) && !isLink(folder)) walk(folder);
   return found;
+};
+
+const comparable = (target) => {
+  // Windows may report a junction target with the \\?\ long-path prefix.
+  const resolved = path.resolve(target.replace(/^\\\\\?\\/, ''));
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
+const pointsAt = (link, target) => comparable(path.resolve(path.dirname(link), fs.readlinkSync(link))) === comparable(target);
+
+// A folder that must be a real local directory: a link in its place is removed first, so nothing
+// is ever created through it inside another install.
+const ensureRealDirectory = (dir) => {
+  if (isLink(dir)) removeLink(dir);
+  fs.mkdirSync(dir, { recursive: true });
 };
 
 if (root === mainRoot) {
@@ -61,20 +79,29 @@ if (command === 'link') {
     process.exit(1);
   }
   // A worktree may start with node_modules as one link to the shared install: replace it.
-  if (isLink(local)) removeLink(local);
-  fs.mkdirSync(local, { recursive: true });
+  ensureRealDirectory(local);
   let linked = 0;
   for (const name of fs.readdirSync(shared)) {
     if (name.startsWith('.vite') || name === '.tmp' || name === '.cache') continue;
     const from = path.join(shared, name);
     const scope = name.startsWith('@') && fs.statSync(from).isDirectory();
     const names = scope ? fs.readdirSync(from).map((child) => path.join(name, child)) : [name];
-    if (scope) fs.mkdirSync(path.join(local, name), { recursive: true });
+    if (scope) ensureRealDirectory(path.join(local, name));
     for (const entry of names) {
       const to = path.join(local, entry);
-      if (fs.existsSync(to) || isLink(to)) continue;
       const own = entry.startsWith(`@wire-edm${path.sep}`) ? path.join(root, 'packages', path.basename(entry)) : null;
       const source = own && fs.existsSync(own) ? own : path.join(shared, entry);
+      if (isLink(to)) {
+        // An existing link stays only if it already points where this run would point it.
+        if (pointsAt(to, source)) continue;
+        removeLink(to);
+      } else if (fs.existsSync(to)) {
+        if (own) {
+          console.error(`${to} is a real folder or file, not a link to ${source}. Remove it and run link again.`);
+          process.exit(1);
+        }
+        continue;
+      }
       if (fs.statSync(source).isDirectory()) fs.symlinkSync(source, to, linkType);
       else fs.copyFileSync(source, to);
       linked += 1;

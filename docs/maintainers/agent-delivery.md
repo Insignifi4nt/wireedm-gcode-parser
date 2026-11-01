@@ -55,8 +55,9 @@ If a default model is unavailable, pause and ask the owner. Never substitute ano
    - Later rounds re-check only the fixes and anything they touch.
 7. **Ready and merge.** Merge only a commit that the review covered and CI passed.
    - The last review round must have reviewed the pull request's current head. Any commit pushed after that review must be reassessed before merging:
-     - a merge with main that conflicted only on version lines, checked by the coordinator with `git diff <reviewed-sha> HEAD`;
+     - a merge with main whose own changes touch only the version: `package.json` `version`, the two top `version` fields of `package-lock.json`, and the release record's file name, `version` and `previousVersion`. The coordinator checks this with `git show --remerge-diff <merge-sha>`, which shows only what the merge itself changed beyond an automatic merge. Anything else in that output gets a narrow review;
      - a wording fix the coordinator made itself;
+     - either way, the coordinator records the reassessed head SHA in the pull request before merging it;
      - anything else gets another, narrow review round.
    - When nothing blocks and CI is green on that head, mark the pull request ready and merge it, pinned to that commit (see [Pull requests and versions](#pull-requests-and-versions)).
    - Check the branch is deleted, remove the worktree, and record the result.
