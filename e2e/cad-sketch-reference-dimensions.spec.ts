@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures/native-sketch-solver';
-import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('persists passive dimensions through private sketch Finish and converts a diameter without losing exact geometry or Undo',async({page})=>{
   await prepareCadTools(page);await call(page,'cad_open_workspace');
@@ -16,8 +16,9 @@ test('persists passive dimensions through private sketch Finish and converts a d
   const finish=async()=>{await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);};
   await edit();await page.getByRole('button',{name:'Point 1 in Measured plate',exact:true}).press('Enter');
   await page.getByRole('button',{name:'Point 3 in Measured plate',exact:true}).press('Shift+Enter');
-  await (await relationControl(page, 'button', 'Reference distance')).click();await apply();
-  await page.locator('[data-cad-sketch-entity="bore"]').press('Enter');await (await relationControl(page, 'button', 'Reference diameter')).click();await apply();
+  // The selection's inspector saves what it measures as a reference at once; a measurement already saved cannot be saved again.
+  const distance=page.getByRole('button',{name:'Reference distance',exact:true});await distance.click();await expect(distance).toBeDisabled();
+  await page.locator('[data-cad-sketch-entity="bore"]').press('Enter');const diameter=page.getByRole('button',{name:'Reference diameter',exact:true});await diameter.click();await expect(diameter).toBeDisabled();
   expect((await call(page,'cad_get_feature',{expectedVersion:base.version,featureId:'plate'})).feature).toEqual(sketch);
   await finish();let current=await context(page);
   const measured=(await call(page,'cad_get_feature',{expectedVersion:current.version,featureId:'plate'})).feature;

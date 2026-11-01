@@ -11,7 +11,8 @@ import { cadSketchRelationOffers } from '@/domain/cad/sketch-relations/cadSketch
 import { cadSketchRelationKey, cadSketchRelationKindName, cadSketchRelationMeaning } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { compileCadSketchEquations } from '@/domain/cad/sketch-solver/compileCadSketchEquations';
 import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
-import { cadSketchConstraintChoices, cadSketchConstraintStep } from './cadSketchConstraintTool';
+import { cadSketchConstraintStep } from './cadSketchConstraintTool';
+import { cadSketchConstraintChoices } from './sketch-relations/__tests__/cadSketchToolChoices';
 import { loadCadSketchTestNativeSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 import { attemptCadSketchNativeSolve } from './sketch-solver/native/cadSketchNativeAttempt';
 import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';

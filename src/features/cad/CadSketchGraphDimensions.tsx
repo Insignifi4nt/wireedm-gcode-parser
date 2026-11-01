@@ -6,6 +6,7 @@ import { cadSketchDimensionArcPath, cadSketchDimensionMove, cadSketchGraphDimens
   type CadSketchDimensionRelation, type CadSketchGraphDimensionLayout } from './cadSketchGraphDimensionLayout';
 import { cadSketchDimensionPickOf, createCadSketchDimensionKeys, isCadSketchDimensionRelation, type CadSketchDimensionPick, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import type { SketchPoint } from './cadSketchInteraction';
+import { focusFell, restoreFocus } from './cadFocus';
 import './cad-sketch-graph-dimensions.css';
 
 export interface CadSketchGraphDimensionsProps {
@@ -122,6 +123,13 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
   // The drawn dimension whose line or arrow took the last primary press; only that press's click and double-click reach it.
   const pressed = useRef<string | null>(null);
   const labels = useRef(new Map<string, SVGGElement>());
+  // A label that leaves the drawing while focused, because its dimension was deleted or hidden, gives focus to the canvas, so the canvas keys
+  // keep working. Its ref is also let go as it renders again, so the label is checked once that render is done.
+  const forgetLabel = (key: string) => {
+    const label = labels.current.get(key), canvas = label?.ownerSVGElement;
+    labels.current.delete(key);
+    if (label && label === document.activeElement) queueMicrotask(() => { if (!label.isConnected && focusFell()) restoreFocus(canvas); });
+  };
   const hide = () => { if (hovered.current) highlight?.hide(hovered.current); hovered.current = null; point(null); };
   const hideOnUnmount = useRef(hide); hideOnUnmount.current = hide;
   // A window that loses focus never sends the pointer leave, so it drops the hover too.
@@ -305,7 +313,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
           {measure('cad-sketch-graph-dimension-line')}
           {arrows('cad-sketch-graph-dimension-arrow')}
         </g>
-        <g ref={element => { if (element) labels.current.set(elementKey, element); else labels.current.delete(elementKey); }} className="cad-sketch-graph-dimension-label" role="button" aria-label={`${reference ? 'Reference dimension' : 'Dimension'} ${name} ${quantity}${roles}, press Enter to edit`}
+        <g ref={element => { if (element) labels.current.set(elementKey, element); else forgetLabel(elementKey); }} className="cad-sketch-graph-dimension-label" role="button" aria-label={`${reference ? 'Reference dimension' : 'Dimension'} ${name} ${quantity}${roles}, press Enter to edit`}
           aria-pressed={selected || inspected} aria-disabled={!interactive || undefined} tabIndex={interactive ? 0 : -1}
           transform={labelTransform(dimension, center, mmPerPixel)}
           onKeyDown={key}>

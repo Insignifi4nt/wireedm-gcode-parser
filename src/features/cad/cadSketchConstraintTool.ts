@@ -1,7 +1,7 @@
 import { readableMessage } from '@/lib/userMessage';
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { cadSketchMirrorIndex } from '@/domain/cad/cadSketchSymmetryRelations';
-import { cadSketchPickOrders, cadSketchRelationPlanner } from '@/domain/cad/sketch-relations/cadSketchRelationPlanning';
+import { cadSketchRelationPlanner } from '@/domain/cad/sketch-relations/cadSketchRelationPlanning';
 import type { CadSketchEdge, CadSketchRelationPlan } from '@/domain/cad/sketch-relations/cadSketchRelationTypes';
 import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_ORIGIN_ID, CAD_SKETCH_V_AXIS_ID, isCadSketchVirtualId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
@@ -28,7 +28,7 @@ export type CadSketchConstraintPick = CadSketchGraphSelection;
 export type CadSketchConstraintStep =
   /**
    * `refusable` names picks the step does not offer that the tool refuses with a reason as the last pick, such as a line with an arc for
-   * Equal: selection-first choices list them as blocked, with that reason.
+   * Equal, so the tool refuses such a pair, as the relation offers do, rather than not taking it.
    */
   | { readonly status: 'more'; readonly prompt: string; readonly entityIds: readonly string[]; readonly pointIds: readonly string[];
     readonly refusable?: { readonly entityIds: readonly string[]; readonly pointIds: readonly string[] } }
@@ -178,50 +178,4 @@ export function cadSketchConstraintStep(graph: CadSketchGraph, tool: CadSketchCo
     }
     case 'fix': return points.length ? planned(planning.fix(points[0])) : more('Choose a point to fix', [], allPoints);
   }
-}
-
-/** One row of the selection-first constraint list, as CATIA's Constraint Definition dialog offers it. */
-export type CadSketchConstraintChoice =
-  | { readonly tool: CadSketchConstraintTool; readonly state: 'available'; readonly relations: readonly CadSketchGraphRelation[] }
-  | { readonly tool: CadSketchConstraintTool; readonly state: 'applied'; readonly relationIds: readonly string[] }
-  | { readonly tool: CadSketchConstraintTool; readonly state: 'blocked'; readonly reason: string };
-
-/**
- * The constraints that take exactly the selected operands, in any order: the ones that can be added, the ones already
- * applied (with the relations that hold them) and the ones that fit but cannot be added now. Each tool's own steps decide,
- * so this list never offers what the tool-first command would refuse. A tool that does not offer the origin or an axis the
- * selection names is listed as blocked when its planning says why, such as Equal with an axis, which has no length. A selection
- * of only the origin and the axes relates nothing that can move, so it is offered nothing.
- */
-export function cadSketchConstraintChoices(graph: CadSketchGraph, picks: readonly CadSketchConstraintPick[], newId: () => string): readonly CadSketchConstraintChoice[] {
-  if (!picks.length || picks.length > 3 || picks.every(pick => isCadSketchVirtualId(pick.id))) return [];
-  return CAD_SKETCH_CONSTRAINT_TOOLS.flatMap((tool): CadSketchConstraintChoice[] => {
-    let blocked: string | null = null;
-    for (const order of cadSketchPickOrders(picks)) {
-      const step = completedStep(graph, tool, order, newId);
-      if (step?.status === 'ready') return [{ tool, state: 'available', relations: step.relations }];
-      if (step?.status === 'invalid' && step.applied) return [{ tool, state: 'applied', relationIds: step.applied }];
-      if (step?.status === 'invalid') blocked ??= step.reason;
-    }
-    return blocked ? [{ tool, state: 'blocked', reason: blocked }] : [];
-  });
-}
-
-/**
- * The final step when every pick is one the tool asked for in turn, or null when the tool takes different operands. The origin or an
- * axis the tool did not offer, or a pick the step names refusable, is still let through as the last pick, where the tool reads every
- * pick, but only to say why it refuses it.
- */
-function completedStep(graph: CadSketchGraph, tool: CadSketchConstraintTool, picks: readonly CadSketchConstraintPick[], newId: () => string) {
-  let unoffered = false;
-  for (let index = 0; index < picks.length; index++) {
-    const step = cadSketchConstraintStep(graph, tool, picks.slice(0, index), newId), pick = picks[index];
-    if (step.status !== 'more') return null;
-    if ((pick.kind === 'point' ? step.pointIds : step.entityIds).includes(pick.id)) continue;
-    const refusable = step.refusable && (pick.kind === 'point' ? step.refusable.pointIds : step.refusable.entityIds).includes(pick.id);
-    if (index < picks.length - 1 || !refusable && !isCadSketchVirtualId(pick.id)) return null;
-    unoffered = true;
-  }
-  const step = cadSketchConstraintStep(graph, tool, picks, newId);
-  return step.status === 'more' || unoffered && (step.status !== 'invalid' || step.applied) ? null : step;
 }

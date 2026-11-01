@@ -6,13 +6,21 @@ import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmis
 import type { CadPrepareEdits } from './useCadPreparedPreview';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
 import { isCadSketchGraphSelected, reconcileCadSketchGraphSelection, toggleCadSketchGraphSelection, type CadSketchGeometryPick } from './cadSketchGraphSelection';
-import { cadSketchAxisOfNormal, cadSketchFixedElementError, cadSketchVirtualSubject, isCadSketchVirtualId, isCadSketchVirtualSelection } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
+import { cadSketchFixedElementError, cadSketchVirtualSubject, isCadSketchVirtualId, isCadSketchVirtualSelection } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { createCadFreshSketchDrawing, createCadFreshSketchGraph, type CadFreshSketchDrawing } from '@/domain/cad/cadFreshSketchGraph';
 import { createCadPathDraftGraph } from './cadPathDraftGraph';
 import { inspectCadSketchCornerTarget } from '@/domain/cad/cadSketchCornerTreatment';
 import { cadPathDraftInferences, type CadPathDraft } from './cadPathDrawing';
-import { CadSketchRelationsPanel, type CadSketchRelationCommand } from './CadSketchRelationsPanel';
+import { CadSketchContextHeader } from './CadSketchContextHeader';
+import { CadSketchDimensionValueEditor, isCadSketchValueRelation } from './CadSketchDimensionValueEditor';
+import { CadSketchCornerEditor, CadSketchMoveEditor } from './CadSketchGeometryEditors';
+import { CadSketchSelectionInspector } from './CadSketchSelectionInspector';
+import { CadSketchRelationList } from './CadSketchRelationList';
+import { cadSketchSelectionRelationActions, type CadSketchSelectionAction, type CadSketchSelectionActionsModel } from './CadSketchSelectionActions';
+import { cadSketchAnalysisIssues, cadSketchIssuesStandInForD1, NO_CAD_SKETCH_ISSUES_BY_RELATION, type CadSketchAnalysisIssues, type CadSketchIssue } from './cadSketchIssues';
+import { cadSketchRelationOffers, type CadSketchRelationOffer } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
+import type { CadSketchWarningsRecord } from './cadEditPreparation';
 import {
   CAD_SKETCH_ORIGIN_PAIR_NAME, cadSketchAnnotationCount, cadSketchDimensionIds, cadSketchDimensionPick, cadSketchDimensionPickOf, cadSketchDrawnAnnotations, cadSketchRelationHighlight, createCadSketchHighlightStore,
   isCadSketchDimensionInGraph, isCadSketchDimensionPickCurrent, isCadSketchDimensionRelation, isCadSketchGlyphRelation, isCadSketchOriginPair, NO_SKETCH_DIMENSIONS, reconcileCadSketchDimensionSelection,
@@ -20,7 +28,7 @@ import {
 } from './cadSketchDimensionSelection';
 import { cadSketchRelationName } from './cadSketchRelationNames';
 import { CAD_SKETCH_RELATION_ICONS } from './CadSketchRelationGlyphs';
-import { cadSketchAxisDistanceLine, cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
+import { cadSketchDimensionToDriving, cadSketchDimensionToReference } from './cadSketchDimensionCommands';
 import {
   CAD_SKETCH_DIMENSION_EXISTING_REASON, cadSketchDimensionBatchAt, cadSketchDimensionCandidateAt, cadSketchDimensionPickAllowed, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRetry,
   NO_SKETCH_DIMENSION_PLAN, planCadSketchDimension, type CadSketchDimensionForm, type CadSketchDimensionOperand
@@ -44,7 +52,7 @@ import type { CadSketchOffsetSource } from '@/domain/cad/cadSketchOffset';
 import type { CadSketchAreaRepairInspection, CadSketchAreaRepairs } from './cadSketchEditDraft';
 import { CadSketchConstraintStatus, type CadInspectSketchConstraints, type CadSketchConstraintReport } from './CadSketchConstraintStatus';
 import { cadSketchDefinitionMarks, cadSketchDiagnosisMarks, type CadSketchDefinitionMarks, type CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
-import { CadSketchPreparationError, type CadSketchConstraintFeedbackSubject } from './cadSketchConstraintFeedback';
+import { CadSketchPreparationError, type CadSketchConstraintFeedback } from './cadSketchConstraintFeedback';
 import { appendCadSketchGraphWithInferences, cadSketchInferenceNote } from './cadSketchInferenceFallback';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -84,7 +92,7 @@ import { createCadWorkbenchViewportControls, type CadViewportBindings } from './
 import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './cadViewportControls';
 import { CadPatternCommand } from './CadPatternCommand';
 import { CadToolbarMenu } from './CadToolbarMenu';
-import { CAD_SKETCH_CONSTRAINT_TOOLS, cadSketchConstraintChoices, cadSketchConstraintStep, cadSketchConstraintToolHelp, cadSketchConstraintToolLabels, type CadSketchConstraintChoice, type CadSketchConstraintPick, type CadSketchConstraintTool } from './cadSketchConstraintTool';
+import { CAD_SKETCH_CONSTRAINT_TOOLS, cadSketchConstraintStep, cadSketchConstraintToolHelp, cadSketchConstraintToolLabels, type CadSketchConstraintPick, type CadSketchConstraintTool } from './cadSketchConstraintTool';
 import { cadSketchRelationPlacement } from '@/domain/cad/cadSketchRelationPlacement';
 import { CadEdgeTreatmentCommand } from './CadEdgeTreatmentCommand';
 import { CadPluginsPanel, type CadPluginCommands } from './CadPluginsPanel';
@@ -109,6 +117,11 @@ import { cadDirectDepthTarget, createCadDirectDepthControl, type CadDirectDepthE
 import { cadUnobscuredFitArea, type CadFitAreaReader } from './cadFitArea';
 const NO_MESHES: readonly CadBuildResult['meshes'][number][] = Object.freeze([]);
 const NO_SKETCH_SELECTIONS: readonly CadSketchGraphSelection[] = Object.freeze([]);
+const NO_RELATION_IDS: readonly string[] = Object.freeze([]);
+const NO_RELATION_OFFERS: readonly CadSketchRelationOffer[] = Object.freeze([]);
+const NO_SELECTION_RELATIONS: readonly CadSketchSelectionAction[] = Object.freeze([]);
+/** A relation of the selection in a right-click menu: Remove for an applied one, as the icon shown pressed removes it. */
+const relationMenuLabel = (action: CadSketchSelectionAction) => action.state === 'applied' ? `Remove ${action.label.toLowerCase()}` : action.label;
 function afterCadEdit(completion: CadEditCompletion, accepted: () => void, signal?: AbortSignal): CadEditCompletion {
   const finish = (result: Awaited<CadEditCompletion>) => { signal?.throwIfAborted(); accepted(); return result; };
   return completion && 'then' in completion ? completion.then(finish) : finish(completion);
@@ -120,11 +133,12 @@ function constraintToolIcon(tool: CadSketchConstraintTool) {
   return <Icon size={14} />;
 }
 /**
- * A canvas annotation's editor, for a dimension or a relation glyph: the document, sketch and annotation it belongs to, and the geometry it
- * works on, kept apart from the selection.
+ * A sketch command on the selection: a value editor at a dimension, relation mark or tree row, or the move and corner editors. A value
+ * editor belongs to its document, sketch and relation; `pick` is the drawn dimension or mark it was opened on, which stays the whole
+ * selection, and `version` the document version it was opened at, so an editor opened as its relation is added waits for that relation.
  */
-type DimensionEditor = { readonly documentId: string; readonly sketchId: string; readonly pick: CadSketchDimensionPick; readonly operands: readonly CadSketchGraphSelection[] };
-type GraphRelationCommand = CadSketchRelationCommand & { token: string; dimension?: DimensionEditor };
+type GraphRelationCommand = { readonly kind: 'value'; readonly token: string; readonly documentId: string; readonly sketchId: string; readonly relationId: string; readonly pick: CadSketchDimensionPick | null; readonly version: string }
+  | { readonly kind: 'move' | 'fillet' | 'chamfer'; readonly token: string };
 /**
  * The Dimension tool from the moment it starts until it ends. `previousGraphPick` and `previousProfileId` come back when it ends without
  * placing anything; `placed` keeps the dimensions it placed or reused last, with whether they have been selected yet; `picks` are
@@ -140,20 +154,12 @@ const NO_DIMENSION_OPERANDS: readonly CadSketchDimensionOperand[] = Object.freez
 const DIMENSION_REFERENCE_STATUS = 'Placed as a reference: a driving dimension would over-define the sketch.';
 const DIMENSION_REUSED_STATUS = 'Already dimensioned: that dimension is selected, with the relation added that keeps it measuring these picks.';
 const NO_SKETCH_RELATIONS: readonly CadSketchGraphRelation[] = Object.freeze([]);
-/**
- * A relations list command follows the row it edits, so a remounted panel reopens that row, and records a row that closes, so a remount
- * never replays a cancelled editor. Only a canvas annotation's row has an editor; a command that places a new dimension keeps its kind.
- */
-function followRelationRow(command: GraphRelationCommand, relationId: string | null, dimension?: DimensionEditor): GraphRelationCommand {
-  const next: GraphRelationCommand = command.kind !== 'inspect' && command.kind !== 'relations' ? { ...command }
-    : relationId ? { kind: 'inspect', relationId, token: command.token } : { kind: 'relations', token: command.token };
-  if (dimension) next.dimension = dimension; else delete next.dimension;
-  return next;
-}
 type CanvasMenu = { document: CadDocument; version: string; buildId: string | null } & (
   { kind: 'solid'; request: CadViewportContextMenuRequest } |
   { kind: 'sketch'; sketchId: string; request: CadSketchContextMenuRequest } |
-  { kind: 'annotation'; sketchId: string; picks: readonly CadSketchDimensionPick[]; cancel: number; request: { readonly clientX: number; readonly clientY: number } });
+  { kind: 'annotation'; sketchId: string; picks: readonly CadSketchDimensionPick[]; cancel: number; request: { readonly clientX: number; readonly clientY: number } } |
+  /** A relations tree row whose relation the canvas does not draw. */
+  { kind: 'relation-row'; sketchId: string; relationId: string; cancel: number; request: { readonly clientX: number; readonly clientY: number } });
 import './cad-workbench.css';
 import './cad-plugins.css';
 
@@ -177,6 +183,8 @@ export interface CadWorkbenchProps extends CadPluginCommands {
   onEditMany(edits: readonly CadEdit[], signal?: AbortSignal): CadEditCompletion;
   onPrepareEdits?: CadPrepareEdits;
   onInspectSketchConstraints?: CadInspectSketchConstraints;
+  /** Shrinks an accepted sketch edit made that no length driver sets, for the document version it produced. */
+  sketchWarnings?: CadSketchWarningsRecord | null;
   onUndo(): void;
   onRedo(): void;
   onBack(): void;
@@ -205,8 +213,10 @@ interface SketchAnalysisState {
   readonly document: CadDocument; readonly version: string; readonly sketchId: string;
   readonly freedom: number | null; readonly locks: boolean;
   readonly definition: CadSketchDefinitionMarks | null; readonly diagnosis: CadSketchDiagnosisMarks | null;
+  /** The analysis's conflicting, redundant and unmet relations, as the issue adapter reads them. */
+  readonly issues: CadSketchAnalysisIssues | null;
 }
-const NO_SKETCH_ANALYSIS = Object.freeze({ freedom: null, locks: false, definition: null, diagnosis: null });
+const NO_SKETCH_ANALYSIS = Object.freeze({ freedom: null, locks: false, definition: null, diagnosis: null, issues: null });
 /**
  * Freedom and definition locks need the exact accepted document and version. Colours stay with the same sketch of the
  * same document until the next result replaces them, so undo or a parameter change never moves an old lock onto new state.
@@ -216,7 +226,7 @@ function shownSketchAnalysis(state: SketchAnalysisState | null, document: CadDoc
   // A version that only moved this sketch's dimensions holds the same analysis, so its freedom and locks show from its first render.
   // The same document at another version, as undo restores it, waits for its own analysis.
   const exact = state.document === document ? state.version === version : cadDocumentsPlacedAlike(state.document, document, state.sketchId);
-  return { freedom: exact ? state.freedom : null, locks: exact && state.locks, definition: state.definition, diagnosis: state.diagnosis };
+  return { freedom: exact ? state.freedom : null, locks: exact && state.locks, definition: state.definition, diagnosis: state.diagnosis, issues: state.issues };
 }
 
 /** The kinds the model view's selection filter offers. Vertices are not picked in 3D, so that kind is left to the sketch canvas. */
@@ -268,8 +278,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const commandSubmission = useCadEditSubmission();
   const { document, build, buildState, dirty, canUndo, canRedo, storageBusy = false, externalWorkflowOpen = false } = props;
   const getFitArea = useCallback<CadFitAreaReader>(viewport => {
-    // Query current DOM only on Fit: panels never alter canvas layout or camera.
-    const overlays = viewport.closest('.cad-workbench')?.querySelectorAll<HTMLElement>('[data-cad-properties], [data-cad-model-tree], [data-cad-command-dock]');
+    // Query current DOM only on Fit: panels never alter canvas layout or camera. The sketch bar counts too, so a fitted sketch and its
+    // dimensions start clear of it.
+    const overlays = viewport.closest('.cad-workbench')?.querySelectorAll<HTMLElement>('[data-cad-properties], [data-cad-model-tree], [data-cad-command-dock], [data-cad-sketch-header]');
     const bounds = viewport.getBoundingClientRect();
     return cadUnobscuredFitArea({ left: bounds.left, top: bounds.top, width: viewport.clientWidth, height: viewport.clientHeight },
       [...overlays ?? []].filter(overlay => !overlay.hidden).map(overlay => overlay.getBoundingClientRect()));
@@ -302,10 +313,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const [dimensionTool, setDimensionTool] = useState<DimensionToolSession<typeof graphPick> | null>(null);
   /** The pointer over the sketch while the tool is on; only its preview and coordinate readout subscribe. */
   const [dimensionPointer] = useState(createCadSketchPointerStore);
-  /**
-   * The command open in the relations panel. A dimension editor carries the dimension it edits and the geometry that dimension measures:
-   * the panel works on that geometry without selecting it, so the selection, and Delete, stay on the dimension.
-   */
+  /** The value editor, or the move or corner editor, open on the selection. */
   const [graphRelationCommand, setGraphRelationCommand] = useState<GraphRelationCommand | null>(null);
   const [offsetCommand, setOffsetCommand] = useState<{ sketchId: string; source: CadSketchOffsetSource; token: string } | null>(null);
   const [mirrorCommand, setMirrorCommand] = useState<{ sketchId: string; entityIds: readonly string[]; token: string } | null>(null);
@@ -319,8 +327,16 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const [profileCopyCommand, setProfileCopyCommand] = useState<{ request: CadSketchProfileCopyRequest; token: string } | null>(null);
   const [profileCopyPreview, setProfileCopyPreview] = useState<CadDocument | null>(null);
   const [profileCopyAccepted, setProfileCopyAccepted] = useState<{ document: CadDocument; sketchId: string } | null>(null);
-  const [relationInspection, setRelationInspection] = useState<{ sketchId: string; relation: CadSketchGraphRelation } | null>(null);
-  const [diagnosticInspection, setDiagnosticInspection] = useState<{ document: CadDocument; sketchId: string; subject: CadSketchConstraintFeedbackSubject } | null>(null);
+  const [diagnosticInspection, setDiagnosticInspection] = useState<{ document: CadDocument; sketchId: string; issue: CadSketchIssue } | null>(null);
+  /** The refusal of the last edit made from the icon row, a value editor or a sketch editor, until the next edit or document. */
+  const [editFeedback, setEditFeedback] = useState<{ document: CadDocument; feedback: CadSketchConstraintFeedback } | null>(null);
+  /** Relations tree rows selected whose relations the canvas does not draw; drawn ones select through their marks. */
+  const [relationRowPick, setRelationRowPick] = useState<{ documentId: string; sketchId: string; relationIds: readonly string[] } | null>(null);
+  /** The tree row to scroll to, and the geometry whose relations alone the list shows, kept while the selection moves to its rows. */
+  const [relationListReveal, setRelationListReveal] = useState<{ relationId: string | null; token: string } | null>(null);
+  // The relations list under the sketch starts collapsed, so opening a sketch mounts no row, and stays open for later sketches once opened.
+  const [relationListOpen, setRelationListOpen] = useState(false);
+  const [relationListScope, setRelationListScope] = useState<{ documentId: string; sketchId: string; selection: readonly CadSketchGraphSelection[] } | null>(null);
   const [sketchAnalysis, setSketchAnalysis] = useState<SketchAnalysisState | null>(null);
   const [newFeature, setNewFeature] = useState<CadFeature | null>(null);
   const [tool, setTool] = useState<SketchTool>('select');
@@ -456,7 +472,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   useLayoutEffect(() => { if (referencePick && !currentOwnedPick) { referencePick.command.onCancel(); setReferencePick(null); } }, [referencePick, currentOwnedPick]);
   const canvasMenuBlocked = Boolean(currentDimensionPicks) || drawingPending || pluginsOpen || editorPending || parameterPending || dimensionPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || treeMenuOpen || storageBusy || externalWorkflowOpen || Boolean(currentOwnedPick);
   const currentCanvasMenu = !canvasMenuBlocked && canvasMenu?.document === document && canvasMenu.version === props.documentVersion && canvasMenu.buildId === (build?.buildId ?? null)
-    && (canvasMenu.kind !== 'annotation' || canvasMenu.cancel === cancelSignal) ? canvasMenu : null;
+    && (canvasMenu.kind !== 'annotation' && canvasMenu.kind !== 'relation-row' || canvasMenu.cancel === cancelSignal) ? canvasMenu : null;
   useLayoutEffect(() => { if (canvasMenu && !currentCanvasMenu) setCanvasMenu(null); }, [canvasMenu, currentCanvasMenu]);
   const pendingOtherCommands = commandSubmission.applying || directDepthActive || pluginsOpen || parameterPending || dimensionPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || treeMenuOpen || Boolean(currentCanvasMenu) || Boolean(currentOwnedPick) || Boolean(currentSketchPlaneRequest) || Boolean(currentAreaRepair);
   const pendingOutsideDrawing = editorPending || pendingOtherCommands || Boolean(currentDimensionPicks);
@@ -508,23 +524,30 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     setGraphPick(current => current === graphPick ? graphSelections.length || graphDimensionPicks.length
       ? { ...current, selections: graphSelections, dimensions: graphDimensionPicks } : null : current);
   }, [graphPick, graphSelections, graphDimensionPicks]);
-  // A dimension editor belongs to its document, its sketch and the dimension it edits, which stays the whole selection. It closes once a
-  // profile, geometry, the origin, an axis or another dimension takes the selection, another document opens under the same IDs, or Delete, undo, redo
-  // or an agent edit removes its dimension or replaces it under the same ID. A relation glyph's row works the same way, and hiding what draws
-  // the dimension or glyph closes it too.
-  const dimensionEditor = graphRelationCommand?.dimension;
-  const dimensionEditorCurrent = Boolean(dimensionEditor && dimensionEditor.documentId === document.id && dimensionEditor.sketchId === sketch?.id && !profileId
-    && !graphSelections.length && graphDimensionPicks.length === 1 && sameCadSketchDimensionPick(graphDimensionPicks[0], dimensionEditor.pick, sketch.graph)
-    && isCadSketchDimensionPickCurrent(drawnAnnotations, dimensionEditor.pick));
-  useLayoutEffect(() => { if (dimensionEditor && !dimensionEditorCurrent) setGraphRelationCommand(current => current?.dimension === dimensionEditor ? null : current); }, [dimensionEditor, dimensionEditorCurrent]);
-  /** The geometry the relations panel works on: a dimension editor's measured geometry, otherwise the geometry selection. */
-  const relationOperands = useMemo(() => !dimensionEditor ? graphSelections : dimensionEditorCurrent ? reconcileCadSketchGraphSelection(sketch?.graph, dimensionEditor.operands) : NO_SKETCH_SELECTIONS,
-    [dimensionEditor, dimensionEditorCurrent, graphSelections, sketch]);
-  /** The geometry the relations panel lists and edits: its operands without the origin and the axes, which stay selected beside it. */
-  const relationGeometry = useMemo(() => {
-    const own = relationOperands.filter(item => !isCadSketchVirtualSelection(item));
-    return own.length === relationOperands.length ? relationOperands : Object.freeze(own);
-  }, [relationOperands]);
+  // A value editor belongs to its document, its sketch and the relation it edits. One opened on a drawn dimension or mark keeps that as the
+  // whole selection, and closes once a profile, geometry, the origin, an axis or another annotation takes the selection, another document opens
+  // under the same IDs, Delete, undo, redo or an agent edit removes its relation or replaces it under the same ID, or hiding it stops drawing it.
+  // One opened as its relation is added, as a new corner's is, waits for the version that adds it.
+  const valueCommand = graphRelationCommand?.kind === 'value' ? graphRelationCommand : null;
+  const valueSketch = valueCommand && valueCommand.documentId === document.id && valueCommand.sketchId === sketch?.id && !profileId ? sketch : null;
+  const valueRelation = valueSketch && valueCommand ? valueSketch.graph?.relations.find(item => item.id === valueCommand.relationId) : undefined;
+  const valueEditorCurrent = Boolean(valueSketch?.graph && valueCommand && (valueRelation ? isCadSketchValueRelation(valueRelation) && (valueCommand.pick
+    ? !graphSelections.length && graphDimensionPicks.length === 1 && sameCadSketchDimensionPick(graphDimensionPicks[0], valueCommand.pick, valueSketch.graph) && isCadSketchDimensionPickCurrent(drawnAnnotations, valueCommand.pick)
+    : !graphDimensionPicks.length) : valueCommand.version === props.documentVersion));
+  useLayoutEffect(() => { if (valueCommand && !valueEditorCurrent) setGraphRelationCommand(current => current === valueCommand ? null : current); }, [valueCommand, valueEditorCurrent]);
+  /** Tree rows selected for relations the canvas does not draw; a selection elsewhere clears them. */
+  const relationRowIds = relationRowPick && relationRowPick.documentId === document.id && relationRowPick.sketchId === sketch?.id ? relationRowPick.relationIds : NO_RELATION_IDS;
+  const selectedRelationIds = useMemo(() => relationRowIds.length ? [...graphDimensions, ...relationRowIds] : graphDimensions, [graphDimensions, relationRowIds]);
+  /**
+   * The selected relations Delete removes: drawn dimensions and marks while they still show their relations, and tree rows of relations the
+   * canvas does not draw. A pattern detaches through its editor instead.
+   */
+  const removableSelectedRelationIds = (graph: CadSketchGraph) => {
+    const drawn = graphDimensions.filter(id => drawnAnnotations?.graph === graph && cadSketchDimensionPick(drawnAnnotations, id));
+    const listed = relationRowIds.filter(id => !drawn.includes(id) && graph.relations.some(item => item.id === id && item.kind !== 'linear-pattern'));
+    return listed.length ? [...drawn, ...listed] : drawn;
+  };
+  const relationListSelection = relationListScope && relationListScope.documentId === document.id && relationListScope.sketchId === sketch?.id ? relationListScope.selection : null;
   /** The selected points and edges edits may change: the selection without the origin and the axes, which are fixed. */
   const graphGeometry = useMemo(() => {
     const own = graphSelections.filter(item => !isCadSketchVirtualSelection(item));
@@ -545,7 +568,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     // Source controls and accepted creation callbacks supply known IDs; agent input is validated
     // at the viewport boundary. A creation callback can precede this render's graph update.
     setGraphPick(sketchId && selections.length ? { sketchId, selections } : null);
-    setGraphRelationCommand(null);
+    setGraphRelationCommand(null); setRelationRowPick(null);
     if (selections.length) { setProfileId(null); setProfileCommand(null); }
   }, [sketchId]);
   const selectGraph = useCallback((selection: CadSketchGraphSelection | null, additive = false) => {
@@ -553,8 +576,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   }, [graphSelections, selectGraphSet]);
   /**
    * A dimension or relation glyph pick replaces the geometry selection and never opens the editor; double-click or Enter does.
-   * Dimensions and relations share one annotation selection, so Shift adds either to the other. A label or glyph names the relations it
-   * was drawn for, so one that a replacement under the same ID has taken over selects nothing.
+   * Dimensions, relation marks and tree rows of relations the canvas does not draw share one relation selection, so Shift adds any of them
+   * to the others. A label or glyph names the relations it was drawn for, so one that a replacement under the same ID has taken over selects nothing.
    */
   const selectGraphAnnotations = useCallback((annotations: readonly CadSketchDimensionPick[] | null, additive = false) => {
     if (!sketchId) return;
@@ -564,22 +587,22 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const dimensions = annotations ? selectCadSketchAnnotations(graphDimensionPicks, picks, graph, additive) : NO_SKETCH_DIMENSIONS;
     setGraphPick(dimensions.length ? { sketchId, selections: NO_SKETCH_SELECTIONS, dimensions } : null);
     setGraphRelationCommand(null);
+    if (!annotations || !additive) setRelationRowPick(null);
     if (dimensions.length) { setProfileId(null); setProfileCommand(null); }
   }, [sketchId, sketch, graphDimensionPicks, drawnAnnotations]);
   const selectGraphDimension = useCallback((dimension: CadSketchDimensionPick | null, additive = false) => selectGraphAnnotations(dimension ? [dimension] : null, additive), [selectGraphAnnotations]);
-  const inspectRelation = useCallback((relation: CadSketchGraphRelation | null) => setRelationInspection(relation && sketchId ? { sketchId, relation } : null), [sketchId]);
-  const inspectedRelation = relationGeometry.length > 0 && relationInspection && relationInspection.sketchId === sketch?.id ? relationInspection.relation : null;
-  const inspectConstraintSubject = useCallback((subject: CadSketchConstraintFeedbackSubject | null) => setDiagnosticInspection(subject && sketchId ? { document, sketchId, subject } : null), [document, sketchId]);
-  const inspectedDiagnostic = relationGeometry.length > 0 && diagnosticInspection?.document === document && diagnosticInspection.sketchId === sketch?.id ? diagnosticInspection.subject : null;
-  // A diagnostic on a relation that names the origin or an axis, or holds a point on one, lights that up too.
-  const diagnosticHighlight = useMemo(() => {
-    if (inspectedDiagnostic?.source.kind !== 'relation') return inspectedDiagnostic;
-    const relationId = inspectedDiagnostic.source.id, graph = sketch?.graph, relation = graph?.relations.find(item => item.id === relationId);
+  // The canvas lights the relation a value editor edits, or the one tree row selected for a relation it does not draw.
+  const inspectedRelation = (valueEditorCurrent ? valueRelation : relationRowIds.length === 1 ? sketch?.graph?.relations.find(item => item.id === relationRowIds[0]) : undefined) ?? null;
+  const inspectIssue = useCallback((issue: CadSketchIssue | null) => setDiagnosticInspection(issue && sketchId ? { document, sketchId, issue } : null), [document, sketchId]);
+  const inspectedIssue = diagnosticInspection?.document === document && diagnosticInspection.sketchId === sketch?.id ? diagnosticInspection.issue : null;
+  /** An issue lights its geometry, its relation's mark, and the origin or axis that relation names or holds a point on. */
+  const issueHighlight = useCallback((issue: CadSketchIssue) => {
+    const graph = sketch?.graph, relation = issue.relationId ? graph?.relations.find(item => item.id === issue.relationId) : undefined;
     const named = graph && relation ? cadSketchRelationHighlight(graph, relation) : null;
     const fixed = (ids: readonly string[] | undefined, shown: readonly string[]) => ids?.filter(id => isCadSketchVirtualId(id) && !shown.includes(id)) ?? [];
-    const pointIds = fixed(named?.pointIds, inspectedDiagnostic.pointIds), entityIds = fixed(named?.entityIds, inspectedDiagnostic.entityIds);
-    return pointIds.length || entityIds.length ? { ...inspectedDiagnostic, pointIds: [...inspectedDiagnostic.pointIds, ...pointIds], entityIds: [...inspectedDiagnostic.entityIds, ...entityIds] } : inspectedDiagnostic;
-  }, [inspectedDiagnostic, sketch]);
+    return { pointIds: [...issue.pointIds, ...fixed(named?.pointIds, issue.pointIds)], entityIds: [...issue.entityIds, ...fixed(named?.entityIds, issue.entityIds)], relationIds: relation ? [relation.id] : [] };
+  }, [sketch]);
+  const diagnosticHighlight = useMemo(() => inspectedIssue ? issueHighlight(inspectedIssue) : null, [inspectedIssue, issueHighlight]);
   // A report that leaves the shown freedom, locks and colours as they are queues no update, so the workbench does not
   // render again for it. Equal definitions keep their marks, so a new version with the same result changes nothing.
   const requestedAnalysis = useRef(sketchAnalysis);
@@ -594,78 +617,52 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       const diagnosis = analysis.kind === 'rejected' && sourceSketch?.kind === 'sketch' && sourceSketch.graph
         ? cadSketchDiagnosisMarks(sketchId, sourceSketch.graph, analysis.diagnostics, kept?.diagnosis) : null;
       next = { document: owned.document, version: owned.version, sketchId, freedom: owned.live && analysis.kind === 'solved' ? analysis.diagnostics.degreesOfFreedom : null,
-        locks: owned.live && definition !== null, definition, diagnosis };
+        locks: owned.live && definition !== null, definition, diagnosis, issues: cadSketchAnalysisIssues(analysis, kept?.issues) };
     }
     const before = shownSketchAnalysis(previous, document, props.documentVersion, sketchId), after = shownSketchAnalysis(next, document, props.documentVersion, sketchId);
-    if (before.freedom === after.freedom && before.locks === after.locks && before.definition === after.definition && before.diagnosis === after.diagnosis) return;
+    if (before.freedom === after.freedom && before.locks === after.locks && before.definition === after.definition && before.diagnosis === after.diagnosis && before.issues === after.issues) return;
     requestedAnalysis.current = next; setSketchAnalysis(next);
   }, [document, props.documentVersion, sketchId]);
   const shownAnalysis = shownSketchAnalysis(sketchAnalysis, document, props.documentVersion, sketch?.id);
+  const shownFeedback = editFeedback?.document === document && editFeedback.feedback.sketchId === sketch?.id ? editFeedback.feedback : null;
+  const shownWarnings = props.sketchWarnings && props.sketchWarnings.version === props.documentVersion ? props.sketchWarnings.warnings : null;
+  /** Conflicting, redundant and unmet relations, a refused edit's subjects and unsized shrinks, for the header and the relations tree alike. */
+  const sketchIssues = useMemo(() => !sketch ? null : sketch.graph ? cadSketchIssuesStandInForD1({ sketchId: sketch.id, graph: sketch.graph, analysis: shownAnalysis.issues, feedback: shownFeedback, warnings: shownWarnings })
+    : { sketchId: sketch.id, message: null, list: [], omitted: 0, byRelation: NO_CAD_SKETCH_ISSUES_BY_RELATION },
+    [sketch, shownAnalysis.issues, shownFeedback, shownWarnings]);
+  /** A sketch editor, the value editor or the icon row reports its refusal here, or null once it has none. */
+  const reportEditFeedback = useCallback((feedback: CadSketchConstraintFeedback | null) => setEditFeedback(current => feedback ? current?.feedback === feedback && current.document === document ? current : { document, feedback }
+    : current?.document === document ? null : current), [document]);
   const graphFreedom = shownAnalysis.freedom;
   /**
-   * Every way of opening or switching a canvas dimension's editor comes here. The selection becomes exactly that dimension and the editor
-   * keeps the geometry it works on apart from it, so Delete removes the dimension that is drawn selected, before and after Apply or Cancel.
-   * A relations panel that switches its edited row passes its command token and stays open.
+   * Every way of opening a value editor comes here: double-click or Enter on a dimension label or a fixed point's mark, Edit value…, or a
+   * tree row. A drawn dimension or mark becomes the whole selection, so Delete removes what is drawn selected, before and after Apply or
+   * Cancel; the editor opens beside it, or beside the tree row of a relation the canvas does not draw.
    */
-  const editSketchDimension = useCallback((pick: CadSketchDimensionPick, operands: readonly CadSketchGraphSelection[], token?: string) => {
-    if (!sketchId || token !== undefined && graphRelationCommand?.token !== token) return;
-    const dimension: DimensionEditor = { documentId: document.id, sketchId, pick, operands };
-    setGraphPick({ sketchId, selections: NO_SKETCH_SELECTIONS, dimensions: selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick, null) }); setProfileId(null); setProfileCommand(null);
-    if (token !== undefined) { setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, pick.id, dimension) : current); return; }
-    setGraphRelationCommand({ kind: 'inspect', relationId: pick.id, token: crypto.randomUUID(), dimension }); setInspectorCollapsed(false);
-  }, [document.id, sketchId, graphRelationCommand?.token]);
+  const editSketchValue = useCallback((relationId: string, pick: CadSketchDimensionPick | null) => {
+    if (!sketchId) return;
+    if (pick) { setGraphPick({ sketchId, selections: NO_SKETCH_SELECTIONS, dimensions: selectCadSketchDimension(NO_SKETCH_DIMENSIONS, pick, null) }); setRelationRowPick(null); }
+    setProfileId(null); setProfileCommand(null);
+    // A relation the canvas does not draw opens its editor beside its tree row, so the list opens.
+    if (!pick) setRelationListOpen(true);
+    setGraphRelationCommand({ kind: 'value', token: crypto.randomUUID(), documentId: document.id, sketchId, relationId, pick, version: props.documentVersion });
+  }, [document.id, sketchId, props.documentVersion]);
+  /** Opens the relations tree and scrolls it to a row, listing every relation so the row is there. */
+  const revealRelationRow = useCallback((relationId: string | null) => {
+    if (relationId) setRelationListScope(null);
+    setRelationListOpen(true);
+    setRelationListReveal({ relationId, token: crypto.randomUUID() });
+  }, []);
   /**
-   * The relations panel reports the row it edits. A canvas dimension's row makes that dimension the selection, and the row of the relation
-   * glyph the panel was opened for keeps it; another row, or a draft, returns the selection to the geometry the panel works on. Closing a
-   * row keeps the selection, and the command records it closed.
-   */
-  const editPanelRelation = (token: string, relationId: string | null) => {
-    const command = graphRelationCommand, graph = sketch?.graph;
-    if (!sketchId || !graph || command?.token !== token) return;
-    const editor = command.dimension;
-    if (!relationId) { if (command.kind === 'inspect') setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, null, current.dimension) : current); return; }
-    const relation = graph.relations.find(item => item.id === relationId), pick = drawnAnnotations ? cadSketchDimensionPick(drawnAnnotations, relationId) : null;
-    const own = Boolean(pick && editor && sameCadSketchDimensionPick(editor.pick, pick, graph));
-    if (pick && (own || relation && isCadSketchDimensionRelation(relation))) {
-      if (!own) editSketchDimension(pick, relationOperands, token);
-      else if (command.kind === 'relations') setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, pick.id, editor) : current);
-      return;
-    }
-    if (!editor) return;
-    setGraphPick({ sketchId, selections: relationOperands });
-    setGraphRelationCommand(current => current?.token === token ? followRelationRow(current, relationId) : current);
-  };
-  /**
-   * Double-click, Enter, Edit value… or Show in relations list opens the editor of the dimension or relation shown, never a replacement
-   * under the same ID, on the geometry it measures or holds: the relations list with its row active.
+   * Double-click, Enter or Edit value… opens the value editor of the dimension or fixed point shown, never a replacement under the same
+   * ID; on another relation's mark it selects the mark and scrolls the relations tree to its row.
    */
   const configureGraphRelation = useCallback((relation: CadSketchGraphRelation) => {
     const graph = sketch?.graph, pick = graph && drawnAnnotations?.graph === graph ? cadSketchDimensionPick(drawnAnnotations, relation.id) : null;
     if (interactionState.current.locked || !sketchId || !graph || !pick || !sameCadSketchDimensionPick(pick, cadSketchDimensionPickOf(relation), graph)) return;
-    const points = (ids: readonly string[]) => ids.map(id => ({ kind: 'point' as const, id })), entity = (id: string) => [{ kind: 'entity' as const, id }];
-    let operands: readonly CadSketchGraphSelection[];
-    if (!isCadSketchDimensionRelation(relation)) {
-      // A relation works on the edges it names and the points off them, as its glyphs and highlight show it.
-      const named = cadSketchRelationHighlight(graph, relation), onEdges = new Set(graph.entities.filter(item => named.entityIds.includes(item.id))
-        .flatMap(item => item.kind === 'line' ? [item.startPointId, item.endPointId] : item.kind === 'arc' ? [item.centerPointId, item.startPointId, item.endPointId] : [item.centerPointId]));
-      operands = [...named.entityIds.flatMap(entity), ...points(named.pointIds.filter(id => !onEdges.has(id)))];
-    } else if (relation.kind === 'fixed-axis') {
-      // A distance from an axis edits on the line it is drawn to, or its point, with the axis it is measured from.
-      const line = cadSketchAxisDistanceLine(graph, relation);
-      operands = [...line ? entity(line.id) : points([relation.pointId]), { kind: 'entity', id: cadSketchAxisOfNormal(relation.axis) }];
-    } else if (relation.kind === 'reference-dimension') {
-      const measurement = relation.measurement;
-      operands = measurement.kind === 'point-distance' ? points(measurement.pointIds)
-        : measurement.kind === 'point-line-distance' ? [{ kind: 'point', id: measurement.pointId }, { kind: 'entity', id: measurement.lineId }] : entity(measurement.entityId);
-    } else if (relation.kind === 'distance') {
-      const line = graph.entities.find(item => item.kind === 'line' && relation.pointIds.includes(item.startPointId) && relation.pointIds.includes(item.endPointId));
-      operands = line ? entity(line.id) : points(relation.pointIds);
-    } else if (relation.kind === 'point-line-distance') operands = [{ kind: 'point', id: relation.pointId }, { kind: 'entity', id: relation.lineId }];
-    else if (relation.kind === 'axis-distance') operands = points(relation.pointIds);
-    else if (relation.kind === 'line-angle') operands = relation.rays.map(ray => ({ kind: 'entity' as const, id: ray.lineId }));
-    else operands = entity(relation.kind === 'radial-size' ? relation.entityId : relation.kind === 'fillet-corner' ? relation.arcId : relation.chamferId);
-    editSketchDimension(pick, operands);
-  }, [sketchId, sketch, drawnAnnotations, editSketchDimension]);
+    if (isCadSketchValueRelation(relation)) { editSketchValue(relation.id, pick); return; }
+    selectGraphAnnotations([pick]); revealRelationRow(relation.id);
+  }, [sketchId, sketch, drawnAnnotations, editSketchValue, selectGraphAnnotations, revealRelationRow]);
   /** A glyph's double-click or Enter names the relation it was drawn for; one a replacement under the same ID has taken over opens nothing. */
   const openGraphRelation = useCallback((pick: CadSketchDimensionPick) => {
     const relation = sketch?.graph?.relations.find(item => item.id === pick.id);
@@ -921,11 +918,13 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   };
   const submitEdit = (apply: (signal: AbortSignal) => CadEditCompletion, accepted: () => void = () => undefined, failure = 'The edit could not be completed.') => {
     props.onWorkflowChange(true);
-    setError(null); setFileMenu(false);
+    setError(null); setFileMenu(false); reportEditFeedback(null);
     commandSubmission.submit(apply, accepted, cause => {
       // A synchronous rejection can batch applying true→false without a pending-effect change.
       props.onWorkflowChange(latestPending.current);
       setError(userFacingMessage(cause, failure));
+      // The native judge's refusal names its relations in the header and the relations tree, as well as on the error line.
+      if (cause instanceof CadSketchPreparationError) reportEditFeedback(cause.feedback);
     });
   };
   directDepthCallbacks.current = { preview: props.onFeaturePreview, commit: edits => {
@@ -1241,14 +1240,14 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       && interactionState.current.cancel === menu.cancel;
     const shown = source?.graph && relation && drawnAnnotations?.graph === source.graph && menu.picks.every(pick => isCadSketchDimensionPickCurrent(drawnAnnotations, pick)) ? source.graph : null;
     // Delete removes the selection when the menu's annotation is part of it, as Delete does on the canvas.
-    const removed = shown && menu.picks.every(pick => graphDimensionPicks.some(item => sameCadSketchDimensionPick(item, pick, shown))) ? graphDimensions : menu.picks.map(pick => pick.id);
+    const removed = shown && menu.picks.every(pick => graphDimensionPicks.some(item => sameCadSketchDimensionPick(item, pick, shown))) ? removableSelectedRelationIds(shown) : menu.picks.map(pick => pick.id);
     const deleteItem: CadContextMenuItem = { label: removed.length > menu.picks.length && shown ? `Delete ${cadSketchAnnotationCount(shown, removed)}` : 'Delete', danger: true,
       onSelect: () => { if (current()) deleteSketchAnnotations(menu.picks); } };
     if (shown && relation && !isCadSketchDimensionRelation(relation)) {
       // A glyph that draws X and Y held at 0 on one point reads as the point at the origin.
       const pair = isCadSketchOriginPair(shown, menu.picks.flatMap(pick => shown.relations.filter(item => item.id === pick.id)));
       canvasMenuTitle = pair ? CAD_SKETCH_ORIGIN_PAIR_NAME : cadSketchRelationName(shown, relation);
-      canvasMenuItems.push({ label: 'Show in relations list', onSelect: () => { if (current()) configureGraphRelation(relation); } }, { kind: 'separator' }, deleteItem);
+      canvasMenuItems.push({ label: 'Show in relations list', help: 'Scroll the relations under the sketch in the feature tree to this one.', onSelect: () => { if (current()) revealRelationRow(relation.id); } }, { kind: 'separator' }, deleteItem);
     } else if (shown && relation && isCadSketchDimensionRelation(relation)) {
       const graph = shown, reference = relation.kind === 'reference-dimension';
       const convert = (conversion: ReturnType<typeof cadSketchDimensionToReference>) => {
@@ -1273,6 +1272,23 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         help: placed.length ? undefined : 'This dimension is already laid out automatically.',
         onSelect: () => { if (current() && placed.length) submitEdit(signal => props.onEditMany(placed.map(item => ({ kind: 'set-sketch-relation', sketchId: menu.sketchId, relation: withoutCadSketchDimensionAnnotation(item) })), signal), undefined, SKETCH_RELATION_FAILURE); } });
       canvasMenuItems.push({ kind: 'separator' }, deleteItem);
+    }
+  } else if (currentCanvasMenu?.kind === 'relation-row') {
+    const menu = currentCanvasMenu, graph = sketch?.id === menu.sketchId ? sketch.graph : undefined, relation = graph?.relations.find(item => item.id === menu.relationId);
+    const current = () => interactionState.current.document === menu.document && interactionState.current.version === menu.version && interactionState.current.sketchId === menu.sketchId
+      && interactionState.current.cancel === menu.cancel;
+    if (graph && relation) {
+      canvasMenuTitle = cadSketchRelationName(graph, relation);
+      if (isCadSketchValueRelation(relation)) canvasMenuItems.push({ label: 'Edit value…', onSelect: () => { if (current()) editSketchValue(relation.id, null); } });
+      if (relation.kind === 'linear-pattern') canvasMenuItems.push({ label: 'Edit pattern', onSelect: () => { if (current()) editSketchPattern(relation.id); } },
+        { label: 'Select seed', onSelect: () => { if (current()) selectGraph({ kind: 'entity', id: relation.seed.entityId }); } },
+        { label: 'Detach pattern', help: 'Detach all occurrences and retain their current geometry.', onSelect: () => { if (current()) editSketchPattern(relation.id, true); } });
+      else {
+        const removed = selectedRelationIds.includes(relation.id) ? removableSelectedRelationIds(graph) : [relation.id];
+        canvasMenuItems.push(...canvasMenuItems.length ? [{ kind: 'separator' } as const] : [], relation.kind === 'external-reference' && removed.length === 1
+          ? { label: 'Detach reference', help: 'Detach this source link and retain the current geometry.', onSelect: () => { if (current()) deleteRelationRow(relation); } }
+          : { label: removed.length > 1 ? `Delete ${cadSketchAnnotationCount(graph, removed)}` : 'Delete', danger: true, onSelect: () => { if (current()) deleteRelationRow(relation); } });
+      }
     }
   } else if (currentCanvasMenu?.kind === 'sketch') {
     const source = document.features.find((feature): feature is CadSketchFeature => feature.kind === 'sketch' && feature.id === currentCanvasMenu.sketchId);
@@ -1392,10 +1408,13 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const graph = sketch?.graph;
     if (!sketch || !graph || interactionState.current.locked || annotations && (!annotations.length || !annotations.every(pick => isCadSketchDimensionPickCurrent(drawnAnnotations, pick)))) return;
     const selected = !annotations || annotations.some(pick => graphDimensionPicks.some(item => sameCadSketchDimensionPick(item, pick, graph)));
-    const ids = (selected ? graphDimensions : annotations.map(pick => pick.id)).filter(id => drawnAnnotations?.graph === graph && cadSketchDimensionPick(drawnAnnotations, id));
+    const drawn = (id: string) => drawnAnnotations?.graph === graph && cadSketchDimensionPick(drawnAnnotations, id) !== null;
+    const ids = selected ? removableSelectedRelationIds(graph) : annotations.map(pick => pick.id).filter(drawn);
     if (!ids.length) return;
-    submitEdit(signal => props.onEditMany(ids.map(id => ({ kind: 'remove-sketch-relation' as const, sketchId: sketch.id, relationId: id })), signal),
-      () => setGraphPick(current => current?.dimensions?.some(pick => ids.includes(pick.id)) ? null : current), SKETCH_RELATION_FAILURE);
+    submitEdit(signal => props.onEditMany(ids.map(id => ({ kind: 'remove-sketch-relation' as const, sketchId: sketch.id, relationId: id })), signal), () => {
+      setGraphPick(current => current?.dimensions?.some(pick => ids.includes(pick.id)) ? null : current);
+      setRelationRowPick(current => current?.relationIds.some(id => ids.includes(id)) ? null : current);
+    }, SKETCH_RELATION_FAILURE);
   };
   /**
    * Delete and Backspace on a focused label, point or edge act on the selection, as they do on the canvas: Delete removes the selected
@@ -1404,7 +1423,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
    * such as the origin, an axis, a profile or geometry under Backspace, stays and nothing is removed.
    */
   const deleteFromFocus = (focused: { readonly annotations: readonly CadSketchDimensionPick[] } | { readonly geometry: CadSketchGraphSelection }, key: 'Delete' | 'Backspace') => {
-    if (graphDimensionPicks.length) deleteSketchAnnotations();
+    if (graphDimensionPicks.length || relationRowIds.length) deleteSketchAnnotations();
     else if (graphSelections.length) { if (key === 'Delete') deleteSketchGeometry(graphSelections[graphSelections.length - 1]); }
     else if (profileId) return;
     else if ('annotations' in focused) deleteSketchAnnotations(focused.annotations);
@@ -1541,9 +1560,11 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     return [
       { label: 'Dimension', disabled: !dimensionStart.length, help: dimensionStart.length ? `${scopeHelp} Then click where the dimension goes.` : 'Choose one eligible point or edge, or two points, lines, arcs or circles. Linked and generated edges retain their owners.',
         onSelect: () => act(() => { if (dimensionStart.length) startDimensionTool(dimensionStart); }) },
-      { label: 'Constraints and dimensions', help: `${scopeHelp} List, edit or remove what constrains it.`, onSelect: () => act(() => { selectGraphSet(selections); setGraphRelationCommand({ kind: 'relations', token: crypto.randomUUID() }); setInspectorCollapsed(false); }) },
+      { label: 'Constraints and dimensions', help: `${scopeHelp} List, edit or remove what constrains it, under the sketch in the feature tree.`, onSelect: () => act(() => {
+        selectGraphSet(selections); setRelationListScope(geometry.length ? { documentId: document.id, sketchId: sourceSketchId, selection: geometry } : null); revealRelationRow(null);
+      }) },
       { label: 'Move selection', disabled: Boolean(moveLock), help: moveLock ?? `${scopeHelp} Keep existing dimensions and relations.`, onSelect: () => act(() => { if (!moveLock) openGraphMove(geometry); }) },
-      ...constraintMenuItems(graph, sourceSketchId, selections, act),
+      ...relationMenuItems(graph, sourceSketchId, selections, act),
     ];
   };
   const dimensionOperands = currentDimensionPicks?.operands ?? NO_DIMENSION_OPERANDS;
@@ -1718,15 +1739,13 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       for (const candidate of dimensionPlan.candidates) items.push({ label: candidate.label, disabled: candidate.state === 'blocked', help: candidate.state === 'available' ? undefined : candidate.reason,
         onSelect: () => { if (owned()) placeDimension({ form: candidate.form, pointer }); } });
     }
-    const choices = cadSketchConstraintChoices(graph, picks.operands, () => crypto.randomUUID());
-    if (choices.length) items.push(...items.length ? [{ kind: 'separator' as const }] : [], ...choices.map(choice => ({
-      label: choice.state === 'applied' ? `Remove ${cadSketchConstraintToolLabels[choice.tool].toLowerCase()}` : cadSketchConstraintToolLabels[choice.tool],
-      disabled: choice.state === 'blocked', help: constraintChoiceHelp(choice),
+    // The relations the picks take, as the icon row would offer them on the same selection.
+    const relations = cadSketchSelectionRelationActions(graph, picks.operands);
+    if (relations.length) items.push(...items.length ? [{ kind: 'separator' as const }] : [], ...relations.map(action => ({
+      label: relationMenuLabel(action), disabled: action.state === 'blocked', help: action.help,
       onSelect: () => {
-        if (!owned() || choice.state === 'blocked' || commandSubmission.applying) return;
-        const edits = choice.state === 'available' ? constraintEdits(graph, sourceSketchId, choice.relations)
-          : choice.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sourceSketchId, relationId }));
-        submitEdit(signal => applyCanvasEdits(edits, signal), () => { const owner = dimensionToolOwner.current; if (owner?.id === session.id) settleDimension(owner, owner.placed); });
+        if (!owned() || action.state === 'blocked' || commandSubmission.applying) return;
+        applySketchEdits(relationOfferEdits(graph, sourceSketchId, action.offer), () => { const owner = dimensionToolOwner.current; if (owner?.id === session.id) settleDimension(owner, owner.placed); });
       } })));
     return items.length ? { title: 'Dimension', items } : null;
   };
@@ -1781,21 +1800,25 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     return [...placement ? [{ kind: 'translate-sketch-geometry' as const, sketchId: sourceSketchId, ...placement }] : [],
       ...relations.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation }))];
   };
-  // Selection first, as in CATIA's Constraint Definition dialog: the menu lists what fits the selected geometry, the origin and the axes among it.
-  const constraintChoices = useMemo(() => sketch?.graph && !currentConstraintTool && tool === 'select'
-    ? cadSketchConstraintChoices(sketch.graph, graphSelections, () => crypto.randomUUID()) : [], [sketch, currentConstraintTool, tool, graphSelections]);
-  const toggleConstraint = (graph: CadSketchGraph, sourceSketchId: string, choice: CadSketchConstraintChoice) => {
-    if (choice.state === 'blocked') return;
-    const edits = choice.state === 'available' ? constraintEdits(graph, sourceSketchId, choice.relations)
-      : choice.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sourceSketchId, relationId }));
-    submitEdit(signal => applyCanvasEdits(edits, signal));
-  };
-  const constraintChoiceHelp = (choice: CadSketchConstraintChoice) => choice.state === 'blocked' ? choice.reason
-    : choice.state === 'applied' ? 'Already applied. Choose it to remove the constraint.' : cadSketchConstraintToolHelp[choice.tool];
-  const constraintMenuItems = (graph: CadSketchGraph, sourceSketchId: string, picks: readonly CadSketchConstraintPick[], act: (action: () => void) => void): readonly CadContextMenuItem[] => {
-    const choices = cadSketchConstraintChoices(graph, picks, () => crypto.randomUUID()).filter(choice => choice.state !== 'blocked');
-    return choices.length ? [{ kind: 'separator' }, ...choices.map(choice => ({ label: choice.state === 'applied' ? `Remove ${cadSketchConstraintToolLabels[choice.tool].toLowerCase()}` : cadSketchConstraintToolLabels[choice.tool],
-      help: constraintChoiceHelp(choice), onSelect: () => act(() => toggleConstraint(graph, sourceSketchId, choice)) }))] : [];
+  // What the registry's operand signatures say the selection takes, the origin and the axes among it, with no solver call; a pointer move
+  // changes none of it. The icon row offers it, and the Constrain menu lists the same relations first, as CATIA's Constraint Definition
+  // dialog does, so the two never differ.
+  const selectionOffers = useMemo(() => sketch?.graph && tool === 'select' && !currentConstraintTool && graphSelections.length
+    ? cadSketchRelationOffers(sketch.graph, graphSelections) : NO_RELATION_OFFERS, [sketch?.graph, tool, currentConstraintTool, graphSelections]);
+  const relationOffers = currentDimensionTool ? NO_RELATION_OFFERS : selectionOffers;
+  const selectionRelations = useMemo(() => sketch?.graph && selectionOffers !== NO_RELATION_OFFERS ? cadSketchSelectionRelationActions(sketch.graph, graphSelections, selectionOffers) : NO_SELECTION_RELATIONS,
+    [sketch?.graph, graphSelections, selectionOffers]);
+  const selectionDimensionOperands = useMemo(() => sketch?.graph && relationOffers !== NO_RELATION_OFFERS ? cadSketchDimensionPreselection(sketch.graph, dimensionPickTargets, graphSelections) : NO_DIMENSION_OPERANDS,
+    [sketch?.graph, relationOffers, dimensionPickTargets, graphSelections]);
+  /** The edits an offer makes: its relations, carrying free geometry onto them first, or the removal of the relations an applied one names. */
+  const relationOfferEdits = (graph: CadSketchGraph, sourceSketchId: string, offer: CadSketchRelationOffer): readonly CadEdit[] => offer.state === 'applied'
+    ? offer.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sourceSketchId, relationId }))
+    : constraintEdits(graph, sourceSketchId, offer.relations.map(intent => ({ ...intent, id: crypto.randomUUID() }) as CadSketchGraphRelation));
+  /** After the selection's commands, the relations its icon row would press: the same ones, with the same help, adding or removing the same relations. */
+  const relationMenuItems = (graph: CadSketchGraph, sourceSketchId: string, picks: readonly CadSketchConstraintPick[], act: (action: () => void) => void): readonly CadContextMenuItem[] => {
+    const usable = cadSketchSelectionRelationActions(graph, picks).filter(action => action.state !== 'blocked');
+    return usable.length ? [{ kind: 'separator' }, ...usable.map(action => ({ label: relationMenuLabel(action), help: action.help,
+      onSelect: () => act(() => applySketchEdits(relationOfferEdits(graph, sourceSketchId, action.offer))) }))] : [];
   };
   const beginConstraintTool = (kind: CadSketchConstraintTool) => {
     if (locked || !sketch?.graph) return;
@@ -1868,7 +1891,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     setTool('select'); setGraphRelationCommand({ kind, token: crypto.randomUUID() }); setInspectorCollapsed(false);
   };
   const acceptSketchCorner = (entityId: string, relationId: string) => {
-    selectGraph({ kind: 'entity', id: entityId }); setGraphRelationCommand({ kind: 'inspect', relationId, token: crypto.randomUUID() });
+    selectGraph({ kind: 'entity', id: entityId });
+    if (sketchId) setGraphRelationCommand({ kind: 'value', token: crypto.randomUUID(), documentId: document.id, sketchId, relationId, pick: null, version: props.documentVersion });
   };
   const changeConstruction = (value: boolean) => {
     if (interactionState.current.locked || patternConstructionLocked) return;
@@ -1890,7 +1914,108 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     { label: 'New group', help: 'A folder for organising parameters. Removing a group keeps its values.', onSelect: () => parameterControls.current?.create('group') },
   ];
   const parameterContent = <CadParametersPanel controls={parameterControls} key={`parameters-${externalWorkflowOpen}-${pluginsOpen}`} document={document} onEditMany={props.onEditMany} onInspectParameter={inspectParameter} onInspectUsage={inspectParameterUsage} onPendingChange={setParameterPending} interactionLocked={Boolean(props.sketchEdit || currentDimensionPicks) || commandSubmission.applying || drawingPending || editorPending || dimensionPending || namePending || treeRenamePending || newFeature !== null || resolvingTopology !== null || storageBusy || deleteFeature !== null || externalWorkflowOpen || pluginsOpen || Boolean(currentSketchPlaneRequest || currentReferencePick)} cancelSignal={cancelSignal} />;
-  const specificationTree = <CadFeatureTree onSectionView={sketch || curve ? undefined : plane => setSectionView({ plane })} parameterContent={parameterContent} parameterMenu={parameterMenu} selectionOnly={Boolean(props.sketchEdit || currentReferencePick || currentSketchPlaneRequest || currentSketchReferencePick)} allowPrincipalPlaneSelection={Boolean(currentSketchPlaneRequest)} selectableFeatureIds={currentSketchReferencePick ? currentSketchReferencePick.eligibleSketchIds : props.sketchEdit ? [props.sketchEdit.sketchId] : currentReferencePick?.eligibleIds ?? (currentSketchPlaneRequest ? document.features.filter(feature => feature.kind === 'datum-plane' && cadFeatureActive(feature, document)).map(feature => feature.id) : undefined)} document={document} diagnostics={build?.diagnostics} selectedId={selectedId} selectedProfileId={profileId} locked={treeLocked} onRenamePendingChange={setTreeRenamePending} cancelSignal={cancelSignal} selectedReferencePlane={typeof selectedReferencePlane === 'string' ? selectedReferencePlane : null} onSelectReferencePlane={selectReferencePlane} hoveredReferencePlane={hoveredReferencePlane} onHoverReferencePlane={hoverReferencePlane} onCreateSketch={plane => { if (!interactionState.current.locked) run(() => createSketchOnPlane(plane)); }} onRename={(feature, name, renamedProfileId, signal) => {
+  const applySketchEdits = (edits: readonly CadEdit[], accepted?: () => void) => submitEdit(signal => applyCanvasEdits(edits, signal), accepted, SKETCH_RELATION_FAILURE);
+  /** Pressing an offer adds its relations, carrying free geometry onto them first, or removes the relations an applied one names. */
+  const applyRelationOffer = (offer: CadSketchRelationOffer) => {
+    const graph = sketch?.graph;
+    if (!sketch || !graph || offer.state === 'blocked' || interactionState.current.locked) return;
+    applySketchEdits(relationOfferEdits(graph, sketch.id, offer));
+  };
+  const selectionActionHandlers = useRef({ offer: applyRelationOffer, dimension: () => undefined as void });
+  selectionActionHandlers.current = { offer: applyRelationOffer, dimension: () => { if (selectionDimensionOperands.length) startDimensionTool(selectionDimensionOperands); } };
+  const selectionActions = useMemo((): CadSketchSelectionActionsModel | null => sketch?.graph && (relationOffers.length || selectionDimensionOperands.length) ? {
+    graph: sketch.graph, selection: graphSelections, offers: relationOffers, dimensionAvailable: selectionDimensionOperands.length > 0, disabled: locked,
+    onOffer: offer => selectionActionHandlers.current.offer(offer), onDimension: () => selectionActionHandlers.current.dimension()
+  } : null, [sketch?.graph, graphSelections, relationOffers, selectionDimensionOperands, locked]);
+  const sketchCommandLocked = commandSubmission.applying || drawingPending || parameterPending || dimensionPending || namePending || treeRenamePending || storageBusy || externalWorkflowOpen || pluginsOpen;
+  const closeGraphCommand = () => setGraphRelationCommand(null);
+  const valueAnchorId = valueEditorCurrent ? valueCommand?.relationId ?? null : null;
+  /** The dimension label, relation mark or tree row a value editor opens beside, in that order. */
+  const findValueAnchor = useCallback(() => {
+    const root = modelingArea.current;
+    if (!root || !valueAnchorId) return null;
+    const id = CSS.escape(valueAnchorId);
+    return root.querySelector(`[data-cad-sketch-dimension="${id}"]`) ?? root.querySelector(`[data-cad-sketch-relation-glyph~="${id}"]`) ?? root.querySelector(`[data-cad-sketch-relation-row="${id}"]`);
+  }, [valueAnchorId]);
+  /** Closing the value editor keeps its dimension selected; the editor returns focus to what it opened beside, else to the canvas. */
+  const closeValueEditor = () => setGraphRelationCommand(current => current?.kind === 'value' ? null : current);
+  const drawnRelationPick = (relationId: string) => { const graph = sketch?.graph; return graph && drawnAnnotations?.graph === graph ? cadSketchDimensionPick(drawnAnnotations, relationId) : null; };
+  /** A tree row selects its relation's mark when the canvas draws it, otherwise the row itself; Shift, Ctrl or Command adds or removes it. */
+  const selectRelationRow = (relation: CadSketchGraphRelation, additive: boolean) => {
+    if (!sketch?.graph) return;
+    const pick = drawnRelationPick(relation.id);
+    if (pick) { selectGraphAnnotations([pick], additive); return; }
+    const ids = !additive ? [relation.id] : relationRowIds.includes(relation.id) ? relationRowIds.filter(id => id !== relation.id) : [...relationRowIds, relation.id];
+    // Shift keeps the selected dimensions and marks: they and the rows are one relation selection, which replaces the geometry selection.
+    setGraphPick(current => additive && current?.dimensions?.length ? current.selections.length ? { ...current, selections: NO_SKETCH_SELECTIONS } : current : null);
+    setGraphRelationCommand(null); setProfileId(null); setProfileCommand(null);
+    setRelationRowPick(ids.length ? { documentId: document.id, sketchId: sketch.id, relationIds: ids } : null);
+  };
+  /** Double-click or Enter on a row: a value editor, a pattern's editor, or the relation selected. */
+  const openRelationRow = (relation: CadSketchGraphRelation) => {
+    if (!sketch?.graph || interactionState.current.locked) return;
+    if (relation.kind === 'linear-pattern') { editSketchPattern(relation.id); return; }
+    const pick = drawnRelationPick(relation.id);
+    if (!isCadSketchValueRelation(relation)) { selectRelationRow(relation, false); return; }
+    if (!pick) selectRelationRow(relation, false);
+    editSketchValue(relation.id, pick);
+  };
+  /**
+   * Delete on a row removes the whole relation selection, drawn and listed alike, in one undo step when the row is part of it, otherwise the
+   * row's own relation; a pattern detaches through its editor.
+   */
+  const deleteRelationRow = (relation: CadSketchGraphRelation) => {
+    const graph = sketch?.graph;
+    if (!sketch || !graph || interactionState.current.locked) return;
+    if (relation.kind === 'linear-pattern') { editSketchPattern(relation.id, true); return; }
+    if (selectedRelationIds.includes(relation.id)) { deleteSketchAnnotations(); return; }
+    const pick = drawnRelationPick(relation.id);
+    if (pick) { deleteSketchAnnotations([pick]); return; }
+    applySketchEdits([{ kind: 'remove-sketch-relation' as const, sketchId: sketch.id, relationId: relation.id }]);
+  };
+  const openRelationRowMenu = (relation: CadSketchGraphRelation, at: { readonly clientX: number; readonly clientY: number }) => {
+    if (!sketch?.graph || interactionState.current.locked) return;
+    const pick = drawnRelationPick(relation.id);
+    if (pick) { openAnnotationMenu([pick], at); return; }
+    if (!selectedRelationIds.includes(relation.id)) selectRelationRow(relation, false);
+    setCanvasMenu({ kind: 'relation-row', document, version: props.documentVersion, buildId: build?.buildId ?? null, sketchId: sketch.id, relationId: relation.id, cancel: cancelSignal, request: { clientX: at.clientX, clientY: at.clientY } });
+  };
+  const relationRowActions = useRef({ select: selectRelationRow, open: openRelationRow, remove: deleteRelationRow, menu: openRelationRowMenu, scope: (() => undefined) as (only: boolean) => void,
+    expand: (() => undefined) as (expanded: boolean) => void });
+  relationRowActions.current = { select: selectRelationRow, open: openRelationRow, remove: deleteRelationRow, menu: openRelationRowMenu,
+    scope: only => setRelationListScope(only && sketch && graphGeometry.length ? { documentId: document.id, sketchId: sketch.id, selection: graphGeometry } : null),
+    expand: setRelationListOpen };
+  // Stable row commands keep the memoized list from rendering again for anything but its own inputs.
+  const [relationRowCommands] = useState(() => ({
+    select: (relation: CadSketchGraphRelation, additive: boolean) => relationRowActions.current.select(relation, additive),
+    open: (relation: CadSketchGraphRelation) => relationRowActions.current.open(relation),
+    remove: (relation: CadSketchGraphRelation) => relationRowActions.current.remove(relation),
+    menu: (relation: CadSketchGraphRelation, at: { readonly clientX: number; readonly clientY: number }) => relationRowActions.current.menu(relation, at),
+    scope: (only: boolean) => relationRowActions.current.scope(only),
+    expand: (expanded: boolean) => relationRowActions.current.expand(expanded),
+  }));
+  // Choosing areas swaps the sketch canvas for the 3D view, where no mark is drawn for a row to select, so the list waits for the sketch.
+  const sketchRelationContent = sketch?.graph && sketchIssues && !currentRegionPick ? { sketchId: sketch.id, reveal: relationListReveal?.token ?? null, content: <CadSketchRelationList graph={sketch.graph}
+    parameters={document.parameters} issues={sketchIssues} selectedIds={selectedRelationIds} selection={relationListSelection ?? graphGeometry} onlySelection={relationListSelection !== null}
+    onOnlySelection={relationRowCommands.scope} locked={locked} highlight={sketchHighlight} onSelect={relationRowCommands.select} onOpen={relationRowCommands.open}
+    onDelete={relationRowCommands.remove} onMenu={relationRowCommands.menu} reveal={relationListReveal} expanded={relationListOpen} onExpandedChange={relationRowCommands.expand} /> } : null;
+  /** Inspecting an issue of a relation the canvas does not draw opens its row too, the one place it can be selected or deleted. */
+  const inspectHeaderIssue = (issue: CadSketchIssue | null) => {
+    inspectIssue(issue);
+    if (issue?.relationId && sketch?.graph?.relations.some(item => item.id === issue.relationId) && !drawnRelationPick(issue.relationId)) revealRelationRow(issue.relationId);
+  };
+  const sketchHeader = sketch && sketchIssues ? <CadSketchContextHeader name={sketch.name}
+    status={!currentAreaRepair ? <CadSketchConstraintStatus document={document} sketch={sketch} version={props.documentVersion} inspect={props.onInspectSketchConstraints} onReport={publishSketchReport} enabled={props.sketchAnalysisReady !== false && !pending && !storageBusy && !externalWorkflowOpen} /> : null}
+    issues={sketchIssues} inspectedIssue={inspectedIssue?.key ?? null} issuesLocked={commandSubmission.applying || storageBusy || externalWorkflowOpen} onInspectIssue={inspectHeaderIssue}
+    highlight={sketchHighlight} highlightOf={issueHighlight} dimensionsShown={preferences.showOnPartDimensions} relationsShown={relationsShown}
+    onShowDimensions={shown => { setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: shown }); }} onShowRelations={shown => { setCadPreferences({ ...getCadPreferences(), showRelations: shown }); }}
+    actions={<>{currentAreaRepair ? <Button variant="primary" className="cad-sketch-header-finish" type="submit" form={areaRepairFormId} aria-label="Finish sketch" title="Finish sketch with replacement areas" disabled={!areaRepairReady || storageBusy || externalWorkflowOpen}><Check size={14} /><span>Finish</span></Button>
+      : <Button variant="primary" className="cad-sketch-header-finish" aria-label="Finish sketch" title="Finish sketch" disabled={toolsLocked} onClick={finishSketch}><Check size={14} /><span>Finish</span></Button>}
+      {props.sketchEdit && <Button size="icon" aria-label="Cancel sketch edits" title="Discard sketch edits" disabled={storageBusy} onClick={cancelSketchEdit}><CloseIcon size={13} /></Button>}</>} /> : null;
+  const valueEditor = valueEditorCurrent && valueCommand && valueRelation && sketch?.graph ? <CadSketchDimensionValueEditor key={valueCommand.token} document={document} sketch={sketch} graph={sketch.graph}
+    relationId={valueRelation.id} findAnchor={findValueAnchor} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPendingChange={setEditorPending}
+    onPreviewDocument={publishSketchPreview} onFeedback={reportEditFeedback} interactionLocked={sketchCommandLocked} onClose={closeValueEditor} onAccepted={closeValueEditor} /> : null;
+  const specificationTree = <CadFeatureTree sketchContent={sketchRelationContent} onSectionView={sketch || curve ? undefined : plane => setSectionView({ plane })} parameterContent={parameterContent} parameterMenu={parameterMenu} selectionOnly={Boolean(props.sketchEdit || currentReferencePick || currentSketchPlaneRequest || currentSketchReferencePick)} allowPrincipalPlaneSelection={Boolean(currentSketchPlaneRequest)} selectableFeatureIds={currentSketchReferencePick ? currentSketchReferencePick.eligibleSketchIds : props.sketchEdit ? [props.sketchEdit.sketchId] : currentReferencePick?.eligibleIds ?? (currentSketchPlaneRequest ? document.features.filter(feature => feature.kind === 'datum-plane' && cadFeatureActive(feature, document)).map(feature => feature.id) : undefined)} document={document} diagnostics={build?.diagnostics} selectedId={selectedId} selectedProfileId={profileId} locked={treeLocked} onRenamePendingChange={setTreeRenamePending} cancelSignal={cancelSignal} selectedReferencePlane={typeof selectedReferencePlane === 'string' ? selectedReferencePlane : null} onSelectReferencePlane={selectReferencePlane} hoveredReferencePlane={hoveredReferencePlane} onHoverReferencePlane={hoverReferencePlane} onCreateSketch={plane => { if (!interactionState.current.locked) run(() => createSketchOnPlane(plane)); }} onRename={(feature, name, renamedProfileId, signal) => {
     if (document.features.find(entry => entry.id === feature.id) !== feature) throw new Error('The part changed. Cancel and reopen the rename editor.');
     return props.onEdit({ kind: 'update-feature', feature: renamedProfileId && feature.kind === 'sketch' ? { ...feature, profiles: feature.profiles.map(entry => entry.id === renamedProfileId ? { ...entry, name } : entry) } : { ...feature, name } }, signal);
   }} onContextMenuOpenChange={setTreeMenuOpen} onProperties={id => openProperties(id ? { kind: 'feature', featureId: id } : { kind: 'body' })} onChangeSketchPlane={beginChangeSketchPlane} onSuppress={(feature, suppressed) => submitEdit(signal => props.onEdit({ kind: 'update-feature', feature: { ...feature, suppressed } }, signal))} onDelete={feature => { setSelectedId(feature.id); setProfileId(null); setDeleteFeature(feature); }} onUpdateProfile={(source, next) => submitEdit(signal => props.onEdit({ kind: 'update-feature', feature: { ...source, profiles: source.profiles.map(entry => entry.id === next.id ? next : entry) } }, signal))} onDeleteProfile={deleteProfile} onCopyProfile={props.sketchEdit ? undefined : beginProfileCopy} highlightedFeatureIds={parameterUsages.map(usage => usage.featureId)} onSelect={choose} onConfigure={configureFeature} onEditSketch={editSketch} onEditCurve={editCurve} onSelectProfile={(feature, id) => { editSketch(feature); setProfileId(id); setProfileCommand(null); }} />;
@@ -1920,8 +2045,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       {!canvasReference && <div className="cad-tool-group">{toolButton('Sketch', SketchIcon, startSketch, locked)}{toolButton('Plane', DatumPlaneIcon, () => startFeature('datum-plane'), locked)}{toolButton('Curve', CurveIcon, () => startFeature('curve'), locked)}</div>}
       <div className="cad-tool-group">{toolButton('Plugins', AddIcon, () => setPluginsOpen(true), locked || Boolean(props.sketchEdit))}</div>
       {sketch ? <><div className="cad-tool-group">{toolButton('Select', SelectIcon, () => { if (dimensionToolOwner.current) endDimensionTool(); chooseTool('select'); }, toolsLocked, tool === 'select' && !currentDimensionTool, undefined, 'S')}{drawingToolButton('line', 'Line', LineIcon, 'Draw connected lines: click each point, then double-click, press Enter or Escape to finish, or click the start to close. Drag to draw one line. 3-point Arc adds arcs to the chain. A line along the horizontal or vertical guide from its start stays horizontal or vertical', 'L P')}{drawingToolButton('arc', 'Arc', ArcIcon, 'Draw a three-point arc: click its start, its end, then a point on the arc', 'A')}{drawingToolButton('rectangle', 'Rectangle', RectangleIcon, undefined, 'R')}{drawingToolButton('circle', 'Circle', CircleIcon, undefined, 'C')}{drawingToolButton('slot', 'Slot', SlotIcon, 'Draw a slot: click both arc centers, then a point to set the width', 'O')}{toolButton('Trim', TrimIcon, () => chooseTool('trim'), toolsLocked || !sketch.graph, tool === 'trim', sketch.graph ? 'Click edge pieces to remove them up to the nearest crossing edge' : 'Trim needs a sketch drawn with connected edges', 'T')}</div><div className="cad-tool-group">{toolButton('Dimension', MeasureIcon, beginSketchDimension, currentDimensionTool ? locked : locked || !sketchDimensionAvailable && !canPickDimension, Boolean(currentDimensionTool), 'Dimension: pick the geometry, then click where the dimension goes', 'D')}<CadToolbarMenu label="Constrain" menuLabel="Constraint tools" title="Constrain the selected geometry, or choose a constraint and then pick the geometry it asks for." icon={<ConstraintIcon size={15} strokeWidth={1.5} />} disabled={locked || !sketch.graph} pressed={Boolean(currentConstraintTool)}
-        items={[...constraintChoices.length && sketch.graph ? [{ kind: 'label' as const, key: 'selection', label: 'For the selection' }, ...constraintChoices.map(choice => ({ key: `selection-${choice.tool}`, label: cadSketchConstraintToolLabels[choice.tool], icon: constraintToolIcon(choice.tool),
-          checked: choice.state === 'applied', disabled: choice.state === 'blocked', title: constraintChoiceHelp(choice), onSelect: () => { if (!locked && sketch.graph) toggleConstraint(sketch.graph, sketch.id, choice); } })),
+        items={[...selectionRelations.length ? [{ kind: 'label' as const, key: 'selection', label: 'For the selection' }, ...selectionRelations.map(action => ({ key: `selection-${action.key}`, label: action.label, icon: <action.icon size={14} />,
+          checked: action.state === 'applied', disabled: action.state === 'blocked', title: action.help, onSelect: () => applyRelationOffer(action.offer) })),
           { kind: 'separator' as const, key: 'tools-separator' }, { kind: 'label' as const, key: 'tools', label: 'Choose, then pick' }] : [],
           ...CAD_SKETCH_CONSTRAINT_TOOLS.map(kind => ({ key: kind, label: cadSketchConstraintToolLabels[kind], icon: constraintToolIcon(kind), title: cadSketchConstraintToolHelp[kind], onSelect: () => beginConstraintTool(kind) }))]} />{toolButton(graphSelections.length ? 'Move selection' : 'Move profile', MoveIcon, beginSketchMove, locked || Boolean(graphEditLock) || !graphSelections.length && (!profile || profile.geometry.kind === 'plugin'), false, graphEditLock ?? 'Move selected geometry without releasing dimensions')}{toolButton('Offset loop', OffsetIcon, beginSketchOffset, locked || !offsetSource, Boolean(currentOffset), 'Create an independent copy of one closed nonconstruction loop')}{toolButton('Mirror copy', MirrorIcon, beginSketchMirror, locked || !canMirrorSketch, Boolean(currentMirror), 'Mirror selected edges, then choose a line in the sketch. The copy is independent.', 'M')}<CadPatternCommand context="sketch" disabled={locked || !canPatternSketch} onChoose={beginSketchPattern} />{toolButton('Use reference', LinkIcon, beginSketchReference, locked || !referenceSources.length, Boolean(currentSketchReference), 'Use a linked line or circle from an earlier sketch on this plane')}<CadEdgeTreatmentCommand context="sketch" disabled={locked || profile?.geometry.kind !== 'rectangle' && !sketchCornerAvailable} chamferAvailable={sketchCornerAvailable} onChoose={beginSketchCorner} /></div><div className="cad-sketch-options"><label><Input type="checkbox" checked={tool === 'select' && graphSelections.length ? graphEntities.length === graphSelections.length && graphEntities.every(entity => entity.construction) : tool === 'select' && profile ? profile.construction : construction} disabled={locked || Boolean(graphEditLock) || patternConstructionLocked || tool === 'select' && graphSelections.some(selection => selection.kind === 'point')} onChange={(event) => changeConstruction(event.target.checked)} /> Construction</label></div></> : curve || curveCreation ? null : <><div className="cad-tool-group">{toolButton('Pad / Pocket', PadPocketIcon, () => startFeature('extrude'), locked || !modelSketchSources?.pad, false, undefined, 'E')}{toolButton('Revolve', RevolveIcon, () => startFeature('revolve'), locked || !modelSketchSources?.revolve)}{toolButton('Loft', LoftIcon, () => startFeature('loft'), locked || document.features.filter(feature => feature.kind === 'sketch' && cadFeatureActive(feature, document)).length < 2, false, 'Loft through ordered sketch sections')}{toolButton('Sweep', SweepIcon, () => startFeature('sweep'), locked || !modelSketchSources?.sweep || !document.features.some(feature => feature.kind === 'curve' && cadFeatureActive(feature, document)), false, 'Sweep a profile along a reference Curve')}</div><div className="cad-tool-group"><CadEdgeTreatmentCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Shell', ShellIcon, () => startFeature('shell'), locked || !topologyReady || !props.onResolveSelection || topologySelection?.picks[0]?.kind !== 'face')}{toolButton('Boolean', BooleanIcon, () => startFeature('boolean'), locked || currentBodyIds.length < 2)}</div><div className="cad-tool-group">{toolButton('Move', Move3dIcon, () => startFeature('transform'), locked || !hasBody)}<CadPatternCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Mirror', MirrorIcon, () => startFeature('mirror'), locked || !hasBody)}</div></>}
     </div>;
@@ -1932,7 +2057,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   return <main className="cad-workbench" aria-label="Parametric CAD workbench">
     {publishHeader ? headerHost && createPortal(header, headerHost) : header}
     <div className="cad-body" inert={deleteFeature || pluginsOpen || externalWorkflowOpen || currentCanvasMenu || treeMenuOpen ? true : undefined}>
-      <section ref={modelingArea} className={`cad-center${sketchSurface && sketchBackgroundView ? ' has-sketch-background' : ''}`} aria-label="Modeling area"><CadCommandDock toolbar={toolbar}><CadViewport hidden={sketchSurface} sketchView={sketchSurface ? sketchBackgroundView : null} key={document.id} depthControl={currentDepthControl} busyInputLocked={storageBusy} regionSelection={currentRegionPick} sourceReferencePickIds={currentRegionPick ? regionReferenceIds : currentReferencePick?.eligibleIds} getFitArea={getFitArea} onContextMenu={currentOwnedPick || currentSketchPlaneRequest ? undefined : openSolidMenu} navigationMode={preferences.navigationMode} navigationLocked={navigationLocked} meshes={currentAreaRepair && currentRegionPick ? NO_MESHES : displayedMeshes} references={sketchSurface && sketchBackgroundView && sketchBackgroundReferences ? sketchBackgroundReferences : references} referenceVersion={currentTopologyPick ? inputPicker.source?.inputToken ?? null : candidatePreview?.candidateId ?? props.documentVersion} selectedId={currentTopologyPick ? currentTopologyPick.request.bodyId : newFeature?.id ?? selectedId} selectedReferencePlane={selectedReferencePlane} hoveredReferencePlane={hoveredReferencePlane} onHoverPlane={hoverReferencePlane} onSelect={choose} onSelectPlane={selectReferencePlane}
+      <section ref={modelingArea} className={`cad-center${sketchSurface && sketchBackgroundView ? ' has-sketch-background' : ''}${sketchHeader ? ' has-sketch-header' : ''}`} aria-label="Modeling area"><CadCommandDock toolbar={toolbar}><CadViewport hidden={sketchSurface} sketchView={sketchSurface ? sketchBackgroundView : null} key={document.id} depthControl={currentDepthControl} busyInputLocked={storageBusy} regionSelection={currentRegionPick} sourceReferencePickIds={currentRegionPick ? regionReferenceIds : currentReferencePick?.eligibleIds} getFitArea={getFitArea} onContextMenu={currentOwnedPick || currentSketchPlaneRequest ? undefined : openSolidMenu} navigationMode={preferences.navigationMode} navigationLocked={navigationLocked} meshes={currentAreaRepair && currentRegionPick ? NO_MESHES : displayedMeshes} references={sketchSurface && sketchBackgroundView && sketchBackgroundReferences ? sketchBackgroundReferences : references} referenceVersion={currentTopologyPick ? inputPicker.source?.inputToken ?? null : candidatePreview?.candidateId ?? props.documentVersion} selectedId={currentTopologyPick ? currentTopologyPick.request.bodyId : newFeature?.id ?? selectedId} selectedReferencePlane={selectedReferencePlane} hoveredReferencePlane={hoveredReferencePlane} onHoverPlane={hoverReferencePlane} onSelect={choose} onSelectPlane={selectReferencePlane}
         selectedOrigin={selectedOrigin} onSelectOrigin={selectOriginReference} section={viewportSection} selectionFilter={partView.selectionFilter} viewControls={partViewControls} planePickingOnly={Boolean(currentSketchPlaneRequest)} interactionLocked={currentTopologyPick ? inputPicker.busy : locked && !currentOwnedPick && !currentSketchPlaneRequest} onControlsReady={publishRenderedControls} pickMode={currentTopologyPick ? inputPicker.mode : currentOwnedPick || currentSketchPlaneRequest ? 'body' : pickMode} topologySelection={currentTopologyPick ? inputPicker.selection : candidatePreview || currentOwnedPick ? null : topologySelection} pickingEnabled={currentTopologyPick ? Boolean(inputPicker.source) && !inputPicker.busy : Boolean(currentOwnedPick) || topologyReady && !candidatePreview} onTopologyPick={currentTopologyPick ? inputPicker.pick : currentOwnedPick || currentSketchPlaneRequest ? undefined : pickTopology} />{currentSketchReferencePick?.source ? <CadSketchCanvas outlined={sketchOutlined}
           key={`use-source/${currentSketchReferencePick.source.id}`} sketch={currentSketchReferencePick.source} parameters={document.parameters} documentVersion={props.documentVersion}
           placementLabel={cadPlacementLabel(currentSketchReferencePick.source.plane, document.features)} tool="select" selectedProfileId={null}
@@ -1944,13 +2069,14 @@ export function CadWorkbench(props: CadWorkbenchProps) {
           placementLabel={cadPlacementLabel(copiedPreview.plane, profileCopyPreview.features)} tool="select" selectedProfileId={null}
           onSelectProfile={selectProfile} onAddProfile={addProfile} onPendingChange={setDrawingPending} onError={setError}
           cancelSignal={cancelSignal} interactionLocked onControlsReady={publishRenderedControls} getFitArea={getFitArea} navigationMode={preferences.navigationMode}
-          graphControls={{ document: profileCopyPreview, selection: [], onSelect: selectGraph, onEditMany: props.onEditMany }} /> : canvasReference && !currentRegionPick ? <CadSketchCanvas outlined={sketchOutlined} getFitArea={getFitArea} graphContextMenu={graphContextMenu} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: Boolean(currentDimensionPicks) || commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, patternInteraction: currentPattern ? patternInteraction ?? undefined : undefined, onEditPattern: editSketchPattern, geometryPick: currentPlacement ? placementInteraction?.geometryPick : mirrorAxisPick ?? dimensionGeometryPick ?? constraintGeometryPick, positionPick: placementPositionPick, placement: currentPlacement ? placementInteraction?.placement : undefined, relation: inspectedRelation, inspection: currentMirror && mirrorInteraction?.kind === 'preview' ? { pointIds: [], entityIds: [mirrorInteraction.axisLineId] } : currentOffset?.source.kind === 'graph-cycle' ? { pointIds: [], entityIds: currentOffset.source.sourceRefs.map(ref => ref.entityId) } : diagnosticHighlight, degreesOfFreedom: graphFreedom, definition: shownAnalysis.definition, definitionLocked: shownAnalysis.locks, diagnosis: previewMarks ?? shownAnalysis.diagnosis, showDimensions: preferences.showOnPartDimensions, showRelations: relationsShown, onSelect: selectGraph, onSelectSet: selectGraphSet, onDelete: (selection, focused) => focused ? deleteFromFocus({ geometry: selection }, 'Delete') : deleteSketchGeometry(selection), onConfigureRelation: configureGraphRelation, dimensionSelection: graphDimensions, onSelectDimension: selectGraphDimension, onDeleteDimension: (dimension, key) => dimension ? deleteFromFocus({ annotations: [dimension] }, key ?? 'Delete') : deleteSketchAnnotations(), onDimensionMenu: (dimension, at) => openAnnotationMenu([dimension], at), onSelectRelations: selectGraphAnnotations, onOpenRelation: openGraphRelation, onDeleteRelations: (relations, key) => deleteFromFocus({ annotations: relations }, key), onRelationMenu: openAnnotationMenu, highlight: sketchHighlight, onEditMany: applyCanvasEdits, onPrepareEdits: props.onPrepareEdits, onPreviewDocument: publishSketchPreview } : undefined} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={preparedSketchDocument?.parameters ?? previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features)} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? () => undefined : selectProfile} onAddProfile={addProfile} onAddFreshSketch={addFreshSketch} onAddPath={addPath} onTranslateProfile={(id, translation, signal) => { if (!sketch) return; return applyCanvasEdits([{ kind: 'translate-sketch-profiles', sketchId: sketch.id, profileIds: [id], translation }], signal); }} onMoveHandle={(id, handle, translation, signal) => { if (!sketch) return; return applyCanvasEdits([{ kind: 'move-sketch-handle', sketchId: sketch.id, profileId: id, handle, translation }], signal); }} onAddCurve={addCurve} onCancelCurve={cancel} curveCreation={Boolean(curveCreation)} onPendingChange={setDrawingPending} onDrawingControls={publishDrawingControls} onExitTool={leaveDrawingTool} onError={setError} cancelSignal={cancelSignal} interactionLocked={curveCreation ? commandSubmission.applying || editorPending || parameterPending || namePending || storageBusy || deleteFeature !== null || resolvingTopology !== null : pendingOtherCommands || editorPending && !mirrorAxisPick && !placementPositionPick || storageBusy || externalWorkflowOpen} viewLocked={navigationLocked} onControlsReady={publishRenderedControls} onViewFrame={backgroundSketch ? publishSketchViewFrame : undefined} viewControls={backgroundSketch ? sketchViewControls : undefined} /> : null}
+          graphControls={{ document: profileCopyPreview, selection: [], onSelect: selectGraph, onEditMany: props.onEditMany }} /> : canvasReference && !currentRegionPick ? <CadSketchCanvas outlined={sketchOutlined} getFitArea={getFitArea} graphContextMenu={graphContextMenu} onContextMenu={openSketchMenu} navigationMode={preferences.navigationMode} dimensionControls={preferences.showOnPartDimensions ? { document, onEditMany: props.onEditMany, onPendingChange: setDimensionPending, interactionLocked: Boolean(currentDimensionPicks) || commandSubmission.applying || externalWorkflowOpen || pluginsOpen || editorPending || parameterPending || namePending || treeRenamePending || newFeature !== null || deleteFeature !== null || resolvingTopology !== null || storageBusy, onInspectInput: inspectInput, onConfigure: name => { setInspectorCollapsed(false); inspectInput(name); } } : undefined} previewProfile={profilePreview} previewSketch={preparedSketch} graphControls={sketch ? { document, selection: graphSelections, patternInteraction: currentPattern ? patternInteraction ?? undefined : undefined, onEditPattern: editSketchPattern, geometryPick: currentPlacement ? placementInteraction?.geometryPick : mirrorAxisPick ?? dimensionGeometryPick ?? constraintGeometryPick, positionPick: placementPositionPick, placement: currentPlacement ? placementInteraction?.placement : undefined, relation: inspectedRelation, inspection: currentMirror && mirrorInteraction?.kind === 'preview' ? { pointIds: [], entityIds: [mirrorInteraction.axisLineId] } : currentOffset?.source.kind === 'graph-cycle' ? { pointIds: [], entityIds: currentOffset.source.sourceRefs.map(ref => ref.entityId) } : diagnosticHighlight, degreesOfFreedom: graphFreedom, definition: shownAnalysis.definition, definitionLocked: shownAnalysis.locks, diagnosis: previewMarks ?? shownAnalysis.diagnosis, showDimensions: preferences.showOnPartDimensions, showRelations: relationsShown, selectionActions, onSelect: selectGraph, onSelectSet: selectGraphSet, onDelete: (selection, focused) => focused ? deleteFromFocus({ geometry: selection }, 'Delete') : deleteSketchGeometry(selection), onConfigureRelation: configureGraphRelation, dimensionSelection: graphDimensions, onSelectDimension: selectGraphDimension, onDeleteDimension: (dimension, key) => dimension ? deleteFromFocus({ annotations: [dimension] }, key ?? 'Delete') : deleteSketchAnnotations(), onDimensionMenu: (dimension, at) => openAnnotationMenu([dimension], at), onSelectRelations: selectGraphAnnotations, onOpenRelation: openGraphRelation, onDeleteRelations: (relations, key) => deleteFromFocus({ annotations: relations }, key), onRelationMenu: openAnnotationMenu, highlight: sketchHighlight, onEditMany: applyCanvasEdits, onPrepareEdits: props.onPrepareEdits, onPreviewDocument: publishSketchPreview } : undefined} inspection={sketchInspection} key={`${document.id}/${canvasReference.id}`} sketch={canvasReference} documentVersion={props.documentVersion} parameters={preparedSketchDocument?.parameters ?? previewParameters ?? document.parameters} placementLabel={cadPlacementLabel(canvasReference.plane, document.features)} tool={tool} selectedProfileId={profileId} onSelectProfile={canvasReference.kind === 'curve' ? () => undefined : selectProfile} onAddProfile={addProfile} onAddFreshSketch={addFreshSketch} onAddPath={addPath} onTranslateProfile={(id, translation, signal) => { if (!sketch) return; return applyCanvasEdits([{ kind: 'translate-sketch-profiles', sketchId: sketch.id, profileIds: [id], translation }], signal); }} onMoveHandle={(id, handle, translation, signal) => { if (!sketch) return; return applyCanvasEdits([{ kind: 'move-sketch-handle', sketchId: sketch.id, profileId: id, handle, translation }], signal); }} onAddCurve={addCurve} onCancelCurve={cancel} curveCreation={Boolean(curveCreation)} onPendingChange={setDrawingPending} onDrawingControls={publishDrawingControls} onExitTool={leaveDrawingTool} onError={setError} cancelSignal={cancelSignal} interactionLocked={curveCreation ? commandSubmission.applying || editorPending || parameterPending || namePending || storageBusy || deleteFeature !== null || resolvingTopology !== null : pendingOtherCommands || editorPending && !mirrorAxisPick && !placementPositionPick || storageBusy || externalWorkflowOpen} viewLocked={navigationLocked} onControlsReady={publishRenderedControls} onViewFrame={backgroundSketch ? publishSketchViewFrame : undefined} viewControls={backgroundSketch ? sketchViewControls : undefined} /> : null}
         {currentSketchPlaneRequest && <div className="cad-plane-request" role="status"><PencilRuler size={14} /><span>{currentSketchPlaneRequest.replaceSketchId ? `Click the new plane for ${document.features.find(feature => feature.id === currentSketchPlaneRequest.replaceSketchId)?.name ?? 'the sketch'}` : 'Select a plane in the design area'}</span><Button aria-label="Cancel plane selection" onClick={cancel}>Cancel</Button></div>}
         {buildState === 'building' && <div className="cad-build-overlay" role="status"><Loader2 size={13} className="cad-spin" /> Building solid geometry…</div>}
+        {sketchHeader}{valueEditor}
         <div className="cad-tree-overlay" data-cad-model-tree aria-label="Feature tree and parameters">{specificationTree}</div>
         </CadCommandDock>
       </section>
-      {inspectorVisible && <aside key={`configuration-${externalWorkflowOpen}-${pluginsOpen}`} className={`cad-properties cad-floating-inspector${floatingPluginInspector ? ' cad-plugin-inspector' : ''}${inspectorCollapsed ? ' is-minimized' : ''}`} data-cad-properties aria-label="Feature properties"><CadInspectorTitleContext.Provider value={titleHost}><div className="cad-panel-heading"><span className="cad-panel-title">{titleClaims > 0 && !inspectorCollapsed ? null : currentTopologyPick ? currentTopologyPick.purpose === 'shell' ? 'Choose opening' : 'Choose edges' : currentRegionPick ? 'Choose areas' : sketch ? sketch.name : curve ? curve.name : newFeature ? 'New feature' : currentProperties ? 'Properties' : profile ? 'Configuration' : selected?.name ?? 'Properties'}<span ref={setTitleSlot} className="cad-panel-title-slot" hidden={inspectorCollapsed} /></span>{sketch && !currentAreaRepair && <CadSketchConstraintStatus document={document} sketch={sketch} version={props.documentVersion} inspect={props.onInspectSketchConstraints} onReport={publishSketchReport} enabled={props.sketchAnalysisReady !== false && !pending && !storageBusy && !externalWorkflowOpen} />}{currentTopologyPick ? <><Button variant="primary" className="cad-panel-finish" type="button" aria-label="Use topology selection" disabled={inputPicker.busy || !inputPicker.selection?.picks.length} onClick={() => { void inputPicker.finish(); }}><Check size={16} /></Button><Button type="button" aria-label="Cancel topology selection" onClick={currentTopologyPick.onCancel}><CloseIcon size={13} /></Button></> : currentRegionPick ? <><Button variant="primary" className="cad-panel-finish" aria-label="Finish area selection" title="Keep these areas" type="button" onClick={event => { event.preventDefault(); currentRegionPick.onFinish(); }}><Check size={16} /></Button><Button aria-label="Cancel area selection" title="Restore previous area choice" type="button" onClick={event => { event.preventDefault(); currentRegionPick.onCancel(); }}><CloseIcon size={13} /></Button></> : <>{sketch && (currentAreaRepair ? <Button variant="primary" className="cad-panel-finish" type="submit" form={areaRepairFormId} aria-label="Finish sketch" title="Finish sketch with replacement areas" disabled={!areaRepairReady || storageBusy || externalWorkflowOpen}><Check size={16} /></Button> : <Button variant="primary" className="cad-panel-finish" aria-label="Finish sketch" title="Finish sketch" disabled={toolsLocked} onClick={finishSketch}><Check size={14} /><span>Finish</span></Button>)}{props.sketchEdit && <Button aria-label="Cancel sketch edits" title="Discard sketch edits" disabled={storageBusy} onClick={cancelSketchEdit}><CloseIcon size={13} /></Button>}{curve && !curveCreation && <Button variant="primary" className="cad-panel-finish" aria-label="Finish curve editing" title="Finish curve editing" disabled={locked} onClick={finishCurve}><Check size={14} /><span>Finish</span></Button>}{currentProperties && !featureEditorOpen && !sketch && !curve && !newFeature && <Button aria-label="Close properties" title="Close properties (Esc)" onClick={() => setProperties(null)}><CloseIcon size={13} /></Button>}{featureEditorOpen && !curve && !newFeature && <Button aria-label="Close feature editor" title="Close editor (Esc)" disabled={commandSubmission.applying} onClick={closeFeatureEditor}><CloseIcon size={13} /></Button>}<Button aria-label={inspectorCollapsed ? 'Expand configuration' : 'Minimize configuration'} aria-expanded={!inspectorCollapsed} disabled={pending} onClick={() => setInspectorCollapsed(!inspectorCollapsed)}>{inspectorCollapsed ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</Button>{(sketch ? graphSelections.length > 0 || profile : featureEditorOpen) && !newFeature && <Button aria-label={graphSelections.length > 1 ? 'Delete selected geometry' : graphSelection ? `Delete selected ${graphSelection.kind === 'point' ? 'point and attached geometry' : 'edge'}` : 'Delete selected feature or profile'} disabled={locked || Boolean(props.sketchEdit && !graphSelections.length && !profile)} onClick={removeSelected}><Trash2 size={13} /></Button>}</>}</div>
+      {inspectorVisible && <aside key={`configuration-${externalWorkflowOpen}-${pluginsOpen}`} className={`cad-properties cad-floating-inspector${floatingPluginInspector ? ' cad-plugin-inspector' : ''}${inspectorCollapsed ? ' is-minimized' : ''}`} data-cad-properties aria-label="Feature properties"><CadInspectorTitleContext.Provider value={titleHost}><div className="cad-panel-heading"><span className="cad-panel-title">{titleClaims > 0 && !inspectorCollapsed ? null : currentTopologyPick ? currentTopologyPick.purpose === 'shell' ? 'Choose opening' : 'Choose edges' : currentRegionPick ? 'Choose areas' : sketch ? sketch.name : curve ? curve.name : newFeature ? 'New feature' : currentProperties ? 'Properties' : profile ? 'Configuration' : selected?.name ?? 'Properties'}<span ref={setTitleSlot} className="cad-panel-title-slot" hidden={inspectorCollapsed} /></span>{currentTopologyPick ? <><Button variant="primary" className="cad-panel-finish" type="button" aria-label="Use topology selection" disabled={inputPicker.busy || !inputPicker.selection?.picks.length} onClick={() => { void inputPicker.finish(); }}><Check size={16} /></Button><Button type="button" aria-label="Cancel topology selection" onClick={currentTopologyPick.onCancel}><CloseIcon size={13} /></Button></> : currentRegionPick ? <><Button variant="primary" className="cad-panel-finish" aria-label="Finish area selection" title="Keep these areas" type="button" onClick={event => { event.preventDefault(); currentRegionPick.onFinish(); }}><Check size={16} /></Button><Button aria-label="Cancel area selection" title="Restore previous area choice" type="button" onClick={event => { event.preventDefault(); currentRegionPick.onCancel(); }}><CloseIcon size={13} /></Button></> : <>{curve && !curveCreation && <Button variant="primary" className="cad-panel-finish" aria-label="Finish curve editing" title="Finish curve editing" disabled={locked} onClick={finishCurve}><Check size={14} /><span>Finish</span></Button>}{currentProperties && !featureEditorOpen && !sketch && !curve && !newFeature && <Button aria-label="Close properties" title="Close properties (Esc)" onClick={() => setProperties(null)}><CloseIcon size={13} /></Button>}{featureEditorOpen && !curve && !newFeature && <Button aria-label="Close feature editor" title="Close editor (Esc)" disabled={commandSubmission.applying} onClick={closeFeatureEditor}><CloseIcon size={13} /></Button>}<Button aria-label={inspectorCollapsed ? 'Expand configuration' : 'Minimize configuration'} aria-expanded={!inspectorCollapsed} disabled={pending} onClick={() => setInspectorCollapsed(!inspectorCollapsed)}>{inspectorCollapsed ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</Button>{(sketch ? graphSelections.length > 0 || profile : featureEditorOpen) && !newFeature && <Button aria-label={graphSelections.length > 1 ? 'Delete selected geometry' : graphSelection ? `Delete selected ${graphSelection.kind === 'point' ? 'point and attached geometry' : 'edge'}` : 'Delete selected feature or profile'} disabled={locked || Boolean(props.sketchEdit && !graphSelections.length && !profile)} onClick={removeSelected}><Trash2 size={13} /></Button>}</>}</div>
         {currentRegionPick && <div className="cad-region-pick-hint" role="status">Click an area · Shift adds or removes</div>}
         {currentTopologyPick && <div className="cad-property-form">
           <div className="cad-region-pick-hint" role="status">{!inputPicker.source ? inputPicker.busy ? 'Showing feature input…' : 'Feature input unavailable' : inputPicker.busy ? 'Checking selection…' : inputPicker.mode === 'face' ? 'Pick one planar face to open' : 'Pick edges · Ctrl or Command adds or removes'}</div>
@@ -1974,7 +2100,16 @@ export function CadWorkbench(props: CadWorkbenchProps) {
           interactionLocked={pendingOtherCommands || drawingPending && !currentSketchReferencePick || storageBusy || externalWorkflowOpen} /> : currentPattern && sketch ? <CadSketchLinearPatternEditor key={currentPattern.token} document={document} documentVersion={props.documentVersion} sketch={sketch} request={currentPattern.request}
             onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} onPendingChange={setEditorPending} onInteractionChange={setPatternInteraction}
             onCancel={() => setPatternCommand(null)} onAccepted={({seedEntityId}) => { selectGraph({kind:'entity',id:seedEntityId}); setPatternCommand(null); }}
-            interactionLocked={pendingOtherCommands || drawingPending || storageBusy || externalWorkflowOpen} /> : currentPlacement && sketch ? <CadSketchPlacementEditor key={currentPlacement.token} document={document} documentVersion={props.documentVersion} sketch={sketch} selections={currentPlacement.selections} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} onPendingChange={setEditorPending} onInteractionChange={setPlacementInteraction} onCancel={() => setPlacementCommand(null)} onAccepted={() => setPlacementCommand(null)} interactionLocked={pendingOtherCommands || drawingPending && !placementPositionPick || storageBusy || externalWorkflowOpen} /> : currentMirror && sketch ? <CadSketchMirrorEditor key={currentMirror.token} document={document} documentVersion={props.documentVersion} sketch={sketch} entityIds={currentMirror.entityIds} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} onPendingChange={setEditorPending} onInteractionChange={setMirrorInteraction} onCancel={() => setMirrorCommand(null)} onAccepted={entityIds => { selectGraphSet(entityIds.map(id => ({ kind: 'entity', id }))); setMirrorCommand(null); }} interactionLocked={pendingOtherCommands || drawingPending && !mirrorAxisPick || storageBusy || externalWorkflowOpen} /> : currentOffset && sketch ? <CadSketchOffsetEditor key={currentOffset.token} document={document} documentVersion={props.documentVersion} sketch={sketch} source={currentOffset.source} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} onPendingChange={setEditorPending} onCancel={() => setOffsetCommand(null)} onAccepted={entityIds => { selectGraphSet(entityIds.map(id => ({ kind: 'entity', id }))); setOffsetCommand(null); }} interactionLocked={sketchEditorLocked} /> : relationGeometry.length > 0 && sketch && graphRelationCommand ? <CadSketchRelationsPanel key={graphRelationCommand?.token} initialCommand={graphRelationCommand ?? undefined} dimensionOnly onPlaceGeometry={beginSketchPlacement} onEditPattern={editSketchPattern} onSelectPatternSeed={id => selectGraph({kind:'entity',id})} document={document} sketch={sketch} selection={relationGeometry} onEditMany={props.onEditMany} onPendingChange={setEditorPending} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} onInspectRelation={inspectRelation} onEditRelation={id => editPanelRelation(graphRelationCommand.token, id)} onInspectSubject={inspectConstraintSubject} highlight={sketchHighlight} onCornerAccepted={acceptSketchCorner} interactionLocked={commandSubmission.applying || drawingPending || parameterPending || dimensionPending || namePending || treeRenamePending || storageBusy || externalWorkflowOpen || pluginsOpen} cancelSignal={cancelSignal} /> : profile && sketch ? selectedProfileEditor : selected && (featureEditorOpen || curve?.id === selected.id || sketch?.id === selected.id && !graphSelections.length && !currentProperties) ? <CadFeatureEditor topologyPickingEnabled={Boolean(props.featureInputPicking)} onDepthInteractionReady={publishDepthInteraction} onReferencePick={requestReferencePick} key={`${selected.id}-${cancelSignal}`} feature={selected} document={document} documentVersion={props.documentVersion} onFeaturePreview={props.onFeaturePreview} featurePreview={props.featurePreview} previewEnabled={previewEnabled} isNew={false} onApply={applyFeature} onCancel={closeFeatureEditor} onPendingChange={setEditorPending} /> : currentProperties ? propertiesView : null}</fieldset>
+            interactionLocked={pendingOtherCommands || drawingPending || storageBusy || externalWorkflowOpen} /> : currentPlacement && sketch ? <CadSketchPlacementEditor key={currentPlacement.token} document={document} documentVersion={props.documentVersion} sketch={sketch} selections={currentPlacement.selections} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} onPendingChange={setEditorPending} onInteractionChange={setPlacementInteraction} onCancel={() => setPlacementCommand(null)} onAccepted={() => setPlacementCommand(null)} interactionLocked={pendingOtherCommands || drawingPending && !placementPositionPick || storageBusy || externalWorkflowOpen} /> : currentMirror && sketch ? <CadSketchMirrorEditor key={currentMirror.token} document={document} documentVersion={props.documentVersion} sketch={sketch} entityIds={currentMirror.entityIds} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} onPendingChange={setEditorPending} onInteractionChange={setMirrorInteraction} onCancel={() => setMirrorCommand(null)} onAccepted={entityIds => { selectGraphSet(entityIds.map(id => ({ kind: 'entity', id }))); setMirrorCommand(null); }} interactionLocked={pendingOtherCommands || drawingPending && !mirrorAxisPick || storageBusy || externalWorkflowOpen} /> : currentOffset && sketch ? <CadSketchOffsetEditor key={currentOffset.token} document={document} documentVersion={props.documentVersion} sketch={sketch} source={currentOffset.source} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPreviewDocument={publishSketchPreview} onPendingChange={setEditorPending} onCancel={() => setOffsetCommand(null)} onAccepted={entityIds => { selectGraphSet(entityIds.map(id => ({ kind: 'entity', id }))); setOffsetCommand(null); }} interactionLocked={sketchEditorLocked} /> : sketch?.graph && graphRelationCommand?.kind === 'move' && graphGeometry.length ? <CadSketchMoveEditor key={`${graphRelationCommand.token}-${cancelSignal}`} document={document} sketch={sketch} graph={sketch.graph}
+            selection={graphGeometry} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPendingChange={setEditorPending} onPreviewDocument={publishSketchPreview} onFeedback={reportEditFeedback}
+            interactionLocked={sketchCommandLocked} onPlaceGeometry={beginSketchPlacement} onClose={closeGraphCommand} />
+          : sketch?.graph && (graphRelationCommand?.kind === 'fillet' || graphRelationCommand?.kind === 'chamfer') && graphSelection?.kind === 'point' ? <CadSketchCornerEditor key={`${graphRelationCommand.token}-${cancelSignal}`}
+            kind={graphRelationCommand.kind} pointId={graphSelection.id} document={document} sketch={sketch} graph={sketch.graph} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits}
+            onPendingChange={setEditorPending} onPreviewDocument={publishSketchPreview} onFeedback={reportEditFeedback} interactionLocked={sketchCommandLocked} onAccepted={acceptSketchCorner} onClose={closeGraphCommand} />
+          : sketch?.graph && !profile && graphGeometry.length > 0 && graphRelationCommand?.kind !== 'move' && graphRelationCommand?.kind !== 'fillet' && graphRelationCommand?.kind !== 'chamfer' ? <CadSketchSelectionInspector
+            key={JSON.stringify([document.id, sketch.id, graphGeometry, cancelSignal])} document={document} sketch={sketch} graph={sketch.graph} selection={graphGeometry} onEditMany={props.onEditMany}
+            onPrepareEdits={props.onPrepareEdits} onPendingChange={setEditorPending} onPreviewDocument={publishSketchPreview} onFeedback={reportEditFeedback} interactionLocked={sketchCommandLocked}
+            onApply={edits => applySketchEdits(edits)} onEditPattern={editSketchPattern} onSelectPatternSeed={id => selectGraph({ kind: 'entity', id })} /> : profile && sketch ? selectedProfileEditor : selected && (featureEditorOpen || curve?.id === selected.id || sketch?.id === selected.id && !graphSelections.length && !currentProperties) ? <CadFeatureEditor topologyPickingEnabled={Boolean(props.featureInputPicking)} onDepthInteractionReady={publishDepthInteraction} onReferencePick={requestReferencePick} key={`${selected.id}-${cancelSignal}`} feature={selected} document={document} documentVersion={props.documentVersion} onFeaturePreview={props.onFeaturePreview} featurePreview={props.featurePreview} previewEnabled={previewEnabled} isNew={false} onApply={applyFeature} onCancel={closeFeatureEditor} onPendingChange={setEditorPending} /> : currentProperties ? propertiesView : null}</fieldset>
         </div>
       </CadInspectorTitleContext.Provider></aside>}
     </div>

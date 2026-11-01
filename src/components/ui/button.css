@@ -18,9 +18,10 @@
     transition: background-color var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
   }
   .ui-button > svg { width: var(--icon-control); height: var(--icon-control); flex-shrink: 0; }
-  .ui-button:hover:not(:disabled) { background: var(--accent); color: var(--accent-foreground); }
+  .ui-button:hover:not(:disabled, [aria-disabled=true]) { background: var(--accent); color: var(--accent-foreground); }
   .ui-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
-  .ui-button:disabled { opacity: .45; cursor: not-allowed; }
+  /* A control that keeps focus while it waits, such as a button whose edit is pending, is aria-disabled rather than disabled. */
+  .ui-button:disabled, .ui-button[aria-disabled=true] { opacity: .45; cursor: not-allowed; }
   .ui-button[aria-pressed=true], .ui-button[aria-haspopup][aria-expanded=true] { background: var(--accent); color: var(--primary); }
   .ui-button-primary { border-color: var(--primary); background: var(--primary); color: var(--primary-foreground); }
   .ui-button-primary:hover:not(:disabled) { background: var(--primary-hover); color: var(--primary-foreground); }

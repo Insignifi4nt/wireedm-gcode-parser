@@ -70,8 +70,10 @@ export interface CadSketchGraphControls {
    * the owner removes the selection, and those relations only while nothing is selected.
    */
   onSelectRelations?(relations: readonly CadSketchDimensionPick[] | null, additive: boolean): void;
-  /** Double-click or Enter on a glyph: its relation's row in the relations list. */
+  /** Double-click or Enter on a glyph: a fixed point's value editor, or the relation's row in the relations tree. */
   onOpenRelation?(relation: CadSketchDimensionPick): void;
+  /** The relations the selection takes, shown as an icon row beside it while nothing is drawn or dragged. */
+  readonly selectionActions?: import('./CadSketchSelectionActions').CadSketchSelectionActionsModel | null;
   onDeleteRelations?(relations: readonly CadSketchDimensionPick[], key: 'Delete' | 'Backspace'): void;
   onRelationMenu?(relations: readonly CadSketchDimensionPick[], at: { readonly clientX: number; readonly clientY: number }): void;
   /** Hover highlight shared with the dock rows; without one the layer keeps its own. */

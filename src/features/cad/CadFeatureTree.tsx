@@ -68,11 +68,16 @@ export interface CadFeatureTreeProps {
   parameterContent?: ReactNode;
   /** Actions for the Parameters branch's context menu; choosing one reveals the branch first. */
   parameterMenu?: readonly { readonly label: string; readonly help?: string; onSelect(): void }[];
+  /**
+   * What the sketch being edited lists under its row, such as its relations. A new `reveal` token expands that row; the content stays
+   * usable while the tree only selects.
+   */
+  sketchContent?: { readonly sketchId: string; readonly content: ReactNode; readonly reveal?: string | null } | null;
 }
 
 /** One ordered model history, with links taken from the same reference model as rebuild. */
 export function CadFeatureTree({ document, diagnostics = [], selectedId, selectedProfileId, locked, selectionOnly = false, highlightedFeatureIds = [], onSelect, onConfigure, onEditSketch, onEditCurve, onSelectProfile,
-  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onProperties, onChangeSketchPlane, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, selectedReferencePlane, onSelectReferencePlane, hoveredReferencePlane = null, onHoverReferencePlane, onSectionView, parameterContent, parameterMenu }: CadFeatureTreeProps) {
+  selectableFeatureIds, allowPrincipalPlaneSelection = false, onSuppress, onProperties, onChangeSketchPlane, onDelete, onUpdateProfile, onDeleteProfile, onCopyProfile, onContextMenuOpenChange, onRename, onRenamePendingChange, cancelSignal = 0, onCreateSketch, sketchContent, selectedReferencePlane, onSelectReferencePlane, hoveredReferencePlane = null, onHoverReferencePlane, onSectionView, parameterContent, parameterMenu }: CadFeatureTreeProps) {
 
   const treeId = useId();
   const tree = useRef<HTMLOListElement>(null), returnFocus = useRef<{ documentId: string; target: TreeTarget } | null>(null);
@@ -93,6 +98,18 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       expanded: reveal.some(id => !treeView.expanded.has(id)) ? new Set([...treeView.expanded, ...reveal]) : treeView.expanded,
       branches: selectedId && (!treeView.branches.has('part') || !treeView.branches.has('model')) ? new Set([...treeView.branches, 'part', 'model']) : treeView.branches,
     });
+  }
+  // The sketch being edited opens on its content, and again on each reveal, so its relations are in view.
+  const contentKey = sketchContent ? `${sketchContent.sketchId}/${sketchContent.reveal ?? ''}` : null, [revealedContent, setRevealedContent] = useState<string | null>(null);
+  if (contentKey !== revealedContent) {
+    setRevealedContent(contentKey);
+    if (sketchContent) {
+      const reveal: string[] = [];
+      for (let id: string | undefined = sketchContent.sketchId; id; id = relationships.owner.get(id)?.id) reveal.push(id);
+      if (reveal.some(id => !treeView.expanded.has(id)) || !treeView.branches.has('part') || !treeView.branches.has('model')) {
+        setTreeView({ ...treeView, expanded: new Set([...treeView.expanded, ...reveal]), branches: new Set([...treeView.branches, 'part', 'model']) });
+      }
+    }
   }
   const { expanded, branches } = treeView;
   const [rename, setRename] = useState<{ document: CadDocument; cancelSignal: number; target: TreeTarget } | null>(null);
@@ -197,7 +214,8 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
     const missing = [...new Set(cadFeatureDependencies(feature))].filter(id => !relationships.byId.has(id));
     const profiles = feature.kind === 'sketch' ? feature.profiles : [];
     const profileSelected = selected && profiles.some(profile => profile.id === selectedProfileId);
-    const expandable = nested.length > 0 || shared.length > 0 || missing.length > 0 || profiles.length > 0;
+    const content = sketchContent?.sketchId === feature.id ? sketchContent.content : null;
+    const expandable = nested.length > 0 || shared.length > 0 || missing.length > 0 || profiles.length > 0 || content !== null;
     const open = expanded.has(feature.id), detailsId = `${treeId}-${position}`;
     const diagnostic = diagnostics.find(diagnostic => diagnostic.featureId === feature.id);
     const datumPlane = feature.kind === 'datum-plane', planeHovered = datumPlane && typeof hoveredReferencePlane === 'object' && hoveredReferencePlane?.featureId === feature.id;
@@ -225,6 +243,7 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
           <ProfileIcon size={11} /><span>{profile.name}</span>{profile.construction && <small>ref</small>}
         </Button>;
         })}
+        {content}
         {missing.map(id => <Tooltip content={`Missing feature ${id}`} key={id}><span className="cad-feature-missing-reference">{id} (missing)</span></Tooltip>)}
       </div>}
     </li>;
