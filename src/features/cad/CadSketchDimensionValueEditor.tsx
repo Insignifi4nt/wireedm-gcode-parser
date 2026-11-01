@@ -60,7 +60,7 @@ export interface CadSketchDimensionValueEditorProps {
 export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, graph, relationId, findAnchor, onEditMany, onPrepareEdits, onPendingChange, onPreviewDocument, onFeedback,
   interactionLocked, onClose, onAccepted }: CadSketchDimensionValueEditorProps) {
   const draft = useCadSketchDraft({ document: cadDocument, sketch, graph, interactionLocked, onEditMany, onPrepareEdits, onPendingChange, onPreviewDocument, onFeedback });
-  const form = useRef<HTMLFormElement>(null), [position, setPosition] = useState<{ readonly left: number; readonly top: number } | null>(null);
+  const form = useRef<HTMLFormElement>(null), [position, setPosition] = useState<{ readonly left: number; readonly top: number; readonly maxHeight?: number } | null>(null);
   const relation = draft.draft.relations.find(item => item.id === relationId);
   const accepted = draft.source.graph.relations.find(item => item.id === relationId);
   useLayoutEffect(() => {
@@ -68,18 +68,20 @@ export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, g
     const anchor = findAnchor()?.getBoundingClientRect(), width = element.offsetWidth, height = element.offsetHeight;
     const host = element.offsetParent?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
     const clamp = (value: number, size: number, limit: number) => Math.max(8, Math.min(limit - size - 8, value));
-    if (!anchor) { setPosition({ left: clamp((host.width - width) / 2, width, host.width), top: 48 }); return; }
-    // Below the label when it fits, else above it, so the value stays readable while it is typed. The tool dock and the sketch bar float
-    // over the view, so where the editor would share their columns it keeps above the dock and below the bar, and Apply stays reachable.
-    const left = clamp(anchor.left - host.left + anchor.width / 2 - width / 2, width, host.width);
+    // Below the label when it fits, else above it, so the value stays readable while it is typed; with no label, near the top of the view.
+    // The tool dock and the sketch bar float over the view, so where the editor shares their columns it stays between the bar and the dock
+    // whichever side it opens on, and when it is taller than the room between them it starts under the bar and scrolls, keeping Apply reachable.
+    const left = clamp(anchor ? anchor.left - host.left + anchor.width / 2 - width / 2 : (host.width - width) / 2, width, host.width);
     const across = (selector: string) => {
       const rect = element.closest('.cad-workbench')?.querySelector(selector)?.getBoundingClientRect();
       return rect && rect.width > 0 && rect.height > 0 && rect.left - host.left < left + width && rect.right - host.left > left ? rect : null;
     };
     const dock = across('[data-cad-command-dock]'), bar = across('[data-cad-sketch-header]');
-    const floor = dock ? Math.min(host.height, dock.top - host.top) : host.height, ceiling = bar ? Math.max(8, bar.bottom - host.top + 6) : 8;
-    const below = anchor.bottom - host.top + 6, above = anchor.top - host.top - height - 6;
-    setPosition({ left, top: below + height + 8 <= floor ? below : Math.max(ceiling, above) });
+    const floor = (dock ? Math.min(host.height, dock.top - host.top) : host.height) - 8, ceiling = bar ? Math.max(8, bar.bottom - host.top + 6) : 8;
+    // Never shorter than one field row, even where the bar and the dock leave less.
+    if (height > floor - ceiling) { setPosition({ left, top: ceiling, maxHeight: Math.max(48, floor - ceiling) }); return; }
+    const below = anchor ? anchor.bottom - host.top + 6 : 48, above = anchor ? anchor.top - host.top - height - 6 : 48;
+    setPosition({ left, top: Math.min(floor - height, Math.max(ceiling, below + height <= floor ? below : above)) });
   }, [relationId, findAnchor]);
   // The first editable value takes focus, ready for typing.
   useLayoutEffect(() => {
@@ -106,7 +108,7 @@ export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, g
   const label = cadSketchValueLabel(draft.draft, relation);
   const submit = () => draft.apply(onAccepted);
   return <form ref={form} className="cad-property-form cad-sketch-value-editor" aria-label={`${relation.kind === 'reference-dimension' ? 'Reference dimension' : label} value`} aria-busy={draft.applying || undefined}
-    data-cad-sketch-value-editor={relationId} style={position ? { left: position.left, top: position.top } : { visibility: 'hidden' }}
+    data-cad-sketch-value-editor={relationId} style={position ? { left: position.left, top: position.top, ...position.maxHeight === undefined ? {} : { maxHeight: position.maxHeight, overflowY: 'auto' } } : { visibility: 'hidden' }}
     onKeyDown={event => {
       if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
       event.preventDefault(); event.stopPropagation();

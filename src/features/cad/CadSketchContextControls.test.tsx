@@ -6,7 +6,7 @@ import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchRelationOffers, type CadSketchRelationOffer } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
 import { CadSketchContextHeader } from './CadSketchContextHeader';
 import { CadSketchRelationList, CAD_SKETCH_RELATION_ROW_HEIGHT, cadSketchRelationRow, type CadSketchRelationListProps } from './CadSketchRelationList';
-import { CadSketchSelectionActions, cadSketchCenterSymmetryOffer, cadSketchSelectionActions, placeCadSketchSelectionActions, type CadSketchSelectionActionsModel } from './CadSketchSelectionActions';
+import { CadSketchSelectionActions, cadSketchCenterSymmetryOffer, cadSketchSelectionActions, cadSketchSelectionRelationActions, placeCadSketchSelectionActions, type CadSketchSelectionActionsModel } from './CadSketchSelectionActions';
 import { createCadSketchHighlightStore } from './cadSketchDimensionSelection';
 import { cadSketchIssuesStandInForD1, type CadSketchIssues } from './cadSketchIssues';
 
@@ -33,11 +33,18 @@ const plate = () => graphOf({
 });
 
 describe('selection icon row', () => {
-  it('names two arcs or circles on one centre Concentric, a Fix by its tool name, and a name two kinds share once, the usable one first', () => {
+  it('names two arcs or circles on one centre, or one centred at the origin, Concentric, a Fix by its tool name, and a name two kinds share once, the usable one first', () => {
     const graph = plate();
     const circles = cadSketchSelectionActions(graph, cadSketchRelationOffers(graph, [{ kind: 'entity', id: 'c1' }, { kind: 'entity', id: 'c2' }]));
     expect(circles.map(action => action.label)).toEqual(expect.arrayContaining(['Concentric', 'Equal radius']));
-    expect(circles.find(action => action.label === 'Concentric')).toMatchObject({ key: 'concentric', state: 'available', help: 'Keeps the arcs and circles on one center, independently of their sizes.' });
+    expect(circles.find(action => action.label === 'Concentric')).toMatchObject({ key: 'concentric', state: 'available', help: 'Keeps the arcs and circles on one center, or the arc or circle centered at the origin, independently of their sizes.' });
+    // An arc or circle with the origin takes Concentric, its center held at the origin, beside Point on curve for the origin on it; with an axis,
+    // Coincident holds its center on the axis. Both are what the Constrain tool makes of those picks.
+    const atOrigin = cadSketchSelectionRelationActions(graph, [{ kind: 'point', id: '@origin' }, { kind: 'entity', id: 'arc' }]);
+    expect(atOrigin.map(action => [action.label, action.state])).toEqual([['Concentric', 'available'], ['Point on curve', 'available']]);
+    expect(atOrigin[0].offer.relations).toEqual([{ kind: 'fixed-axis', pointId: 'q', axis: 'x', value: 0 }, { kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 0 }]);
+    const onAxis = cadSketchSelectionRelationActions(graph, [{ kind: 'entity', id: 'c1' }, { kind: 'entity', id: '@v' }]);
+    expect(onAxis.find(action => action.label === 'Coincident')).toMatchObject({ key: 'coincident', state: 'available', offer: { relations: [{ kind: 'fixed-axis', pointId: 'o1', axis: 'x', value: 0 }] } });
     // A line alone takes Horizontal, applied here and pressed to remove, and Vertical, blocked with the judge's reason; Fix holds points only.
     const edge = cadSketchSelectionActions(graph, cadSketchRelationOffers(graph, [{ kind: 'entity', id: 'ab' }]));
     expect(edge.map(action => [action.label, action.state])).toEqual([['Horizontal', 'applied'], ['Vertical', 'blocked']]);

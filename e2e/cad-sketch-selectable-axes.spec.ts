@@ -68,12 +68,13 @@ test('selects the H axis far from the origin with a line and lays the line on it
   expect(await sketch.selection()).toEqual([{ kind: 'entity', id: '@h' }, { kind: 'entity', id: 'ab' }]);
   await expect(hAxis).toHaveAttribute('aria-pressed', 'true');
 
-  // The list shows what a line takes with an axis; Tangent and Equal need ends and a length an axis lacks, so they are unavailable.
+  // The list is the icon row's: what a line takes with an axis. The axis is fixed and infinite, so Horizontal and Vertical, which would
+  // turn it, and Tangent and Equal length, which need its ends and length, are unavailable; Collinear lays the line on it.
   await page.getByRole('button', { name: 'Constrain', exact: true }).click();
   const menu = page.getByRole('menu', { name: 'Constraint tools', exact: true });
-  await expect(menu.getByRole('menuitemcheckbox')).toHaveText(['Coincident', 'Parallel', 'Perpendicular', 'Tangent', 'Equal']);
-  for (const name of ['Tangent', 'Equal']) await expect(menu.getByRole('menuitemcheckbox', { name, exact: true })).toBeDisabled();
-  await menu.getByRole('menuitemcheckbox', { name: 'Coincident', exact: true }).click();
+  await expect(menu.getByRole('menuitemcheckbox')).toHaveText(['Horizontal', 'Vertical', 'Parallel', 'Perpendicular', 'Collinear', 'Tangent', 'Equal length']);
+  for (const name of ['Horizontal', 'Vertical', 'Tangent', 'Equal length']) await expect(menu.getByRole('menuitemcheckbox', { name, exact: true })).toBeDisabled();
+  await menu.getByRole('menuitemcheckbox', { name: 'Collinear', exact: true }).click();
   const graph = await sketch.changed();
   expect(graph.relations).toMatchObject([{ kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 0 }, { kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 }]);
   // The solver moves the line onto the axis and keeps it spanning the same X range.

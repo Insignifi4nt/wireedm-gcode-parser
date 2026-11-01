@@ -3876,11 +3876,12 @@ describe('CAD sketch interaction', () => {
     await tap(0, top); expect(pressed('@v')).toBe('true');
     await tap(-6, 16, true);
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: '@v' }, { kind: 'entity', id: 'side' }]); expect(pressed('@v')).toBe('true');
-    // An axis is infinite, so Tangent and Equal are listed only to say why it cannot take them.
+    // The list is the icon row's. The axis is fixed and infinite, so Horizontal and Vertical, which would turn it, and Tangent and Equal length,
+    // which need its ends and length, are listed only to say why it cannot take them; Collinear lays the line on it.
     const offered = await selectionChoices();
-    expect(offered.map(item => item.textContent?.trim())).toEqual(['Coincident', 'Parallel', 'Perpendicular', 'Tangent', 'Equal']);
-    expect(offered.slice(3).map(item => item.matches(':disabled'))).toEqual([true, true]);
-    await act(async () => offered[1].click());
+    expect(offered.map(item => [item.textContent?.trim(), item.matches(':disabled')])).toEqual([['Horizontal', true], ['Vertical', true], ['Parallel', false],
+      ['Perpendicular', false], ['Collinear', false], ['Tangent', true], ['Equal length', true]]);
+    await act(async () => offered[2].click());
     expect(sketch().relations.at(-1)).toMatchObject({ kind: 'vertical', pointIds: ['c', 'd'] });
 
     // A Shift box adds geometry and keeps the selected axis; a plain box replaces both.
@@ -3900,12 +3901,12 @@ describe('CAD sketch interaction', () => {
     await canvasKey('Escape'); await tap(0, top); await tap(-50, 16, true);
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: '@v' }, { kind: 'entity', id: 'mast' }]);
     count = sketch().relations.length;
-    const coincident = (await selectionChoices()).find(item => item.textContent?.trim() === 'Coincident'); if (!coincident) throw new Error('Coincident missing.');
-    await act(async () => coincident.click());
+    const collinear = (await selectionChoices()).find(item => item.textContent?.trim() === 'Collinear'); if (!collinear) throw new Error('Collinear missing.');
+    await act(async () => collinear.click());
     expect(sketch().relations.slice(count)).toMatchObject([{ kind: 'fixed-axis', pointId: 'm', axis: 'x', value: 0 }]);
   });
 
-  it('keeps a point on an arc or circle with Coincident, picked after the tool or from the selection, and removes it from the selection menu', async () => {
+  it('keeps a point on an arc or circle with Coincident picked after the tool, or Point on curve from the selection, and removes it from the selection menu', async () => {
     const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Curves', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
       points: [{ id: 'o', position: [0, 0] }, { id: 's', position: [10, 0] }, { id: 'e', position: [0, 10] }, { id: 'c', position: [30, 0] }, { id: 'p', position: [6, 8] }, { id: 'q', position: [34, 3] }],
       entities: [{ id: 'bow', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 's', endPointId: 'e', direction: 'ccw' },
@@ -3927,11 +3928,11 @@ describe('CAD sketch interaction', () => {
     expect(relations()).toEqual([{ id: expect.any(String), kind: 'point-on-curve', pointId: 'p', curveId: 'bow' }]);
     await canvasKey('Escape');
     const select = () => act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [{ kind: 'point', id: 'q' }, { kind: 'entity', id: 'ring' }] }));
-    await select(); const offered = await menuItem('menuitemcheckbox', 'Coincident');
+    await select(); const offered = await menuItem('menuitemcheckbox', 'Point on curve');
     expect(offered.getAttribute('aria-checked')).toBe('false'); await act(async () => offered.click());
     const held = relations()[1];
     expect(held).toEqual({ id: expect.any(String), kind: 'point-on-curve', pointId: 'q', curveId: 'ring' });
-    await select(); const applied = await menuItem('menuitemcheckbox', 'Coincident');
+    await select(); const applied = await menuItem('menuitemcheckbox', 'Point on curve');
     expect(applied.getAttribute('aria-checked')).toBe('true'); await act(async () => applied.click());
     expect(relations()).toEqual([expect.objectContaining({ curveId: 'bow' })]);
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
@@ -3983,6 +3984,107 @@ describe('CAD sketch interaction', () => {
     await act(async () => remove.click());
     expect(relations()).toEqual([{ id: 'r', kind: 'coincident', pointIds: ['o', 'q'] }]);
     expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+  });
+
+  /**
+   * A sketch whose selections take every kind of offer, mounted with its edits recorded, not applied, so each selection is read on the
+   * same sketch: crossing lines, three stacked lines and a line meeting an arc, two circles mirrored about a line by their centres, and a
+   * level base. Its helpers read the icon row, the Constrain menu's selection section and the selection's right-click relations.
+   */
+  async function offerParity() {
+    const source = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Offers', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+      points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 2] }, { id: 'k', position: [20, 12] }, { id: 'w', position: [30, 12] },
+        { id: 'p', position: [0, 30] }, { id: 'q', position: [10, 40] }, { id: 'r', position: [0, 40] }, { id: 's', position: [10, 30] },
+        { id: 'e', position: [40, 0] }, { id: 'f', position: [60, 0] }, { id: 'g', position: [40, 10] }, { id: 'h', position: [60, 12] }, { id: 'i', position: [40, 20] }, { id: 'j', position: [60, 24] },
+        { id: 'o1', position: [80, 10] }, { id: 'o2', position: [100, 10] }, { id: 'u', position: [90, -10] }, { id: 'v', position: [90, 30] }],
+      entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' },
+        { id: 'bow', kind: 'arc', construction: false, centerPointId: 'k', startPointId: 'b', endPointId: 'w', direction: 'ccw' },
+        { id: 'rise', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }, { id: 'fall', kind: 'line', construction: false, startPointId: 'r', endPointId: 's' },
+        { id: 'base', kind: 'line', construction: false, startPointId: 'e', endPointId: 'f' }, { id: 'top', kind: 'line', construction: false, startPointId: 'g', endPointId: 'h' },
+        { id: 'upper', kind: 'line', construction: false, startPointId: 'i', endPointId: 'j' },
+        { id: 'c1', kind: 'circle', construction: false, centerPointId: 'o1', radius: 2 }, { id: 'c2', kind: 'circle', construction: false, centerPointId: 'o2', radius: 3 },
+        { id: 'mid', kind: 'line', construction: true, startPointId: 'u', endPointId: 'v' }],
+      relations: [{ id: 'level', kind: 'horizontal', pointIds: ['e', 'f'] }, { id: 'mirror', kind: 'symmetric', pointIds: ['o1', 'o2'], lineId: 'mid' }] } }] });
+    const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(() => undefined);
+    await mount(source, { build: null, buildState: 'idle', onEditMany }); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const P = (id: string): CadSketchGraphSelection => ({ kind: 'point', id }), E = (id: string): CadSketchGraphSelection => ({ kind: 'entity', id });
+    const select = (selections: readonly CadSketchGraphSelection[]) => act(async () => viewport().apply({ kind: 'select-sketch-geometry-set', selections: [...selections] }));
+    const read = (item: HTMLButtonElement, label: string | null, pressed: string | null) => ({ label, pressed: pressed === 'true', disabled: item.disabled, help: item.getAttribute('aria-description') });
+    const rowButtons = () => [...container.querySelectorAll<HTMLButtonElement>('[data-cad-sketch-selection-actions] button:not([data-cad-relation-offer="dimension"])')];
+    const row = () => rowButtons().map(item => read(item, item.getAttribute('aria-label'), item.getAttribute('aria-pressed')));
+    const menuItems = async () => { await click('Constrain'); return [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]')]; };
+    const menu = async () => (await menuItems()).map(item => read(item, item.textContent?.trim() ?? null, item.getAttribute('aria-checked')));
+    const close = () => act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Sketch canvas missing.');
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+    /** The relations the selection's right-click menu lists after its own commands. */
+    const contextRelations = async (pick: CadSketchGraphSelection) => {
+      const target = container.querySelector<SVGGElement>(pick.kind === 'point' ? `[data-cad-sketch-point="${pick.id}"]` : `[data-cad-sketch-entity="${pick.id}"]`); if (!target) throw new Error(`${pick.id} missing.`);
+      await act(async () => { target.focus(); target.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
+      const items = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].map(item => item.textContent?.trim());
+      return items.slice(items.indexOf('Move selection') + 1);
+    };
+    /** Every selection's row and menu lists are the same, and its right-click lists the ones that can be pressed, Remove for those shown pressed. */
+    const compare = async (cases: readonly (readonly [string, readonly CadSketchGraphSelection[], readonly string[]])[]) => {
+      for (const [name, picks, includes] of cases) {
+        await select(picks);
+        const offered = row();
+        expect(offered.map(item => item.label), name).toEqual(expect.arrayContaining([...includes]));
+        expect(await menu(), name).toEqual(offered);
+        await close();
+        await select(picks);
+        expect(await contextRelations(picks.find(pick => !pick.id.startsWith('@'))!), name).toEqual(offered.filter(item => !item.disabled).map(item => item.pressed ? `Remove ${item.label!.toLowerCase()}` : item.label));
+        await close();
+      }
+    };
+    return { source, onEditMany, P, E, select, rowButtons, menuItems, compare };
+  }
+
+  it('lists in the Constrain menu exactly the relations the icon row offers for points, lines, axes and the origin, and on right-click those it can press', async () => {
+    const { P, E, compare } = await offerParity();
+    await compare([
+      ['two points', [P('a'), P('e')], ['Coincident', 'Horizontal', 'Vertical', 'Fix']],
+      ['one line', [E('base')], ['Horizontal', 'Vertical']],
+      ['two crossing lines', [E('rise'), E('fall')], ['Collinear', 'Parallel', 'Perpendicular', 'Equal length']],
+      ['a line and an axis', [E('ab'), E('@h')], ['Collinear', 'Parallel', 'Perpendicular']],
+      ['two lines and an axis', [E('rise'), E('fall'), E('@v')], ['Symmetric']],
+      ['four lines', [E('base'), E('top'), E('upper'), E('ab')], ['Horizontal', 'Parallel', 'Equal length']],
+      ['five points', [P('a'), P('b'), P('e'), P('f'), P('g')], ['Coincident', 'Fix']],
+      ['a point and the origin', [P('a'), P('@origin')], ['Coincident', 'Horizontal', 'Vertical']]
+    ]);
+  });
+
+  it('lists in the Constrain menu exactly the relations the icon row offers for arcs and circles, and on right-click those it can press', async () => {
+    const { P, E, compare } = await offerParity();
+    await compare([
+      ['a line and an arc', [E('ab'), E('bow')], ['Tangent']],
+      ['an arc and a circle', [E('bow'), E('c1')], ['Concentric', 'Equal radius']],
+      ['a point and a circle', [P('a'), E('c1')], ['Point on curve']],
+      ['a circle and the origin', [E('c1'), P('@origin')], ['Concentric', 'Point on curve']],
+      ['a circle and an axis', [E('c2'), E('@h')], ['Coincident', 'Tangent']],
+      ['two circles and a line', [E('c1'), E('c2'), E('mid')], ['Symmetric', 'Symmetric centers']]
+    ]);
+  });
+
+  it('applies or removes from the Constrain menu the same relations as from the icon row', async () => {
+    const { source, onEditMany, P, E, select, rowButtons, menuItems } = await offerParity();
+    // Choosing a relation in the menu makes the edits pressing its icon makes: an available one adds the same relations, an applied one,
+    // shown pressed and checked, removes the relations that hold it.
+    const strip = (edits: readonly CadEdit[]) => edits.map(edit => edit.kind === 'set-sketch-relation' ? { ...edit, relation: { ...edit.relation, id: 'new' } } : edit);
+    for (const [picks, label] of [[[E('rise'), E('fall')], 'Collinear'], [[E('c1'), E('c2'), E('mid')], 'Symmetric centers'], [[E('base'), E('top'), E('upper'), E('ab')], 'Parallel'],
+      [[E('c1'), P('@origin')], 'Concentric'], [[E('base')], 'Horizontal']] as const) {
+      await select(picks);
+      const icon = rowButtons().find(item => item.getAttribute('aria-label') === label); if (!icon) throw new Error(`${label} icon missing.`);
+      onEditMany.mockClear(); await act(async () => icon.click());
+      expect(onEditMany, label).toHaveBeenCalledOnce();
+      const pressed = strip(onEditMany.mock.calls[0][0]);
+      const item = (await menuItems()).find(entry => entry.textContent?.trim() === label); if (!item) throw new Error(`${label} item missing.`);
+      onEditMany.mockClear(); await act(async () => item.click());
+      expect(onEditMany, label).toHaveBeenCalledOnce();
+      expect(strip(onEditMany.mock.calls[0][0]), label).toEqual(pressed);
+    }
+    expect(strip(onEditMany.mock.calls[0][0])).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: 'level' }]);
+    expect(currentDocument).toBe(source);
   });
 
   it('dimensions a point from the sketch origin or an axis in either pick order', async () => {

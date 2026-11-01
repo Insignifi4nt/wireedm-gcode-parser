@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
-import { cadSketchConstraintChoices, cadSketchConstraintStep, type CadSketchConstraintPick } from './cadSketchConstraintTool';
+import { cadSketchConstraintStep, type CadSketchConstraintPick } from './cadSketchConstraintTool';
+import { cadSketchConstraintChoices } from './sketch-relations/__tests__/cadSketchToolChoices';
 import { CAD_SKETCH_FIXED_SELECTIONS, pickCadSketchFixedElement, type CadSketchGraphSelection } from './cadSketchGraphSelection';
 
 const graph: CadSketchGraph = {

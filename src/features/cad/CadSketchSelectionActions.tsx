@@ -6,7 +6,7 @@ import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchRelationOffers, type CadSketchRelationOffer } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
 import { CAD_SKETCH_RELATION_DEFINITIONS } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import type { CadSketchRelationKind } from '@/domain/cad/sketch-relations/cadSketchRelationTypes';
-import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_V_AXIS_ID, isCadSketchVirtualId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
+import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_ORIGIN_ID, CAD_SKETCH_V_AXIS_ID, isCadSketchVirtualId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import type { CadSketchGraphInteraction } from './cadSketchGraphInteraction';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { CAD_SKETCH_RELATION_ICONS, CAD_SKETCH_RELATION_PRESENTATION } from './sketch-relations/cadSketchRelationPresentation';
@@ -41,8 +41,8 @@ export interface CadSketchSelectionAction {
 const HELP: Partial<Record<CadSketchRelationKind | 'concentric', string>> = {
   horizontal: 'Keeps each selected line, or the two points, level.', vertical: 'Keeps each selected line, or the two points, upright.',
   parallel: 'Keeps the lines, or a line and an axis, in the same direction.', perpendicular: 'Keeps two lines, or a line and an axis, at a right angle.',
-  collinear: 'Keeps the lines on one infinite line.', coincident: 'Keeps the points together, or a point on the line, curve or axis.',
-  concentric: 'Keeps the arcs and circles on one center, independently of their sizes.', midpoint: 'Keeps the point halfway between the line’s endpoints as they change.',
+  collinear: 'Keeps the lines on one infinite line.', coincident: 'Keeps the points together, a point on the line, curve or axis, or the center of the arc or circle on the axis.',
+  concentric: 'Keeps the arcs and circles on one center, or the arc or circle centered at the origin, independently of their sizes.', midpoint: 'Keeps the point halfway between the line’s endpoints as they change.',
   'point-on-line': 'Keeps the point on the line or its extension; it can still slide along it.', 'point-on-curve': 'Keeps the point on the arc or circle.',
   symmetric: 'Keeps the two points, lines, arcs or circles mirrored about the line or axis.', 'tangent-joint': 'Keeps a line and arc smoothly joined at their shared endpoint.',
   tangent: 'Keeps the edges touching smoothly.', 'equal-length': 'Keeps the lines at one length.', 'equal-radius': 'Keeps the arcs and circles at one radius.',
@@ -50,10 +50,11 @@ const HELP: Partial<Record<CadSketchRelationKind | 'concentric', string>> = {
 };
 const LABELS: Partial<Record<CadSketchRelationKind | 'concentric', string>> = { concentric: 'Concentric', 'fixed-point': 'Fix' };
 const curveKinds = new Set(['arc', 'circle']);
-/** A Coincident between arcs and circles is their Concentric. */
+/** A Coincident between arcs and circles, or of an arc or circle with the origin, is their Concentric. */
 function concentric(graph: CadSketchGraph, offer: CadSketchRelationOffer) {
-  return offer.kind === 'coincident' && offer.operands.length > 0 && offer.operands.every(part => part.length > 1 && part.every(pick => pick.kind === 'entity'
-    && graph.entities.some(entity => entity.id === pick.id && curveKinds.has(entity.kind))));
+  const curve = (pick: CadSketchGraphSelection) => pick.kind === 'entity' && graph.entities.some(entity => entity.id === pick.id && curveKinds.has(entity.kind));
+  return offer.kind === 'coincident' && offer.operands.length > 0 && offer.operands.every(part => part.length > 1
+    && (part.every(curve) || part.some(curve) && part.some(pick => pick.id === CAD_SKETCH_ORIGIN_ID)));
 }
 
 const CENTER_SYMMETRY_HELP = 'Keeps the two circles’ centers mirrored about the line or axis; each radius keeps its own driver.';
@@ -98,6 +99,15 @@ export function cadSketchSelectionActions(graph: CadSketchGraph, offers: readonl
     actions.splice(at < 0 ? actions.length : at + 1, 0, { key: 'symmetric-centers', label: 'Symmetric centers', icon: CAD_SKETCH_RELATION_PRESENTATION.symmetric.icon, state: centers.state, help, offer: centers });
   }
   return actions;
+}
+
+/**
+ * The relations a selection takes, as the row shows them. The Constrain menu and the selection's menus list this same list, so every place
+ * offers one set, with the same states, reasons and help, and choosing an item applies or removes the same relations as pressing its icon.
+ */
+export function cadSketchSelectionRelationActions(graph: CadSketchGraph, selection: readonly CadSketchGraphSelection[],
+  offers: readonly CadSketchRelationOffer[] = cadSketchRelationOffers(graph, selection)): readonly CadSketchSelectionAction[] {
+  return cadSketchSelectionActions(graph, offers, cadSketchCenterSymmetryOffer(graph, selection));
 }
 
 interface Bounds { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
@@ -198,7 +208,7 @@ export interface CadSketchSelectionActionsProps {
 const DIMENSION_KEY = 'dimension';
 /** The floating row. It renders again only when the selection, its offers or the view change, never as the pointer moves. */
 export const CadSketchSelectionActions = memo(function CadSketchSelectionActions({ model, prepared, center, width, span, pixelWidth, pixelHeight, busy = false, onEscape, onRoomChange }: CadSketchSelectionActionsProps) {
-  const actions = useMemo(() => cadSketchSelectionActions(model.graph, model.offers, cadSketchCenterSymmetryOffer(model.graph, model.selection)), [model.graph, model.offers, model.selection]);
+  const actions = useMemo(() => cadSketchSelectionRelationActions(model.graph, model.selection, model.offers), [model.graph, model.offers, model.selection]);
   const bounds = useMemo(() => cadSketchSelectionScreenBounds(prepared, model.selection, { center, width, span, pixelWidth, pixelHeight }),
     [prepared, model.selection, center, width, span, pixelWidth, pixelHeight]);
   const covers = useMemo(() => cadSketchSelectionCoveredBy(prepared, model.selection, { center, width, span, pixelWidth, pixelHeight }),

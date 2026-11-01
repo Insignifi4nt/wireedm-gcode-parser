@@ -14,7 +14,7 @@ import { evaluateCadScalar } from '../../cadExpression';
 import { cadSketchDriverTolerance } from '../../cadSketchPrecision';
 import type { CadSketchRelationDefinition, CadSketchRelationOf } from '../cadSketchRelationTypes';
 import type { CadSketchLoweringContext } from '../../sketch-solver/cadSketchLoweringContext';
-import { cadSketchAxisNormal, isCadSketchVirtualAxisId, type CadSketchVirtualAxisId } from '../cadSketchVirtualElements';
+import { CAD_SKETCH_ORIGIN_ID, cadSketchAxisNormal, isCadSketchVirtualAxisId, type CadSketchVirtualAxisId } from '../cadSketchVirtualElements';
 import { CAD_SKETCH_POINT_PAIR_OPERANDS, LINE_SLOT, POINT_SLOT, ROUND_SLOT, chainedPair, sortedIds } from './kindParts';
 
 // Points that lie on, or in a set place on, other geometry. Their parse checks resolve exact identities: proximity never stands in for one.
@@ -31,7 +31,11 @@ export const coincident: CadSketchRelationDefinition<'coincident'> = {
   offers: [
     { signature: chainedPair(POINT_SLOT), plan: (planner, [a, b]) => planner.coincide([a.id, b.id]) },
     // Two arcs or circles share their centre: a Coincident between the centres, which reads as Concentric.
-    { signature: chainedPair(ROUND_SLOT), plan: (planner, [a, b]) => planner.concentric(planner.entity(a.id) as Round, planner.entity(b.id) as Round) }
+    { signature: chainedPair(ROUND_SLOT), plan: (planner, [a, b]) => planner.concentric(planner.entity(a.id) as Round, planner.entity(b.id) as Round) },
+    // An arc or circle centred at the origin, which also reads as Concentric, or on an axis: its centre takes the coordinates they fix.
+    { signature: { slots: [ROUND_SLOT, { role: 'Origin', accepts: ['point'] }] },
+      plan: (planner, [curve, origin]) => origin.id === CAD_SKETCH_ORIGIN_ID ? planner.centre(planner.entity(curve.id) as Round, origin.id) : null },
+    { signature: { slots: [ROUND_SLOT, { role: 'Axis', accepts: ['axis'] }] }, plan: (planner, [curve, axis]) => planner.centre(planner.entity(curve.id) as Round, axis.id) }
   ],
   lower: (relation, context) => context.together(() => {
     context.offset(0, relation.pointIds[0], relation.pointIds[1]);

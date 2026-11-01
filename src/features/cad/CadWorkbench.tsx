@@ -17,7 +17,7 @@ import { CadSketchDimensionValueEditor, isCadSketchValueRelation } from './CadSk
 import { CadSketchCornerEditor, CadSketchMoveEditor } from './CadSketchGeometryEditors';
 import { CadSketchSelectionInspector } from './CadSketchSelectionInspector';
 import { CadSketchRelationList } from './CadSketchRelationList';
-import type { CadSketchSelectionActionsModel } from './CadSketchSelectionActions';
+import { cadSketchSelectionRelationActions, type CadSketchSelectionAction, type CadSketchSelectionActionsModel } from './CadSketchSelectionActions';
 import { cadSketchAnalysisIssues, cadSketchIssuesStandInForD1, NO_CAD_SKETCH_ISSUES_BY_RELATION, type CadSketchAnalysisIssues, type CadSketchIssue } from './cadSketchIssues';
 import { cadSketchRelationOffers, type CadSketchRelationOffer } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
 import type { CadSketchWarningsRecord } from './cadEditPreparation';
@@ -92,7 +92,7 @@ import { createCadWorkbenchViewportControls, type CadViewportBindings } from './
 import type { CadRenderedViewControls, CadWorkbenchViewportControls } from './cadViewportControls';
 import { CadPatternCommand } from './CadPatternCommand';
 import { CadToolbarMenu } from './CadToolbarMenu';
-import { CAD_SKETCH_CONSTRAINT_TOOLS, cadSketchConstraintChoices, cadSketchConstraintStep, cadSketchConstraintToolHelp, cadSketchConstraintToolLabels, type CadSketchConstraintChoice, type CadSketchConstraintPick, type CadSketchConstraintTool } from './cadSketchConstraintTool';
+import { CAD_SKETCH_CONSTRAINT_TOOLS, cadSketchConstraintStep, cadSketchConstraintToolHelp, cadSketchConstraintToolLabels, type CadSketchConstraintPick, type CadSketchConstraintTool } from './cadSketchConstraintTool';
 import { cadSketchRelationPlacement } from '@/domain/cad/cadSketchRelationPlacement';
 import { CadEdgeTreatmentCommand } from './CadEdgeTreatmentCommand';
 import { CadPluginsPanel, type CadPluginCommands } from './CadPluginsPanel';
@@ -119,6 +119,9 @@ const NO_MESHES: readonly CadBuildResult['meshes'][number][] = Object.freeze([])
 const NO_SKETCH_SELECTIONS: readonly CadSketchGraphSelection[] = Object.freeze([]);
 const NO_RELATION_IDS: readonly string[] = Object.freeze([]);
 const NO_RELATION_OFFERS: readonly CadSketchRelationOffer[] = Object.freeze([]);
+const NO_SELECTION_RELATIONS: readonly CadSketchSelectionAction[] = Object.freeze([]);
+/** A relation of the selection in a right-click menu: Remove for an applied one, as the icon shown pressed removes it. */
+const relationMenuLabel = (action: CadSketchSelectionAction) => action.state === 'applied' ? `Remove ${action.label.toLowerCase()}` : action.label;
 function afterCadEdit(completion: CadEditCompletion, accepted: () => void, signal?: AbortSignal): CadEditCompletion {
   const finish = (result: Awaited<CadEditCompletion>) => { signal?.throwIfAborted(); accepted(); return result; };
   return completion && 'then' in completion ? completion.then(finish) : finish(completion);
@@ -1561,7 +1564,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         selectGraphSet(selections); setRelationListScope(geometry.length ? { documentId: document.id, sketchId: sourceSketchId, selection: geometry } : null); revealRelationRow(null);
       }) },
       { label: 'Move selection', disabled: Boolean(moveLock), help: moveLock ?? `${scopeHelp} Keep existing dimensions and relations.`, onSelect: () => act(() => { if (!moveLock) openGraphMove(geometry); }) },
-      ...constraintMenuItems(graph, sourceSketchId, selections, act),
+      ...relationMenuItems(graph, sourceSketchId, selections, act),
     ];
   };
   const dimensionOperands = currentDimensionPicks?.operands ?? NO_DIMENSION_OPERANDS;
@@ -1736,15 +1739,13 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       for (const candidate of dimensionPlan.candidates) items.push({ label: candidate.label, disabled: candidate.state === 'blocked', help: candidate.state === 'available' ? undefined : candidate.reason,
         onSelect: () => { if (owned()) placeDimension({ form: candidate.form, pointer }); } });
     }
-    const choices = cadSketchConstraintChoices(graph, picks.operands, () => crypto.randomUUID());
-    if (choices.length) items.push(...items.length ? [{ kind: 'separator' as const }] : [], ...choices.map(choice => ({
-      label: choice.state === 'applied' ? `Remove ${cadSketchConstraintToolLabels[choice.tool].toLowerCase()}` : cadSketchConstraintToolLabels[choice.tool],
-      disabled: choice.state === 'blocked', help: constraintChoiceHelp(choice),
+    // The relations the picks take, as the icon row would offer them on the same selection.
+    const relations = cadSketchSelectionRelationActions(graph, picks.operands);
+    if (relations.length) items.push(...items.length ? [{ kind: 'separator' as const }] : [], ...relations.map(action => ({
+      label: relationMenuLabel(action), disabled: action.state === 'blocked', help: action.help,
       onSelect: () => {
-        if (!owned() || choice.state === 'blocked' || commandSubmission.applying) return;
-        const edits = choice.state === 'available' ? constraintEdits(graph, sourceSketchId, choice.relations)
-          : choice.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sourceSketchId, relationId }));
-        submitEdit(signal => applyCanvasEdits(edits, signal), () => { const owner = dimensionToolOwner.current; if (owner?.id === session.id) settleDimension(owner, owner.placed); });
+        if (!owned() || action.state === 'blocked' || commandSubmission.applying) return;
+        applySketchEdits(relationOfferEdits(graph, sourceSketchId, action.offer), () => { const owner = dimensionToolOwner.current; if (owner?.id === session.id) settleDimension(owner, owner.placed); });
       } })));
     return items.length ? { title: 'Dimension', items } : null;
   };
@@ -1799,26 +1800,25 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     return [...placement ? [{ kind: 'translate-sketch-geometry' as const, sketchId: sourceSketchId, ...placement }] : [],
       ...relations.map(relation => ({ kind: 'set-sketch-relation' as const, sketchId: sourceSketchId, relation }))];
   };
-  // Selection first, as in CATIA's Constraint Definition dialog: the menu lists what fits the selected geometry, the origin and the axes among it.
-  const constraintChoices = useMemo(() => sketch?.graph && !currentConstraintTool && tool === 'select'
-    ? cadSketchConstraintChoices(sketch.graph, graphSelections, () => crypto.randomUUID()) : [], [sketch, currentConstraintTool, tool, graphSelections]);
-  // The icon row offers what the registry's operand signatures say the selection takes, with no solver call; a pointer move changes none of it.
-  const relationOffers = useMemo(() => sketch?.graph && tool === 'select' && !currentConstraintTool && !currentDimensionTool && graphSelections.length
-    ? cadSketchRelationOffers(sketch.graph, graphSelections) : NO_RELATION_OFFERS, [sketch?.graph, tool, currentConstraintTool, currentDimensionTool, graphSelections]);
+  // What the registry's operand signatures say the selection takes, the origin and the axes among it, with no solver call; a pointer move
+  // changes none of it. The icon row offers it, and the Constrain menu lists the same relations first, as CATIA's Constraint Definition
+  // dialog does, so the two never differ.
+  const selectionOffers = useMemo(() => sketch?.graph && tool === 'select' && !currentConstraintTool && graphSelections.length
+    ? cadSketchRelationOffers(sketch.graph, graphSelections) : NO_RELATION_OFFERS, [sketch?.graph, tool, currentConstraintTool, graphSelections]);
+  const relationOffers = currentDimensionTool ? NO_RELATION_OFFERS : selectionOffers;
+  const selectionRelations = useMemo(() => sketch?.graph && selectionOffers !== NO_RELATION_OFFERS ? cadSketchSelectionRelationActions(sketch.graph, graphSelections, selectionOffers) : NO_SELECTION_RELATIONS,
+    [sketch?.graph, graphSelections, selectionOffers]);
   const selectionDimensionOperands = useMemo(() => sketch?.graph && relationOffers !== NO_RELATION_OFFERS ? cadSketchDimensionPreselection(sketch.graph, dimensionPickTargets, graphSelections) : NO_DIMENSION_OPERANDS,
     [sketch?.graph, relationOffers, dimensionPickTargets, graphSelections]);
-  const toggleConstraint = (graph: CadSketchGraph, sourceSketchId: string, choice: CadSketchConstraintChoice) => {
-    if (choice.state === 'blocked') return;
-    const edits = choice.state === 'available' ? constraintEdits(graph, sourceSketchId, choice.relations)
-      : choice.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sourceSketchId, relationId }));
-    submitEdit(signal => applyCanvasEdits(edits, signal));
-  };
-  const constraintChoiceHelp = (choice: CadSketchConstraintChoice) => choice.state === 'blocked' ? choice.reason
-    : choice.state === 'applied' ? 'Already applied. Choose it to remove the constraint.' : cadSketchConstraintToolHelp[choice.tool];
-  const constraintMenuItems = (graph: CadSketchGraph, sourceSketchId: string, picks: readonly CadSketchConstraintPick[], act: (action: () => void) => void): readonly CadContextMenuItem[] => {
-    const choices = cadSketchConstraintChoices(graph, picks, () => crypto.randomUUID()).filter(choice => choice.state !== 'blocked');
-    return choices.length ? [{ kind: 'separator' }, ...choices.map(choice => ({ label: choice.state === 'applied' ? `Remove ${cadSketchConstraintToolLabels[choice.tool].toLowerCase()}` : cadSketchConstraintToolLabels[choice.tool],
-      help: constraintChoiceHelp(choice), onSelect: () => act(() => toggleConstraint(graph, sourceSketchId, choice)) }))] : [];
+  /** The edits an offer makes: its relations, carrying free geometry onto them first, or the removal of the relations an applied one names. */
+  const relationOfferEdits = (graph: CadSketchGraph, sourceSketchId: string, offer: CadSketchRelationOffer): readonly CadEdit[] => offer.state === 'applied'
+    ? offer.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sourceSketchId, relationId }))
+    : constraintEdits(graph, sourceSketchId, offer.relations.map(intent => ({ ...intent, id: crypto.randomUUID() }) as CadSketchGraphRelation));
+  /** After the selection's commands, the relations its icon row would press: the same ones, with the same help, adding or removing the same relations. */
+  const relationMenuItems = (graph: CadSketchGraph, sourceSketchId: string, picks: readonly CadSketchConstraintPick[], act: (action: () => void) => void): readonly CadContextMenuItem[] => {
+    const usable = cadSketchSelectionRelationActions(graph, picks).filter(action => action.state !== 'blocked');
+    return usable.length ? [{ kind: 'separator' }, ...usable.map(action => ({ label: relationMenuLabel(action), help: action.help,
+      onSelect: () => act(() => applySketchEdits(relationOfferEdits(graph, sourceSketchId, action.offer))) }))] : [];
   };
   const beginConstraintTool = (kind: CadSketchConstraintTool) => {
     if (locked || !sketch?.graph) return;
@@ -1919,8 +1919,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const applyRelationOffer = (offer: CadSketchRelationOffer) => {
     const graph = sketch?.graph;
     if (!sketch || !graph || offer.state === 'blocked' || interactionState.current.locked) return;
-    applySketchEdits(offer.state === 'applied' ? offer.relationIds.map(relationId => ({ kind: 'remove-sketch-relation' as const, sketchId: sketch.id, relationId }))
-      : constraintEdits(graph, sketch.id, offer.relations.map(intent => ({ ...intent, id: crypto.randomUUID() }) as CadSketchGraphRelation)));
+    applySketchEdits(relationOfferEdits(graph, sketch.id, offer));
   };
   const selectionActionHandlers = useRef({ offer: applyRelationOffer, dimension: () => undefined as void });
   selectionActionHandlers.current = { offer: applyRelationOffer, dimension: () => { if (selectionDimensionOperands.length) startDimensionTool(selectionDimensionOperands); } };
@@ -2050,8 +2049,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       {!canvasReference && <div className="cad-tool-group">{toolButton('Sketch', SketchIcon, startSketch, locked)}{toolButton('Plane', DatumPlaneIcon, () => startFeature('datum-plane'), locked)}{toolButton('Curve', CurveIcon, () => startFeature('curve'), locked)}</div>}
       <div className="cad-tool-group">{toolButton('Plugins', AddIcon, () => setPluginsOpen(true), locked || Boolean(props.sketchEdit))}</div>
       {sketch ? <><div className="cad-tool-group">{toolButton('Select', SelectIcon, () => { if (dimensionToolOwner.current) endDimensionTool(); chooseTool('select'); }, toolsLocked, tool === 'select' && !currentDimensionTool, undefined, 'S')}{drawingToolButton('line', 'Line', LineIcon, 'Draw connected lines: click each point, then double-click, press Enter or Escape to finish, or click the start to close. Drag to draw one line. 3-point Arc adds arcs to the chain. A line along the horizontal or vertical guide from its start stays horizontal or vertical', 'L P')}{drawingToolButton('arc', 'Arc', ArcIcon, 'Draw a three-point arc: click its start, its end, then a point on the arc', 'A')}{drawingToolButton('rectangle', 'Rectangle', RectangleIcon, undefined, 'R')}{drawingToolButton('circle', 'Circle', CircleIcon, undefined, 'C')}{drawingToolButton('slot', 'Slot', SlotIcon, 'Draw a slot: click both arc centers, then a point to set the width', 'O')}{toolButton('Trim', TrimIcon, () => chooseTool('trim'), toolsLocked || !sketch.graph, tool === 'trim', sketch.graph ? 'Click edge pieces to remove them up to the nearest crossing edge' : 'Trim needs a sketch drawn with connected edges', 'T')}</div><div className="cad-tool-group">{toolButton('Dimension', MeasureIcon, beginSketchDimension, currentDimensionTool ? locked : locked || !sketchDimensionAvailable && !canPickDimension, Boolean(currentDimensionTool), 'Dimension: pick the geometry, then click where the dimension goes', 'D')}<CadToolbarMenu label="Constrain" menuLabel="Constraint tools" title="Constrain the selected geometry, or choose a constraint and then pick the geometry it asks for." icon={<ConstraintIcon size={15} strokeWidth={1.5} />} disabled={locked || !sketch.graph} pressed={Boolean(currentConstraintTool)}
-        items={[...constraintChoices.length && sketch.graph ? [{ kind: 'label' as const, key: 'selection', label: 'For the selection' }, ...constraintChoices.map(choice => ({ key: `selection-${choice.tool}`, label: cadSketchConstraintToolLabels[choice.tool], icon: constraintToolIcon(choice.tool),
-          checked: choice.state === 'applied', disabled: choice.state === 'blocked', title: constraintChoiceHelp(choice), onSelect: () => { if (!locked && sketch.graph) toggleConstraint(sketch.graph, sketch.id, choice); } })),
+        items={[...selectionRelations.length ? [{ kind: 'label' as const, key: 'selection', label: 'For the selection' }, ...selectionRelations.map(action => ({ key: `selection-${action.key}`, label: action.label, icon: <action.icon size={14} />,
+          checked: action.state === 'applied', disabled: action.state === 'blocked', title: action.help, onSelect: () => applyRelationOffer(action.offer) })),
           { kind: 'separator' as const, key: 'tools-separator' }, { kind: 'label' as const, key: 'tools', label: 'Choose, then pick' }] : [],
           ...CAD_SKETCH_CONSTRAINT_TOOLS.map(kind => ({ key: kind, label: cadSketchConstraintToolLabels[kind], icon: constraintToolIcon(kind), title: cadSketchConstraintToolHelp[kind], onSelect: () => beginConstraintTool(kind) }))]} />{toolButton(graphSelections.length ? 'Move selection' : 'Move profile', MoveIcon, beginSketchMove, locked || Boolean(graphEditLock) || !graphSelections.length && (!profile || profile.geometry.kind === 'plugin'), false, graphEditLock ?? 'Move selected geometry without releasing dimensions')}{toolButton('Offset loop', OffsetIcon, beginSketchOffset, locked || !offsetSource, Boolean(currentOffset), 'Create an independent copy of one closed nonconstruction loop')}{toolButton('Mirror copy', MirrorIcon, beginSketchMirror, locked || !canMirrorSketch, Boolean(currentMirror), 'Mirror selected edges, then choose a line in the sketch. The copy is independent.', 'M')}<CadPatternCommand context="sketch" disabled={locked || !canPatternSketch} onChoose={beginSketchPattern} />{toolButton('Use reference', LinkIcon, beginSketchReference, locked || !referenceSources.length, Boolean(currentSketchReference), 'Use a linked line or circle from an earlier sketch on this plane')}<CadEdgeTreatmentCommand context="sketch" disabled={locked || profile?.geometry.kind !== 'rectangle' && !sketchCornerAvailable} chamferAvailable={sketchCornerAvailable} onChoose={beginSketchCorner} /></div><div className="cad-sketch-options"><label><Input type="checkbox" checked={tool === 'select' && graphSelections.length ? graphEntities.length === graphSelections.length && graphEntities.every(entity => entity.construction) : tool === 'select' && profile ? profile.construction : construction} disabled={locked || Boolean(graphEditLock) || patternConstructionLocked || tool === 'select' && graphSelections.some(selection => selection.kind === 'point')} onChange={(event) => changeConstruction(event.target.checked)} /> Construction</label></div></> : curve || curveCreation ? null : <><div className="cad-tool-group">{toolButton('Pad / Pocket', PadPocketIcon, () => startFeature('extrude'), locked || !modelSketchSources?.pad, false, undefined, 'E')}{toolButton('Revolve', RevolveIcon, () => startFeature('revolve'), locked || !modelSketchSources?.revolve)}{toolButton('Loft', LoftIcon, () => startFeature('loft'), locked || document.features.filter(feature => feature.kind === 'sketch' && cadFeatureActive(feature, document)).length < 2, false, 'Loft through ordered sketch sections')}{toolButton('Sweep', SweepIcon, () => startFeature('sweep'), locked || !modelSketchSources?.sweep || !document.features.some(feature => feature.kind === 'curve' && cadFeatureActive(feature, document)), false, 'Sweep a profile along a reference Curve')}</div><div className="cad-tool-group"><CadEdgeTreatmentCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Shell', ShellIcon, () => startFeature('shell'), locked || !topologyReady || !props.onResolveSelection || topologySelection?.picks[0]?.kind !== 'face')}{toolButton('Boolean', BooleanIcon, () => startFeature('boolean'), locked || currentBodyIds.length < 2)}</div><div className="cad-tool-group">{toolButton('Move', Move3dIcon, () => startFeature('transform'), locked || !hasBody)}<CadPatternCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Mirror', MirrorIcon, () => startFeature('mirror'), locked || !hasBody)}</div></>}
     </div>;

@@ -96,6 +96,30 @@ describe('value editor at a dimension', () => {
     } finally { document.body.append(container); workbench.remove(); }
   });
 
+  it('stays between the sketch bar and the tool dock on either side of its dimension, and scrolls where they leave too little room', async () => {
+    // The view is 1000 by 800 px; the sketch bar floats over columns 300 to 700 down to 36 px, and the dock over them from 700 px down.
+    const workbench = document.createElement('div'); workbench.className = 'cad-workbench'; document.body.append(workbench); workbench.append(container);
+    const dock = document.createElement('div'), bar = document.createElement('div'), label = document.createElement('div');
+    dock.setAttribute('data-cad-command-dock', ''); bar.setAttribute('data-cad-sketch-header', ''); workbench.append(dock, bar, label);
+    let anchor = new DOMRect(400, 0, 40, 12), height = 120;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this === dock ? new DOMRect(300, 700, 400, 50) : this === bar ? new DOMRect(300, 8, 400, 28) : this === label ? anchor : new DOMRect(0, 0, 1000, 800);
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(228); vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => height);
+    const source = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }], entities: [line('base', 'a', 'b')],
+      relations: [{ id: 'size', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] });
+    const style = () => (container.querySelector<HTMLFormElement>('form[data-cad-sketch-value-editor]')!).style;
+    const open = async () => { await act(async () => root.render(<></>)); await mount(source, props => <CadSketchDimensionValueEditor {...props} relationId="size" findAnchor={() => label} onClose={vi.fn()} onAccepted={vi.fn()} />); };
+    try {
+      // A label panned up under the bar would put the editor at 18 px below it; it starts under the bar at 42 px instead.
+      await open(); expect([style().top, style().maxHeight]).toEqual(['42px', '']);
+      // A label panned down under the dock would put the editor above it at 634 px, reaching 754 px; it ends 8 px above the dock instead.
+      anchor = new DOMRect(400, 760, 40, 12); await open(); expect([style().top, style().maxHeight]).toEqual(['572px', '']);
+      // Taller than the 650 px between the bar and the dock, it starts under the bar and scrolls within them.
+      height = 700; await open(); expect([style().top, style().maxHeight, style().overflowY]).toEqual(['42px', '650px', 'auto']);
+    } finally { document.body.append(container); workbench.remove(); }
+  });
+
   it('keeps a distance from an axis on its side of the axis and edits an angle in degrees', async () => {
     const source = part({ points: [{ id: 'a', position: [-10, 0] }, { id: 'b', position: [0, 0] }, { id: 'c', position: [0, 10] }], entities: [line('base', 'a', 'b'), line('side', 'b', 'c')],
       relations: [{ id: 'left', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: -10 },
