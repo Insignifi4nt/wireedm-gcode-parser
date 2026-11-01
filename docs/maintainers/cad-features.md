@@ -11,7 +11,7 @@ features through the definition rather than switching on kinds. What a kind show
 | Scalars (`cadFeatureScalarField`, `cadFeatureVectorField`) | Range checks while parsing, parameter traversals (`mapCadFeatureScalars`) and kernel limits (`cadFeatureScalar`). |
 | `quantities` of a field holding nested values | What each number inside it measures, by path (`cadFeatureQuantityAt`). |
 | `choices`, `condition` | Choice values in forms, and conditional fields such as a target that only exists for join and cut. |
-| `outputs`, `body`, `suppression` | Which features may feed a slot, which bodies a feature replaces (`cadConsumedBodyIds`) and what an inactive feature leaves. |
+| `outputs`, `body`, `occurrence`, `suppression` | Which features may feed a slot, which body a feature creates, keeps or consumes ([body identity](#body-identity)) and what an inactive feature leaves. |
 | `evaluator` | Where the feature is evaluated and the version of that evaluation, for the rebuild cache. |
 | `diagnostics` | Every code the kind's own checks and evaluation raise, apart from the steps all kinds share (`CAD_FEATURE_SHARED_DIAGNOSTICS`). |
 | `check`, `instances` | Checks beyond the schema while parsing, and the solid count a feature makes. |
@@ -59,6 +59,86 @@ Read whether a feature takes part in a rebuild with `cadFeatureActive(feature, s
 assignment, `'suppressed' in` and reflective reads. Code that means the stored value itself, such as the suppression toggle or a check
 on an import result, reads it with `cadFeatureSuppressionFlag`. The check cannot see reads that never name the flag (key enumeration,
 spreads, serialization) or keys built at run time; `scripts/check-feature-activity.ts` lists what it covers.
+
+## Body identity
+
+`src/domain/cad/cadBodies.ts` derives the bodies after each feature and keys each one by the feature that created it, so a body keeps one
+key however often features change it. `createCadBodyLineage()` applies features in history order. Validation, the kernel, the workbench and
+the export dialogs each derive the lineage of the history they show. The kernel adds what only geometry knows and returns the states with
+every build (`CadBuildResult.bodies`, `CadMesh.bodyKey`). A kind's `body` behaviour decides the key:
+
+| `body` | Key after the feature | What the feature's id leads to (`of`) |
+| --- | --- | --- |
+| `none` | – | nothing |
+| `new` | the feature's id, followed by the kind's `occurrence`: a mirror's is `flip/mirror` | the new body |
+| `modify-target` | the key of its target or source | that body |
+| `new-or-modify` | as `modify-target` when it names a target, otherwise as `new` | the body made or modified |
+| `consume-tools` | the key of its target. Each tool body is consumed and records the feature as `consumedBy` | the target body |
+
+- A body whose solids are told apart has `pieces`: one key for each solid, in `CadMesh.faceSolids` order. A body stays whole, with no
+  pieces, until one of its solids may have split, or a pattern leaves a copy apart from the originals. A solid may have split when it leaves
+  several solids, or when a solid of the result keeps none of the body's faces, since that solid might be a piece of any of them. A fused
+  tool keeps the body whole. A body that has pieces keeps them, even when one solid is left. A new body starts whole, and so does a mirror
+  image, whatever parts its source had.
+- The kernel traces each solid of a feature's result to every source solid it keeps a face of unchanged (`createCadKernelFaceSources`):
+  the solids of the target, of each pattern copy and of a fused tool. A face that two solids of a source, or two sources, share is never
+  traced, since which of them it would count for follows the order they are listed in. A key is inherited only when continuity is
+  certain. Anything else gets a fresh key, a reported ambiguity or a reported loss, never a guess. Each solid of the result:
+  - continues the one target piece it keeps faces of. A Boolean keeps its target's key, whatever tool or copies it absorbs;
+  - keeping no target face, continues the one pattern copy it keeps faces of, keyed `inst(i,j)` after the piece copied, such as
+    `box/inst(2,0)`. The copied piece itself becomes `inst(0,0)`, and nested patterns nest them. A solid of the fused tool alone gets a
+    fresh key;
+  - keeping faces of several target pieces, or of several copies and no target, merges them. It gets a fresh key, and the merged pieces are
+    reported lost;
+  - keeping no face at all, descends from the target's one key when the target has one key and the feature has no tool or copies.
+    Otherwise it gets a fresh key. Face provenance is then incomplete: nothing proves that a piece one solid continues did not also split
+    into it, or which piece no solid continues it is. So it, the pieces continued by one solid and the pieces no solid continues are
+    ambiguous together.
+- A key that one solid continues stays. When several solids continue it, each becomes `key/split(q)`, numbered by the first face of the
+  body before that it keeps, never by position or size, then the solids that keep no face in the kernel's order. Fresh keys are
+  `feature/split(k)`: solids of the tool, then merges, then solids that keep no face. Faces rank within their source in the order the
+  kernel lists its solids, so ranks order solids only when the faces they are numbered by lie in the same solid of one source. Solids
+  numbered by faces of different solids, as the several solids of a whole body are, by equal ranks, or in the kernel's order, are marked
+  `ambiguous` when there are two or more of them: the kernel might list them in another order for the same input. A piece no solid continues is lost, and
+  references to it resolve as missing.
+- Ambiguity is kept in groups (`CadBodyState.ambiguous`), and an ambiguous key resolves only to the pieces of its own group. The keys
+  that descend from one group through one source form a group, so each pattern copy's pieces stay apart from every other copy's, until K5
+  can establish identity. A group's earlier keys that no solid continues stay in it, as keys that can't be found, while a solid descends
+  from the group through the target; once none does, they are lost. So do earlier keys that solids continue under other keys, as
+  `key/split(q)` or a pattern copy's `key/inst(i,j)`: the kernel's order picked which member's key each solid continued, so the old key
+  may name any solid descending from the group in another order. A pattern keeps them in the original's group.
+- A key no body lists resolves as ambiguous when another kernel order would have given it a solid. The order decides only which of the
+  keys one split gave at once names which solid; every later step follows its solid, and pattern copies and mirror images are told apart
+  by the faces they keep, never by the order. So a twin of the key is the key with one `split` step changed to a sibling's, a key the same
+  split gave beside it in its group, and the nearest such step with a twin the body lists decides, among the groups of all its twins. A
+  later feature's key with the same steps, such as the copy of a join that merged the originals, is never a twin, and the search stops at
+  a certain piece or the body's own key.
+- Each feature reports these in `CadBuildResult.bodyIssues` for D1 to adopt: `ambiguous-body-parts` for keys it makes ambiguous,
+  `lost-body-parts` for pieces it removes or merges into another solid, and `untracked-body-parts` when a body tracks more than
+  `MAX_CAD_BODY_LIST` (4,096) part keys: its pieces and the keys its groups keep, together. Its parts are then untracked for the rest of
+  the history, and references to them resolve as missing. Since groups keep every former member's key while a solid descends from them,
+  the keys grow with the history, not the solid count: a body of 100 ambiguous solids that loses one piece and splits another at each
+  feature adds two keys a feature and passes the limit at the 1,999th such feature. That limit is separate from an issue's 4,096 keys
+  below. Collapsing a group's kept keys to a common prefix was not done: removed and merged keys leave no descendant to imply them, so it
+  would at most halve the growth while adding a third way to resolve a key. A key ambiguous only
+  because it descends from an ambiguous key is added to the issue that reported that key instead of being reported again, until that
+  issue lists 4,096 keys. The later feature then reports the keys that did not fit in an `ambiguous-body-parts` issue of its own, which
+  later descendants extend in turn. A message gives counts,
+  never keys; `pieces` lists the keys, at most 4,096. A build lists at most `MAX_CAD_BODY_ISSUES` (512) issues, and the last becomes
+  `more-body-issues`, which counts the rest. Two cases are reported today: a fillet or chamfer of every edge rebuilds every face, so the
+  pieces it changes keep none; and the kernel simplifies the result of a Boolean, which can merge faces, so a solid that continues a piece
+  can keep none of its faces. Precise lineage through Booleans and splits waits for the kernel's own history (K3: modified, generated and
+  deleted shapes).
+- An inactive feature changes no body. Under `pass-through` its id leads to the body it would have changed, so selecting it selects that
+  body; under `no-output` it leads nowhere. Validation and the kernel resolve a stored target strictly (`at`): it names the feature whose
+  result the body now is, as before.
+- Keys are derived on every rebuild and never stored, so the stored document is unchanged and targets still hold feature ids. S8's format
+  cut stores targets as `CadBodyRef` (`{ kind: 'body', key }`, resolved by `resolveCadBodyRef` to a body, a part of one, a missing body
+  with the feature that consumed it, or an ambiguous piece) and body metadata as `CadBodyMetadata` (`{ name, role, appearance?, material? }`)
+  keyed by body key. Until then `resolveCadBodyMetadata` names each body after its creating feature, in the `part` role.
+- Consumers choose a body by key. A selected feature leads to its body wherever it sits in that body's history (`cadSelectedBody`), and
+  the latest body is chosen only when the selection leads to none. Worker requests and agent tools still pass the `featureId` of a body's
+  current state as `bodyId`.
 
 ## Not yet slots
 
