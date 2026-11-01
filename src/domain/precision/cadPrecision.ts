@@ -72,6 +72,8 @@ const roles = {
   pocketCapMarginFloorMm: 1e-6,
   /** Dimensionless tolerance on unit topology directions: normalization, parallel test and plane-normal match. */
   kernelDirection: 1e-10,
+  /** Fuzzy tolerance that fuse, cut and intersect pass to `SimplifyResult` when they unify the result's same-domain faces and edges. Replicad 1.1's value, kept so boolean results stay the same. */
+  kernelBooleanSimplifyMm: 0.001,
   /** Dimensionless orthonormality residual a datum or placement frame may carry. */
   frameOrthonormalResidual: 64 * Number.EPSILON,
   /** Display mesh chord deviation. */

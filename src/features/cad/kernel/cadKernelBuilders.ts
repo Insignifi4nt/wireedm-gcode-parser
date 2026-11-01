@@ -2,6 +2,7 @@ import { cast, getOC, isShape3D, type Shape3D } from 'replicad';
 import type { BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse, BRepBuilderAPI_Transform, BRepFilletAPI_MakeChamfer, BRepFilletAPI_MakeFillet,
   gp_Trsf, TopoDS_Shape } from 'replicad-opencascadejs';
 import type { CadPlane } from '../../../domain/cad/cadDocument';
+import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
 import { cadKernelDisposeOwned, cadKernelEdges } from './cadKernelShapes';
 
 /**
@@ -79,7 +80,7 @@ function boolean(kind: CadKernelBooleanKind, left: Shape3D, right: Shape3D): Sha
     // Replicad builds a second time after the constructor. The second build is part of today's
     // geometry (a near-full circular pattern differs without it), so it stays.
     builder.Build();
-    builder.SimplifyResult(true, true, 0.001);
+    builder.SimplifyResult(true, true, CAD_PRECISION.kernelBooleanSimplifyMm);
     return owned3D(builder.Shape(), () => true, `Could not ${verbs[kind]} as a 3d shape`);
   } finally { builder.delete(); }
 }

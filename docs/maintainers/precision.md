@@ -38,6 +38,7 @@ Units: `Mm` millimetres, `Mm2` square millimetres, `Mm3` cubic millimetres, `Rad
 | | `kernelBoundsSlackMm` | 1e-6 | Slack when shell result bounds are compared with the original. |
 | | `pocketCapMarginFloorMm` | 1e-6 | Smallest cap margin a pocket extent adds. |
 | | `kernelDirection` | 1e-10 | Unit direction normalization, parallel test and plane normal match. |
+| | `kernelBooleanSimplifyMm` | 0.001 | Fuzzy tolerance of `SimplifyResult` after fuse, cut and intersect. Replicad 1.1's value, so boolean results stay the same. |
 | | `frameOrthonormalResidual` | 64 ε | Orthonormality residual of a datum or placement frame. |
 | | `tessellationMm`, `tessellationAngleRad` | 0.05, 0.15 | Display mesh deviation. |
 | Gears | `gearAngleMarginRad` | 1e-6 | Keeps tooth half-angles away from pointed tips and overlap. |

@@ -251,7 +251,7 @@ The kernel now runs these operations itself:
 - **Adapters.** `cadKernelBuilders.ts` holds fuse, cut and common; translate, rotate, mirror and scale, which leave their input intact; and fillet and chamfer of every edge.
   - Each repeats Replicad's native calls exactly, borrows its inputs and returns a new shape the caller owns.
   - Each deletes its builder, raw result and every vector, point, direction, axis and transform it makes in `finally`, so they are released also when the native operation throws.
-  - Booleans keep Replicad's second `Build()` and `SimplifyResult(true, true, 0.001)` after the constructor (see the findings below).
+  - Booleans keep Replicad's second `Build()` and `SimplifyResult(true, true, 0.001)` after the constructor (see the findings below), with the tolerance read from the precision role `kernelBooleanSimplifyMm`.
   - `cadKernelAx1` and `cadKernelScaledUnitVector` give the revolve axis and the extrusion vector with the values `makeAx1` and `new Vector(normal).normalized().multiply(distance)` give.
 - **Placement.** `CadKernelPlane` owns only the origin, x direction and normal that Replicad's `Plane` gives a sketch. The sketch axis and the faces of profiles with holes (`cadKernelSketchFace`) are built and deleted by the kernel, as `makeAx2`, `Sketch.face` and `CompoundSketch.face` build them.
 - **Callers.** Extrude and Revolve with every operation, boolean features, linear and circular patterns, Mirror, Transform, loft, segment sweep, Pocket, cut evidence and inch STL import use the adapters. Shell and selected-edge fillet and chamfer already owned their builders. `cadKernelConsumeShape`, which existed only because Replicad's transforms consumed their input, is gone.
