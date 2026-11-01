@@ -101,6 +101,9 @@ describe('persistent circle row source and ownership', () => {
     // A copied id that already names other data refuses, and the flag means nothing on any other relation.
     const taken = applyCadEdits(source, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'holes_i1_r0', kind: 'distance', pointIds: ['center', 'far'], value: 30 } }]);
     expect(() => applyCadEdits(taken, [copying(circleRow)])).toThrowError(expect.objectContaining({ code: 'invalid-sketch-pattern' }));
+    // A new owner reserves its own id: a copied reference or an occurrence that would reuse it refuses alike, and nothing is applied.
+    for (const id of ['holes_i1_r0', 'holes_i1_e0', 'holes_i2_p0'])
+      expect(() => applyCadEdits(source, [copying({ ...circleRow, id })])).toThrowError(expect.objectContaining({ code: 'invalid-sketch-pattern' }));
     expect(() => applyCadEdits(source, [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: seedRelations[0], copyRelations: true }]))
       .toThrowError(expect.objectContaining({ code: 'invalid-edit' }));
   });

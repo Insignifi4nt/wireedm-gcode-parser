@@ -138,7 +138,8 @@ export function reconcileCadSketchLinearPattern({ graph, parameters, relation, p
   const outcomes = leaving.length ? remapCadSketchRelations(graph, { curves: new Map(leaving.map(member => [member.entityId, []])),
     points: new Map(leaving.map(member => [member.pointId, null])) }) : [];
   if (outcomes.some(item => item.kind === 'blocked' && item.relation.id !== previous?.id)) return invalid('Remove dependent relations before omitting a pattern occurrence.');
-  const occupied = new Set([...graph.points, ...graph.entities, ...graph.relations].map(item => item.id));
+  // A new owner's own id is taken as well, so neither an occurrence nor a copied relation may reuse it.
+  const occupied = new Set([...graph.points, ...graph.entities, ...graph.relations, relation].map(item => item.id));
   for (const id of active) if (occupied.has(id) && !retained.has(id)) return invalid('A pattern occurrence identity already belongs to other geometry.');
   const positions = new Map(next.positions.map(member => [member.pointId, member.position]));
   const points = graph.points.filter(point => !removed.has(point.id)).map(point => positions.has(point.id) ? { ...point, position: positions.get(point.id)! } : point);
