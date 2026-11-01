@@ -5,7 +5,7 @@ import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph, type CadSketchSymmetricCurvesRelation } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
 import { CadSketchSplitDependencyError, splitCadSketchEntity } from '@/domain/cad/cadSketchSplit';
-import { cadSketchMirrorPairings, cadSketchMirrorPairs, type CadSketchMirroredCurve } from '@/domain/cad/cadSketchSymmetryRelations';
+import { CAD_SKETCH_MIRROR_COLLAPSE, cadSketchMirrorPairings, cadSketchMirrorPairs, type CadSketchMirroredCurve } from '@/domain/cad/cadSketchSymmetryRelations';
 import { CadSketchExtendDependencyError, prepareCadSketchExtend, prepareCadSketchTrim, trimCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { cadSketchRelationOffers } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
 import { cadSketchRelationKey, cadSketchRelationKindName, cadSketchRelationMeaning } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
@@ -264,9 +264,9 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
   it('mirror two lines kept horizontal or vertical about H, V, a free construction line or a fixed oblique line, refusing directions no mirror keeps by name', async () => {
     // Every mix of nothing, Horizontal and Vertical on A and on B, about the axes, a free construction line drawn near V, and a line
     // fixed at 120°, V turned 30°. A mirror about a fixed line sends a direction θ to twice the line's less θ, so the lines' directions
-    // agree with it or the mirror would collapse them; a free line turns to agree with any two. The mirror keeps what Horizontal or
-    // Vertical on one line adds to the other, so it takes exactly the freedom they leave and none is redundant. Then, with the relations
-    // removed, the lines stay where they are, still mirrored, with the mirror's own freedom.
+    // agree with it or the mirror would collapse them; a free line turns to agree with any two, starting turned to the nearer direction
+    // that does. The mirror keeps what Horizontal or Vertical on one line adds to the other, so it takes exactly the freedom they leave
+    // and none is redundant. Then, with the relations removed, the lines stay where they are, still mirrored, with the mirror's own freedom.
     const solver = await loadCadSketchTestNativeSolver();
     type Held = 'none' | 'horizontal' | 'vertical';
     type Mirrored = '@v' | '@h' | 'free' | 'oblique';
@@ -291,7 +291,7 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       });
     };
     const angle = (how: Held) => how === 'horizontal' ? 0 : 90, name = (how: Held) => how === 'horizontal' ? 'Horizontal' : 'Vertical';
-    let applied = 0, refused = 0, unreached = 0;
+    let applied = 0, refused = 0;
     for (const mirror of ['@v', '@h', 'free', 'oblique'] as const) for (const onA of HELD) for (const onB of HELD) {
       const where = `${onA} A, ${onB} B about ${mirror}`, raw = build(mirror, onA, onB), graph = parseCadSketchGraph(raw);
       const lineId = mirror === '@v' || mirror === '@h' ? mirror : 'mirror', relation = { kind: 'symmetric', curveIds: ['A', 'B'], lineId };
@@ -309,12 +309,7 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       }
       expect(offer(graph, ['A', 'B', lineId]), where).toMatchObject({ state: 'available', relations: [relation] });
       const freedom = mirror === 'free' ? 8 - kept : 4 - Math.min(kept, 1), result = solve([...raw.relations, { id: 'mirrored', ...relation }]);
-      if (result.kind !== 'solved') {
-        // A free mirror drawn near V has to turn 45° for one line level and the other upright, and the solver meets the lines collapsed
-        // first, which the graph check refuses: rejected, never solved elsewhere. Drawn near the bisector, it solves; see below.
-        expect(mirror === 'free' && kept === 2 && onA !== onB, `${where}: ${result.message}`).toBe(true);
-        unreached++; continue;
-      }
+      if (result.kind !== 'solved') throw new Error(`${where}: ${result.message}`);
       expect(result.diagnostics, where).toMatchObject({ degreesOfFreedom: freedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
       expect(reflects(result.graph, mirror), where).toBe(true);
       expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
@@ -325,14 +320,62 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       expect([...positions(released.graph)].every(([id, { x, y }]) => Math.hypot(x - positions(result.graph).get(id)!.x, y - positions(result.graph).get(id)!.y) < 1e-9), where).toBe(true);
       applied++;
     }
-    expect([applied, refused, unreached]).toEqual([4 * 9 - 10, 8, 2]);
-    for (const [onA, onB] of [['horizontal', 'vertical'], ['vertical', 'horizontal']] as const) {
-      const raw = build('free', onA, onB, [[-40, -42], [42, 40]]);
-      const { result } = attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...raw, relations: [...raw.relations, mirrored('construction')] }), parameters: {}, analyseDefinition: true }, solver);
-      if (result.kind !== 'solved') throw new Error(`${onA} A, ${onB} B about a free line near the bisector: ${result.message}`);
-      expect(result.diagnostics).toMatchObject({ degreesOfFreedom: 6, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
-      expect(reflects(result.graph, 'free')).toBe(true);
+    expect([applied, refused]).toEqual([4 * 9 - 8, 8]);
+  });
+
+  it('turn a free mirror to the nearer direction that the lines\' directions leave it, counter-clockwise on a tie, and mirror from there', async () => {
+    // The review's sketch, already valid: A level from (10, 5) to (25, 5), B upright from (-10, 5) to (-10, 20), and a free construction
+    // line drawn near V, and the same with A upright and B level. One line level and the other upright mirror only about a line at 45°
+    // or 135°: drawn tilted left of V it turns to 135°, tilted right to 45°, and exactly upright, 45° from both, counter-clockwise to
+    // 135°. Lines kept perpendicular, or parallel, by a relation leave the mirror two directions about A's, 45° apart or along and
+    // square to A. Each mirror holds four of the free lines' freedoms, A stays where it is and the mirror turns about its middle.
+    const solver = await loadCadSketchTestNativeSolver();
+    const sketch = (points: Readonly<Record<string, Place>>, drawn: readonly [Place, Place], relations: readonly unknown[]) => ({
+      points: [...Object.entries({ ...points, m1: drawn[0], m2: drawn[1] }).map(([id, position]) => ({ id, position }))],
+      entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }], relations });
+    const level = { a1: [10, 5], a2: [25, 5], b1: [-10, 5], b2: [-10, 20] } as const, upright = { a1: [10, 5], a2: [10, 20], b1: [-10, 5], b2: [-25, 5] } as const;
+    const square = (id: string, kind: string, pointIds: readonly [string, string]) => ({ id, kind, pointIds });
+    const [left, right, plumb] = [[[.5, -60], [-.5, 60]], [[-.5, -60], [.5, 60]], [[0, -60], [0, 60]]] as const;
+    const cases: readonly (readonly [string, Readonly<Record<string, Place>>, readonly [Place, Place], readonly unknown[], number, number])[] = [
+      ['A level, B upright, drawn left of V', level, left, [square('h', 'horizontal', ['a1', 'a2']), square('v', 'vertical', ['b1', 'b2'])], 135, 6],
+      ['A upright, B level, drawn left of V', upright, left, [square('v', 'vertical', ['a1', 'a2']), square('h', 'horizontal', ['b1', 'b2'])], 135, 6],
+      ['A level, B upright, drawn right of V', level, right, [square('h', 'horizontal', ['a1', 'a2']), square('v', 'vertical', ['b1', 'b2'])], 45, 6],
+      ['A upright, B level, drawn on V', upright, plumb, [square('v', 'vertical', ['a1', 'a2']), square('h', 'horizontal', ['b1', 'b2'])], 135, 6],
+      ['A perpendicular to B', level, left, [{ id: 'p', kind: 'perpendicular', lineIds: ['A', 'B'] }], 135, 7],
+      ['A parallel to B at 45°', { a1: [10, 5], a2: [25, 20], b1: [-10, -5], b2: [-25, -20] }, left, [{ id: 'p', kind: 'parallel', lineIds: ['A', 'B'] }], 135, 7]
+    ];
+    for (const [where, points, drawn, relations, direction, freedom] of cases) {
+      const raw = sketch(points, drawn, relations), graph = parseCadSketchGraph(raw);
+      expect(offer(graph, ['A', 'B', 'mirror']), where).toMatchObject({ state: 'available', relations: [{ kind: 'symmetric', curveIds: ['A', 'B'], lineId: 'mirror' }] });
+      const { result } = attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...raw, relations: [...relations, mirrored('construction')] }), parameters: {}, analyseDefinition: true }, solver);
+      if (result.kind !== 'solved') throw new Error(`${where}: ${result.message}`);
+      expect(result.diagnostics, where).toMatchObject({ degreesOfFreedom: freedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      const at = positions(result.graph), [m1, m2] = [at.get('m1')!, at.get('m2')!];
+      expect(((Math.atan2(m2.y - m1.y, m2.x - m1.x) * 180 / Math.PI) % 180 + 180) % 180, where).toBeCloseTo(direction, 9);
+      expect(Math.hypot((m1.x + m2.x) / 2 - (drawn[0][0] + drawn[1][0]) / 2, (m1.y + m2.y) / 2 - (drawn[0][1] + drawn[1][1]) / 2), where).toBeLessThan(1e-9);
+      for (const id of ['a1', 'a2']) expect(Math.hypot(at.get(id)!.x - points[id][0], at.get(id)!.y - points[id][1]), `${where}: ${id} stays`).toBeLessThan(1e-9);
+      // B's ends are A's images, paired by where they start about the turned mirror.
+      const dx = m2.x - m1.x, dy = m2.y - m1.y, images = ['a1', 'a2'].map(id => {
+        const { x, y } = at.get(id)!, along = ((x - m1.x) * dx + (y - m1.y) * dy) / (dx * dx + dy * dy);
+        return { x: 2 * (m1.x + along * dx) - x, y: 2 * (m1.y + along * dy) - y };
+      });
+      for (const id of ['b1', 'b2']) expect(Math.min(...images.map(image => Math.hypot(image.x - at.get(id)!.x, image.y - at.get(id)!.y))), `${where}: ${id} on an image`).toBeLessThan(1e-7);
+      expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
     }
+  });
+
+  it('refuse a mirror that could only be met by collapsing the curves, with the reason, and never store the collapse', async () => {
+    // A level and B upright, about a construction line whose ends Fixed x keeps on V: a mirror the curves can meet only at zero length.
+    // The planner refuses it; stored anyway, as a file or an edit may, the solve is refused with the reason rather than collapsing them.
+    const solver = await loadCadSketchTestNativeSolver();
+    const raw = { points: [{ id: 'a1', position: [10, 5] }, { id: 'a2', position: [25, 5] }, { id: 'b1', position: [-10, 5] }, { id: 'b2', position: [-10, 20] }, { id: 'm1', position: [0, -60] }, { id: 'm2', position: [0, 60] }],
+      entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }],
+      relations: [{ id: 'h', kind: 'horizontal', pointIds: ['a1', 'a2'] }, { id: 'v', kind: 'vertical', pointIds: ['b1', 'b2'] },
+        { id: 'x1', kind: 'fixed-axis', pointId: 'm1', axis: 'x', value: 0 }, { id: 'x2', kind: 'fixed-axis', pointId: 'm2', axis: 'x', value: 0 }] };
+    expect(offer(parseCadSketchGraph(raw), ['A', 'B', 'mirror'])).toMatchObject({ state: 'blocked', reason: 'The Horizontal and Vertical relations keep these lines in directions that cannot mirror about this line. Remove one of them first.' });
+    const { result } = attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...raw, relations: [...raw.relations, mirrored('construction')] }), parameters: {}, analyseDefinition: true }, solver);
+    expect(result).toMatchObject({ kind: 'rejected', reason: 'failed', message: CAD_SKETCH_MIRROR_COLLAPSE });
+    expect(result.kind === 'rejected' && result.diagnostics.issues?.map(issue => [issue.source.id, issue.code])).toEqual([['A', 'degenerate-entity'], ['B', 'degenerate-entity']]);
   });
 
   it('mirror two lines beside Parallel, Perpendicular or Collinear, Equal, a point mirror or a hold on an axis, refusing only what cannot mirror', async () => {
@@ -582,6 +625,38 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     // Point mirrors that pair two lines' ends the other way round from where they lie are refused, as a new mirror pairs them by place.
     const crossed = graphOf(SCENES.lines, '@v', { relations: [{ id: 'x', kind: 'symmetric', pointIds: ['a1', 'b2'], lineId: '@v' }] });
     expect(offer(crossed, ['A', 'B', '@v'])).toMatchObject({ state: 'blocked', reason: 'Symmetric already pairs these lines’ ends the other way round from where they lie. Remove it first.' });
+  });
+
+  it('refuse a curve mirror that other relations keep whole as redundant, naming it, though it yields where they keep only part', async () => {
+    // The review's four circles of radius 4 at (±10, ±5): A and B mirror about V, B and C about H, C and D about V, so D and A mirror
+    // about H already. The planner offers it, as only the solver sees the chain, and the solver refuses it as redundant, as any relation
+    // adding nothing is, leaving the sketch as it was.
+    const solver = await loadCadSketchTestNativeSolver();
+    const ring = (id: string, centerPointId: string, radius: number | string = 4) => ({ ...circle(id, centerPointId), radius });
+    const curves = (id: string, curveIds: readonly [string, string], lineId: string) => ({ id, kind: 'symmetric', curveIds, lineId });
+    const four = { points: [{ id: 'ka', position: [10, 5] }, { id: 'kb', position: [-10, 5] }, { id: 'kc', position: [-10, -5] }, { id: 'kd', position: [10, -5] }],
+      entities: [ring('A', 'ka'), ring('B', 'kb'), ring('C', 'kc'), ring('D', 'kd')],
+      relations: [curves('ab', ['A', 'B'], '@v'), curves('bc', ['B', 'C'], '@h'), curves('cd', ['C', 'D'], '@v')] };
+    const solve = (raw: { readonly relations: readonly unknown[] }, relation: unknown) => attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...raw, relations: [...raw.relations, relation] }), parameters: {}, analyseDefinition: true }, solver).result;
+    expect(offer(parseCadSketchGraph(four), ['D', 'A', '@h'])).toMatchObject({ state: 'available', relations: [{ kind: 'symmetric', curveIds: ['D', 'A'], lineId: '@h' }] });
+    expect(solve(four, curves('da', ['D', 'A'], '@h'))).toMatchObject({ kind: 'rejected', reason: 'redundant',
+      diagnostics: { degreesOfFreedom: 3, conflictingIds: [], redundantIds: ['da'], partiallyRedundantIds: [] } });
+    // The open chain, three of the four, still adds the last mirror's freedom.
+    expect(solve({ ...four, relations: four.relations.slice(0, 2) }, curves('cd', ['C', 'D'], '@v'))).toMatchObject({ kind: 'solved',
+      diagnostics: { degreesOfFreedom: 3, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] } });
+
+    // Mirrored centres and both radii fixed to 4 keep the whole mirror, which the planner finds already applied, naming the point
+    // mirror; stored anyway, the solver refuses the curves' Symmetric as redundant. With one radius fixed, it still adds the other.
+    const centres = { points: [{ id: 'k1', position: [15, 8] }, { id: 'k2', position: [-15, 8] }], entities: [ring('A', 'k1', '4'), ring('B', 'k2', '4')],
+      relations: [{ id: 'c', kind: 'symmetric', pointIds: ['k1', 'k2'], lineId: '@v' }] };
+    const graph = parseCadSketchGraph(centres);
+    expect(offer(graph, ['A', 'B', '@v'])).toMatchObject({ state: 'applied', relations: [], relationIds: ['c'] });
+    expect(step(graph, 'symmetric', ['A', 'B', '@v'])).toEqual({ status: 'invalid', reason: 'These circles already mirror each other.', applied: ['c'] });
+    expect(solve(centres, mirrored('@v'))).toMatchObject({ kind: 'rejected', reason: 'redundant',
+      diagnostics: { degreesOfFreedom: 2, conflictingIds: [], redundantIds: ['mirrored'], partiallyRedundantIds: [] } });
+    const one = { ...centres, entities: [ring('A', 'k1', '4'), ring('B', 'k2')] };
+    expect(offer(parseCadSketchGraph(one), ['A', 'B', '@v'])).toMatchObject({ state: 'available' });
+    expect(solve(one, mirrored('@v'))).toMatchObject({ kind: 'solved', diagnostics: { degreesOfFreedom: 2, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] } });
   });
 
   it('leave with a trim of either mirrored curve, and refuse a split or an extension while it names the curve', () => {

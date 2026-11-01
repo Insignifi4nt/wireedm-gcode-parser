@@ -7,6 +7,7 @@ import { resolveCadSketchPointIdentities } from '../cadSketchGraphJoints';
 import { cadSketchLineDirection } from '../cadSketchLineRelations';
 import type { Point2 } from '../../path-intel/types';
 import { cadSketchRelationDefinition } from '../sketch-relations/cadSketchRelationRegistry';
+import { cadSketchRelationPlanner, type CadSketchMirrorTurn } from '../sketch-relations/cadSketchRelationPlanning';
 import type { CadSketchEquation, CadSketchEquationKind, CadSketchPointParameters, CadSketchSizeParameters, CadSketchSupportParameters } from './cadSketchEquationModel';
 
 /**
@@ -78,6 +79,10 @@ export interface CadSketchLoweringContext {
    * puts it; false when neither coordinate can move. A later start of the same coordinate replaces an earlier one.
    */
   start(pointId: string, position: Point2): boolean;
+  /** Whether either of the point's coordinates can move: false where expressions fix both, and for the origin and the axes. */
+  movable(pointId: string): boolean;
+  /** How the relations and fixed ends that keep line directions force a mirror line for two lines, as the shared planner reads them. */
+  mirrorTurn(firstLineId: string, secondLineId: string, mirrorId: string): CadSketchMirrorTurn | undefined;
   /** The point lies on the infinite line through the support. */
   onSupport(pointId: string, support: CadSketchSupportParameters): void;
   /**
@@ -358,6 +363,13 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     const free = ([[x, position.x], [x + 1, position.y]] as const).filter(([index]) => !this.fixed[index]);
     for (const [index, value] of free) this.seeds.push({ index, value });
     return free.length > 0;
+  }
+  movable(pointId: string): boolean {
+    const x = this.pointParameters.get(pointId);
+    return x !== undefined && (!this.fixed[x] || !this.fixed[x + 1]);
+  }
+  mirrorTurn(firstLineId: string, secondLineId: string, mirrorId: string): CadSketchMirrorTurn | undefined {
+    return cadSketchRelationPlanner(this.graph).mirrorTurn(firstLineId, secondLineId, mirrorId);
   }
   onSupport(pointId: string, support: CadSketchSupportParameters) {
     this.emit('point-on-line', [...this.point(pointId), ...support]);

@@ -41,8 +41,9 @@ export interface CadSketchEquation {
   /** Solved but left out of diagnosis, as a drag target is. */
   readonly temporary?: boolean;
   /**
-   * Solved and diagnosed, but never redundant: an equation of a relation that yields, which is a constraint of its own after every
-   * equation that does not yield. Only the TypeScript diagnosis reads it; the native buffer does not carry it.
+   * Solved and diagnosed, but redundant only with every other equation of its relation: an equation of a relation that yields, which
+   * is a constraint of its own after every equation that does not yield. Only the TypeScript diagnosis reads it; the native buffer
+   * does not carry it.
    */
   readonly yields?: boolean;
 }

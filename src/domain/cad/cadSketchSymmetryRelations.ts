@@ -155,6 +155,17 @@ export function cadSketchMirrorImage(point: Point2, axis: Axis): Point2 {
   return { x: 2 * (axis.start.x + along * axis.x) - point.x, y: 2 * (axis.start.y + along * axis.y) - point.y };
 }
 
+/** Why a solve is refused when it met a mirror of curves only by collapsing them, which the graph checks never accept. */
+export const CAD_SKETCH_MIRROR_COLLAPSE = 'Symmetric could only be met from here by collapsing the mirrored curves. Move the curves or the mirror line nearer to a mirror image first.';
+/**
+ * Whether a solution's graph check issues collapse a curve Symmetric's curves or its mirror line: a line or arc whose ends meet, or a
+ * radius that is no longer valid, in any curve Symmetric `graph` stores.
+ */
+export function cadSketchMirrorCollapsed(graph: CadSketchGraph, issues: readonly CadSketchGraphIssue[]): boolean {
+  const collapsed = new Set(issues.filter(issue => issue.source.kind === 'entity' && (issue.code === 'degenerate-entity' || issue.code === 'invalid-radius')).map(issue => issue.source.id));
+  return collapsed.size > 0 && graph.relations.some(relation => relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation) && [...relation.curveIds, relation.lineId].some(id => collapsed.has(id)));
+}
+
 /** Reflection in the infinite line support; both components are physical world millimeters. */
 export function checkCadSketchSymmetricRelation(graph: CadSketchGraph, relation: CadSketchSymmetricRelation, points: ReadonlyMap<string, Point2>,
   parameters: Readonly<Record<string, number>>): CadSketchGraphIssue[] {

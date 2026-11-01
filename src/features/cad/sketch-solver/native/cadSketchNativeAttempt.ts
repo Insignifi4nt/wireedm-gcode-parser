@@ -1,4 +1,5 @@
 import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
+import { CAD_SKETCH_MIRROR_COLLAPSE, cadSketchMirrorCollapsed } from '../../../../domain/cad/cadSketchSymmetryRelations';
 import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from '../cadSketchSolverStages';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations, type CadSketchCompiledSketch } from '../../../../domain/cad/sketch-solver/compileCadSketchEquations';
@@ -240,6 +241,8 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
     issues = check(graph, input.parameters);
     if (!issues.length) return { result: { kind: 'solved', graph, diagnostics }, movedGroups: moved.size, keptGroups: values === solution.values || values === snapped ? 0 : keep.size };
   }
+  // A mirror of curves the solver met only by collapsing them is a failure from this start, which another start may not share.
+  if (cadSketchMirrorCollapsed(input.graph, issues)) return { reason: 'graph-check', result: { kind: 'rejected', reason: 'failed', message: CAD_SKETCH_MIRROR_COLLAPSE, diagnostics: { ...diagnostics, issues } } };
   return { reason: 'graph-check',
     result: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution does not satisfy its geometry and relations.', diagnostics: { ...diagnostics, issues } } };
 }
