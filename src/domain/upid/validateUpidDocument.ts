@@ -38,6 +38,7 @@ import {
   finitePointOnly,
   type UpidValidationContext as ValidationContext
 } from './upidValidationPrimitives';
+import { CAD_PRECISION, cadRoundoff } from '@/domain/precision/cadPrecision';
 
 export interface UpidValidationReport {
   valid: boolean;
@@ -746,14 +747,14 @@ function validateSegment(
   if (valid) {
     const expected = normalizeSegmentDerivedGeometry(segment);
     const expectedLength = expected.length;
-    const lengthTolerance = Math.max(1e-9, 64 * Number.EPSILON * Math.max(1, expectedLength));
+    const lengthTolerance = Math.max(CAD_PRECISION.upidRecordedValueFloorMm, cadRoundoff(64, Math.max(1, expectedLength)));
     if (Number.isFinite(expectedLength) && Math.abs(segment.length - expectedLength) > lengthTolerance) {
       invalidate(`Segment ${segment.id}.length disagrees with its geometry.`);
     }
     if ((['minX', 'minY', 'maxX', 'maxY'] as const).some((axis) => {
       const actual = segment.bounds[axis], expectedValue = expected.bounds[axis];
       return !Number.isFinite(expectedValue) || Math.abs(actual - expectedValue) >
-        Math.max(1e-9, numericComparisonTolerance(actual, expectedValue));
+        Math.max(CAD_PRECISION.upidRecordedValueFloorMm, numericComparisonTolerance(actual, expectedValue));
     })) {
       invalidate(`Segment ${segment.id}.bounds disagree with its geometry.`);
     }
@@ -2441,7 +2442,7 @@ function numbersNearlyEqual(left: number, right: number) {
 }
 
 function numericComparisonTolerance(left: number, right: number) {
-  return 64 * Number.EPSILON * Math.max(1, Math.abs(left), Math.abs(right));
+  return cadRoundoff(64, Math.max(1, Math.abs(left), Math.abs(right)));
 }
 
 function sameRefs(left: OrientedSegmentRef[], right: OrientedSegmentRef[]) {
@@ -2648,7 +2649,7 @@ function validateDerivedBounds(
     expected.maxY = Math.max(expected.maxY, source.maxY);
   }
   if (axes.some((axis) => Math.abs(bounds[axis] - expected[axis]) >
-    Math.max(1e-9, numericComparisonTolerance(bounds[axis], expected[axis])))) {
+    Math.max(CAD_PRECISION.upidRecordedValueFloorMm, numericComparisonTolerance(bounds[axis], expected[axis])))) {
     context.add('upid-identity-mismatch', `${path} bounds disagree with its owned source geometry. Correct the derived bounds in a new document; the original is preserved.`);
   }
 }

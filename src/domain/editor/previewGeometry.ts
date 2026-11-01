@@ -34,6 +34,7 @@ import type {
   SegmentId
 } from '@/domain/path-intel/types';
 import { deriveActiveMachiningOperations, deriveSpanSegment } from '@/domain/path-intel/machiningParticipation';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export interface EditorPreviewPath {
   type: 'rapid' | 'cut' | 'arc';
@@ -442,7 +443,7 @@ function arcPath(point: GCodeArcPathPoint) {
   const radius = Math.hypot(point.startX - point.centerX, point.startY - point.centerY);
   const sweepFlag = point.clockwise ? 0 : 1;
 
-  if (radius > 1e-9 && pointsEqual({ x: point.startX, y: point.startY }, { x: point.endX, y: point.endY })) {
+  if (radius > CAD_PRECISION.gcodePositionMm && pointsEqual({ x: point.startX, y: point.startY }, { x: point.endX, y: point.endY })) {
     const opposite = {
       x: point.centerX - (point.startX - point.centerX),
       y: point.centerY - (point.startY - point.centerY)
@@ -649,7 +650,7 @@ function normalizeAngle(angle: number) {
 }
 
 function pointsEqual(a: { x: number; y: number }, b: { x: number; y: number }) {
-  return Math.abs(a.x - b.x) <= 1e-9 && Math.abs(a.y - b.y) <= 1e-9;
+  return Math.abs(a.x - b.x) <= CAD_PRECISION.gcodePositionMm && Math.abs(a.y - b.y) <= CAD_PRECISION.gcodePositionMm;
 }
 
 function format(value: number) {

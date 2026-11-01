@@ -5,6 +5,7 @@ import { CadError } from './cadError';
 import { isCadImportData } from './cadImportData';
 import { cadPathClosureTolerance, validateCadSketchGeometry, type ResolvedCadPathSegment } from './cadSketchGeometry';
 import { resolveCadCurve } from './cadCurve';
+import { CAD_PRECISION, cadRoundoff } from '../precision/cadPrecision';
 
 export type CadConstructionPoint = readonly [number, number];
 export type CadPathConstructionStep =
@@ -28,7 +29,7 @@ export function copyCadConstructionPoint(value: unknown): CadConstructionPoint {
 
 export function createCadConstructionLine(start: CadConstructionPoint, end: CadConstructionPoint): Extract<ResolvedCadPathSegment, { kind: 'line' }> {
   const a = copyCadConstructionPoint(start); const b = copyCadConstructionPoint(end);
-  if (Math.hypot(b[0] - a[0], b[1] - a[1]) <= 1e-7) throw new CadError('degenerate-line', 'A path line must be longer than 1e-7 mm.');
+  if (Math.hypot(b[0] - a[0], b[1] - a[1]) <= CAD_PRECISION.minimumLengthMm) throw new CadError('degenerate-line', 'A path line must be longer than 1e-7 mm.');
   return Object.freeze({ kind: 'line', start: a, end: b });
 }
 
@@ -45,7 +46,7 @@ export function createCadThreePointArc(value: unknown): CadConstructedArc {
   const vx = (through[0] - start[0]) / scale; const vy = (through[1] - start[1]) / scale;
   const cross = ux * vy - uy * vx;
   // Bound arithmetic roundoff and the coordinate-scale uncertainty of the input differences.
-  const crossError = 8 * Number.EPSILON * (Math.abs(ux * vy) + Math.abs(uy * vx))
+  const crossError = cadRoundoff(8, Math.abs(ux * vy) + Math.abs(uy * vx))
     + uncertainty / scale * (Math.abs(ux) + Math.abs(uy) + Math.abs(vx) + Math.abs(vy));
   if (Math.abs(cross) <= crossError) throw new CadError('degenerate-arc', 'Arc points are collinear or their orientation is numerically uncertain.');
   const u2 = ux * ux + uy * uy; const v2 = vx * vx + vy * vy;
@@ -54,14 +55,14 @@ export function createCadThreePointArc(value: unknown): CadConstructedArc {
     start[1] + scale * (ux * v2 - vx * u2) / (2 * cross)
   ]);
   const radius = Math.hypot(start[0] - center[0], start[1] - center[1]);
-  if (!center.every(component => Number.isFinite(component) && Math.abs(component) <= 1e9) || !Number.isFinite(radius) || radius <= 1e-7 || radius > 1e6) throw new CadError('invalid-dimension', 'Arc center and radius exceed the saved geometry limits.');
+  if (!center.every(component => Number.isFinite(component) && Math.abs(component) <= 1e9) || !Number.isFinite(radius) || radius <= CAD_PRECISION.minimumLengthMm || radius > CAD_PRECISION.modelExtentMm) throw new CadError('invalid-dimension', 'Arc center and radius exceed the saved geometry limits.');
   const angle = (point: CadConstructionPoint) => Math.atan2(point[1] - center[1], point[0] - center[0]);
   const a = angle(start); const b = angle(end); const m = angle(through); const tau = 2 * Math.PI;
   const positive = (radians: number) => (radians % tau + tau) % tau;
   const endDelta = positive(b - a); const throughDelta = positive(m - a);
   const sweepRadians = throughDelta < endDelta ? endDelta : endDelta - tau;
   const startAngle = a * 180 / Math.PI; const sweep = sweepRadians * 180 / Math.PI;
-  if (sweep === 0 || Math.abs(sweep) >= 360 || radius * Math.abs(sweepRadians) <= 1e-7) throw new CadError('degenerate-arc', 'An arc needs a distinct start and end with a nonzero sweep.');
+  if (sweep === 0 || Math.abs(sweep) >= 360 || radius * Math.abs(sweepRadians) <= CAD_PRECISION.minimumLengthMm) throw new CadError('degenerate-arc', 'An arc needs a distinct start and end with a nonzero sweep.');
   // Check the *stored* degree encoding, including its actual chain joints. A radial
   // residual alone can miss cancellation when a shallow circle has a large radius.
   const encodedStart = (startAngle % 360) * Math.PI / 180;

@@ -5,6 +5,7 @@ import { cadKernelPlaneBasis } from './cadKernelPlane';
 import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
 import { cadKernelDisposeOwned, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 import type { CadResolvedFrame } from '../../../domain/cad/cadDatumPlanes';
+import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
 
 function validateLoftSolid(shape: Shape3D) {
   const oc = getOC();
@@ -22,7 +23,7 @@ function validateLoftSolid(shape: Shape3D) {
       }
     } finally { explorer.delete(); }
     const volume = measureVolume(shape);
-    if (!Number.isFinite(volume) || volume <= 1e-9) throw new CadError('loft-volume', 'The loft must contain positive volume with outward orientation. Revise the section spacing.');
+    if (!Number.isFinite(volume) || volume <= CAD_PRECISION.kernelMinimumVolumeMm3) throw new CadError('loft-volume', 'The loft must contain positive volume with outward orientation. Revise the section spacing.');
   } finally { for (const solid of solids) cadKernelDisposeOwned(solid); }
 }
 

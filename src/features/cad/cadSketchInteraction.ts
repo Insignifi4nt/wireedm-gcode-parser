@@ -1,4 +1,5 @@
 import type { CadProfile } from '@/domain/cad/cadDocument';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export type SketchPoint = readonly [number, number];
 /** `line` chains connected lines and arcs. `path`, the former Polyline tool, is its alias, and curves draw with it. */
@@ -32,17 +33,17 @@ export function magnetSketchValue(value: number, step: number, enabled: boolean,
 export function twoPointSketchProfile(tool: 'rectangle' | 'circle', start: SketchPoint, end: SketchPoint): CadProfile {
   if (tool === 'circle') {
     const radius = Math.hypot(end[0] - start[0], end[1] - start[1]);
-    if (radius < 0.001) throw new Error('Click a different point to define a circle radius.');
+    if (radius < CAD_PRECISION.pointerMinimumSizeMm) throw new Error('Click a different point to define a circle radius.');
     return { kind: 'circle', x: start[0], y: start[1], radius };
   }
   const width = Math.abs(end[0] - start[0]);
   const height = Math.abs(end[1] - start[1]);
-  if (width < 0.001 || height < 0.001) throw new Error('Choose a second corner with nonzero width and height.');
+  if (width < CAD_PRECISION.pointerMinimumSizeMm || height < CAD_PRECISION.pointerMinimumSizeMm) throw new Error('Choose a second corner with nonzero width and height.');
   return { kind: 'rectangle', x: Math.min(start[0], end[0]), y: Math.min(start[1], end[1]), width, height, cornerRadius: 0 };
 }
 
 /** Below this, two slot centers or a slot width are treated as one click and rejected. */
-const SLOT_MINIMUM = 0.001;
+const SLOT_MINIMUM = CAD_PRECISION.pointerMinimumSizeMm;
 
 /** A slot's third click sets its width: twice the distance from the line through both arc centers. */
 export function slotSketchWidth(first: SketchPoint, second: SketchPoint, cursor: SketchPoint): number {

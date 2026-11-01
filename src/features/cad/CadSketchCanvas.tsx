@@ -52,6 +52,7 @@ import { cadFreshSketchFixedAxes, type CadFreshSketchDrawing, type CadFreshSketc
 import { CadSketchSplitPreview, prepareCadSketchSplitPreview, type CadSketchSplitPreview as SplitPreview } from './CadSketchSplitPreview';
 import { CadSketchTrimPreview, prepareCadSketchTrimPreview, type CadSketchTrimPreview as TrimPreview,
   CadSketchExtendPreview, prepareCadSketchExtendPreview, prepareCadSketchExtendEndPreview, type CadSketchExtendPreview as ExtendPreview } from './CadSketchBoundaryPreview';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 const NO_PROFILES: readonly CadSketchProfile[] = Object.freeze([]);
 const snapDraftStart = prepareCadSketchGeometrySnaps();
@@ -1168,7 +1169,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         const width = slotSketchWidth(points[0], points[1], point);
         add(slotSketchProfile(points[0], points[1], width), { kind: 'slot', first: picks[0], second: picks[1], width });
       } else if (tool === 'slot' && first) {
-        if (Math.hypot(point[0] - first[0], point[1] - first[1]) < 0.001) throw new Error('Click a different point for the second arc center.');
+        if (Math.hypot(point[0] - first[0], point[1] - first[1]) < CAD_PRECISION.pointerMinimumSizeMm) throw new Error('Click a different point for the second arc center.');
         appendPick(authoredPick());
       } else if (first && (tool === 'rectangle' || tool === 'circle')) {
         // A completing pick ends the press even when its geometry is rejected.

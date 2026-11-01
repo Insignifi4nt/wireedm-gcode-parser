@@ -5,6 +5,7 @@ import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';
 import { cadAnalyticSegments, resolveCadPathSegments, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 import { createCadThreePointArc } from './cadPathConstruction';
 import { inspectCadSketchDimensions, isCadSketchExpressionDriven, translateCadSketchProfile } from './cadSketchConstraints';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 const index = Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER });
 const strict = { additionalProperties: false };
@@ -130,7 +131,7 @@ export function moveCadSketchHandle(input: { profile: CadSketchProfile; handle: 
   const shifted = (value: CadScalar, delta: number): CadScalar => delta === 0 ? value : e(value) + delta;
   const resizedRadius = (value: CadScalar) => {
     const radius = Math.hypot(e(value) + dx, dy);
-    if (radius <= 1e-7) throw new CadError('invalid-profile', 'The radius must remain positive.');
+    if (radius <= CAD_PRECISION.minimumLengthMm) throw new CadError('invalid-profile', 'The radius must remain positive.');
     return radius;
   };
   if (g.kind === 'path' && g.segments.length === 1 && g.segments[0].kind === 'arc' && (handle.kind === 'center' || handle.kind === 'radius')) {
@@ -169,13 +170,13 @@ export function moveCadSketchHandle(input: { profile: CadSketchProfile; handle: 
     const angle = evaluateCadAngle(g.angle, parameters) * Math.PI / 180, ux = Math.cos(angle), uy = Math.sin(angle);
     if (handle.kind === 'slot-angle') {
       const reach = e(g.length) / 2 + e(g.width), x = reach * ux + dx, y = reach * uy + dy;
-      if (Math.hypot(x, y) <= 1e-7) throw new CadError('invalid-profile', 'Move the angle grip away from the slot center.');
+      if (Math.hypot(x, y) <= CAD_PRECISION.minimumLengthMm) throw new CadError('invalid-profile', 'Move the angle grip away from the slot center.');
       const turn = Math.atan2(ux * y - uy * x, ux * x + uy * y) * 180 / Math.PI;
       return turn === 0 ? profile : { ...profile, geometry: { ...g, angle: e(g.angle) + turn } };
     }
     const length = e(g.length) + (handle.kind === 'slot-length' ? 2 * (dx * ux + dy * uy) : 0);
     const width = e(g.width) + (handle.kind === 'slot-width' ? 2 * (-dx * uy + dy * ux) : 0);
-    if (width <= 1e-7 || length < width) throw new CadError('invalid-profile', 'The slot width must stay positive and no greater than its length.');
+    if (width <= CAD_PRECISION.minimumLengthMm || length < width) throw new CadError('invalid-profile', 'The slot width must stay positive and no greater than its length.');
     return { ...profile, geometry: { ...g, length: length === e(g.length) ? g.length : length, width: width === e(g.width) ? g.width : width } };
   }
   if ((handle.kind === 'rectangle-corner' || handle.kind === 'rectangle-side') && g.kind === 'rectangle') {
@@ -183,7 +184,7 @@ export function moveCadSketchHandle(input: { profile: CadSketchProfile; handle: 
     const x = (left || right) && size('width', g.width) && (!left || free(g.x)) ? dx : 0;
     const y = (bottom || top) && size('height', g.height) && (!bottom || free(g.y)) ? dy : 0;
     const width = e(g.width) + (left ? -x : x), height = e(g.height) + (bottom ? -y : y);
-    if (width <= 1e-7 || height <= 1e-7 || 2 * e(g.cornerRadius) > Math.min(width, height)) throw new CadError('invalid-profile', 'Keep the opposite corner fixed and enough room for the corner radius.');
+    if (width <= CAD_PRECISION.minimumLengthMm || height <= CAD_PRECISION.minimumLengthMm || 2 * e(g.cornerRadius) > Math.min(width, height)) throw new CadError('invalid-profile', 'Keep the opposite corner fixed and enough room for the corner radius.');
     return { ...profile, geometry: { ...g, x: shifted(g.x, left ? x : 0), y: shifted(g.y, bottom ? y : 0), width: x === 0 ? g.width : width, height: y === 0 ? g.height : height } };
   }
   throw new CadError('unsupported-sketch-handle', 'This sketch grip does not support direct editing.');

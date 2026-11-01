@@ -10,6 +10,7 @@ import { resolveCadSketchGraphJoints } from './cadSketchGraphJoints';
 import type { Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
 import { cross, dot } from '@/domain/path-intel/segments';
+import { CAD_PRECISION, cadRoundoff } from '@/domain/precision/cadPrecision';
 import { CadSketchPositions } from './sketch-relations/cadSketchVirtualElements';
 
 type Rays = CadSketchAngleRelation['rays'];
@@ -73,7 +74,7 @@ export function checkCadSketchAngleRelation(graph: CadSketchGraph, relation: Cad
     const q = Math.abs(Math.atan2(Math.sin(difference), Math.cos(difference)));
     const residualMm = 2 * Math.sin(q / 2) * Math.max(a.length, b.length);
     const sector = actual * (relation.sense === 'ccw' ? 1 : -1);
-    return !(sector > 0 && sector < Math.PI) || !Number.isFinite(q) || q > 1e-12 || residualMm > cadSketchDriverTolerance([a.start, a.end, b.start, b.end])
+    return !(sector > 0 && sector < Math.PI) || !Number.isFinite(q) || q > CAD_PRECISION.angularAccuracyRad || residualMm > cadSketchDriverTolerance([a.start, a.end, b.start, b.end])
       ? [{ source, code: 'relation-residual', message: 'Sketch rays do not satisfy their driving angle.', ...(Number.isFinite(residualMm) ? { residualMm } : {}) }] : [];
   } catch (error) {
     return [{ source, code: 'relation-residual', message: error instanceof Error ? error.message : 'Invalid sketch angle.' }];
@@ -83,7 +84,7 @@ export function checkCadSketchAngleRelation(graph: CadSketchGraph, relation: Cad
 /** The corner where two line supports meet, or a `sketch-angle-precision` error when it cannot be placed reliably. */
 export function cadSketchLineSupportIntersection(a: Direction, b: Direction): Readonly<Point2> {
   const determinant = cross(a, b);
-  if (Math.abs(determinant) <= 32 * Number.EPSILON) throw new CadError('sketch-angle-precision', 'These lines are too close to parallel to measure an angle between them.');
+  if (Math.abs(determinant) <= cadRoundoff(32)) throw new CadError('sketch-angle-precision', 'These lines are too close to parallel to measure an angle between them.');
   const delta = { x: b.start.x - a.start.x, y: b.start.y - a.start.y }, distance = cross(delta, b) / determinant;
   const vertex = { x: a.start.x + a.x * distance, y: a.start.y + a.y * distance };
   if (!Number.isFinite(vertex.x) || !Number.isFinite(vertex.y) || Math.abs(vertex.x) > 1e9 || Math.abs(vertex.y) > 1e9

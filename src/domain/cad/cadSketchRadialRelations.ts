@@ -4,13 +4,14 @@ import { evaluateCadScalar } from './cadExpression';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import type { Point2 } from '@/domain/path-intel/types';
 import { CAD_SKETCH_RADIAL_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
+import { cadSupportedLength } from '@/domain/precision/cadPrecision';
 
 /** Source topology only: a changed dimension may have unsolved numeric geometry. */
 export function resolveCadSketchRadialEntity(graph: CadSketchGraph, entityId: string) {
   return resolveCadSketchOperands(graph, CAD_SKETCH_RADIAL_OPERANDS, [entityId])[0] as Extract<CadSketchGraphEntity, { kind: 'arc' | 'circle' }>;
 }
 
-function validRadius(radius: number): boolean { return Number.isFinite(radius) && radius > 1e-7 && radius <= 1e6; }
+function validRadius(radius: number): boolean { return Number.isFinite(radius) && cadSupportedLength(radius); }
 
 /** Evaluate the displayed quantity without changing its exact source scalar. */
 export function cadSketchRadialTarget(relation: CadSketchRadialRelation, parameters: Readonly<Record<string, number>>): number {

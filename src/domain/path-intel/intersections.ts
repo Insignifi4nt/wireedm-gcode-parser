@@ -25,6 +25,7 @@ import type {
   PathSegment,
   Point2
 } from './types';
+import { cadRoundoff } from '../precision/cadPrecision';
 
 const FULL_TURN = 2 * Math.PI;
 const ROUNDING_FACTOR = 64;
@@ -140,7 +141,7 @@ export function pathSegmentsMayOverlap(left: PathSegment, right: PathSegment) {
   if (leftLength === 0 || rightLength === 0) return false;
   const leftUnit = { x: leftVector.x / leftLength, y: leftVector.y / leftLength };
   const rightUnit = { x: rightVector.x / rightLength, y: rightVector.y / rightLength };
-  return Math.abs(cross(leftUnit, rightUnit)) <= ROUNDING_FACTOR * Number.EPSILON;
+  return Math.abs(cross(leftUnit, rightUnit)) <= cadRoundoff(ROUNDING_FACTOR);
 }
 
 export function pathSegmentsShareSweptLocus(
@@ -374,7 +375,7 @@ function intersectLines(
     offset.y
   );
 
-  if (Math.abs(denominator) <= ROUNDING_FACTOR * Number.EPSILON) {
+  if (Math.abs(denominator) <= cadRoundoff(ROUNDING_FACTOR)) {
     const startDistance = Math.abs(cross(offset, leftUnit));
     const endDistance = Math.abs(cross(vector(left.start, right.end), leftUnit));
     if (startDistance > tolerance || endDistance > tolerance) return noIntersection();
@@ -500,7 +501,7 @@ function intersectLineCircular(
     4 * quadraticA * (dot(start, start) + radius * radius),
     Number.MIN_VALUE
   );
-  const discriminantTolerance = ROUNDING_FACTOR * Number.EPSILON * discriminantScale;
+  const discriminantTolerance = cadRoundoff(ROUNDING_FACTOR, discriminantScale);
   const anchoredCandidates = arcEndpointAnchoredLineCandidates({
     line, circular, start, end: { x: localEnd.x / scale, y: localEnd.y / scale },
     delta, radius, scale, quadraticA
@@ -566,7 +567,7 @@ function arcEndpointAnchoredLineCandidates({ line, circular, start, end, delta, 
     const radialSquared = dot(candidate.radial, candidate.radial);
     const radiusSquared = radius * radius;
     if (radialSquared === 0 || radiusSquared === 0) continue;
-    const radialRoundoff = ROUNDING_FACTOR * Number.EPSILON * (radialSquared + radiusSquared);
+    const radialRoundoff = cadRoundoff(ROUNDING_FACTOR, radialSquared + radiusSquared);
     if (Math.abs(radialSquared - radiusSquared) > radialRoundoff) continue;
     // An exact declared endpoint supplies one root when its radial residual is
     // only local arithmetic error. Factor u * (A*u + B) at that endpoint instead
@@ -742,7 +743,7 @@ function sameCircularSupportRelation(
   if (leftCoverage.full && rightCoverage.full) return overlapIntersection();
 
   const angularTolerance = Math.max(
-    ROUNDING_FACTOR * Number.EPSILON * FULL_TURN,
+    cadRoundoff(ROUNDING_FACTOR, FULL_TURN),
     epsilon / Math.max(left.radius, right.radius, Number.MIN_VALUE)
   );
   const touchingAngles: number[] = [];
@@ -1015,7 +1016,7 @@ function adjacentEndpointContactScore(
 
 function endpointParameterTolerance(segment: PathSegment, epsilon: number) {
   return Math.max(
-    ROUNDING_FACTOR * Number.EPSILON,
+    cadRoundoff(ROUNDING_FACTOR),
     (Math.SQRT2 * epsilon) / Math.max(segment.length, Number.MIN_VALUE)
   );
 }
@@ -1084,7 +1085,7 @@ function numbersAreNumericallyIndistinguishable(left: number, right: number) {
   if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
   const difference = Math.abs(left - right);
   const localComputationError =
-    ROUNDING_FACTOR * Number.EPSILON * Math.max(1, difference);
+    cadRoundoff(ROUNDING_FACTOR, Math.max(1, difference));
   return difference <= Math.max(floatingStep(left), floatingStep(right), localComputationError);
 }
 
@@ -1129,7 +1130,7 @@ function isCircular(segment: PathSegment): segment is CircularPathSegment {
 
 function linearTolerance(epsilon: number, ...values: number[]) {
   const magnitude = largestMagnitude(values);
-  return Math.max(epsilon, ROUNDING_FACTOR * Number.EPSILON * magnitude);
+  return Math.max(epsilon, cadRoundoff(ROUNDING_FACTOR, magnitude));
 }
 
 /** Math.max(1, ...values.map(Math.abs)) without the intermediate arrays; NaN still propagates. */
@@ -1141,12 +1142,12 @@ function largestMagnitude(values: readonly number[]) {
 
 /** Unlike coordinateRoundoffTolerance, no unit floor: values near zero keep their own precision. */
 function withinCoordinateUlps(left: number, right: number) {
-  return Math.abs(left - right) <= 8 * Number.EPSILON * Math.max(Math.abs(left), Math.abs(right));
+  return Math.abs(left - right) <= cadRoundoff(8, Math.max(Math.abs(left), Math.abs(right)));
 }
 
 function coordinateRoundoffTolerance(epsilon: number, ...coordinates: number[]) {
   const magnitude = largestMagnitude(coordinates);
-  return Math.max(epsilon, 8 * Number.EPSILON * magnitude);
+  return Math.max(epsilon, cadRoundoff(8, magnitude));
 }
 
 function stableMidpoint(left: number, right: number) {

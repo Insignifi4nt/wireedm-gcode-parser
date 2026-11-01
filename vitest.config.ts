@@ -7,7 +7,9 @@ const pureDomainTests = [
   'src/domain/{compensation,execution-plan,path-editor,path-intel,simulation}/**/*.{test,spec}.{ts,tsx}',
   // CAD geometry, expression and schema suites have no DOM dependencies.
   // CAD storage suites live outside this directory and keep the browser adapter.
-  'src/domain/cad/__tests__/**/*.{test,spec}.{ts,tsx}'
+  'src/domain/cad/__tests__/**/*.{test,spec}.{ts,tsx}',
+  // The precision policy and its ordering are plain numbers.
+  'src/domain/precision/**/*.{test,spec}.{ts,tsx}'
 ];
 
 export default defineConfig({

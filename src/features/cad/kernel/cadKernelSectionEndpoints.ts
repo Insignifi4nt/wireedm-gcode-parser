@@ -1,6 +1,7 @@
 import type { DxfEntity, DxfPoint } from '../../../domain/dxf/types';
 import { CadError } from '../../../domain/cad/cadError';
 import { SpatialHash } from '../../../domain/path-intel/spatialIndex';
+import { cadRoundoff } from '../../../domain/precision/cadPrecision';
 
 /** First-representative geometric degrees; circles contribute no endpoints. */
 export function assertCadSectionClosedEndpoints(entities: readonly DxfEntity[], tolerance: number): void {
@@ -10,7 +11,7 @@ export function assertCadSectionClosedEndpoints(entities: readonly DxfEntity[], 
     for (const point of [entity.start, entity.end]) {
       // Broadphase bounds include rounding at far coordinates. The ordered
       // candidates retain the original first representative and exact predicate.
-      const margin = 2 * tolerance + 64 * Number.EPSILON * Math.max(1, Math.abs(point.x), Math.abs(point.y));
+      const margin = 2 * tolerance + cadRoundoff(64, Math.max(1, Math.abs(point.x), Math.abs(point.y)));
       const candidates = index.queryBounds({
         minX: Math.max(-Number.MAX_VALUE, point.x - margin), minY: Math.max(-Number.MAX_VALUE, point.y - margin),
         maxX: Math.min(Number.MAX_VALUE, point.x + margin), maxY: Math.min(Number.MAX_VALUE, point.y + margin)

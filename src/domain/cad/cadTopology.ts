@@ -3,6 +3,7 @@ import { Value } from '@sinclair/typebox/value';
 import type { CadPoint3, CadScalar } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export const MAX_CAD_TOPOLOGY_PICKS = 64;
 export const MAX_CAD_TOPOLOGY_PREDICATES = 8;
@@ -148,12 +149,12 @@ function frozenSnapshot<S extends TSchema>(schema: S, value: unknown): Static<S>
 }
 function normalized(value: CadUnitVector): CadUnitVector {
   const norm = Math.hypot(...value);
-  if (!Number.isFinite(norm) || Math.abs(norm - 1) > 1e-10) throw new CadError('invalid-direction', 'Topology directions must be normalized nonzero vectors.');
+  if (!Number.isFinite(norm) || Math.abs(norm - 1) > CAD_PRECISION.kernelDirection) throw new CadError('invalid-direction', 'Topology directions must be normalized nonzero vectors.');
   return [value[0] / norm, value[1] / norm, value[2] / norm];
 }
 function positive(value: CadScalar, parameters: Readonly<Record<string, number>>): number {
   const result = evaluateCadScalar(value, parameters);
-  if (result <= 1e-7) throw new CadError('invalid-selector-dimension', 'Selector lengths and radii must be greater than kernel precision.');
+  if (result <= CAD_PRECISION.minimumLengthMm) throw new CadError('invalid-selector-dimension', 'Selector lengths and radii must be greater than kernel precision.');
   return result;
 }
 function resolvedPoint(value: CadPoint3, parameters: Readonly<Record<string, number>>): CadVector3 {

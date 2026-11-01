@@ -7,6 +7,7 @@ import { CadError } from './cadError';
 import { parseCadDocument } from './cadSchema';
 import { cadSketchToEntities } from './cadSketchGeometry';
 import { cadEntitiesToDxf } from './cadDxfExport';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 function entitiesForSketch(document: CadDocument, sketchId: string): DxfEntity[] {
   parseCadDocument(document);
@@ -43,7 +44,7 @@ function appendPluginNotes(result: PathPlanningDocument, sketches: readonly CadS
 export function cadEntitiesToCam(entities: readonly DxfEntity[], sourceDocument?: CadDocument): PathPlanningDocument {
   if (entities.length === 0 || entities.some(entity => entity.type === 'polyline' || entity.type === 'lwpolyline')) throw new CadError('cam-geometry', 'CAD handoff requires complete analytic line, arc or circle entities.');
   const units = dxfUnitsFromInsunitsCode(4);
-  const result = createPathPlanningDocumentFromDxfEntities([...entities], { endpointTolerance: 1e-7, coincidenceEpsilon: 1e-9 }, {
+  const result = createPathPlanningDocumentFromDxfEntities([...entities], { endpointTolerance: CAD_PRECISION.camHandoffEndpointMm, coincidenceEpsilon: CAD_PRECISION.camHandoffCoincidenceMm }, {
     units, unitDeclaration: { status: 'recognized', units }, coordinateScaleToMillimeters: 1,
     appliedUnits: { label: units.label, scaleToMillimeters: 1, basis: 'dxf-declared', confirmed: true }
   });

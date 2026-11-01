@@ -1,5 +1,6 @@
 import type { DxfPoint } from './types';
 import { DXF_RESOURCE_LIMITS, DxfResourceBudget, DxfResourceLimitError } from './dxfResourceLimits';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export interface DxfSplineDefinition {
   controlPoints: DxfPoint[];
@@ -32,7 +33,7 @@ interface HomogeneousSpline {
 
 type InternalResult = { ok: true } | { ok: false; reason: string };
 
-const POINT_EPSILON = 1e-12;
+const POINT_EPSILON = CAD_PRECISION.zeroLengthMm;
 
 /**
  * Produces a polyline with a conservative curve-to-chord bound.

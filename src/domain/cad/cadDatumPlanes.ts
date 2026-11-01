@@ -7,10 +7,11 @@ import { isCadImportData } from './cadImportData';
 import { CadFeatureBaseSchemaFields, CadPlaneSchema, CadScalarSchema } from './cadPrimitives';
 import { cadPlaneBasis, type CadNumericPoint2, type CadNumericPoint3 } from './cadPlanes';
 import { cadProfileToEntities, resolveCadSketchRegions } from './cadSketchGeometry';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export type { CadDatumPlaneFeature } from './cadDocument';
-export const CAD_DATUM_ORTHONORMAL_RESIDUAL = 64 * Number.EPSILON;
-export const CAD_DATUM_NATIVE_PLACEMENT_PRECISION_MM = 1e-7;
+export const CAD_DATUM_ORTHONORMAL_RESIDUAL = CAD_PRECISION.frameOrthonormalResidual;
+export const CAD_DATUM_NATIVE_PLACEMENT_PRECISION_MM = CAD_PRECISION.kernelConfusionMm;
 const point = Type.Tuple([CadScalarSchema, CadScalarSchema, CadScalarSchema]);
 export const CadDatumPlaneFeatureSchema = Type.Object(
   {

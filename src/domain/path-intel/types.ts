@@ -6,6 +6,7 @@ import type {
   DxfEntitySource,
   DxfUnitDeclaration
 } from '@/domain/dxf/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export interface Point2 {
   x: number;
@@ -57,8 +58,8 @@ export interface PathPlanningSourceMetadata {
 export type ResolvedPathPlanningOptions = Required<PathPlanningOptions>;
 
 export const DEFAULT_PATH_PLANNING_OPTIONS: ResolvedPathPlanningOptions = {
-  endpointTolerance: 0.001,
-  coincidenceEpsilon: 1e-5,
+  endpointTolerance: CAD_PRECISION.camDefaultEndpointMm,
+  coincidenceEpsilon: CAD_PRECISION.camDefaultCoincidenceMm,
   startPoint: { x: 0, y: 0 },
   allowReverseOpenChains: false,
   allowReverseClosedContours: true,
