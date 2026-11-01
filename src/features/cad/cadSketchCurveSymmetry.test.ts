@@ -6,7 +6,7 @@ import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph, type Cad
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
 import { CadSketchSplitDependencyError, splitCadSketchEntity } from '@/domain/cad/cadSketchSplit';
 import { cadSketchMirrorPairings, cadSketchMirrorPairs, type CadSketchMirroredCurve } from '@/domain/cad/cadSketchSymmetryRelations';
-import { prepareCadSketchTrim, trimCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
+import { CadSketchExtendDependencyError, prepareCadSketchExtend, prepareCadSketchTrim, trimCadSketchEntity } from '@/domain/cad/cadSketchTrimExtend';
 import { cadSketchRelationOffers } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
 import { cadSketchRelationKey, cadSketchRelationKindName, cadSketchRelationMeaning } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { compileCadSketchEquations } from '@/domain/cad/sketch-solver/compileCadSketchEquations';
@@ -321,7 +321,7 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     expect(offer(equal, ['A', 'B', 'mirror'])).toMatchObject({ state: 'blocked', reason: expect.stringMatching(/Remove Equal first\.$/) });
   });
 
-  it('leave with a trim of either mirrored curve, and refuse a split while it names the curve', () => {
+  it('leave with a trim of either mirrored curve, and refuse a split or an extension while it names the curve', () => {
     // A cutter at x = 15 crosses line A a third of the way along and circle A through its centre.
     const cutter = { relations: [mirrored('@v')] }, withCutter = (scene: Scene) => {
       const raw = rawScene(scene, '@v', cutter);
@@ -341,6 +341,8 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     expect(trimCadSketchEntity({ graph: circles, parameters: {}, trim: { ...ring.target, cutPointIds: ['k', 'l'] } }).graph.relations).toEqual([]);
     expect(() => splitCadSketchEntity({ graph: lines, parameters: {}, split: { kind: 'line', entityId: 'A', parameter: .5, splitPointId: 'cut',
       newEntityId: 'piece', supportRelationId: 'support' } })).toThrow(CadSketchSplitDependencyError);
+    for (const [graph, entityId] of [[lines, 'A'], [graphOf(SCENES.arcs, '@v', cutter), 'B']] as const) for (const end of ['start', 'end'] as const)
+      expect(() => prepareCadSketchExtend({ graph, parameters: {}, entityId, end }), `${entityId} ${end}`).toThrow(CadSketchExtendDependencyError);
   });
 
   it('name and describe a curve mirror apart from a point mirror, and take it from an agent edit', () => {
