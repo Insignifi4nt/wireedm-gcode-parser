@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { applyCadEdits } from '@/domain/cad/cadOperations';
+import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph, type CadSketchSymmetricCurvesRelation } from '@/domain/cad/cadSketchGraph';
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
@@ -16,6 +16,7 @@ import { loadCadSketchTestNativeSolver } from './sketch-solver/__tests__/cadSket
 import { attemptCadSketchNativeSolve } from './sketch-solver/native/cadSketchNativeAttempt';
 import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 import { prepareCadEdits } from './cadEditPreparation';
+import { cadSketchShrinkWarnings } from './cadSketchShrinkWarnings';
 import { CAD_SKETCH_START_COMBINATIONS, cadSketchStartCombinations, cadSketchStartComponents } from './sketch-solver/native/cadSketchNativeStartSearch';
 
 // Two lines, two arcs or two circles mirrored about a line or an axis, end to end: what a selection offers and the Constrain tool
@@ -135,6 +136,20 @@ const folding = (suffix = '', dx = 0) => {
       { id: id('shared'), kind: 'coincident', pointIds: [id('a1'), id('b1')] }, { id: id('mirrored'), kind: 'symmetric', curveIds: [id('A'), id('B')], lineId: id('mirror') }]
   };
 };
+/**
+ * The two folding copies drawn elsewhere, with Parallel between their mirrors and no size dimensions, plus `extra`. Every start a solve
+ * tries shrinks A2 and B2, 16.906 and 3.324 mm long, to 6.6e-6 mm.
+ */
+const shrinking = (extra: { readonly points?: readonly unknown[]; readonly entities?: readonly unknown[]; readonly relations?: readonly unknown[] } = {}) => parseCadSketchGraph({
+  points: [...Object.entries({ a1: [9.5, -5], a2: [16.1, -4.5], b1: [-8.3, 26.7], b2: [-17.4, 12.3], m1: [-3.7, -65.3], m2: [10.6, 63.3],
+    a12: [109.5, -5], a22: [102.1, 10.2], b12: [99.3, 18.5], b22: [100.5, 15.4], m12: [98.4, -52.8], m22: [106.4, 65.5] }).map(([id, position]) => ({ id, position })), ...extra.points ?? []],
+  entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true },
+    line('A2', 'a12', 'a22'), line('B2', 'b12', 'b22'), { ...line('mirror2', 'm12', 'm22'), construction: true }, ...extra.entities ?? []],
+  relations: [{ id: 'p', kind: 'parallel', lineIds: ['A', 'B'] }, { id: 'fix', kind: 'fixed-point', pointId: 'a1', position: [9.5, -5] },
+    { id: 'shared', kind: 'coincident', pointIds: ['a1', 'b1'] }, { id: 'mirrored', kind: 'symmetric', curveIds: ['A', 'B'], lineId: 'mirror' },
+    { id: 'p2', kind: 'parallel', lineIds: ['A2', 'B2'] }, { id: 'fix2', kind: 'fixed-point', pointId: 'a12', position: [109.5, -5] },
+    { id: 'shared2', kind: 'coincident', pointIds: ['a12', 'b12'] }, { id: 'mirrored2', kind: 'symmetric', curveIds: ['A2', 'B2'], lineId: 'mirror2' },
+    { id: 'kept', kind: 'parallel', lineIds: ['mirror', 'mirror2'] }, ...extra.relations ?? []] });
 /** Expects the sketch `folding(suffix, dx)` draws solved: A where it was, B folded out beyond the shared end and the mirror square to A. */
 const expectFolded = (graph: CadSketchGraph, suffix = '', dx = 0) => {
   const at = positions(graph), [m1, m2] = [at.get(`m1${suffix}`)!, at.get(`m2${suffix}`)!];
@@ -619,7 +634,7 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     if (result.kind !== 'solved') throw new Error(result.message);
     expect(solves).toBe(4);
     expect(result.diagnostics).toMatchObject({ degreesOfFreedom: 7, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
-    expect(result.diagnostics.warnings).toBeUndefined();
+    expect(cadSketchShrinkWarnings(graph, result.graph, {})).toEqual([]);
     expect(checkCadSketchGraph(result.graph, {})).toEqual([]);
     expectFolded(result.graph);
     expectFolded(result.graph, '2', 100);
@@ -640,7 +655,7 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       if (result.kind !== 'solved') throw new Error(`${label}: ${result.message}`);
       expect(result.diagnostics, label).toMatchObject({ degreesOfFreedom: 0, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
       // The dimension asks for the shrink, so nothing warns of it.
-      expect(result.diagnostics.warnings, label).toBeUndefined();
+      expect(cadSketchShrinkWarnings(graph, result.graph, {}), label).toEqual([]);
       expect(checkCadSketchGraph(result.graph, {}), label).toEqual([]);
       return result.graph;
     };
@@ -650,6 +665,13 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     expect(positions(direct).get('a2')!.x - positions(direct).get('a1')!.x).toBeCloseTo(.0099, 12);
     expect(positions(direct).get('b2')!.x).toBeCloseTo(-10.0099, 12);
     expect(positions(stepped)).toEqual(positions(direct));
+    // A construction line on A's ends shares its length, and a dimension to a point Coincident with A's end sets it alike: no warning.
+    const length = (relation: (typeof start.relations)[number]) => relation.id === 'length' ? { ...relation, value: .0099 } : relation;
+    const along = solved(parseCadSketchGraph({ ...start, entities: [...start.entities, { ...line('along', 'a1', 'a2'), construction: true }], relations: start.relations.map(length) }), 'beside a construction line');
+    expect(positions(along)).toEqual(positions(direct));
+    const aliased = solved(parseCadSketchGraph({ ...start, points: [...start.points, { id: 'z', position: [1010, 5] }],
+      relations: [...start.relations.map(relation => relation.id === 'length' ? { ...length(relation), pointIds: ['a1', 'z'] } : relation), { id: 'alias', kind: 'coincident', pointIds: ['z', 'a2'] }] }), 'to an alias');
+    expect(positions(aliased).get('a2')).toEqual(positions(direct).get('a2'));
   });
 
   it('keep a start that met everything but a shrink a dimension asks for while the next mirror\'s start is tried, directly or in steps alike', async () => {
@@ -672,7 +694,7 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       if (result.kind !== 'solved') throw new Error(`${label}: ${result.message}`);
       expect(result.diagnostics, label).toMatchObject({ degreesOfFreedom: 8, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
       // C's dimension sets both radii, D's through the Symmetric, so nothing warns of the shrink.
-      expect(result.diagnostics.warnings, label).toBeUndefined();
+      expect(cadSketchShrinkWarnings(graph, result.graph, {}), label).toEqual([]);
       expect(checkCadSketchGraph(result.graph, {}), label).toEqual([]);
       expectFolded(result.graph);
       expectFolded(result.graph, '2', 100);
@@ -712,55 +734,94 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
       if (result.kind !== 'solved') throw new Error(`${label}: ${result.message}`);
       expect(sized(positions(result.graph), result.graph), label).toBeCloseTo(value, 12);
-      expect(result.diagnostics.warnings, label).toBeUndefined();
+      expect(cadSketchShrinkWarnings(graph, result.graph, {}), label).toEqual([]);
       expect(checkCadSketchGraph(result.graph, {}), label).toEqual([]);
     }
   });
 
-  it('warn, naming each curve with its size before and after, where a solve keeps mirrored curves shrunk that nothing sizes', async () => {
-    // The reviewer's sketch: the two folding copies drawn elsewhere, with Parallel between their mirrors and no size dimensions. Every
-    // start the solve tries shrinks A2 and B2, 16.906 and 3.324 mm long, to 6.6e-6 mm, so it keeps the first such answer and warns.
+  it('warn, naming each curve with its size before and after, where a committed solve keeps mirrored curves shrunk that nothing sizes', async () => {
+    // The reviewer's sketch (see `shrinking`): every start the solve tries shrinks A2 and B2, so it keeps the first such answer, and a
+    // committed edit warns. A Y distance between A2's ends sets only a projection: with one of 1e-5 mm the solve still shrinks both lines,
+    // to 2.1e-5 mm, though going through 5e-6 mm first leaves A2 7.4 mm long, so nothing forces the shrink and it is warned of alike.
     const native = await loadCadSketchTestNativeSolver();
     let solves = 0;
     const solver = { ...native, solve: (...args: Parameters<typeof native.solve>) => { solves++; return native.solve(...args); } };
-    const graph = parseCadSketchGraph({ points: Object.entries({ a1: [9.5, -5], a2: [16.1, -4.5], b1: [-8.3, 26.7], b2: [-17.4, 12.3], m1: [-3.7, -65.3], m2: [10.6, 63.3],
-        a12: [109.5, -5], a22: [102.1, 10.2], b12: [99.3, 18.5], b22: [100.5, 15.4], m12: [98.4, -52.8], m22: [106.4, 65.5] }).map(([id, position]) => ({ id, position })),
-      entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true },
-        line('A2', 'a12', 'a22'), line('B2', 'b12', 'b22'), { ...line('mirror2', 'm12', 'm22'), construction: true }],
-      relations: [{ id: 'p', kind: 'parallel', lineIds: ['A', 'B'] }, { id: 'fix', kind: 'fixed-point', pointId: 'a1', position: [9.5, -5] },
-        { id: 'shared', kind: 'coincident', pointIds: ['a1', 'b1'] }, { id: 'mirrored', kind: 'symmetric', curveIds: ['A', 'B'], lineId: 'mirror' },
-        { id: 'p2', kind: 'parallel', lineIds: ['A2', 'B2'] }, { id: 'fix2', kind: 'fixed-point', pointId: 'a12', position: [109.5, -5] },
-        { id: 'shared2', kind: 'coincident', pointIds: ['a12', 'b12'] }, { id: 'mirrored2', kind: 'symmetric', curveIds: ['A2', 'B2'], lineId: 'mirror2' },
-        { id: 'kept', kind: 'parallel', lineIds: ['mirror', 'mirror2'] }] });
+    const graph = shrinking();
     const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
     if (result.kind !== 'solved') throw new Error(result.message);
     expect(solves).toBe(4);
     expect(result.diagnostics).toMatchObject({ degreesOfFreedom: 7, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [] });
     const message = 'Symmetric shrank Line 2 from 16.906 mm to 0.000007 mm and Line 4 from 3.324 mm to 0.000007 mm. Check the mirror and its relations.';
-    expect(result.diagnostics.warnings).toEqual([{ code: 'mirror-shrank', relationId: 'mirrored2', message, curves: [
+    const warnings = cadSketchShrinkWarnings(graph, result.graph, {});
+    expect(warnings).toEqual([{ code: 'mirror-shrank', relationId: 'mirrored2', message, curves: [
       { entityId: 'A2', beforeMm: expect.closeTo(16.906, 3), afterMm: expect.closeTo(6.575e-6, 9) },
       { entityId: 'B2', beforeMm: expect.closeTo(3.324, 3), afterMm: expect.closeTo(6.575e-6, 9) }] }]);
-    // A batch that solves the sketch lists the warning with it.
+    const projected = shrinking({ relations: [{ id: 'rise', kind: 'axis-distance', axis: 'y', pointIds: ['a12', 'a22'], value: 1e-5 }] });
+    const rise = attemptCadSketchNativeSolve({ graph: projected, parameters: {}, analyseDefinition: true }, solver).result;
+    if (rise.kind !== 'solved') throw new Error(rise.message);
+    expect(cadSketchShrinkWarnings(projected, rise.graph, {})).toEqual([{ code: 'mirror-shrank', relationId: 'mirrored2', curves: [
+      { entityId: 'A2', beforeMm: expect.closeTo(16.906, 3), afterMm: expect.closeTo(2.0662e-5, 9) }, { entityId: 'B2', beforeMm: expect.closeTo(3.324, 3), afterMm: expect.closeTo(2.0662e-5, 9) }],
+      message: 'Symmetric shrank Line 2 from 16.906 mm to 0.00002 mm and Line 4 from 3.324 mm to 0.00002 mm. Check the mirror and its relations.' }]);
+    // A committed batch that solves the sketch lists the warning with it; a preview, which asks for none, lists nothing.
     const document = parseCadDocument({ ...createCadDocument('Folds', 'folds'), schemaVersion: 2 });
-    const prepared = await prepareCadEdits(document, [{ kind: 'add-feature', feature: { id: 'folds', kind: 'sketch', name: 'Folds', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph } }], createCadSketchTestSolver());
-    expect(prepared.sketchWarnings).toEqual([{ ...result.diagnostics.warnings![0], sketchId: 'folds', sketchName: 'Folds' }]);
+    const added: readonly CadEdit[] = [{ kind: 'add-feature', feature: { id: 'folds', kind: 'sketch', name: 'Folds', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph } }];
+    expect((await prepareCadEdits(document, added, createCadSketchTestSolver(), undefined, { warnings: true })).sketchWarnings).toEqual([{ ...warnings[0], sketchId: 'folds', sketchName: 'Folds' }]);
+    expect((await prepareCadEdits(document, added, createCadSketchTestSolver())).sketchWarnings).toEqual([]);
+    // A committed drag puts its point where it is dragged, so it asks for the shrink that follows: A's end dragged to within 1e-4 mm of
+    // its held start shrinks A and its mirror far below the fraction, and nothing warns.
+    const lines = graphOf(SCENES.lines, '@v', { held: { a1: 'fix' }, relations: [mirrored('@v')] });
+    const drawn = parseCadDocument({ ...document, features: [{ id: 'mirror', kind: 'sketch', name: 'Mirror', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: lines }] });
+    const dragged = await prepareCadEdits(drawn, [{ kind: 'move-sketch-point', sketchId: 'mirror', pointId: 'a2', translation: [-15 + 1e-4, -15] }], createCadSketchTestSolver(), undefined, { warnings: true });
+    const sketch = dragged.document.features[0];
+    if (sketch.kind !== 'sketch' || !sketch.graph) throw new Error('Expected the dragged sketch.');
+    expect(Math.hypot(...[0, 1].map(axis => Number(sketch.graph!.points.find(point => point.id === 'b2')!.position[axis]) - [-10.0001, 5][axis]))).toBeLessThan(1e-9);
+    expect(cadSketchShrinkWarnings(lines, sketch.graph, {}).map(warning => warning.relationId)).toEqual(['mirrored']);
+    expect(dragged.sketchWarnings).toEqual([]);
+  });
+
+  it('keep the start search\'s answer over a later retry that shrinks the same curves, as it keeps the first shrunk answer', async () => {
+    // The reviewer's sketch (see `shrinking`) beside a circle of radius 1 held at the origin, with a point held on it starting 4e-13 mm
+    // above its centre. Every start shrinks A2 and B2 alike; the first solve and the start search move the point straight up to (0, 1),
+    // and the retries from one radius out along X, along Y and diagonally then solve too. Keeping the last shrunk answer instead of the
+    // first would leave the point diagonal.
+    const native = await loadCadSketchTestNativeSolver();
+    let solves = 0;
+    const solver = { ...native, solve: (...args: Parameters<typeof native.solve>) => { solves++; return native.solve(...args); } };
+    const graph = shrinking({ points: [{ id: 'k', position: [0, 0] }, { id: 'q', position: [0, 4e-13] }], entities: [{ ...circle('K', 'k'), radius: 1 }],
+      relations: [{ id: 'held', kind: 'fixed-point', pointId: 'k', position: [0, 0] }, { id: 'unit', kind: 'radial-size', entityId: 'K', quantity: 'radius', value: 1 },
+        { id: 'on', kind: 'point-on-curve', pointId: 'q', curveId: 'K' }] });
+    const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
+    if (result.kind !== 'solved') throw new Error(result.message);
+    expect(solves).toBe(7);
+    expect(result.diagnostics).toMatchObject({ degreesOfFreedom: 8, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+    expect(checkCadSketchGraph(result.graph, {})).toEqual([]);
+    const q = positions(result.graph).get('q')!;
+    expect(Math.hypot(q.x, q.y - 1)).toBeLessThan(1e-12);
+    expect(cadSketchShrinkWarnings(graph, result.graph, {}).map(warning => warning.relationId)).toEqual(['mirrored2']);
   });
 
   it('find the edges whose size a dimension or an expression sets, and the edges Equal or a curve Symmetric sizes alike', () => {
-    // Driven: a line by its own ends' distance or axis distance, an arc by its centre's distance from an end, a circle by a radius
-    // dimension or an expression, and what Equal or a Symmetric joins to those. Free: a line whose ends a distance spans only through
-    // another point, and a mirrored pair nothing sizes.
+    // Driven: a line by its own ends' distance, or by both their X and Y offsets, set by X and Y distances or Horizontal with an X
+    // distance; a construction line on a dimensioned line's ends; a line whose end is Coincident with a point a distance dimensions; an arc
+    // by its centre's distance from an end; a circle by a radius dimension or an expression; and what Equal or a Symmetric joins to those.
+    // Free: a line whose ends only an X distance sets, a line whose ends a distance spans only through another point, and a mirrored pair
+    // nothing sizes.
     const point = (id: string, x: number, y: number) => ({ id, position: [x, y] });
-    const graph = parseCadSketchGraph({ points: [point('a', 0, 0), point('b', 10, 0), point('c', 0, 10), point('d', 10, 10), point('e', 20, 0), point('f', 30, 0),
+    const graph = parseCadSketchGraph({ points: [point('a', 0, 0), point('b', 10, 0), point('c', 0, 10), point('d', 10, 12), point('e', 20, 0), point('f', 30, 0),
       point('o', 50, 0), point('s', 55, 0), point('t', 50, 5), point('k', 70, 0), point('q', 90, 0), point('g', 0, 40), point('h', 10, 40), point('i', 0, 50), point('j', 10, 50),
-      point('u', 0, 60), point('v', 10, 60), point('w', 20, 60), point('x', 0, -20), point('y', 10, -20)],
+      point('u', 0, 60), point('v', 10, 60), point('w', 20, 60), point('x', 0, -20), point('y', 10, -20), point('l1', 0, 70), point('l2', 10, 70), point('n1', 0, 80), point('n2', 10, 90),
+      point('r1', 20, -40), point('r2', 30, -40), point('z', 30, -40)],
     entities: [line('measured', 'a', 'b'), line('stepped', 'c', 'd'), line('equal', 'e', 'f'), { id: 'bend', kind: 'arc', construction: false, centerPointId: 'o', startPointId: 's', endPointId: 't', direction: 'ccw' },
-      { ...circle('expressed', 'k'), radius: 'r' }, circle('sized', 'q'), line('left', 'g', 'h'), line('right', 'i', 'j'), line('spanned', 'u', 'v'), line('mirroredMeasured', 'x', 'y')],
+      { ...circle('expressed', 'k'), radius: 'r' }, circle('sized', 'q'), line('left', 'g', 'h'), line('right', 'i', 'j'), line('spanned', 'u', 'v'), line('mirroredMeasured', 'x', 'y'),
+      line('level', 'l1', 'l2'), line('projected', 'n1', 'n2'), { ...line('alongside', 'a', 'b'), construction: true }, line('aliased', 'r1', 'r2')],
     relations: [{ id: 'length', kind: 'distance', pointIds: ['b', 'a'], value: 10 }, { id: 'across', kind: 'axis-distance', axis: 'x', pointIds: ['c', 'd'], value: 10 },
       { id: 'same', kind: 'equal-length', lineIds: ['measured', 'equal'] }, { id: 'reach', kind: 'distance', pointIds: ['o', 't'], value: 5 },
       { id: 'radius', kind: 'radial-size', entityId: 'sized', quantity: 'diameter', value: 8 }, { id: 'through', kind: 'distance', pointIds: ['u', 'w'], value: 20 },
-      { id: 'free-mirror', kind: 'symmetric', curveIds: ['left', 'right'], lineId: '@h' }, { id: 'sized-mirror', kind: 'symmetric', curveIds: ['measured', 'mirroredMeasured'], lineId: '@h' }] });
-    expect([...cadSketchDrivenSizes(graph)].sort()).toEqual(['bend', 'equal', 'expressed', 'measured', 'mirroredMeasured', 'sized', 'stepped']);
+      { id: 'free-mirror', kind: 'symmetric', curveIds: ['left', 'right'], lineId: '@h' }, { id: 'sized-mirror', kind: 'symmetric', curveIds: ['measured', 'mirroredMeasured'], lineId: '@h' },
+      { id: 'flat', kind: 'horizontal', pointIds: ['l1', 'l2'] }, { id: 'run', kind: 'axis-distance', axis: 'x', pointIds: ['l2', 'l1'], value: 10 },
+      { id: 'dx', kind: 'axis-distance', axis: 'x', pointIds: ['n1', 'n2'], value: 10 }, { id: 'dy', kind: 'axis-distance', axis: 'y', pointIds: ['n2', 'n1'], value: 10 },
+      { id: 'alias', kind: 'coincident', pointIds: ['z', 'r2'] }, { id: 'aliasLength', kind: 'distance', pointIds: ['r1', 'z'], value: 10 }] });
+    expect([...cadSketchDrivenSizes(graph)].sort()).toEqual(['aliased', 'alongside', 'bend', 'equal', 'expressed', 'level', 'measured', 'mirroredMeasured', 'projected', 'sized']);
   });
 
   it('try a component\'s start combinations least moved first, ties by the first relation\'s order, up to the cap', () => {

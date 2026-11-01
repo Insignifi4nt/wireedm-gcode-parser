@@ -18,18 +18,6 @@ export interface CadSketchDefinition {
   readonly definedEntityIds: readonly string[];
   readonly underDefinedEntityIds: readonly string[];
 }
-/**
- * A solved sketch that keeps a curve Symmetric only by shrinking mirrored curves to less than `mirrorCollapseRelative` of their size
- * before the solve, where no start the solve tried avoids it and no dimension or expression sets those sizes (see
- * `cadSketchDrivenSizes`). Each curve gives its size, a line's length or an arc's or circle's radius, before and after, in millimetres;
- * `message` says the same in words.
- */
-export interface CadSketchSolveWarning {
-  readonly code: 'mirror-shrank';
-  readonly relationId: string;
-  readonly curves: readonly { readonly entityId: string; readonly beforeMm: number; readonly afterMm: number }[];
-  readonly message: string;
-}
 export interface CadSketchSolveDiagnostics {
   readonly status: 'success' | 'converged' | 'failed' | 'invalid' | null;
   readonly degreesOfFreedom: number | null;
@@ -40,8 +28,6 @@ export interface CadSketchSolveDiagnostics {
   readonly issues: readonly CadSketchGraphIssue[];
   /** Present on a solved result exactly when its input asked for definition. */
   readonly definition?: CadSketchDefinition;
-  /** Present only on a solved result that has some. */
-  readonly warnings?: readonly CadSketchSolveWarning[];
 }
 export type CadSketchSolveResult = {
   readonly kind: 'solved'; readonly graph: CadSketchGraph; readonly diagnostics: CadSketchSolveDiagnostics;

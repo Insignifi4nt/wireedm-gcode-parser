@@ -1,8 +1,7 @@
 import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
-import { CAD_SKETCH_MIRROR_COLLAPSE, cadSketchDrivenSizes, cadSketchMirrorCollapses, cadSketchMirrorShrinkage, cadSketchMirrorShrinks, type CadSketchMirrorShrink } from '../../../../domain/cad/cadSketchSymmetryRelations';
+import { CAD_SKETCH_MIRROR_COLLAPSE, cadSketchMirrorCollapses, cadSketchMirrorShrinks } from '../../../../domain/cad/cadSketchSymmetryRelations';
 import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from '../cadSketchSolverStages';
-import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult, CadSketchSolveWarning } from '../cadSketchSolverTypes';
-import { createCadSketchRelationLabels } from '../../cadSketchRelationNames';
+import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations, type CadSketchCompiledSketch } from '../../../../domain/cad/sketch-solver/compileCadSketchEquations';
 import { applyCadSketchEquationSolution, cadSketchEquationResidual, type CadSketchEquationModel } from '../../../../domain/cad/sketch-solver/cadSketchEquationModel';
 import { cadSketchEquationDefinition, cadSketchEquationDiagnostics, type CadSketchNativeOptions } from './cadSketchNativeProtocol';
@@ -76,8 +75,8 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     // A solution that keeps a mirror of curves only by shrinking one to a small fraction of its size passes every check, but ranks below
     // one that does not (see `cadSketchMirrorShrinks`): the starts below are tried for a better one. The search keeps, for each group of
     // starts, the first that shrinks nothing there, or else the first that only shrinks, and its answer is kept where no retry does
-    // better; failing that, the first such solution tried. It warns of each shrunk curve whose size the sketch does not set (see
-    // `warned`). A drag tries no other start, and other sketches never shrink one.
+    // better; failing that, the first such solution tried. A committed edit warns of each shrunk curve whose size the sketch does not set
+    // (see `cadSketchShrinkWarnings`). A drag tries no other start, and other sketches never shrink one.
     const shrinks = (attempt: CadSketchNativeAttempt) => attempt.result.kind === 'solved' && cadSketchMirrorShrinks(input.graph, attempt.result.graph, input.parameters).length > 0;
     if (input.drag || first.result.kind === 'solved' && !shrinks(first)) return first;
     let shrunk = first.result.kind === 'solved' ? first : undefined;
@@ -100,7 +99,7 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
       const seeded = { ...best, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded, options)), check);
       if (certain(retried)) return retried;
     }
-    if (shrunk) return warned(input, shrunk);
+    if (shrunk) return shrunk;
     // A relation the lowering found no solve can meet, such as a mirror that held points and directions leave no line, conflicts with
     // what keeps them, where the solve itself named nothing: a solve can still meet such relations by collapsing the curves.
     const { result } = attempt;
@@ -110,30 +109,6 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     }
     return attempt;
   } finally { clock.stop(); }
-}
-
-/**
- * A solved answer kept though it shrinks mirrored curves (see `cadSketchMirrorShrinkage`), with a warning for each curve Symmetric
- * that shrinks a curve whose size no dimension or expression sets (see `cadSketchDrivenSizes`), naming those curves. A shrink the
- * sketch asks for is not warned of; one that relations only set together still is.
- */
-function warned(input: CadSketchSolveInput, attempt: CadSketchNativeAttempt): CadSketchNativeAttempt {
-  const { result } = attempt;
-  if (result.kind !== 'solved') return attempt;
-  const driven = cadSketchDrivenSizes(input.graph), labels = createCadSketchRelationLabels(input.graph);
-  const kinds = new Map(input.graph.entities.map(entity => [entity.id, entity.kind]));
-  const warnings = cadSketchMirrorShrinkage(input.graph, result.graph, input.parameters).flatMap((shrink): CadSketchSolveWarning[] => {
-    const curves = shrink.curves.filter(curve => !driven.has(curve.entityId));
-    if (!curves.length) return [];
-    const named = curves.map(curve => `${kinds.get(curve.entityId) === 'line' ? '' : 'the radius of '}${labels.entity(curve.entityId)} from ${millimetres(curve.beforeMm)} mm to ${millimetres(curve.afterMm)} mm`);
-    const list = named.length > 1 ? `${named.slice(0, -1).join(', ')} and ${named.at(-1)}` : named[0];
-    return [{ code: 'mirror-shrank', relationId: shrink.relationId, curves, message: `Symmetric shrank ${list}. Check the mirror and its relations.` }];
-  });
-  return warnings.length ? { ...attempt, result: { ...result, diagnostics: { ...result.diagnostics, warnings } } } : attempt;
-}
-/** A size for reading: three decimals, or for one below 0.001 mm its first significant digit, at most 12 decimals. */
-function millimetres(size: CadSketchMirrorShrink['curves'][number]['afterMm']): string {
-  return size >= 0.001 || size <= 0 ? size.toFixed(3) : size.toFixed(Math.min(12, -Math.floor(Math.log10(size))));
 }
 
 /** A compiled sketch, native's solution of it and the attempt it settled to. */

@@ -197,33 +197,60 @@ export function cadSketchMirrorShrinks(before: CadSketchGraph, after: CadSketchG
   return cadSketchMirrorShrinkage(before, after, parameters).map(shrink => shrink.relationId);
 }
 /**
- * The edges of `graph` whose size a dimension or expression sets: a line whose own ends a distance or axis distance dimensions, an arc
- * whose centre a distance dimensions from one of its ends, an arc or circle with a radius or diameter dimension, a fillet's arc, a
- * chamfer's line, or a circle whose radius is an expression; and every edge Equal or a curve Symmetric gives the same size as one of
- * those. A size that other relations set together, as a triangle of dimensions does, is not found.
+ * The edges of `graph` whose size a dimension or expression sets: a line whose own ends a distance dimensions, an arc whose centre a
+ * distance dimensions from one of its ends, either of those whose ends have both offsets set, X and Y, each by an X or Y distance or kept
+ * at zero by Vertical or Horizontal, an arc or circle with a radius or diameter dimension, a fillet's arc, a chamfer's line, or a circle
+ * whose radius is an expression; and every edge Equal or a curve Symmetric gives the same size as one of those. Ends are read through
+ * Coincident, and a dimension sets every edge on the same two ends. An X or Y distance alone sets a projection, not a size, and a size
+ * that other relations set together, as a triangle of dimensions does, is not found. One pass, joined by size with path compression.
  */
 export function cadSketchDrivenSizes(graph: CadSketchGraph): ReadonlySet<string> {
-  const parent = new Map<string, string>();
-  const root = (id: string): string => { let at = id; while (parent.has(at) && parent.get(at) !== at) at = parent.get(at)!; return at; };
-  const join = (ids: readonly string[]) => { for (const id of ids.slice(1)) parent.set(root(id), root(ids[0])); };
-  const driven = new Set<string>(), ends = new Map<string, string>();
-  const pair = (first: string, second: string) => first < second ? `${first}\u0000${second}` : `${second}\u0000${first}`;
+  const identity = resolveCadSketchPointIdentities(graph), sizes = disjointSets(graph.entities.map(entity => entity.id));
+  const key = (first: string, second: string) => { const [a, b] = [identity(first), identity(second)]; return a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`; };
+  // The edges whose size is the distance between two identities, and the offsets between them that relations set, by those identities.
+  const spans = new Map<string, string[]>(), offsets = new Map<string, Set<'x' | 'y'>>(), driven: string[] = [];
+  const span = (first: string, second: string, id: string) => { const at = key(first, second), edges = spans.get(at); if (edges) edges.push(id); else spans.set(at, [id]); };
+  const offset = ([first, second]: readonly [string, string], axis: 'x' | 'y') => {
+    const at = key(first, second), set = offsets.get(at) ?? new Set();
+    if (set.has(axis)) return;
+    set.add(axis); offsets.set(at, set);
+    if (set.size === 2) driven.push(...spans.get(at) ?? []);
+  };
   for (const entity of graph.entities) {
-    if (entity.kind === 'line') ends.set(pair(entity.startPointId, entity.endPointId), entity.id);
-    else if (entity.kind === 'arc') for (const end of [entity.startPointId, entity.endPointId]) ends.set(pair(entity.centerPointId, end), entity.id);
-    else if (typeof entity.radius === 'string') driven.add(entity.id);
+    if (entity.kind === 'line') span(entity.startPointId, entity.endPointId, entity.id);
+    else if (entity.kind === 'arc') { span(entity.centerPointId, entity.startPointId, entity.id); span(entity.centerPointId, entity.endPointId, entity.id); }
+    else if (typeof entity.radius === 'string') driven.push(entity.id);
   }
   for (const relation of graph.relations) {
-    if (relation.kind === 'distance' || relation.kind === 'axis-distance') { const id = ends.get(pair(...relation.pointIds)); if (id) driven.add(id); }
-    else if (relation.kind === 'radial-size') driven.add(relation.entityId);
-    else if (relation.kind === 'fillet-corner') driven.add(relation.arcId);
-    else if (relation.kind === 'chamfer-corner') driven.add(relation.chamferId);
-    else if (relation.kind === 'equal-length') join(relation.lineIds);
-    else if (relation.kind === 'equal-radius') join(relation.curveIds);
-    else if (relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation)) join(relation.curveIds);
+    if (relation.kind === 'distance') driven.push(...spans.get(key(...relation.pointIds)) ?? []);
+    else if (relation.kind === 'axis-distance') offset(relation.pointIds, relation.axis);
+    else if (relation.kind === 'horizontal' || relation.kind === 'vertical') offset(relation.pointIds, relation.kind === 'horizontal' ? 'y' : 'x');
+    else if (relation.kind === 'radial-size') driven.push(relation.entityId);
+    else if (relation.kind === 'fillet-corner') driven.push(relation.arcId);
+    else if (relation.kind === 'chamfer-corner') driven.push(relation.chamferId);
+    else if (relation.kind === 'equal-length') sizes.join(...relation.lineIds);
+    else if (relation.kind === 'equal-radius') sizes.join(...relation.curveIds);
+    else if (relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation)) sizes.join(...relation.curveIds);
   }
-  const drivenRoots = new Set([...driven].map(root));
-  return new Set(graph.entities.map(entity => entity.id).filter(id => drivenRoots.has(root(id))));
+  const roots = new Set(driven.map(sizes.find));
+  return new Set(graph.entities.map(entity => entity.id).filter(id => roots.has(sizes.find(id))));
+}
+/** Disjoint sets of ids, each its own at first, joined by size with path compression: any run of joins and finds is about linear. */
+function disjointSets(ids: readonly string[]) {
+  const parent = new Map(ids.map(id => [id, id])), size = new Map(ids.map(id => [id, 1]));
+  const find = (id: string): string => {
+    let root = id;
+    for (let up = parent.get(root); up !== undefined && up !== root; up = parent.get(root)) root = up;
+    for (let at = id; at !== root;) { const up = parent.get(at)!; parent.set(at, root); at = up; }
+    return root;
+  };
+  const join = (first: string, second: string) => {
+    const [a, b] = [find(first), find(second)];
+    if (a === b || !parent.has(a) || !parent.has(b)) return;
+    const [small, large] = size.get(a)! < size.get(b)! ? [a, b] : [b, a];
+    parent.set(small, large); size.set(large, size.get(small)! + size.get(large)!);
+  };
+  return { find, join };
 }
 const curveMirrors = (graph: CadSketchGraph) =>
   graph.relations.filter((relation): relation is CadSketchSymmetricCurvesRelation => relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation));

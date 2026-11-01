@@ -3,7 +3,8 @@ import { CadError } from '@/domain/cad/cadError';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { cadEditsOnlyPlaceDimensions, placeCadSketchDimensions, reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { hasValidCadSketchGeometry, parseCadDocument } from '@/domain/cad/cadSchema';
-import type { CadSketchSolveDiagnostics, CadSketchSolverClient, CadSketchSolveWarning } from './sketch-solver/cadSketchSolverTypes';
+import type { CadSketchSolveDiagnostics, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
+import { cadSketchShrinkWarnings, type CadSketchShrinkWarning } from './cadSketchShrinkWarnings';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { Value } from '@sinclair/typebox/value';
 import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
@@ -57,14 +58,16 @@ function withoutReferenceDimensions(document: CadDocument): CadDocument {
     ? { ...feature, graph: { ...feature.graph, relations: feature.graph.relations.filter(relation => relation.kind !== 'reference-dimension') } } : feature) };
 }
 
-/** A warning one of a batch's solves gave, with the sketch it solved. */
-export interface CadSketchEditWarning extends CadSketchSolveWarning { readonly sketchId: string; readonly sketchName: string }
+/** A warning about one of a committed batch's solves, with the sketch it solved. */
+export interface CadSketchEditWarning extends CadSketchShrinkWarning { readonly sketchId: string; readonly sketchName: string }
 
 /**
- * Reduce intent, solve numeric copies, then validate the whole part before a session can commit it. `sketchWarnings` lists, in solve
- * order, the warnings every solve of the batch gave, a later solve of the same sketch included.
+ * Reduce intent, solve numeric copies, then validate the whole part before a session can commit it. With `options.warnings`, for a batch
+ * that is committed, `sketchWarnings` lists in solve order the warnings about every solve of the batch that is not a drag, a later solve
+ * of the same sketch included (see `cadSketchShrinkWarnings`); otherwise, as for a preview, it is empty and nothing looks for them.
  */
-export async function prepareCadEdits(document: CadDocument, edits: readonly CadEdit[], solver: Pick<CadSketchSolverClient, 'solve'>, signal?: AbortSignal) {
+export async function prepareCadEdits(document: CadDocument, edits: readonly CadEdit[], solver: Pick<CadSketchSolverClient, 'solve'>, signal?: AbortSignal,
+  options: { readonly warnings?: boolean } = {}) {
   validateCadEditBatch(edits);
   const captured = structuredClone(edits);
   let candidate = parseCadDocument(document);
@@ -108,7 +111,7 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       assertCadSketchExternalReferences({ sketch: solved, parameters: target.parameters, previous });
       if (!cadSketchSolutionMatchesInput(input, result.graph)) throw exact?.error() ?? new CadError('invalid-sketch-solution', 'The sketch solution changed source records or fixed geometry.');
       features.push(solved);
-      for (const warning of result.diagnostics.warnings ?? []) warnings.push({ ...warning, sketchId: feature.id, sketchName: feature.name });
+      if (options.warnings && !input.drag) for (const warning of cadSketchShrinkWarnings(input.graph, result.graph, input.parameters)) warnings.push({ ...warning, sketchId: feature.id, sketchName: feature.name });
       if (exact) {
         if (index === end && !Value.Equal(features, target.features.slice(0, end + 1))) throw exact.error();
         if (index > end) {

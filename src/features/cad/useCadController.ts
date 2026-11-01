@@ -95,8 +95,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       return { document: session.getSnapshot().document, storage: workbench.adapter };
     },
     createKernel: async () => (await import('./kernel/cadKernelClient')).createCadKernelClient(),
-    prepare: async (document, edits, signal) => needsCadSketchPreparation(document, edits)
-      ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits),
+    prepare: prepareDocument,
     onChange: setFeaturePreview
   }), session);
   useLayoutEffect(() => { featurePreviewCoordinator.invalidate(); }, [featurePreviewCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
@@ -129,14 +128,15 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     void pending.catch(() => { if (sketchSolver.current === pending) sketchSolver.current = null; });
     return pending;
   }
+  /** Prepares a previewed batch: every preview goes through here, and none looks for solve warnings. */
   async function prepareDocument(document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) {
     return needsCadSketchPreparation(document, edits)
       ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits);
   }
-  /** As `prepareDocument`, with the warnings its solves gave, for an edit that is committed rather than previewed. */
+  /** As `prepareDocument`, with warnings about its solves, for an edit that is committed rather than previewed. */
   async function prepareCommit(document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) {
     return needsCadSketchPreparation(document, edits)
-      ? prepareCadEdits(document, edits, await getSketchSolver(), signal) : { document: applyCadEdits(document, edits), sketchWarnings: [] };
+      ? prepareCadEdits(document, edits, await getSketchSolver(), signal, { warnings: true }) : { document: applyCadEdits(document, edits), sketchWarnings: [] };
   }
   /** Shows each warning of an accepted edit's solves as a status toast that names its sketch. */
   function showSketchWarnings(warnings: readonly CadSketchEditWarning[]) {
@@ -274,7 +274,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       const solver = getSketchSolver();
       let warnings: readonly CadSketchEditWarning[] = [];
       return session.editPrepared(expectedVersion ?? source.version, async (document, signal) => {
-        const prepared = await prepareCadEdits(document, captured, await solver, signal);
+        const prepared = await prepareCadEdits(document, captured, await solver, signal, { warnings: true });
         warnings = prepared.sketchWarnings; return prepared.document;
       }, combined, () => {
         if (!current.current.open || current.current.app.connectedWorkbench !== workbench || current.current.app.workbenchInteractionLocked)
