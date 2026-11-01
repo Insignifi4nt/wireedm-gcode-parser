@@ -1,0 +1,19 @@
+/* The relations of the sketch being edited, under it in the feature tree. Rows have one fixed height, so only the scrolled rows render. */
+.cad-sketch-relation-list { width: 260px; margin: 2px 0 2px; }
+.cad-sketch-relation-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 1px 2px; font-size: 10px; color: var(--muted-foreground); }
+/* The heading is the list's disclosure: collapsed by default, so opening a sketch mounts no row. */
+.cad-workbench .cad-sketch-relation-list-toggle { height: 18px; padding: 0 4px 0 2px; gap: 3px; font-size: 10px; }
+.cad-sketch-relation-list-toggle > svg { width: 10px; height: 10px; }
+.cad-sketch-relation-list-toggle[aria-expanded="true"] > svg { transform: rotate(90deg); }
+.cad-sketch-relation-list-heading small { margin-left: 3px; }
+.cad-sketch-relation-list-empty { margin: 2px 6px 4px; font-size: 10px; color: var(--muted-foreground); }
+.cad-sketch-relation-list-scroller { position: relative; overflow-y: auto; pointer-events: auto; background: var(--card); border: 1px solid var(--border); border-radius: 3px; text-shadow: none; }
+.cad-sketch-relation-list-scroller ul { position: relative; margin: 0; padding: 0; list-style: none; }
+.cad-sketch-relation-list-scroller li { position: absolute; left: 0; right: 0; height: 22px; }
+.cad-workbench .cad-sketch-relation-row { display: flex; width: 100%; height: 22px; min-height: 22px; padding: 0 6px; gap: 5px; justify-content: flex-start; font-size: 10px; text-align: left; }
+.cad-sketch-relation-row.is-selected { background: var(--accent); color: var(--foreground); }
+.cad-sketch-relation-row.has-issues .cad-sketch-relation-state { color: var(--destructive); }
+.cad-sketch-relation-name { flex-shrink: 0; }
+.cad-sketch-relation-operands { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }
+.cad-sketch-relation-value { margin-left: auto; flex-shrink: 0; }
+.cad-sketch-relation-state { flex-shrink: 0; font-size: 9px; }

@@ -65,11 +65,15 @@ export function describeCadSketchConstraintSource(graph: CadSketchGraph, source:
   return Object.freeze({ source: Object.freeze({ ...source }), label, pointIds: Object.freeze([...pointIds]), entityIds: Object.freeze([...entityIds]) });
 }
 
-function feedback({ sketchId, sketchName, graph, rejection, dragPointId }: PreparationFailureInput): CadSketchConstraintFeedback {
-  const diagnostics = rejection.diagnostics, subjects: CadSketchConstraintFeedbackSubject[] = [];
+/**
+ * The sources a solve names, as subjects in diagnosis order: conflicting, redundant and partly redundant identities, then geometry issues,
+ * at most `limit` of them. A source the graph no longer has is left out.
+ */
+export function cadSketchDiagnosticSubjects(graph: CadSketchGraph, diagnostics: CadSketchSolveDiagnostics, limit = Infinity, dragPointId?: string): readonly CadSketchConstraintFeedbackSubject[] {
+  const subjects: CadSketchConstraintFeedbackSubject[] = [];
   for (const [category, ids] of [['conflicting', diagnostics.conflictingIds], ['redundant', diagnostics.redundantIds], ['partially-redundant', diagnostics.partiallyRedundantIds]] as const) {
     for (const id of ids) {
-      if (subjects.length >= 8) break;
+      if (subjects.length >= limit) break;
       const source: Source | null = graph.relations.some(item => item.id === id) ? { kind: 'relation', id }
         : graph.entities.some(item => item.id === id) ? { kind: 'entity', id } : graph.points.some(item => item.id === id) ? { kind: 'point', id } : null;
       if (source) {
@@ -81,10 +85,15 @@ function feedback({ sketchId, sketchName, graph, rejection, dragPointId }: Prepa
     }
   }
   for (const issue of diagnostics.issues) {
-    if (subjects.length >= 8) break;
+    if (subjects.length >= limit) break;
     subjects.push(Object.freeze({ ...describeCadSketchConstraintSource(graph, issue.source), category: 'issue', code: issue.code, detail: issueDetails[issue.code],
       ...(issue.residualMm === undefined ? {} : { residualMm: issue.residualMm }) }));
   }
+  return subjects;
+}
+
+function feedback({ sketchId, sketchName, graph, rejection, dragPointId }: PreparationFailureInput): CadSketchConstraintFeedback {
+  const diagnostics = rejection.diagnostics, subjects = cadSketchDiagnosticSubjects(graph, diagnostics, 8, dragPointId);
   const subjectCount = diagnostics.conflictingIds.length + diagnostics.redundantIds.length + diagnostics.partiallyRedundantIds.length + diagnostics.issues.length;
   // A solver that could not load says how to recover, which the generic wording would hide.
   const message = rejection.reason === 'failed' && cadSketchSolverRecoveryMessages.has(rejection.message) ? rejection.message : rejectionMessages[rejection.reason];

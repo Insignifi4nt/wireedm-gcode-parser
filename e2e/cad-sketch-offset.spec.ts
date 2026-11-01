@@ -59,8 +59,8 @@ test('offsets a consumed plate into an independent wall loop and matches the exa
   await page.getByRole('button', { name: 'View controls', exact: true }).click();
   const area = await page.getByLabel('3D model canvas').boundingBox();
   if (!area) throw new Error('Replacement wall area unavailable.');
-  // Fitted from the top, this lands in the 2 mm wall along the plate's far edge, at (20, 19) mm.
-  await page.mouse.click(area.x + area.width * .558, area.y + area.height * .2214);
+  // Fitted from the top, below the sketch bar, this lands in the 2 mm wall along the plate's far edge, at (20, 19) mm.
+  await page.mouse.click(area.x + area.width * .558, area.y + area.height * .2492);
   await page.getByRole('button', { name: 'Finish area selection', exact: true }).click();
   expect((await call(page, 'cad_get_feature', { expectedVersion: base.version, featureId: sketch.id })).feature).toEqual(sketch);
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();

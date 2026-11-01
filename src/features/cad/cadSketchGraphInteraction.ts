@@ -70,7 +70,7 @@ function boundsCorners(bounds: Readonly<Bounds2>): readonly Point2[] {
     { x: bounds.maxX, y: bounds.maxY }, { x: bounds.minX, y: bounds.maxY }];
 }
 
-type CadSketchGraphInteraction = ReturnType<typeof prepareInteraction>;
+export type CadSketchGraphInteraction = ReturnType<typeof prepareInteraction>;
 // The interaction last prepared for an accepted graph, under these parameters, kept for the graphs made from it by moving dimensions.
 const preparedInteractions = new WeakMap<CadSketchGraph, { readonly parameters: Readonly<Record<string, number>>; readonly interaction: CadSketchGraphInteraction }>();
 

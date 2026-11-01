@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures/native-sketch-solver';
 import type { CadSketchFeature } from '../src/domain/cad/cadDocument';
-import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow, relationControl } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, rawCadToolCall as raw, cadContext as context, historyRow, relationOffer } from './cad-tool-helpers';
 
 test('keeps a bore centered through line changes, deliberate detachment, exact history and save', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
@@ -24,11 +24,12 @@ test('keeps a bore centered through line changes, deliberate detachment, exact h
     await page.locator('[data-cad-sketch-entity="guide"][role="button"]').press('Shift+Enter');
   };
   await (await historyRow(page, 'Centered bore')).dblclick();
-  await selectPair(); await (await relationControl(page, 'checkbox', 'Midpoint')).check();
-  expect(await readSketch()).toEqual(sketch); await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  // Midpoint applies to the private draft at once and comes off again when pressed; the part keeps its version until Finish.
+  const midpoint = relationOffer(page, 'Midpoint');
+  await selectPair(); await midpoint.click(); await expect(midpoint).toHaveAttribute('aria-pressed', 'true');
+  expect(await readSketch()).toEqual(sketch); await midpoint.click(); await expect(midpoint).toHaveAttribute('aria-pressed', 'false');
   expect((await context(page)).version).toBe(initialVersion);
-  await (await relationControl(page, 'checkbox', 'Midpoint')).check();
-  await page.getByRole('button', { name: 'Apply', exact: true }).click();
+  await midpoint.click(); await expect(midpoint).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toHaveCount(0); current = await context(page);
   const linked = await readSketch();
@@ -46,8 +47,8 @@ test('keeps a bore centered through line changes, deliberate detachment, exact h
     ...widened, graph: { ...widened.graph, points: [...widened.graph.points.slice(0, 4), { id: 'center', position: ['0', '0'] }] }
   } }] })).ok).toBe(false); expect((await context(page)).version).toBe(current.version); expect(await readSketch()).toEqual(widened);
   await (await historyRow(page, 'Centered bore')).dblclick();
-  await selectPair(); await (await relationControl(page, 'checkbox', 'Midpoint')).uncheck();
-  await page.getByRole('button', { name: 'Apply', exact: true }).click(); await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await selectPair(); await expect(midpoint).toHaveAttribute('aria-pressed', 'true'); await midpoint.click();
+  await expect(midpoint).toHaveAttribute('aria-pressed', 'false'); await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toHaveCount(0); current = await context(page);
   expect((await readSketch()).graph).toEqual({ ...widened.graph, relations: [] });
   await call(page, 'cad_edit_document', { expectedVersion: current.version, edits: [{ kind: 'set-parameter', name: 'width', value: 80 }] }); current = await context(page);

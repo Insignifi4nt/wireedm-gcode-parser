@@ -23,8 +23,8 @@ interface Host<Inspection> {
   prepare: CadSketchDraftPreparation;
   /** Prepares a batch the draft commits, with the warnings its solves gave; `prepare` stands in, with none, where it is absent. */
   prepareCommit?(document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal): Promise<{ readonly document: CadDocument; readonly sketchWarnings: readonly CadSketchEditWarning[] }>;
-  /** Told the warnings of a batch the draft accepted. */
-  warn?(warnings: readonly CadSketchEditWarning[]): void;
+  /** Told the warnings of a batch the draft accepted, and the draft version that batch made. */
+  warn?(warnings: readonly CadSketchEditWarning[], version: string): void;
   inspect(document: CadDocument, sketchId: string, signal?: AbortSignal): Promise<Inspection>;
   commit(edits: readonly CadEdit[], expectedVersion: string, signal?: AbortSignal): CadEditCompletion;
 }
@@ -103,7 +103,7 @@ export function useCadSketchEditing<Inspection>(host: Host<Inspection>) {
         const prepared = await now.prepareCommit(document, captured, signal);
         warnings = prepared.sketchWarnings; return prepared.document;
       }, undefined, combined, () => assertOwner(owned));
-      if (warnings.length) latest.current.warn?.(warnings);
+      latest.current.warn?.(warnings, owned.draft.getSnapshot().version);
       return accepted;
     } finally { if (current.current === owned) { owned.pending = false; setWorking(false); } }
   };

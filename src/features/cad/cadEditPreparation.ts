@@ -60,6 +60,8 @@ function withoutReferenceDimensions(document: CadDocument): CadDocument {
 
 /** A warning about one of a committed batch's solves, with the sketch it solved. */
 export interface CadSketchEditWarning extends CadSketchShrinkWarning { readonly sketchId: string; readonly sketchName: string }
+/** The warnings of the last accepted edit that gave any, with the version it made; they hold while that version is shown. */
+export interface CadSketchWarningsRecord { readonly version: string; readonly warnings: readonly CadSketchEditWarning[] }
 
 /**
  * Reduce intent, solve numeric copies, then validate the whole part before a session can commit it. With `options.warnings`, for a batch

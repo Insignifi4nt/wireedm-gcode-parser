@@ -7,7 +7,8 @@ import { cadSketchRelationEntityIds } from '@/domain/cad/cadSketchGraphReference
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
 import { cadSketchRelationOffers, type CadSketchRelationOffer } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
 import type { CadSketchRelationIntent, CadSketchRelationKind } from '@/domain/cad/sketch-relations/cadSketchRelationTypes';
-import { cadSketchConstraintChoices, type CadSketchConstraintChoice, type CadSketchConstraintTool } from '../../cadSketchConstraintTool';
+import type { CadSketchConstraintTool } from '../../cadSketchConstraintTool';
+import { cadSketchConstraintChoices, type CadSketchConstraintChoice } from './cadSketchToolChoices';
 import { decodeCorpusJson } from '../../sketch-solver/__tests__/planeGcsCorpus';
 
 // Offers and the Constrain tool share one planning, so for every kind the tool creates, an offer must say exactly what the tool's
