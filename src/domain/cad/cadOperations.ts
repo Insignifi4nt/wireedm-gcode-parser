@@ -51,8 +51,8 @@ export type CadEdit =
   | { readonly kind: 'split-sketch-entity'; readonly sketchId: string; readonly split: CadSketchSplitTarget }
   | { readonly kind: 'trim-sketch-entity'; readonly sketchId: string; readonly trim: CadSketchTrimTarget }
   | { readonly kind: 'extend-sketch-entity'; readonly sketchId: string; readonly extend: CadSketchExtendTarget }
-  | ({ readonly kind: 'offset-sketch-loop'; readonly sketchId: string } & CadSketchOffsetRequest)
-  | ({ readonly kind: 'mirror-sketch-geometry'; readonly sketchId: string } & CadSketchMirrorRequest)
+  | ({ readonly kind: 'offset-sketch-loop'; readonly sketchId: string; readonly copyRelations?: boolean } & CadSketchOffsetRequest)
+  | ({ readonly kind: 'mirror-sketch-geometry'; readonly sketchId: string; readonly copyRelations?: boolean } & CadSketchMirrorRequest)
   | ({ readonly kind: 'copy-sketch-profile' } & CadSketchProfileCopyRequest)
   | ({ readonly kind: 'use-sketch-entity' } & CadSketchUseEntityRequest)
   | { readonly kind: 'delete-sketch-elements'; readonly sketchId: string; readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly relationIds: readonly string[]; readonly cascade: boolean }
@@ -89,8 +89,8 @@ export const CadEditSchema = Type.Union([
   Type.Object({ kind: Type.Literal('split-sketch-entity'), sketchId: identifier, split: CadSketchSplitTargetSchema }, strict),
   Type.Object({ kind: Type.Literal('trim-sketch-entity'), sketchId: identifier, trim: CadSketchTrimTargetSchema }, strict),
   Type.Object({ kind: Type.Literal('extend-sketch-entity'), sketchId: identifier, extend: CadSketchExtendTargetSchema }, strict),
-  Type.Object({ kind: Type.Literal('offset-sketch-loop'), sketchId: identifier, ...CadSketchOffsetRequestSchema.properties }, strict),
-  Type.Object({ kind: Type.Literal('mirror-sketch-geometry'), sketchId: identifier, ...CadSketchMirrorRequestSchema.properties }, strict),
+  Type.Object({ kind: Type.Literal('offset-sketch-loop'), sketchId: identifier, ...CadSketchOffsetRequestSchema.properties, copyRelations: Type.Optional(Type.Boolean()) }, strict),
+  Type.Object({ kind: Type.Literal('mirror-sketch-geometry'), sketchId: identifier, ...CadSketchMirrorRequestSchema.properties, copyRelations: Type.Optional(Type.Boolean()) }, strict),
   Type.Object({ kind: Type.Literal('copy-sketch-profile'), ...CadSketchProfileCopyRequestSchema.properties }, strict),
   Type.Object({ kind: Type.Literal('use-sketch-entity'), ...CadSketchUseEntityRequestSchema.properties }, strict),
   Type.Object({ kind: Type.Literal('delete-sketch-elements'), sketchId: identifier, pointIds: Type.Array(identifier, { uniqueItems: true }), entityIds: Type.Array(identifier, { uniqueItems: true }), relationIds: Type.Array(identifier, { uniqueItems: true }), cascade: Type.Boolean() }, strict),
@@ -302,13 +302,13 @@ export function reduceCadEditIntents(document: CadDocument, edits: readonly CadE
       case 'offset-sketch-loop': {
         const index = indexOf(edit.sketchId), sketch = features[index];
         if (sketch.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to offset.');
-        features[index] = prepareCadSketchOffset({ sketch, parameters, source: edit.source, distance: edit.distance, idPrefix: edit.idPrefix }).sketch;
+        features[index] = prepareCadSketchOffset({ sketch, parameters, source: edit.source, distance: edit.distance, idPrefix: edit.idPrefix, copyRelations: edit.copyRelations }).sketch;
         break;
       }
       case 'mirror-sketch-geometry': {
         const index = indexOf(edit.sketchId), sketch = features[index];
         if (sketch.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to mirror.');
-        features[index] = prepareCadSketchMirror({ sketch, parameters, entityIds: edit.entityIds, axisLineId: edit.axisLineId, idPrefix: edit.idPrefix }).sketch;
+        features[index] = prepareCadSketchMirror({ sketch, parameters, entityIds: edit.entityIds, axisLineId: edit.axisLineId, idPrefix: edit.idPrefix, copyRelations: edit.copyRelations }).sketch;
         break;
       }
       case 'use-sketch-entity': {

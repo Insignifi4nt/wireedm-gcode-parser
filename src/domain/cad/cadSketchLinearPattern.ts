@@ -7,6 +7,7 @@ import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { cadSupportedLength } from '../precision/cadPrecision';
+import { remapCadSketchRelations } from './sketch-relations/cadSketchRelationRemap';
 
 const invalid = (message: string): never => { throw new CadError('invalid-sketch-pattern', message); };
 const locked = () => new CadError('owned-sketch-pattern', 'Edit the seed or detach its linear pattern before editing generated geometry.');
@@ -126,8 +127,11 @@ export function reconcileCadSketchLinearPattern({ graph, parameters, relation, p
   const old = previous ? members(graph, previous) : [], retained = new Set(old.flatMap(member => [member.pointId, member.entityId]));
   const next = values(graph, parameters, relation), active = new Set(next.positions.flatMap(member => [member.pointId, member.entityId]));
   const removed = new Set([...retained].filter(id => !active.has(id)));
-  for (const other of graph.relations) if (other.id !== previous?.id && (cadSketchRelationEntityIds(other).some(id => removed.has(id))
-    || cadSketchRelationPointIds(graph, other).some(id => removed.has(id)))) return invalid('Remove dependent relations before omitting a pattern occurrence.');
+  // An omitted occurrence leaves with its centre: every other relation on either blocks the omission (see `remapCadSketchRelations`).
+  const leaving = old.filter(member => removed.has(member.entityId));
+  const outcomes = leaving.length ? remapCadSketchRelations(graph, { curves: new Map(leaving.map(member => [member.entityId, []])),
+    points: new Map(leaving.map(member => [member.pointId, null])) }) : [];
+  if (outcomes.some(item => item.kind === 'blocked' && item.relation.id !== previous?.id)) return invalid('Remove dependent relations before omitting a pattern occurrence.');
   const occupied = new Set([...graph.points, ...graph.entities, ...graph.relations].map(item => item.id));
   for (const id of active) if (occupied.has(id) && !retained.has(id)) return invalid('A pattern occurrence identity already belongs to other geometry.');
   const positions = new Map(next.positions.map(member => [member.pointId, member.position]));
