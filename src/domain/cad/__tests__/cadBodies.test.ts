@@ -145,18 +145,19 @@ describe('body lineage', () => {
 
 describe('body parts', () => {
   type Entry = readonly [source: number, solid: number, rank: number];
+  type Groups = readonly (readonly string[])[];
   const target = [{ kind: 'target' }] as const, fused = [{ kind: 'target' }, { kind: 'tool' }] as const;
   const copies = (n: number): CadBodySource[] => [{ kind: 'target' }, ...Array.from({ length: n }, (_, index) => ({ kind: 'copy' as const, i: index + 1, j: 0 }))];
   const facts = (solids: number, traced: readonly (readonly Entry[])[], extra: Partial<CadBodyKernelFacts> = {}): CadBodyKernelFacts =>
     ({ solids, removesMaterial: true, sources: target, provenance: vi.fn(() => traced.map(list => list.map(([source, solid, rank]) => ({ source, solid, rank })))), ...extra });
-  const previous = (pieces?: readonly string[], ambiguous?: readonly string[]): CadBodyState =>
-    ({ key: key('pad'), kind: 'solid', createdBy: 'pad', modifiedBy: ['cut'], ...(pieces ? { pieces: pieces.map(key) } : {}), ...(ambiguous ? { ambiguous: ambiguous.map(key) } : {}) });
-  const parts = (input: { before?: readonly string[]; ambiguous?: readonly string[]; beforeSolids?: number; facts: CadBodyKernelFacts }) =>
+  const previous = (pieces?: readonly string[], ambiguous?: Groups): CadBodyState =>
+    ({ key: key('pad'), kind: 'solid', createdBy: 'pad', modifiedBy: ['cut'], ...(pieces ? { pieces: pieces.map(key) } : {}), ...(ambiguous ? { ambiguous: ambiguous.map(group => group.map(key)) } : {}) });
+  const parts = (input: { before?: readonly string[]; ambiguous?: Groups; beforeSolids?: number; facts: CadBodyKernelFacts }) =>
     cadBodyParts({ featureId: 'cut', previous: previous(input.before, input.ambiguous), beforeSolids: input.beforeSolids ?? input.before?.length ?? 1, facts: input.facts });
-  const changed = (pieces: readonly string[], rest: { ambiguous?: readonly string[]; ambiguousNow?: readonly string[]; lost?: readonly string[] } = {}) =>
-    ({ pieces, ...(rest.ambiguous ? { ambiguous: rest.ambiguous } : {}), ambiguousNow: rest.ambiguousNow ?? rest.ambiguous ?? [], lost: rest.lost ?? [] });
-  const whole = { ambiguousNow: [], lost: [] };
-  const A = 'pad/split(0)', B = 'pad/split(1)';
+  const changed = (pieces: readonly string[], rest: { ambiguous?: Groups; ambiguousNow?: readonly string[]; inherited?: readonly (readonly [string, string])[]; lost?: readonly string[] } = {}) =>
+    ({ pieces, ...(rest.ambiguous ? { ambiguous: rest.ambiguous } : {}), ambiguousNow: rest.ambiguousNow ?? rest.ambiguous?.flat() ?? [], inherited: rest.inherited ?? [], lost: rest.lost ?? [] });
+  const whole = { ambiguousNow: [], inherited: [], lost: [] };
+  const A = 'pad/split(0)', B = 'pad/split(1)', C = 'pad/split(2)';
 
   it('numbers the pieces of a first split by the first face each keeps, not by the kernel order', () => {
     expect(parts({ facts: facts(2, [[[0, 0, 9]], [[0, 0, 4]]]) })).toEqual(changed(['pad/split(1)', 'pad/split(0)']));
@@ -164,17 +165,30 @@ describe('body parts', () => {
   });
 
   it('numbers pieces that keep no face after the others, and reports two or more of them as ambiguous', () => {
-    expect(parts({ facts: facts(3, [[[0, 0, 3]], [], []]) })).toEqual(changed(['pad/split(0)', 'pad/split(1)', 'pad/split(2)'], { ambiguous: ['pad/split(1)', 'pad/split(2)'] }));
+    expect(parts({ facts: facts(3, [[[0, 0, 3]], [], []]) })).toEqual(changed(['pad/split(0)', 'pad/split(1)', 'pad/split(2)'], { ambiguous: [['pad/split(1)', 'pad/split(2)']] }));
     expect(parts({ facts: facts(2, [[[0, 0, 3]], []]) })).toEqual(changed(['pad/split(0)', 'pad/split(1)']));
   });
 
-  it('keeps a body whole until one of its solids splits, whatever the totals', () => {
+  it('keeps a body whole until one of its solids may have split, whatever the totals', () => {
     const joined = facts(2, [], { removesMaterial: false, sources: fused });
     expect(parts({ facts: joined })).toEqual(whole);
     expect(joined.provenance).not.toHaveBeenCalled();
     expect(parts({ beforeSolids: 2, facts: facts(2, [[[0, 0, 1]], [[0, 1, 4]]]) })).toEqual(whole);
     // Two solids in and two out: the first split in two and the second went.
     expect(parts({ beforeSolids: 2, facts: facts(2, [[[0, 0, 1]], [[0, 0, 5]]]) })).toEqual(changed(['pad/split(0)', 'pad/split(1)']));
+    // A solid keeping no face may be a piece of either solid, so the body may have split although as many solids are left.
+    expect(parts({ beforeSolids: 2, facts: facts(2, [[[0, 0, 1]], []]) })).toEqual(changed(['pad/split(0)', 'pad/split(1)']));
+  });
+
+  it('never orders pieces by faces of different solids, whose ranks follow the kernel order of those solids', () => {
+    // A whole body of two solids, one of them split: which comes first depends on the order the kernel lists the two solids in.
+    expect(parts({ beforeSolids: 2, facts: facts(3, [[[0, 0, 1]], [[0, 1, 2]], [[0, 0, 5]]]) }))
+      .toEqual(changed(['pad/split(0)', 'pad/split(1)', 'pad/split(2)'], { ambiguous: [['pad/split(0)', 'pad/split(1)', 'pad/split(2)']] }));
+    // The same holds for a fused tool of several solids, and for merges that decide by several solids of one source.
+    expect(parts({ before: [A], facts: facts(3, [[[0, 0, 1]], [[1, 0, 1]], [[1, 1, 1]]], { removesMaterial: false, sources: fused }) }))
+      .toEqual(changed([A, 'cut/split(0)', 'cut/split(1)'], { ambiguous: [['cut/split(0)', 'cut/split(1)']] }));
+    expect(parts({ before: [A, B, C, 'pad/split(3)'], facts: facts(2, [[[0, 0, 1], [0, 1, 9]], [[0, 2, 2], [0, 3, 3]]]) }))
+      .toEqual(changed(['cut/split(0)', 'cut/split(1)'], { ambiguous: [['cut/split(0)', 'cut/split(1)']], lost: [A, B, C, 'pad/split(3)'] }));
   });
 
   it('follows each piece by its kept faces, and splits a piece under its own key', () => {
@@ -182,12 +196,18 @@ describe('body parts', () => {
       .toEqual(changed(['pad/split(1)/split(1)', A, 'pad/split(1)/split(0)']));
   });
 
-  it('gives a solid that keeps no face a fresh key, never a piece left over, and reports what it could be', () => {
-    expect(parts({ before: [A, B], facts: facts(2, [[[0, 0, 1]], []]) })).toEqual(changed([A, 'cut/split(0)'], { ambiguous: ['cut/split(0)', B] }));
+  it('treats a solid keeping no face as possibly split from any key, never as proof that a traced piece continues alone', () => {
+    // The piece left keeps faces of A, and B can't be found: the fresh solid may be B, or a piece A split into.
+    expect(parts({ before: [A, B], facts: facts(2, [[[0, 0, 1]], []]) })).toEqual(changed([A, 'cut/split(0)'], { ambiguous: [['cut/split(0)', A, B]] }));
     // With one piece before and no material added, a solid keeping no face can only come from that piece.
     expect(parts({ before: [A], facts: facts(2, [[[0, 0, 1]], []]) })).toEqual(changed([`${A}/split(0)`, `${A}/split(1)`]));
-    // A fused tool could have made it, so it is fresh even beside one piece.
-    expect(parts({ before: [A], facts: facts(2, [[[0, 0, 1]], []], { removesMaterial: false, sources: fused }) })).toEqual(changed([A, 'cut/split(0)']));
+    // A fused tool could have made it, so it is fresh even beside one piece, and that piece may have split into it.
+    expect(parts({ before: [A], facts: facts(2, [[[0, 0, 1]], []], { removesMaterial: false, sources: fused }) })).toEqual(changed([A, 'cut/split(0)'], { ambiguous: [['cut/split(0)', A]] }));
+    // Pieces of a key several solids continue keep their numbers whoever else split from it, so only the fresh solid is uncertain.
+    expect(parts({ before: [A, B], facts: facts(4, [[[0, 0, 1]], [[0, 0, 2]], [[0, 1, 1]], []]) }))
+      .toEqual(changed([`${A}/split(0)`, `${A}/split(1)`, B, 'cut/split(0)'], { ambiguous: [['cut/split(0)', B]] }));
+    expect(parts({ before: [A, B], facts: facts(5, [[[0, 0, 1]], [[0, 0, 2]], [[0, 1, 1]], [[0, 1, 2]], []]) }))
+      .toEqual(changed([`${A}/split(0)`, `${A}/split(1)`, `${B}/split(0)`, `${B}/split(1)`, 'cut/split(0)']));
   });
 
   it('reports pieces a feature removed or merged as lost, and gives a merged solid a fresh key', () => {
@@ -199,14 +219,24 @@ describe('body parts', () => {
     expect(parts({ before: [A, B], facts: facts(2, [[[0, 0, 1], [1, 0, 2]], [[0, 1, 1]]], { removesMaterial: false, sources: fused }) })).toEqual(changed([A, B]));
   });
 
-  it('carries ambiguity to surviving pieces and their descendants', () => {
-    expect(parts({ before: [A, B], ambiguous: [A, B], facts: facts(2, [[[0, 0, 1]], [[0, 1, 1]]]) })).toEqual(changed([A, B], { ambiguous: [A, B], ambiguousNow: [] }));
-    expect(parts({ before: [A, B], ambiguous: [A, B], facts: facts(3, [[[0, 0, 1]], [[0, 0, 4]], [[0, 1, 1]]]) }))
-      .toEqual(changed([`${A}/split(0)`, `${A}/split(1)`, B], { ambiguous: [`${A}/split(0)`, `${A}/split(1)`, B], ambiguousNow: [`${A}/split(0)`, `${A}/split(1)`] }));
-    // Merging an ambiguous piece leaves the merged solid ambiguous; a lost one leaves the ambiguity, and earlier unidentified keys, to the rest.
-    expect(parts({ before: [A, B, 'pad/split(2)'], ambiguous: [A, B, 'gone/split(0)'], facts: facts(2, [[[0, 0, 1], [0, 2, 1]], [[0, 1, 1]]], { removesMaterial: false, sources: fused }) }))
-      .toEqual(changed(['cut/split(0)', B], { ambiguous: ['cut/split(0)', B, 'gone/split(0)'], ambiguousNow: ['cut/split(0)'], lost: [A, 'pad/split(2)'] }));
-    expect(parts({ before: [A, B], ambiguous: [A, B], facts: facts(1, [[[0, 1, 1]]]) })).toEqual(changed([B], { ambiguous: [B], ambiguousNow: [], lost: [A] }));
+  it('carries ambiguity to surviving pieces and their descendants, which extend the issue that reported it', () => {
+    expect(parts({ before: [A, B], ambiguous: [[A, B]], facts: facts(2, [[[0, 0, 1]], [[0, 1, 1]]]) })).toEqual(changed([A, B], { ambiguous: [[A, B]], ambiguousNow: [] }));
+    expect(parts({ before: [A, B], ambiguous: [[A, B]], facts: facts(3, [[[0, 0, 1]], [[0, 0, 4]], [[0, 1, 1]]]) }))
+      .toEqual(changed([`${A}/split(0)`, `${A}/split(1)`, B], { ambiguous: [[`${A}/split(0)`, `${A}/split(1)`, B]], ambiguousNow: [],
+        inherited: [[`${A}/split(0)`, A], [`${A}/split(1)`, A]] }));
+  });
+
+  it('never reports an ambiguous piece lost while a solid it could be is left', () => {
+    // Which of A and B the cut removed depends on the kernel order that numbered them, so both stay ambiguous with the solid left.
+    expect(parts({ before: [A, B], ambiguous: [[A, B]], facts: facts(1, [[[0, 1, 1]]]) })).toEqual(changed([B], { ambiguous: [[B, A]], ambiguousNow: [] }));
+    // Merging an ambiguous piece leaves the merged solid ambiguous with the rest; a certain piece merged with it is lost.
+    expect(parts({ before: [A, B, C], ambiguous: [[A, B, 'gone/split(0)']], facts: facts(2, [[[0, 0, 1], [0, 2, 1]], [[0, 1, 1]]], { removesMaterial: false, sources: fused }) }))
+      .toEqual(changed(['cut/split(0)', B], { ambiguous: [['cut/split(0)', B, A, 'gone/split(0)']], ambiguousNow: [], inherited: [['cut/split(0)', A]], lost: [C] }));
+    // Once no solid descends from the group, its keys are lost.
+    expect(parts({ before: [A, B, C], ambiguous: [[A, B]], facts: facts(1, [[[0, 2, 1]]]) })).toEqual(changed([C], { lost: [A, B] }));
+    // A solid keeping no face may be any of them.
+    expect(parts({ before: [A, B], ambiguous: [[A, B]], facts: facts(2, [[], []]) }))
+      .toEqual(changed(['cut/split(0)', 'cut/split(1)'], { ambiguous: [['cut/split(0)', 'cut/split(1)', A, B]], ambiguousNow: ['cut/split(0)', 'cut/split(1)'] }));
   });
 
   it('keys a pattern copy apart from the originals by the copy it keeps faces of, the original itself being inst(0,0)', () => {
@@ -216,26 +246,33 @@ describe('body parts', () => {
     expect(parts({ beforeSolids: 2, facts: pattern(2, [[[0, 0, 1], [1, 0, 1]], [[0, 1, 3], [1, 1, 3]]], 1) })).toEqual(whole);
     // Copies fused into each other, away from the original, merge without a target.
     expect(parts({ facts: pattern(2, [[[0, 0, 1]], [[1, 0, 1], [2, 0, 1]]]) })).toEqual(changed(['pad/inst(0,0)', 'cut/split(0)']));
-    expect(parts({ before: [A, B], facts: pattern(4, [[[0, 0, 1]], [[0, 1, 1]], [[1, 0, 1]], [[1, 1, 1]]], 1) }))
-      .toEqual(changed([`${A}/inst(0,0)`, `${B}/inst(0,0)`, `${A}/inst(1,0)`, `${B}/inst(1,0)`]));
+    const four = pattern(4, [[[0, 0, 1]], [[0, 1, 1]], [[1, 0, 1]], [[1, 1, 1]]], 1);
+    expect(parts({ before: [A, B], facts: four })).toEqual(changed([`${A}/inst(0,0)`, `${B}/inst(0,0)`, `${A}/inst(1,0)`, `${B}/inst(1,0)`]));
+    // Ambiguous pieces stay ambiguous within each copy, never with another copy's pieces.
+    expect(parts({ before: [A, B], ambiguous: [[A, B]], facts: four })).toEqual(changed([`${A}/inst(0,0)`, `${B}/inst(0,0)`, `${A}/inst(1,0)`, `${B}/inst(1,0)`],
+      { ambiguous: [[`${A}/inst(0,0)`, `${B}/inst(0,0)`], [`${A}/inst(1,0)`, `${B}/inst(1,0)`]], ambiguousNow: [],
+        inherited: [[`${A}/inst(0,0)`, A], [`${B}/inst(0,0)`, B], [`${A}/inst(1,0)`, A], [`${B}/inst(1,0)`, B]] }));
+    // The solids of a whole body several solids strong are told apart in each copy only by the kernel's order.
+    expect(parts({ beforeSolids: 2, facts: four })).toEqual(changed(['pad/inst(0,0)/split(0)', 'pad/inst(0,0)/split(1)', 'pad/inst(1,0)/split(0)', 'pad/inst(1,0)/split(1)'],
+      { ambiguous: [['pad/inst(0,0)/split(0)', 'pad/inst(0,0)/split(1)'], ['pad/inst(1,0)/split(0)', 'pad/inst(1,0)/split(1)']] }));
     // A copy that vanished is never listed.
     expect(parts({ before: ['pad/inst(0,0)', 'pad/inst(1,0)'], facts: facts(1, [[[0, 0, 1]]]) })).toEqual(changed(['pad/inst(0,0)'], { lost: ['pad/inst(1,0)'] }));
   });
 
   it('carries pieces through a feature that keeps the solid order, and keeps them when one solid is left', () => {
     const moved = facts(2, [], { removesMaterial: false, sameSolidOrder: true });
-    expect(parts({ before: [B, A], ambiguous: [A], facts: moved })).toEqual({ pieces: [B, A], ambiguous: [A], ambiguousNow: [], lost: [] });
+    expect(parts({ before: [B, A], ambiguous: [[A, B]], facts: moved })).toEqual({ pieces: [B, A], ambiguous: [[A, B]], ambiguousNow: [], inherited: [], lost: [] });
     expect(moved.provenance).not.toHaveBeenCalled();
     expect(parts({ before: [A, B], facts: facts(1, [[[0, 1, 1], [0, 0, 1]]]) })).toEqual(changed(['cut/split(0)'], { lost: [A, B] }));
   });
 
   it('stops tracking parts past the limits instead of failing the build', () => {
     const many = facts(MAX_CAD_BODY_LIST + 1, []);
-    expect(parts({ facts: many })).toEqual({ untracked: true, ambiguousNow: [], lost: [], overflowed: true });
+    expect(parts({ facts: many })).toEqual({ untracked: true, ambiguousNow: [], inherited: [], lost: [], overflowed: true });
     expect(many.provenance).not.toHaveBeenCalled();
     const long = `pad${'/split(0)'.repeat(Math.floor((MAX_CAD_BODY_KEY_LENGTH - 3) / 9))}`;
     expect(parts({ before: [long], facts: facts(2, [[[0, 0, 1]], [[0, 0, 2]]]) })).toMatchObject({ untracked: true, overflowed: true });
-    expect(cadBodyParts({ featureId: 'cut', previous: { ...previous(), untracked: true }, beforeSolids: 9, facts: facts(9, []) })).toEqual({ untracked: true, ambiguousNow: [], lost: [] });
+    expect(cadBodyParts({ featureId: 'cut', previous: { ...previous(), untracked: true }, beforeSolids: 9, facts: facts(9, []) })).toEqual({ untracked: true, ambiguousNow: [], inherited: [], lost: [] });
   });
 
   it('refuses provenance that does not describe every solid', () => {
@@ -252,10 +289,24 @@ describe('body parts', () => {
     expect(lineage.bodies()).toEqual(before);
     expect(lineage.at('box')?.key).toBe('box');
     const change = lineage.apply(slot, parsed, facts(2, [[], []]));
-    expect(change?.state).toMatchObject({ key: 'box', modifiedBy: ['slot'], pieces: ['box/split(0)', 'box/split(1)'], ambiguous: ['box/split(0)', 'box/split(1)'] });
+    expect(change?.state).toMatchObject({ key: 'box', modifiedBy: ['slot'], pieces: ['box/split(0)', 'box/split(1)'], ambiguous: [['box/split(0)', 'box/split(1)']] });
     expect(lineage.issues()).toEqual([{ code: 'ambiguous-body-parts', featureId: 'slot', body: 'box', pieces: ['box/split(0)', 'box/split(1)'],
       message: '2 pieces of body box can\'t be told apart after slot, so references to them are ambiguous.' }]);
     expect(lineage.issues().every(isCadBodyIssue)).toBe(true);
+  });
+
+  it('reports an ambiguity once, extending its issue with the keys that descend from it', () => {
+    const features: CadFeature[] = [...box, sketch('slot_sketch', 18, 4), pad('slot', 'slot_sketch', 'cut', 'box'),
+      { ...base('row'), kind: 'linear-pattern', sourceId: 'slot', count: 2, spacing: [50, 0, 0] }, sketch('nick_sketch', 60, 2), pad('nick', 'nick_sketch', 'cut', 'row')];
+    const parsed = document(features), lineage = createCadBodyLineage();
+    const [a, b] = ['box/split(0)', 'box/split(1)'], copy = (part: string, i: number) => `${part}/inst(${i},0)`;
+    for (const feature of parsed.features) lineage.apply(feature, parsed, feature.id === 'slot' ? facts(2, [[], []])
+      : feature.id === 'row' ? facts(4, [[[0, 0, 1]], [[0, 1, 1]], [[1, 0, 1]], [[1, 1, 1]]], { removesMaterial: false, sources: copies(1) })
+        : feature.id === 'nick' ? facts(5, [[[0, 0, 1]], [[0, 1, 1]], [[0, 2, 1]], [[0, 2, 4]], [[0, 3, 1]]]) : facts(1, []));
+    const nicked = [`${copy(a, 1)}/split(0)`, `${copy(a, 1)}/split(1)`];
+    expect(lineage.issues()).toEqual([{ code: 'ambiguous-body-parts', featureId: 'slot', body: 'box', pieces: [a, b, copy(a, 0), copy(b, 0), copy(a, 1), copy(b, 1), ...nicked],
+      message: '8 pieces of body box can\'t be told apart after slot, so references to them are ambiguous.' }]);
+    expect(lineage.get(key('box'))?.ambiguous).toEqual([[copy(a, 0), copy(b, 0)], [...nicked, copy(b, 1)]]);
   });
 
   it('lists at most the issue limit, ending with a summary of the rest', () => {
@@ -272,11 +323,22 @@ describe('body parts', () => {
     expect(issues.at(-1)).toEqual({ code: 'more-body-issues', featureId: `c${MAX_CAD_BODY_ISSUES - 1}`, body: 'box', pieces: [],
       message: `21 more body issues, from feature c${MAX_CAD_BODY_ISSUES - 1} on, are not listed.` });
   });
+
+  it('shares modifier histories, making a state only when one is asked for', () => {
+    const moves = Array.from({ length: 3000 }, (_, index): CadFeature => ({ ...base(`m${index}`), kind: 'transform', sourceId: index ? `m${index - 1}` : 'box', translation: [1, 0, 0], rotation: [0, 0, 0] }));
+    const parsed = document([...box, ...moves]), lineage = cadBodyLineage(parsed.features, parsed);
+    expect(lineage.has('m2999')).toBe(true);
+    expect(lineage.has('m2998')).toBe(false);
+    const [body] = lineage.bodies();
+    expect(body.modifiedBy).toHaveLength(3000);
+    expect([body.modifiedBy[0], body.modifiedBy[2999]]).toEqual(['m0', 'm2999']);
+    expect(lineage.at('m2999')).toBe(body);
+  });
 });
 
 describe('body references, metadata and selection', () => {
   const split: CadBodyState = { key: key('box'), kind: 'solid', createdBy: 'box', modifiedBy: ['slot', 'round'],
-    pieces: [key('box/split(0)'), key('round/split(0)')], ambiguous: [key('round/split(0)'), key('box/split(1)')] };
+    pieces: [key('box/split(0)'), key('round/split(0)')], ambiguous: [[key('round/split(0)'), key('box/split(1)')]] };
   const lineage = lineageOf([...box, ...peg, { ...base('merge'), kind: 'boolean', targetId: 'box', toolId: 'peg', operation: 'union' }]);
   const holding = (...bodies: CadBodyState[]) => ({ ...lineage, bodies: () => bodies, get: () => undefined }) as typeof lineage;
 
@@ -291,6 +353,14 @@ describe('body references, metadata and selection', () => {
     expect(resolveCadBodyRef({ kind: 'body', key: key('box/split(1)') }, holding({ ...split, pieces: [key('box/split(0)')] }))).toEqual({ status: 'missing' });
     const consumed = { ...lineage, consumed: () => [{ ...split, consumedBy: 'merge' }] } as typeof lineage;
     expect(resolveCadBodyRef({ kind: 'body', key: key('box/split(0)') }, consumed)).toEqual({ status: 'missing', consumedBy: 'merge' });
+  });
+
+  it('resolves an ambiguous key only among the keys it can\'t be told apart from, never another pattern occurrence\'s', () => {
+    const part = (k: number, i: number) => key(`box/split(${k})/inst(${i},0)`);
+    const copied: CadBodyState = { key: key('box'), kind: 'solid', createdBy: 'box', modifiedBy: ['slot', 'row'], pieces: [part(0, 0), part(1, 0), part(0, 1), part(1, 1)],
+      ambiguous: [[part(0, 0), part(1, 0)], [part(0, 1), part(1, 1), key('box/split(2)/inst(1,0)')]] };
+    expect(resolveCadBodyRef({ kind: 'body', key: part(0, 0) }, holding(copied))).toMatchObject({ status: 'ambiguous', candidates: [part(0, 0), part(1, 0)] });
+    expect(resolveCadBodyRef({ kind: 'body', key: key('box/split(2)/inst(1,0)') }, holding(copied))).toMatchObject({ status: 'ambiguous', candidates: [part(0, 1), part(1, 1)] });
   });
 
   it('names a body after its creating feature until metadata is stored, and lists orphaned metadata', () => {
@@ -318,7 +388,12 @@ describe('body references, metadata and selection', () => {
     expect(isCadBodyState({ ...split, kind: 'mesh' })).toBe(false);
     // Parts are made by the body's creator or a modifier, and never repeat the body's own key.
     expect(isCadBodyState({ ...split, pieces: ['peg/split(0)'] })).toBe(false);
-    expect(isCadBodyState({ ...split, ambiguous: ['box'] })).toBe(false);
+    expect(isCadBodyState({ ...split, ambiguous: [['box']] })).toBe(false);
+    // Ambiguous keys come in groups, each key once, and a piece is listed once.
+    expect(isCadBodyState({ ...split, ambiguous: ['round/split(0)'] })).toBe(false);
+    expect(isCadBodyState({ ...split, ambiguous: [[]] })).toBe(false);
+    expect(isCadBodyState({ ...split, ambiguous: [['round/split(0)'], ['round/split(0)', 'box/split(1)']] })).toBe(false);
+    expect(isCadBodyState({ ...split, pieces: ['box/split(0)', 'box/split(0)'] })).toBe(false);
     expect(isCadBodyState({ ...split, modifiedBy: ['bad id'] })).toBe(false);
     expect(isCadBodyState({ ...split, untracked: true })).toBe(false);
     expect(isCadBodyState({ key: 'box', kind: 'solid', createdBy: 'box', modifiedBy: [], untracked: true })).toBe(true);

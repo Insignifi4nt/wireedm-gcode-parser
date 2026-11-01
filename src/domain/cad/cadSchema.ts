@@ -219,7 +219,7 @@ export function parseCadDocument(value: unknown): CadDocument {
       if (!cadFeatureProducesBody(referenced)) throw new CadError('invalid-reference', `A solid operation cannot target ${referenced.kind === 'sketch' ? 'a sketch' : referenced.kind === 'curve' ? 'a reference curve' : 'a datum plane'}.`);
     }
     if (active) for (const id of inputs.bodyIds) {
-      if (!bodies.at(id)) throw new CadError('unavailable-body', `Feature "${feature.name}" references suppressed or already consumed body "${id}". Select its current successor.`);
+      if (!bodies.has(id)) throw new CadError('unavailable-body', `Feature "${feature.name}" references suppressed or already consumed body "${id}". Select its current successor.`);
     }
     const operandInstances = inputs.bodyIds.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0);
     for (const { name, field } of layout.checked) {
