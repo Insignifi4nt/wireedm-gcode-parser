@@ -1,4 +1,5 @@
 import type { CadFeature, CadSketchFeature, CadSketchPlane } from './cadDocument';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { CadError } from './cadError';
 import { cadProfileToEntities, resolveCadSketchRegions, type ResolvedCadProfile } from './cadSketchGeometry';
 import { prepareCadDatumFrames, resolveCadSketchPlacement, type CadDatumFrameLookup, type CadResolvedPlacement } from './cadDatumPlanes';
@@ -39,7 +40,7 @@ export function inspectCadLoftSketch(
   parameters: Readonly<Record<string, number>>,
   lookup?: CadDatumFrameLookup,
 ): CadLoftSketchInspection {
-  if (sketch.suppressed) return { eligible: false, code: 'suppressed-sketch', message: `Loft section "${sketch.name}" is suppressed.` };
+  if (!cadFeatureActive(sketch, { parameters })) return { eligible: false, code: 'suppressed-sketch', message: `Loft section "${sketch.name}" is suppressed.` };
   try {
     const placement = resolveCadSketchPlacement(sketch, parameters, lookup);
     const regions = resolveCadSketchRegions(sketch, parameters);

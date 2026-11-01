@@ -1,4 +1,5 @@
 import type { CadDocument, CadMesh } from '@/domain/cad/cadDocument';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import { applyCadEdits } from '@/domain/cad/cadOperations';
 import type { CadTopologyPickSet } from '@/domain/cad/cadTopology';
 import { cadExtrudeDepthEdits, cadExtrudeForEndFace, inspectCadExtrudeDepth, type CadExtrudeDepthControl, type CadExtrudeDepthModel, type CadExtrudeDepthState } from './cadExtrudeDepthInteraction';
@@ -28,7 +29,7 @@ export function cadDirectDepthTarget(document: CadDocument, meshes: readonly Cad
     return mesh ? cadExtrudeForEndFace(document, mesh, pick.key) : null;
   }
   const feature = document.features.find(entry => entry.id === selectedId);
-  return feature?.kind === 'extrude' && !feature.suppressed ? feature.id : null;
+  return feature?.kind === 'extrude' && cadFeatureActive(feature, document) ? feature.id : null;
 }
 
 /** Drags shorter than this pointer step only round away floating-point noise. */

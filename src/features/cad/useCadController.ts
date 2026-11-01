@@ -1,4 +1,5 @@
 import { userFacingMessage } from '@/lib/userMessage';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { useWorkbenchAppController } from '@/app/useWorkbenchAppController';
 import type { CadBuildResult, CadDocument } from '@/domain/cad/cadDocument';
@@ -195,8 +196,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     const controller = new AbortController();
     buildAbort.current?.abort(); buildAbort.current = controller;
     setBuildVersion(null);
-    setBuildState(snapshot.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed) ? 'building' : 'idle');
-    if (!snapshot.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed)) {
+    setBuildState(snapshot.document.features.some(feature => cadFeatureProducesBody(feature) && cadFeatureActive(feature, snapshot.document)) ? 'building' : 'idle');
+    if (!snapshot.document.features.some(feature => cadFeatureProducesBody(feature) && cadFeatureActive(feature, snapshot.document))) {
       setBuild(null); return () => controller.abort();
     }
     const timer = setTimeout(() => {
@@ -804,7 +805,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     const section = await inspectSection(request, expectedVersion, signal, scope);
     const { cadEntitiesToDxf } = await import('@/domain/cad/cadDxfExport');
     signal?.throwIfAborted(); editable(expectedVersion); session.assertWorkflowClosed(scope);
-    const notes = document.features.flatMap(feature => feature.kind === 'sketch' && !feature.suppressed
+    const notes = document.features.flatMap(feature => feature.kind === 'sketch' && cadFeatureActive(feature, document)
       ? feature.profiles.flatMap(profile => !profile.construction && profile.geometry.kind === 'plugin'
         ? [`${profile.geometry.package.id}@${profile.geometry.package.version}: ${profile.geometry.package.notes}`] : []) : []);
     const text = cadEntitiesToDxf(section.entities, notes);

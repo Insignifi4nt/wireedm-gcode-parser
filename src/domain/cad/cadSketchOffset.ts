@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { Value } from '@sinclair/typebox/value';
 import type { CadSketchFeature } from './cadDocument';
 import { CadIdentifierSchema, CadScalarSchema } from './cadPrimitives';
@@ -120,7 +121,7 @@ export function prepareCadSketchOffset({ sketch, parameters, ...request }: CadSk
 }): CadSketchOffsetPreparation {
   if (!isCadImportData(request) || !Value.Check(CadSketchOffsetRequestSchema, request))
     throw new CadError('invalid-sketch-offset', 'Offset requires one exact loop, a distance and an identifier prefix of at most 64 characters.');
-  if (sketch.suppressed) return fail('Resume the sketch before offsetting a loop.');
+  if (!cadFeatureActive(sketch, { parameters })) return fail('Resume the sketch before offsetting a loop.');
   const { source, idPrefix } = request, distanceMm = evaluateCadScalar(request.distance, parameters);
   if (source.kind === 'profile') {
     const profile = sketch.profiles.find(profile => profile.id === source.profileId);

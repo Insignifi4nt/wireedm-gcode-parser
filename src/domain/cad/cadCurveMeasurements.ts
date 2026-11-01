@@ -1,4 +1,5 @@
 import type { CadDocument, CadSketchPlane } from './cadDocument';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { CadError } from './cadError';
 import { parseCadDocument } from './cadSchema';
 import { resolveCadCurveGeometry, placeCadCurveGeometry, type CadBounds3 } from './cadCurve';
@@ -26,10 +27,10 @@ export function measureCadCurve(document: CadDocument, curveId: string): CadCurv
   let placementDiagnostic: CadCurveMeasurement['placementDiagnostic'] = null;
   try { resolved = placeCadCurveGeometry(local, resolveCadSketchPlacement(curve, validated.parameters, prepareCadDocumentFrames(validated))); }
   catch (error) {
-    if (!(error instanceof CadError) || error.code !== 'unavailable-datum-plane' || !curve.suppressed) throw error;
+    if (!(error instanceof CadError) || error.code !== 'unavailable-datum-plane' || cadFeatureActive(curve, validated)) throw error;
     placementDiagnostic = Object.freeze({ code: error.code, message: error.message });
   }
-  return Object.freeze({ curveId, name: curve.name, plane: curve.plane, offsetMm: local.offset, suppressed: curve.suppressed,
+  return Object.freeze({ curveId, name: curve.name, plane: curve.plane, offsetMm: local.offset, suppressed: !cadFeatureActive(curve, validated),
     frame: resolved?.frame ?? null, placementDiagnostic, coordinateSystem: 'curve-local', segmentCount: local.segments.length, lengthMm: local.length,
     startMm: local.start, endMm: local.end, startWorldMm: resolved?.startWorld ?? null, endWorldMm: resolved?.endWorld ?? null,
     boundsMm: local.bounds, worldBoundsMm: resolved?.worldBounds ?? null });

@@ -369,7 +369,7 @@ describe('datum document history, measurement and native support guards', () => 
     });
     expect(cadFeatureDependencies(sketch)).toEqual(['tilt']);
     expect(cadFeatureProducesBody(datum)).toBe(false);
-    expect(cadVisibleBodyIds(accepted.features)).toEqual(['pad']);
+    expect(cadVisibleBodyIds(accepted.features, accepted)).toEqual(['pad']);
     const changed = applyCadEdits(accepted, [
       {
         kind: 'update-feature',

@@ -172,7 +172,7 @@ function WorkbenchApp({ services }: AppProps) {
             }}
           />
           {cadDxfExport && <Suspense fallback={<div className="cad-export-loading" role="status">Opening DXF export...</div>}><CadDxfExportDialog document={cad.snapshot.document} version={cadDxfExport.version} currentVersion={cad.snapshot.version}
-            bodies={cad.buildState === 'ready' && cad.buildVersion === cad.snapshot.version ? cad.build?.meshes.filter(mesh => cadVisibleBodyIds(cad.snapshot.document.features).includes(mesh.featureId)) ?? [] : []}
+            bodies={cad.buildState === 'ready' && cad.buildVersion === cad.snapshot.version ? cad.build?.meshes.filter(mesh => cadVisibleBodyIds(cad.snapshot.document.features, cad.snapshot.document).includes(mesh.featureId)) ?? [] : []}
             onClose={closeCadDxfExport}
             onExportSketch={(id, version, signal) => cad.exportDxf(id, version, signal, 'dxf-export')}
             onExportCurve={(id, version, signal) => cad.exportCurveDxf(id, version, signal, 'dxf-export')}

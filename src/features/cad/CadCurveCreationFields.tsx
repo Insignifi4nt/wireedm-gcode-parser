@@ -13,7 +13,7 @@ export function CadCurveCreationFields({ draft, document, onChange, onCancel }: 
   return <div className="cad-property-form">
     <CadInspectorTitle>Create curve</CadInspectorTitle>
     <label className="cad-field"><span>Name</span><Input value={draft.name} onChange={event => onChange({ ...draft, name: event.target.value })} /></label>
-    <CadPlacementField features={document.features} featureId={draft.id} plane={draft.plane} onChange={plane => onChange({ ...draft, plane })} />
+    <CadPlacementField document={document} featureId={draft.id} plane={draft.plane} onChange={plane => onChange({ ...draft, plane })} />
     <ScalarField label="Plane offset" value={draft.offset} parameters={document.parameters} onChange={offset => onChange({ ...draft, offset })} />
     <CadPlacementNormal plane={draft.plane} document={document} />
     <div className="cad-form-actions"><Button type="button" onClick={onCancel}>Cancel</Button></div>

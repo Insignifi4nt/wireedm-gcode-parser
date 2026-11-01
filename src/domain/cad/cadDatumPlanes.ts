@@ -1,29 +1,18 @@
-import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { CadCurveFeature, CadDatumPlaneFeature, CadFeature, CadPlane, CadSketchFeature, CadSketchPlane } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';
 import { isCadImportData } from './cadImportData';
-import { CadFeatureBaseSchemaFields, CadPlaneSchema, CadScalarSchema } from './cadPrimitives';
 import { cadPlaneBasis, type CadNumericPoint2, type CadNumericPoint3 } from './cadPlanes';
 import { cadProfileToEntities, resolveCadSketchRegions } from './cadSketchGeometry';
 import { CAD_PRECISION } from '../precision/cadPrecision';
+import { cadFeatureActive } from './features/cadFeatureActivity';
+import { CadDatumPlaneFeatureSchema } from './features/kinds/references';
 
 export type { CadDatumPlaneFeature } from './cadDocument';
 export const CAD_DATUM_ORTHONORMAL_RESIDUAL = CAD_PRECISION.frameOrthonormalResidual;
 export const CAD_DATUM_NATIVE_PLACEMENT_PRECISION_MM = CAD_PRECISION.kernelConfusionMm;
-const point = Type.Tuple([CadScalarSchema, CadScalarSchema, CadScalarSchema]);
-export const CadDatumPlaneFeatureSchema = Type.Object(
-  {
-    ...CadFeatureBaseSchemaFields,
-    kind: Type.Literal('datum-plane'),
-    definition: Type.Object(
-      { kind: Type.Literal('world'), basePlane: CadPlaneSchema, origin: point, rotation: point },
-      { additionalProperties: false },
-    ),
-  },
-  { additionalProperties: false },
-);
+export { CadDatumPlaneFeatureSchema };
 export interface CadResolvedFrame {
   /** Base origin, before Sketch/Curve normal offset. */
   readonly origin: CadNumericPoint3;
@@ -130,7 +119,7 @@ export function prepareCadDatumFrames(features: readonly CadFeature[], parameter
   for (const feature of features)
     if (feature.kind === 'datum-plane') {
       const resolved = resolveCadWorldDatum(feature, parameters);
-      if (!feature.suppressed) frames.set(feature.id, resolved);
+      if (cadFeatureActive(feature, { parameters })) frames.set(feature.id, resolved);
     }
   return Object.freeze({ get: (id: string) => frames.get(id) });
 }

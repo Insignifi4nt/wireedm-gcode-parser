@@ -105,8 +105,8 @@ async function harness(withGeometry = false, allowHandoff = false, showStatusToa
 }
 
 function completeViewport(h: Awaited<ReturnType<typeof harness>>) {
-  const snapshot = h.session.getSnapshot(), visibleBodyIds = cadVisibleBodyIds(snapshot.document.features);
-  const references = selectCadViewportReferences(prepareCadViewportReferences(snapshot.document.features, snapshot.document.parameters), snapshot.document.features, null);
+  const snapshot = h.session.getSnapshot(), visibleBodyIds = cadVisibleBodyIds(snapshot.document.features, snapshot.document);
+  const references = selectCadViewportReferences(prepareCadViewportReferences(snapshot.document.features, snapshot.document.parameters), snapshot.document, null);
   const visibleReferenceIds = cadReferenceFeatureIds(references), visibleReferencePlanes = cadReferencePlanes(references);
   let rendered: CadRenderedViewState = { mode: 'solid', available: true, view: 'Isometric', gridVisible: true, zoom: 1, revision: 1,
     referenceVersion: snapshot.version, referenceFeatureIds: visibleReferenceIds, referencePlanes: visibleReferencePlanes };

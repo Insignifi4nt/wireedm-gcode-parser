@@ -1,4 +1,5 @@
 import { userFacingMessage } from '@/lib/userMessage';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import { MenuItem, MenuSeparator, MenuSurface } from '@/components/ui/menu';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
@@ -230,7 +231,7 @@ const PART_SELECTION_KINDS: readonly { readonly kind: CadSelectionKind; readonly
   { kind: 'body', label: 'Bodies' }, { kind: 'face', label: 'Faces' }, { kind: 'edge', label: 'Edges' },
   { kind: 'plane', label: 'Planes' }, { kind: 'axis', label: 'Axes' }, { kind: 'point', label: 'Origin point' }]);
 
-function featureDraft(kind: CadFeature['kind'], document: CadDocument, selected: CadFeature | undefined, bodyIds: readonly string[], plane: CadSketchPlane = selected?.kind === 'datum-plane' && !selected.suppressed ? Object.freeze({ kind: 'datum-plane', featureId: selected.id }) : 'XY'): CadFeature {
+function featureDraft(kind: CadFeature['kind'], document: CadDocument, selected: CadFeature | undefined, bodyIds: readonly string[], plane: CadSketchPlane = selected?.kind === 'datum-plane' && cadFeatureActive(selected, document) ? Object.freeze({ kind: 'datum-plane', featureId: selected.id }) : 'XY'): CadFeature {
   const id = crypto.randomUUID();
   const sequence = document.features.filter((feature) => feature.kind === kind).length + 1;
   const base = { id, name: `${kind === 'extrude' ? 'Extrude' : featureLabels[kind]} ${sequence}`, suppressed: false };
@@ -488,14 +489,16 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const navigationLocked = commandSubmission.applying || drawingPending || pluginsOpen || treeRenamePending || externalWorkflowOpen || storageBusy || deleteFeature !== null || resolvingTopology !== null || treeMenuOpen || Boolean(currentCanvasMenu);
   const previewEnabled = !pluginsOpen && !treeRenamePending && !externalWorkflowOpen && !storageBusy && !treeMenuOpen && !currentCanvasMenu && !currentReferencePick && !currentTopologyPick;
   const selected = document.features.find((feature) => feature.id === selectedId);
-  const selectedReferencePlane = useMemo<CadSketchPlane | null>(() => selected?.kind === 'datum-plane' && !selected.suppressed
-    ? Object.freeze({ kind: 'datum-plane', featureId: selected.id }) : !selected && planeSelection?.documentId === document.id ? planeSelection.plane ?? null : null, [selected, planeSelection, document.id]);
+  // Keyed on what activity reads, so the plane keeps its identity across edits that leave the selection and parameters alone.
+  const selectedReferencePlane = useMemo<CadSketchPlane | null>(() => selected?.kind === 'datum-plane' && cadFeatureActive(selected, { parameters: document.parameters })
+    ? Object.freeze({ kind: 'datum-plane', featureId: selected.id }) : !selected && planeSelection?.documentId === document.id ? planeSelection.plane ?? null : null,
+  [selected, planeSelection, document.id, document.parameters]);
   const selectedOrigin = useMemo<CadOriginSelection | null>(() => !selected && planeSelection?.documentId === document.id ? planeSelection.origin ?? null : null, [selected, planeSelection, document.id]);
   /** The reference a new feature takes from the selection: a selected plane, an origin axis or the origin point. */
   const selectedReference = useMemo<CadReferenceSelection | null>(() => selectedReferencePlane ? Object.freeze({ kind: 'plane', plane: selectedReferencePlane }) : selectedOrigin,
     [selectedReferencePlane, selectedOrigin]);
   const hoveredReferencePlane = planeHover?.documentId === document.id && (typeof planeHover.plane === 'string'
-    || document.features.some(feature => feature.kind === 'datum-plane' && !feature.suppressed && typeof planeHover.plane === 'object' && feature.id === planeHover.plane.featureId)) ? planeHover.plane : null;
+    || document.features.some(feature => feature.kind === 'datum-plane' && cadFeatureActive(feature, document) && typeof planeHover.plane === 'object' && feature.id === planeHover.plane.featureId)) ? planeHover.plane : null;
   const hoverReferencePlane = useCallback((plane: CadSketchPlane | null) => setPlaneHover(previous => {
     const next = plane ? { documentId: document.id, plane } : null;
     return previous?.documentId === next?.documentId && cadSameReferencePlane(previous?.plane ?? null, next?.plane ?? null) ? previous : next;
@@ -673,7 +676,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   // A rejected preview or Apply marks its operands until the editor publishes again; otherwise a rejected analysis does.
   const previewMarks = (editorPending || drawingPending) && sketchPreview?.source === document && sketchPreview.marks?.sketchId === sketch?.id ? sketchPreview.marks : null;
   const preparedSketch = preparedSketchDocument?.features.find((feature): feature is CadSketchFeature => feature.kind === 'sketch' && feature.id === sketch?.id);
-  const visibleBodyIds = cadVisibleBodyIds(document.features);
+  const visibleBodyIds = cadVisibleBodyIds(document.features, document);
   const currentBodyIds = buildState === 'ready' ? build?.meshes.map((mesh) => mesh.featureId).filter((id) => visibleBodyIds.includes(id)) ?? [] : [];
   const topologyReady = buildState === 'ready' && props.buildVersion === props.documentVersion && Boolean(build);
   const topologySelection = pickedTopology && !canvasReference && topologyReady && pickedTopology.documentVersion === props.documentVersion && pickedTopology.buildId === build?.buildId
@@ -705,7 +708,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const candidatePreview = currentReferencePick || currentTopologyPick ? null : ownedPreview?.kind === 'ready' ? ownedPreview : ownedPreview?.lastValid ?? null;
   const displayedDocument = candidatePreview?.document ?? document;
   const displayedBuild = candidatePreview?.result ?? build;
-  const displayedMeshes = currentTopologyPick ? inputPicker.meshes : displayedDocument.features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature)) ? displayedBuild?.meshes ?? NO_MESHES : NO_MESHES;
+  const displayedMeshes = currentTopologyPick ? inputPicker.meshes : displayedDocument.features.some(feature => cadFeatureActive(feature, displayedDocument) && cadFeatureProducesBody(feature)) ? displayedBuild?.meshes ?? NO_MESHES : NO_MESHES;
   const preparedReferences = useMemo(() => prepareCadViewportReferences(displayedDocument.features, displayedDocument.parameters), [displayedDocument.features, displayedDocument.parameters]);
   // Origin planes and axes span the model; they change only when the model outgrows a size step, so a rebuild usually keeps them.
   const modelBounds = useMemo(() => cadModelBounds(displayedMeshes, preparedReferences), [displayedMeshes, preparedReferences]);
@@ -717,10 +720,10 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       // Like CATIA's default planes, the origin planes, axes and point, and every datum plane, stay in the design area so either view can
       // pick them. With reference geometry turned off only the selected one stays, and datum planes show as the selection needs them.
       : referenceGeometryShown ? [...originReferences, ...preparedReferences.filter(reference => reference.featureKind === 'datum-plane'),
-        ...selectCadViewportReferences(preparedReferences, displayedDocument.features, selectedId).filter(reference => reference.featureKind !== 'datum-plane')]
+        ...selectCadViewportReferences(preparedReferences, displayedDocument, selectedId).filter(reference => reference.featureKind !== 'datum-plane')]
       : [...originReferences.filter(reference => reference.featureKind === 'principal-plane' ? reference.plane === selectedReferencePlane
         : reference.featureKind === 'origin-axis' ? selectedOrigin?.kind === 'axis' && selectedOrigin.axis === reference.axis : reference.featureKind === 'origin-point' && selectedOrigin?.kind === 'point'),
-        ...selectCadViewportReferences(preparedReferences, displayedDocument.features, selectedId)],
+        ...selectCadViewportReferences(preparedReferences, displayedDocument, selectedId)],
     [preparedReferences, originReferences, referenceGeometryShown, selectedReferencePlane, selectedOrigin, displayedDocument.features, selectedId, currentReferencePick, currentRegionPick, currentTopologyPick, currentSketchPlaneRequest]);
   // Hovering an installed plane keeps the same references, so the viewport keeps its own hover.
   const references = useMemo(() => currentTopologyPick || currentRegionPick || currentReferencePick || currentSketchPlaneRequest ? baseReferences
@@ -728,7 +731,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     [baseReferences, preparedReferences, originReferences, hoveredReferencePlane, currentTopologyPick, currentRegionPick, currentReferencePick, currentSketchPlaneRequest]);
   const visibleReferenceIds = useMemo(() => cadReferenceFeatureIds(references), [references]);
   const visibleReferencePlanes = useMemo(() => cadReferencePlanes(references), [references]);
-  const hasActiveBodyFeatures = document.features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature));
+  const hasActiveBodyFeatures = document.features.some(feature => cadFeatureActive(feature, document) && cadFeatureProducesBody(feature));
   useEffect(() => { if (!hasActiveBodyFeatures) setPickMode('auto'); }, [hasActiveBodyFeatures]);
   const selectedSketch = selected?.kind === 'sketch' ? selected : sketch;
   const profile = sketch?.profiles.find((entry) => entry.id === profileId);
@@ -775,12 +778,12 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     setCadPreferences(written);
   }, [document.id]);
   // A section by a datum plane that is deleted or suppressed turns off; undoing that does not bring the section back.
-  const sectionAvailable = !partView.section || cadSectionPlaneAvailable(partView.section.plane, document.features);
+  const sectionAvailable = !partView.section || cadSectionPlaneAvailable(partView.section.plane, document);
   useLayoutEffect(() => { if (!sectionAvailable) changePartView({ kind: 'clear-section' }); }, [sectionAvailable, changePartView]);
   /** Turns the section on by a plane, or off; the view controls, the menus and agents all come here. */
   const setSectionView = useCallback((section: { readonly plane: CadSectionPlane; readonly flip?: boolean; readonly caps?: boolean } | null) => {
     if (!section) { changePartView({ kind: 'clear-section' }); return; }
-    if (!cadSectionPlaneAvailable(section.plane, interactionState.current.document.features)) return;
+    if (!cadSectionPlaneAvailable(section.plane, interactionState.current.document)) return;
     changePartView({ kind: 'set-section', plane: section.plane, ...(section.flip === undefined ? {} : { flip: section.flip }), ...(section.caps === undefined ? {} : { caps: section.caps }) });
   }, [changePartView]);
   // An open sketch or curve shows its own view; the section returns when it closes.
@@ -881,7 +884,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const modelSketchSources = useMemo(() => modelToolbar ? {
     pad: document.features.some(feature => feature.kind === 'sketch' && cadSketchSourceAvailability(feature, 'extrude', document.parameters).kind !== 'unavailable'),
     revolve: document.features.some(feature => feature.kind === 'sketch' && cadSketchSourceIssue(feature, 'revolve', document.parameters) === null),
-    sweep: document.features.some(feature => feature.kind === 'sketch' && !feature.suppressed && cadSketchSourceIssue(feature, 'extrude', document.parameters) === null),
+    sweep: document.features.some(feature => feature.kind === 'sketch' && cadFeatureActive(feature, document) && cadSketchSourceIssue(feature, 'extrude', document.parameters) === null),
   } : null, [modelToolbar, document.features, document.parameters]);
   const hasBody = currentBodyIds.length > 0;
   const hasSolid = hasActiveBodyFeatures && buildState === 'ready' && Boolean(displayedMeshes.length);
@@ -1092,7 +1095,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     setProperties(null); setNewFeature(draft); setSketchId(null); setCurveId(null); if (kind === 'curve') setTool('path'); setProfileId(null); setEditorPending(false);
   });
   const createSketchOnPlane = (plane: CadSketchPlane) => {
-    if (typeof plane !== 'string' && !document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && !feature.suppressed)) return;
+    if (typeof plane !== 'string' && !document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && cadFeatureActive(feature, document))) return;
     const feature = featureDraft('sketch', document, undefined, currentBodyIds, plane);
     setPlaneSelection({ documentId: document.id, plane });
     submitEdit(signal => props.onEdit({ kind: 'add-feature', feature }, signal), () => {
@@ -1102,7 +1105,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const pickSketchPlane = (plane: CadSketchPlane) => {
     const owner = currentSketchPlaneRequest;
     if (!owner || planeRequestOwner.current !== owner) return;
-    if (typeof plane !== 'string' && !document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && !feature.suppressed)) return;
+    if (typeof plane !== 'string' && !document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && cadFeatureActive(feature, document))) return;
     // Consume synchronously before the edit: duplicate pointer releases and old
     // callbacks cannot insert a second sketch into the accepted revision.
     planeRequestOwner.current = null; setSketchPlaneRequest(null);
@@ -1132,7 +1135,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     setSelectedId(null); setProfileId(null); setPlaneSelection(null); setSketchPlaneRequest({ document, version: props.documentVersion }); setPickedTopology(null); setError(null);
   };
   const choose = (id: string | null) => { if (currentTopologyPick) return; if (currentSketchReferencePick) { if (id) currentSketchReferencePick.chooseSource(id); return; } if (currentRegionPick) return; if (currentReferencePick) { if (id && currentReferencePick.eligibleIds.includes(id)) currentReferencePick.onSelect(id); return; }
-    if (currentSketchPlaneRequest) { const target = document.features.find(feature => feature.id === id && feature.kind === 'datum-plane' && !feature.suppressed); if (target) pickSketchPlane({ kind: 'datum-plane', featureId: target.id }); return; }
+    if (currentSketchPlaneRequest) { const target = document.features.find(feature => feature.id === id && feature.kind === 'datum-plane' && cadFeatureActive(feature, document)); if (target) pickSketchPlane({ kind: 'datum-plane', featureId: target.id }); return; }
     if (interactionState.current.locked || props.sketchEdit && id !== props.sketchEdit.sketchId) return; setGraphPick(null); setGraphRelationCommand(null); setPlaneSelection(null); setPickedTopology(null); setSelectedId(id); setProfileId(null); if (!id) setProperties(current => current?.kind === 'selection' ? null : current); if (id !== sketchId) setSketchId(null); if (id !== curveId) setCurveId(null); if (id !== openFeatureId) setOpenFeatureId(null); setError(null); return true; };
   const openFeatureEditor = (feature: CadFeature) => { if (choose(feature.id)) setOpenFeatureId(feature.id); };
   /** Double-click intent: sketches and curves open their geometry editors, other features their settings. */
@@ -1142,7 +1145,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const selectReferencePlane = (plane: CadSketchPlane | null) => {
     if (currentSketchPlaneRequest) { if (plane) pickSketchPlane(plane); return; }
     if (interactionState.current.locked) return;
-    if (typeof plane === 'object' && plane !== null) { const target = document.features.find(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && !feature.suppressed); if (target) choose(target.id); return; }
+    if (typeof plane === 'object' && plane !== null) { const target = document.features.find(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && cadFeatureActive(feature, document)); if (target) choose(target.id); return; }
     choose(null); setPlaneSelection(plane ? { documentId: document.id, plane } : null);
   };
   const selectOriginReference = (selection: CadOriginSelection) => {
@@ -1158,7 +1161,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const beginProfileCopy = (source: CadSketchFeature, id: string) => {
     const latest = interactionState.current;
     if (latest.locked || props.sketchEdit || latest.document !== document || latest.version !== props.documentVersion
-      || latest.document.features.find(feature => feature.id === source.id) !== source || source.suppressed) return;
+      || latest.document.features.find(feature => feature.id === source.id) !== source || !cadFeatureActive(source, latest.document)) return;
     const outline = source.profiles.find(profile => profile.id === id); if (!outline) return;
     setProfileCopyPreview(null); setProfileCopyAccepted(null); setInspectorCollapsed(false); setError(null);
     setProfileCopyCommand({ token: crypto.randomUUID(), request: { sourceSketchId: source.id, profileId: id,
@@ -1172,7 +1175,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const target = document.features.find(feature => feature.id === accepted.sketchId);
     if (target?.kind === 'sketch') editSketch(target);
   }, [profileCopyAccepted, profileCopyCommand, pending, document, storageBusy, externalWorkflowOpen]);
-  const editCurve = (feature: CadCurveFeature) => { if (interactionState.current.locked || feature.suppressed) return; setPickedTopology(null); setSketchId(null); setCurveId(feature.id); setSelectedId(feature.id); setProfileId(null); setTool('select'); setProperties(null); };
+  const editCurve = (feature: CadCurveFeature) => { if (interactionState.current.locked || !cadFeatureActive(feature, interactionState.current.document)) return; setPickedTopology(null); setSketchId(null); setCurveId(feature.id); setSelectedId(feature.id); setProfileId(null); setTool('select'); setProperties(null); };
   const openSolidMenu = (request: CadViewportContextMenuRequest) => {
     if (interactionState.current.locked || !request.target) return;
     if (request.target.kind === 'topology') {
@@ -1181,7 +1184,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
       catch { return; }
     } else {
       const featureId = request.target.featureId;
-      if (!document.features.some(feature => feature.id === featureId && !feature.suppressed)) return;
+      if (!document.features.some(feature => feature.id === featureId && cadFeatureActive(feature, document))) return;
     }
     setCanvasMenu({ kind: 'solid', document, version: props.documentVersion, buildId: build?.buildId ?? null, request });
   };
@@ -1209,7 +1212,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     if (feature) {
       canvasMenuTitle = feature.name;
       if (feature.kind !== 'sketch') canvasMenuItems.push({ label: 'Edit feature', onSelect: () => openFeatureEditor(feature) });
-      if (feature.kind === 'datum-plane' && !feature.suppressed) canvasMenuItems.push({ label: 'Section view', onSelect: () => setSectionView({ plane: { kind: 'datum-plane', featureId: feature.id } }) });
+      if (feature.kind === 'datum-plane' && cadFeatureActive(feature, document)) canvasMenuItems.push({ label: 'Section view', onSelect: () => setSectionView({ plane: { kind: 'datum-plane', featureId: feature.id } }) });
       if (feature.kind === 'sketch') canvasMenuItems.push({ label: 'Edit sketch', onSelect: () => editSketch(feature) }, { label: 'Change sketch plane', help: 'Click the new plane in the design area.', onSelect: () => beginChangeSketchPlane(feature) },
         { label: 'Pad sketch', disabled: cadSketchSourceAvailability(feature, 'extrude', document.parameters).kind === 'unavailable', onSelect: () => startFeature('extrude', undefined, feature) },
         { label: 'Revolve sketch', disabled: cadSketchSourceIssue(feature, 'revolve', document.parameters) !== null, onSelect: () => startFeature('revolve', undefined, feature) });
@@ -1366,7 +1369,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   };
   const inspectParameterUsage = (usage: Pick<CadParameterUsage, 'featureId' | 'profileId' | 'inputName'>) => {
     const feature = document.features.find(feature => feature.id === usage.featureId);
-    if (!feature || feature.suppressed) return;
+    if (!feature || !cadFeatureActive(feature, document)) return;
     setSelectedId(feature.id); setCurveId(null); setPickedTopology(null);
     setInspectedInput(usage.profileId && usage.inputName ? { profileId: usage.profileId, inputName: usage.inputName } : null);
     if (feature.kind === 'sketch') { setSketchId(feature.id); setProfileId(usage.profileId ?? null); setTool('select'); }
@@ -2017,7 +2020,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const valueEditor = valueEditorCurrent && valueCommand && valueRelation && sketch?.graph ? <CadSketchDimensionValueEditor key={valueCommand.token} document={document} sketch={sketch} graph={sketch.graph}
     relationId={valueRelation.id} findAnchor={findValueAnchor} onEditMany={props.onEditMany} onPrepareEdits={props.onPrepareEdits} onPendingChange={setEditorPending}
     onPreviewDocument={publishSketchPreview} onFeedback={reportEditFeedback} interactionLocked={sketchCommandLocked} onClose={closeValueEditor} onAccepted={closeValueEditor} /> : null;
-  const specificationTree = <CadFeatureTree sketchContent={sketchRelationContent} onSectionView={sketch || curve ? undefined : plane => setSectionView({ plane })} parameterContent={parameterContent} parameterMenu={parameterMenu} selectionOnly={Boolean(props.sketchEdit || currentReferencePick || currentSketchPlaneRequest || currentSketchReferencePick)} allowPrincipalPlaneSelection={Boolean(currentSketchPlaneRequest)} selectableFeatureIds={currentSketchReferencePick ? currentSketchReferencePick.eligibleSketchIds : props.sketchEdit ? [props.sketchEdit.sketchId] : currentReferencePick?.eligibleIds ?? (currentSketchPlaneRequest ? document.features.filter(feature => feature.kind === 'datum-plane' && !feature.suppressed).map(feature => feature.id) : undefined)} document={document} diagnostics={build?.diagnostics} selectedId={selectedId} selectedProfileId={profileId} locked={treeLocked} onRenamePendingChange={setTreeRenamePending} cancelSignal={cancelSignal} selectedReferencePlane={typeof selectedReferencePlane === 'string' ? selectedReferencePlane : null} onSelectReferencePlane={selectReferencePlane} hoveredReferencePlane={hoveredReferencePlane} onHoverReferencePlane={hoverReferencePlane} onCreateSketch={plane => { if (!interactionState.current.locked) run(() => createSketchOnPlane(plane)); }} onRename={(feature, name, renamedProfileId, signal) => {
+  const specificationTree = <CadFeatureTree sketchContent={sketchRelationContent} onSectionView={sketch || curve ? undefined : plane => setSectionView({ plane })} parameterContent={parameterContent} parameterMenu={parameterMenu} selectionOnly={Boolean(props.sketchEdit || currentReferencePick || currentSketchPlaneRequest || currentSketchReferencePick)} allowPrincipalPlaneSelection={Boolean(currentSketchPlaneRequest)} selectableFeatureIds={currentSketchReferencePick ? currentSketchReferencePick.eligibleSketchIds : props.sketchEdit ? [props.sketchEdit.sketchId] : currentReferencePick?.eligibleIds ?? (currentSketchPlaneRequest ? document.features.filter(feature => feature.kind === 'datum-plane' && cadFeatureActive(feature, document)).map(feature => feature.id) : undefined)} document={document} diagnostics={build?.diagnostics} selectedId={selectedId} selectedProfileId={profileId} locked={treeLocked} onRenamePendingChange={setTreeRenamePending} cancelSignal={cancelSignal} selectedReferencePlane={typeof selectedReferencePlane === 'string' ? selectedReferencePlane : null} onSelectReferencePlane={selectReferencePlane} hoveredReferencePlane={hoveredReferencePlane} onHoverReferencePlane={hoverReferencePlane} onCreateSketch={plane => { if (!interactionState.current.locked) run(() => createSketchOnPlane(plane)); }} onRename={(feature, name, renamedProfileId, signal) => {
     if (document.features.find(entry => entry.id === feature.id) !== feature) throw new Error('The part changed. Cancel and reopen the rename editor.');
     return props.onEdit({ kind: 'update-feature', feature: renamedProfileId && feature.kind === 'sketch' ? { ...feature, profiles: feature.profiles.map(entry => entry.id === renamedProfileId ? { ...entry, name } : entry) } : { ...feature, name } }, signal);
   }} onContextMenuOpenChange={setTreeMenuOpen} onProperties={id => openProperties(id ? { kind: 'feature', featureId: id } : { kind: 'body' })} onChangeSketchPlane={beginChangeSketchPlane} onSuppress={(feature, suppressed) => submitEdit(signal => props.onEdit({ kind: 'update-feature', feature: { ...feature, suppressed } }, signal))} onDelete={feature => { setSelectedId(feature.id); setProfileId(null); setDeleteFeature(feature); }} onUpdateProfile={(source, next) => submitEdit(signal => props.onEdit({ kind: 'update-feature', feature: { ...source, profiles: source.profiles.map(entry => entry.id === next.id ? next : entry) } }, signal))} onDeleteProfile={deleteProfile} onCopyProfile={props.sketchEdit ? undefined : beginProfileCopy} highlightedFeatureIds={parameterUsages.map(usage => usage.featureId)} onSelect={choose} onConfigure={configureFeature} onEditSketch={editSketch} onEditCurve={editCurve} onSelectProfile={(feature, id) => { editSketch(feature); setProfileId(id); setProfileCommand(null); }} />;
@@ -2035,7 +2038,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
             .filter(control => !fileMenuPanel.current?.contains(control) && !control.classList.contains('cad-menu-scrim'));
           const index = controls.findIndex(control => control === trigger);
           setFileMenu(false); (controls[index + (event.shiftKey ? -1 : 1)] ?? trigger)?.focus();
-        }} onDismiss={() => { setFileMenu(false); fileMenuTrigger.current?.focus(); }} className="cad-file-menu" id="cad-file-menu" aria-label="CAD document commands"><MenuItem onClick={() => run(props.onNewDocument)}><FilePlus2 size={14} /> New part</MenuItem><MenuItem onClick={() => run(props.onOpenDocument)}><FolderOpen size={14} /> Open saved part</MenuItem><MenuItem onClick={() => { setFileMenu(false); fileInput.current?.click(); }}><FolderOpen size={14} /> Import file</MenuItem>{props.onCaptureViewport && <MenuItem disabled={locked || (!canvasReference && (hasActiveBodyFeatures ? !hasSolid || props.buildVersion !== props.documentVersion : references.length === 0))} onClick={() => run(() => props.onCaptureViewport?.())}><CameraCaptureIcon size={14} /> Capture view PNG</MenuItem>}<MenuSeparator />{props.onRebuild && <MenuItem disabled={locked} onClick={() => run(() => props.onRebuild?.())}><RefreshIcon size={14} /> Rebuild model</MenuItem>}<MenuItem onClick={() => run(props.onExportDocument)}><Download size={14} /> Download CAD document</MenuItem><MenuItem disabled={!hasSolid} onClick={() => run(() => props.onExportSolid('step'))}><Download size={14} /> Export STEP</MenuItem><MenuItem disabled={!hasSolid} onClick={() => run(() => props.onExportSolid('stl'))}><Download size={14} /> Export STL</MenuItem><MenuItem disabled={!document.features.some(feature => !feature.suppressed && (feature.kind === 'sketch' && hasMaterial(feature) || feature.kind === 'curve')) && !hasSolid || !props.onOpenDxfExport} onClick={() => run(() => props.onOpenDxfExport?.())}><Download size={14} /> Export DXF</MenuItem><Tooltip content={CAD_KERNEL_THIRD_PARTY.description}><MenuItem asChild><a href={CAD_KERNEL_THIRD_PARTY.href} aria-label={CAD_KERNEL_THIRD_PARTY.label}  target="_blank" rel="noopener noreferrer">Geometry kernel licenses</a></MenuItem></Tooltip><MenuSeparator />{props.onSectionForCam && <MenuItem disabled={locked || !sectionBodyId || !hasSolid || props.buildVersion !== props.documentVersion || Boolean(build?.diagnostics.length)} title="Create CAM geometry from a planar section" onClick={() => sectionBodyId && run(() => props.onSectionForCam?.(sectionBodyId))}><SectionCamIcon size={14} /> Section for CAM</MenuItem>}<MenuItem disabled={locked || (!selectedSketch || !hasMaterial(selectedSketch))} onClick={() => selectedSketch && run(() => props.onSendToCam(selectedSketch.id))}><SendCamIcon size={14} /> Send sketch to CAM</MenuItem></MenuSurface></>}</div>
+        }} onDismiss={() => { setFileMenu(false); fileMenuTrigger.current?.focus(); }} className="cad-file-menu" id="cad-file-menu" aria-label="CAD document commands"><MenuItem onClick={() => run(props.onNewDocument)}><FilePlus2 size={14} /> New part</MenuItem><MenuItem onClick={() => run(props.onOpenDocument)}><FolderOpen size={14} /> Open saved part</MenuItem><MenuItem onClick={() => { setFileMenu(false); fileInput.current?.click(); }}><FolderOpen size={14} /> Import file</MenuItem>{props.onCaptureViewport && <MenuItem disabled={locked || (!canvasReference && (hasActiveBodyFeatures ? !hasSolid || props.buildVersion !== props.documentVersion : references.length === 0))} onClick={() => run(() => props.onCaptureViewport?.())}><CameraCaptureIcon size={14} /> Capture view PNG</MenuItem>}<MenuSeparator />{props.onRebuild && <MenuItem disabled={locked} onClick={() => run(() => props.onRebuild?.())}><RefreshIcon size={14} /> Rebuild model</MenuItem>}<MenuItem onClick={() => run(props.onExportDocument)}><Download size={14} /> Download CAD document</MenuItem><MenuItem disabled={!hasSolid} onClick={() => run(() => props.onExportSolid('step'))}><Download size={14} /> Export STEP</MenuItem><MenuItem disabled={!hasSolid} onClick={() => run(() => props.onExportSolid('stl'))}><Download size={14} /> Export STL</MenuItem><MenuItem disabled={!document.features.some(feature => cadFeatureActive(feature, document) && (feature.kind === 'sketch' && hasMaterial(feature) || feature.kind === 'curve')) && !hasSolid || !props.onOpenDxfExport} onClick={() => run(() => props.onOpenDxfExport?.())}><Download size={14} /> Export DXF</MenuItem><Tooltip content={CAD_KERNEL_THIRD_PARTY.description}><MenuItem asChild><a href={CAD_KERNEL_THIRD_PARTY.href} aria-label={CAD_KERNEL_THIRD_PARTY.label}  target="_blank" rel="noopener noreferrer">Geometry kernel licenses</a></MenuItem></Tooltip><MenuSeparator />{props.onSectionForCam && <MenuItem disabled={locked || !sectionBodyId || !hasSolid || props.buildVersion !== props.documentVersion || Boolean(build?.diagnostics.length)} title="Create CAM geometry from a planar section" onClick={() => sectionBodyId && run(() => props.onSectionForCam?.(sectionBodyId))}><SectionCamIcon size={14} /> Section for CAM</MenuItem>}<MenuItem disabled={locked || (!selectedSketch || !hasMaterial(selectedSketch))} onClick={() => selectedSketch && run(() => props.onSendToCam(selectedSketch.id))}><SendCamIcon size={14} /> Send sketch to CAM</MenuItem></MenuSurface></>}</div>
         <Button aria-label="Undo" title="Undo · Ctrl+Z" disabled={!canUndo || locked} onClick={() => run(props.onUndo)}><Undo2 size={15} /></Button><Button aria-label="Redo" title="Redo · Ctrl+Shift+Z" disabled={!canRedo || locked} onClick={() => run(props.onRedo)}><Redo2 size={15} /></Button>
         <Button disabled={locked || Boolean(props.sketchEdit)} onClick={() => run(props.onSave)}><Save size={14} /> {storageBusy ? 'Working…' : 'Save'}</Button>
 
@@ -2050,7 +2053,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         items={[...constraintChoices.length && sketch.graph ? [{ kind: 'label' as const, key: 'selection', label: 'For the selection' }, ...constraintChoices.map(choice => ({ key: `selection-${choice.tool}`, label: cadSketchConstraintToolLabels[choice.tool], icon: constraintToolIcon(choice.tool),
           checked: choice.state === 'applied', disabled: choice.state === 'blocked', title: constraintChoiceHelp(choice), onSelect: () => { if (!locked && sketch.graph) toggleConstraint(sketch.graph, sketch.id, choice); } })),
           { kind: 'separator' as const, key: 'tools-separator' }, { kind: 'label' as const, key: 'tools', label: 'Choose, then pick' }] : [],
-          ...CAD_SKETCH_CONSTRAINT_TOOLS.map(kind => ({ key: kind, label: cadSketchConstraintToolLabels[kind], icon: constraintToolIcon(kind), title: cadSketchConstraintToolHelp[kind], onSelect: () => beginConstraintTool(kind) }))]} />{toolButton(graphSelections.length ? 'Move selection' : 'Move profile', MoveIcon, beginSketchMove, locked || Boolean(graphEditLock) || !graphSelections.length && (!profile || profile.geometry.kind === 'plugin'), false, graphEditLock ?? 'Move selected geometry without releasing dimensions')}{toolButton('Offset loop', OffsetIcon, beginSketchOffset, locked || !offsetSource, Boolean(currentOffset), 'Create an independent copy of one closed nonconstruction loop')}{toolButton('Mirror copy', MirrorIcon, beginSketchMirror, locked || !canMirrorSketch, Boolean(currentMirror), 'Mirror selected edges, then choose a line in the sketch. The copy is independent.', 'M')}<CadPatternCommand context="sketch" disabled={locked || !canPatternSketch} onChoose={beginSketchPattern} />{toolButton('Use reference', LinkIcon, beginSketchReference, locked || !referenceSources.length, Boolean(currentSketchReference), 'Use a linked line or circle from an earlier sketch on this plane')}<CadEdgeTreatmentCommand context="sketch" disabled={locked || profile?.geometry.kind !== 'rectangle' && !sketchCornerAvailable} chamferAvailable={sketchCornerAvailable} onChoose={beginSketchCorner} /></div><div className="cad-sketch-options"><label><Input type="checkbox" checked={tool === 'select' && graphSelections.length ? graphEntities.length === graphSelections.length && graphEntities.every(entity => entity.construction) : tool === 'select' && profile ? profile.construction : construction} disabled={locked || Boolean(graphEditLock) || patternConstructionLocked || tool === 'select' && graphSelections.some(selection => selection.kind === 'point')} onChange={(event) => changeConstruction(event.target.checked)} /> Construction</label></div></> : curve || curveCreation ? null : <><div className="cad-tool-group">{toolButton('Pad / Pocket', PadPocketIcon, () => startFeature('extrude'), locked || !modelSketchSources?.pad, false, undefined, 'E')}{toolButton('Revolve', RevolveIcon, () => startFeature('revolve'), locked || !modelSketchSources?.revolve)}{toolButton('Loft', LoftIcon, () => startFeature('loft'), locked || document.features.filter(feature => feature.kind === 'sketch' && !feature.suppressed).length < 2, false, 'Loft through ordered sketch sections')}{toolButton('Sweep', SweepIcon, () => startFeature('sweep'), locked || !modelSketchSources?.sweep || !document.features.some(feature => feature.kind === 'curve' && !feature.suppressed), false, 'Sweep a profile along a reference Curve')}</div><div className="cad-tool-group"><CadEdgeTreatmentCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Shell', ShellIcon, () => startFeature('shell'), locked || !topologyReady || !props.onResolveSelection || topologySelection?.picks[0]?.kind !== 'face')}{toolButton('Boolean', BooleanIcon, () => startFeature('boolean'), locked || currentBodyIds.length < 2)}</div><div className="cad-tool-group">{toolButton('Move', Move3dIcon, () => startFeature('transform'), locked || !hasBody)}<CadPatternCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Mirror', MirrorIcon, () => startFeature('mirror'), locked || !hasBody)}</div></>}
+          ...CAD_SKETCH_CONSTRAINT_TOOLS.map(kind => ({ key: kind, label: cadSketchConstraintToolLabels[kind], icon: constraintToolIcon(kind), title: cadSketchConstraintToolHelp[kind], onSelect: () => beginConstraintTool(kind) }))]} />{toolButton(graphSelections.length ? 'Move selection' : 'Move profile', MoveIcon, beginSketchMove, locked || Boolean(graphEditLock) || !graphSelections.length && (!profile || profile.geometry.kind === 'plugin'), false, graphEditLock ?? 'Move selected geometry without releasing dimensions')}{toolButton('Offset loop', OffsetIcon, beginSketchOffset, locked || !offsetSource, Boolean(currentOffset), 'Create an independent copy of one closed nonconstruction loop')}{toolButton('Mirror copy', MirrorIcon, beginSketchMirror, locked || !canMirrorSketch, Boolean(currentMirror), 'Mirror selected edges, then choose a line in the sketch. The copy is independent.', 'M')}<CadPatternCommand context="sketch" disabled={locked || !canPatternSketch} onChoose={beginSketchPattern} />{toolButton('Use reference', LinkIcon, beginSketchReference, locked || !referenceSources.length, Boolean(currentSketchReference), 'Use a linked line or circle from an earlier sketch on this plane')}<CadEdgeTreatmentCommand context="sketch" disabled={locked || profile?.geometry.kind !== 'rectangle' && !sketchCornerAvailable} chamferAvailable={sketchCornerAvailable} onChoose={beginSketchCorner} /></div><div className="cad-sketch-options"><label><Input type="checkbox" checked={tool === 'select' && graphSelections.length ? graphEntities.length === graphSelections.length && graphEntities.every(entity => entity.construction) : tool === 'select' && profile ? profile.construction : construction} disabled={locked || Boolean(graphEditLock) || patternConstructionLocked || tool === 'select' && graphSelections.some(selection => selection.kind === 'point')} onChange={(event) => changeConstruction(event.target.checked)} /> Construction</label></div></> : curve || curveCreation ? null : <><div className="cad-tool-group">{toolButton('Pad / Pocket', PadPocketIcon, () => startFeature('extrude'), locked || !modelSketchSources?.pad, false, undefined, 'E')}{toolButton('Revolve', RevolveIcon, () => startFeature('revolve'), locked || !modelSketchSources?.revolve)}{toolButton('Loft', LoftIcon, () => startFeature('loft'), locked || document.features.filter(feature => feature.kind === 'sketch' && cadFeatureActive(feature, document)).length < 2, false, 'Loft through ordered sketch sections')}{toolButton('Sweep', SweepIcon, () => startFeature('sweep'), locked || !modelSketchSources?.sweep || !document.features.some(feature => feature.kind === 'curve' && cadFeatureActive(feature, document)), false, 'Sweep a profile along a reference Curve')}</div><div className="cad-tool-group"><CadEdgeTreatmentCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Shell', ShellIcon, () => startFeature('shell'), locked || !topologyReady || !props.onResolveSelection || topologySelection?.picks[0]?.kind !== 'face')}{toolButton('Boolean', BooleanIcon, () => startFeature('boolean'), locked || currentBodyIds.length < 2)}</div><div className="cad-tool-group">{toolButton('Move', Move3dIcon, () => startFeature('transform'), locked || !hasBody)}<CadPatternCommand disabled={locked || !hasBody} onChoose={kind => startFeature(kind)} />{toolButton('Mirror', MirrorIcon, () => startFeature('mirror'), locked || !hasBody)}</div></>}
     </div>;
   // The model view stays mounted under a sketch surface so leaving the sketch keeps its camera and graphics context.
   const sketchSurface = coveringSketchKey !== null;

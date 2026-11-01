@@ -1,11 +1,9 @@
-import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { CadCurveFeature, CadSketchPlane } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { isCadImportData } from './cadImportData';
-import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
-import { CadFeatureBaseSchemaFields, CadPathSegmentSchema, CadSketchPlaneSchema, CadScalarSchema } from './cadPrimitives';
+import { parseCadDxfImportSource } from './cadDxfSource';
 import { cadAnalyticSegments, cadOrderedCurveEntities, cadPathClosureTolerance, resolveCadPathSegments,
   type CadOrderedCurveEntity, type ResolvedCadPathSegment } from './cadAnalyticSegments';
 import { cadBoundariesIntersect, cadBoundaryCandidatePairs } from './cadSketchGeometry';
@@ -15,10 +13,10 @@ import { cadPlanePointToWorld, type CadNumericPoint2, type CadNumericPoint3 } fr
 import { cadFramePointToWorld, cadFrameDirectionToWorld, cadPrincipalFrame, resolveCadSketchPlacement, type CadDatumFrameLookup, type CadResolvedFrame, type CadResolvedPlacement } from './cadDatumPlanes';
 import { cadFrameEntityBounds } from './cadFrameBounds';
 import { CAD_PRECISION, cadRoundoff } from '@/domain/precision/cadPrecision';
+import { cadFeatureActive } from './features/cadFeatureActivity';
+import { CadCurveFeatureSchema } from './features/kinds/references';
 
-export const CadCurveFeatureSchema = Type.Object({ ...CadFeatureBaseSchemaFields, kind: Type.Literal('curve'), plane: CadSketchPlaneSchema, offset: CadScalarSchema,
-  segments: Type.Array(CadPathSegmentSchema, { minItems: 1 }), source: Type.Optional(CadDxfImportSourceSchema)
-}, { additionalProperties: false });
+export { CadCurveFeatureSchema };
 export interface CadBounds3 { readonly min: CadNumericPoint3; readonly max: CadNumericPoint3 }
 export interface CadCurveGeometry {
   readonly plane: CadSketchPlane; readonly offset: number;
@@ -121,7 +119,7 @@ export function resolveCadCurve(curve: CadCurveFeature, parameters: Readonly<Rec
 export function inspectCadCurve(curve: CadCurveFeature, parameters: Readonly<Record<string, number>>, lookup?: CadDatumFrameLookup): CadCurveInspection {
   try {
     const local = resolveCadCurveGeometry(curve, parameters);
-    return curve.suppressed ? { eligible: false, code: 'suppressed-curve', message: 'Reference curve "'+curve.name+'" is suppressed.' } : { eligible: true, curve: placeCadCurveGeometry(local, resolveCadSketchPlacement(curve, parameters, lookup)) };
+    return !cadFeatureActive(curve, { parameters }) ? { eligible: false, code: 'suppressed-curve', message: 'Reference curve "'+curve.name+'" is suppressed.' } : { eligible: true, curve: placeCadCurveGeometry(local, resolveCadSketchPlacement(curve, parameters, lookup)) };
   } catch (error) {
     if (error instanceof CadError) return { eligible: false, code: error.code, message: error.message };
     throw error;

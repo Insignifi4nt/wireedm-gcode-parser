@@ -1,4 +1,5 @@
 import { Input } from '@/components/ui/input';
+import { cadFeatureSuppressionFlag } from '@/domain/cad/features/cadFeatureActivity';
 import { useEffect, useRef } from 'react';
 import type { CadDocument, CadFeature, CadScalar } from '@/domain/cad/cadDocument';
 import type { CadPocketDirection, CadPocketFeature } from '@/domain/cad/cadPocket';
@@ -36,7 +37,7 @@ export function CadExtrudeFields({ feature, initialFeature, revision, document, 
   const rememberedDistance = useRef<DistanceDraft | null>(initialFeature.kind === 'extrude' ? distanceDraft(initialFeature) : null);
   useEffect(() => { rememberedDistance.current = initialFeature.kind === 'extrude' ? distanceDraft(initialFeature) : null; }, [initialFeature, revision]);
   const operation = feature.kind === 'pocket' ? 'cut' : feature.operation;
-  const base = { id: feature.id, name: feature.name, suppressed: feature.suppressed, sketchId: feature.sketchId,
+  const base = { id: feature.id, name: feature.name, suppressed: cadFeatureSuppressionFlag(feature), sketchId: feature.sketchId,
     ...(feature.regionSelection ? { regionSelection: feature.regionSelection } : {}) };
   const targetId = feature.targetId ?? '';
   const sketch = document.features.find(entry => entry.id === feature.sketchId && entry.kind === 'sketch');

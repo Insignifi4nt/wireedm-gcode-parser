@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { Value } from '@sinclair/typebox/value';
 import type { CadSketchFeature } from './cadDocument';
 import { CadIdentifierSchema } from './cadPrimitives';
@@ -60,7 +61,7 @@ export function prepareCadSketchMirror({ sketch, parameters, ...request }: CadSk
 }): CadSketchMirrorPreparation {
   if (!isCadImportData(request) || !Value.Check(CadSketchMirrorRequestSchema, request))
     throw new CadError('invalid-sketch-mirror', 'Mirror copy needs distinct graph entities, one line and an identifier prefix of at most 64 characters.');
-  if (sketch.suppressed || !sketch.graph) throw new CadError('invalid-sketch-mirror-source', 'Choose an active entity-based sketch.');
+  if (!cadFeatureActive(sketch, { parameters }) || !sketch.graph) throw new CadError('invalid-sketch-mirror-source', 'Choose an active entity-based sketch.');
   const graph = parseCadSketchGraph(sketch.graph), sourceEntityIds = [...request.entityIds].sort();
   const byId = new Map(graph.entities.map(entity => [entity.id, entity]));
   const selected = sourceEntityIds.map(id => {

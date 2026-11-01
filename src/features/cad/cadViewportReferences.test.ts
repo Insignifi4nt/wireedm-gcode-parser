@@ -17,7 +17,7 @@ describe('datum reference geometry and visibility', () => {
     }));
     const document = parseCadDocument({ ...createCadDocument('Station references', 'station_references'), features });
     const references = prepareCadViewportReferences(document.features, document.parameters);
-    expect(cadReferenceFeatureIds(selectCadViewportReferences(references, document.features, null))).toEqual(features.map(feature => feature.id));
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(references, document, null))).toEqual(features.map(feature => feature.id));
     expect(references).toHaveLength(257);
     expect(document.features).toEqual(features);
   });
@@ -44,16 +44,16 @@ describe('datum reference geometry and visibility', () => {
     }
     expect(glyph.positions).toHaveLength(54); expect(glyph.planePatch).toHaveLength(18); expect(Object.isFrozen(glyph.planePatch)).toBe(true);
     expect(JSON.stringify(features)).toBe(before);
-    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, null))).toEqual(['section']);
-    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, 'section'))).toEqual(['mount', 'section']);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, { features, parameters: {} }, null))).toEqual(['section']);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, { features, parameters: {} }, 'section'))).toEqual(['mount', 'section']);
   });
   it('shows standalone active datums and selected body-source datums, suppressing unrelated glyphs', () => {
     const other = { ...datum, id: 'other' }; const features = [datum, other, section, pad];
     const prepared = prepareCadViewportReferences(features, {});
-    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, pad.id))).toEqual(['mount', 'section']);
-    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, null))).toEqual([]);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, { features, parameters: {} }, pad.id))).toEqual(['mount', 'section']);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, { features, parameters: {} }, null))).toEqual([]);
     const onlyDatums = [datum, { ...other, suppressed: true }];
-    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepareCadViewportReferences(onlyDatums, {}), onlyDatums, null))).toEqual(['mount']);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepareCadViewportReferences(onlyDatums, {}), { features: onlyDatums, parameters: {} }, null))).toEqual(['mount']);
   });
 });
 
@@ -130,9 +130,9 @@ describe('world-space Sketch reference preparation', () => {
 describe('selected Sketch reference visibility', () => {
   it('shows active sketches without bodies and retains immutable payload identities through selection', () => {
     const features = [sketch('second'), { ...sketch('first'), profiles: [...sketch('first').profiles, { ...sketch('first').profiles[0], id: 'construction', construction: true }] }, curve, { ...sketch('hidden'), suppressed: true }];
-    const prepared = prepareCadViewportReferences(features, { lift: 0 }); const visible = selectCadViewportReferences(prepared, features, null);
+    const prepared = prepareCadViewportReferences(features, { lift: 0 }); const visible = selectCadViewportReferences(prepared, { features, parameters: { lift: 0 } }, null);
     expect(cadReferenceFeatureIds(visible)).toEqual(['first', 'rail', 'second']); expect(Object.isFrozen(cadReferenceFeatureIds(visible))).toBe(true);
-    expect(selectCadViewportReferences(prepared, features, 'first')[0]).toBe(visible[0]);
+    expect(selectCadViewportReferences(prepared, { features, parameters: { lift: 0 } }, 'first')[0]).toBe(visible[0]);
   });
 
   it('shows selected Sketch or transitive body sources while retaining active Curve behavior', () => {
@@ -141,10 +141,10 @@ describe('selected Sketch reference visibility', () => {
     const move: CadFeature = { id: 'move', name: 'Move', kind: 'transform', suppressed: false, sourceId: 'loft', translation: [0, 0, 5], rotation: [0, 0, 0] };
     const sweep: CadFeature = { id: 'sweep', name: 'Sweep', kind: 'sweep', suppressed: false, sketchId: 'section', curveId: 'rail', operation: 'join', targetId: 'move' };
     const features = [section, unrelated, top, curve, loft, move, sweep]; const before = JSON.stringify(features); const prepared = prepareCadViewportReferences(features, {});
-    const ids = (selectedId: string | null) => cadReferenceFeatureIds(selectCadViewportReferences(prepared, features, selectedId));
+    const ids = (selectedId: string | null) => cadReferenceFeatureIds(selectCadViewportReferences(prepared, { features, parameters: {} }, selectedId));
     expect(ids(null)).toEqual(['rail']); expect(ids('unrelated')).toEqual(['rail', 'unrelated']); expect(ids('move')).toEqual(['rail', 'section', 'top']);
     expect(ids('sweep')).toEqual(['rail', 'section', 'top']); expect(ids('rail')).toEqual(['rail']); expect(ids('missing')).toEqual(['rail']);
     expect(JSON.stringify(features)).toBe(before);
-    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, [...features, { ...pad, suppressed: true }], pad.id))).toEqual(['rail']);
+    expect(cadReferenceFeatureIds(selectCadViewportReferences(prepared, { features: [...features, { ...pad, suppressed: true }], parameters: {} }, pad.id))).toEqual(['rail']);
   });
 });

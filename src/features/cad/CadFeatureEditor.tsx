@@ -1,9 +1,9 @@
 import { userFacingMessage } from '@/lib/userMessage';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ContextType } from 'react';
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ContextType } from 'react';
 import { CloseIcon, ConfirmIcon, SelectIcon } from '@wire-edm/icons-react';
-import type { CadDocument, CadFeature, CadPlane, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
+import type { CadDocument, CadFeature, CadPoint3, CadScalar, CadSketchProfile } from '@/domain/cad/cadDocument';
 import { CadError } from '@/domain/cad/cadError';
 import { resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import { cadSketchSourceAvailability } from '@/domain/cad/cadSketchSources';
@@ -16,6 +16,10 @@ import { CadPolygonVertexFields } from './CadPolygonVertexFields';
 import { CadPluginFields } from './CadPluginFields';
 import { inspectCadPluginProfile } from '@/domain/cad/plugins/cadPlugins';
 import { cadSketchPlacedFrom, cadVisibleBodyIds } from '@/domain/cad/cadSchema';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
+import type { CadFeatureChoice, CadFeatureFormControl, CadFeatureFormPart } from '@/domain/cad/features/cadFeatureDefinitionTypes';
+import { cadFeatureDefinition, cadFeatureKinds } from '@/domain/cad/features/cadFeatureRegistry';
+import { cadFeaturePresentation } from '@/domain/cad/features/cadFeaturePresentation';
 import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
 import { CadLoftSections } from './CadLoftSections';
 import { CadSweepSources } from './CadSweepSources';
@@ -35,12 +39,11 @@ import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './
 import type { CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
 import { CadInspectorTitle } from './CadInspectorTitle';
 
-export const featureLabels: Record<CadFeature['kind'], string> = {
-  'datum-plane': 'Plane', sketch: 'Sketch', curve: 'Curve', imported: 'Imported solid', extrude: 'Pad / pocket', pocket: 'Pocket', revolve: 'Revolve', loft: 'Loft', sweep: 'Sweep', fillet: 'Fillet', chamfer: 'Chamfer', shell: 'Shell', boolean: 'Boolean', transform: 'Move / rotate', 'linear-pattern': 'Linear pattern', 'circular-pattern': 'Circular pattern', mirror: 'Mirror',
-};
+/** Each kind's name in the history and the inspector, as its definition titles its form. */
+export const featureLabels = Object.fromEntries(cadFeatureKinds().map(kind => [kind, cadFeaturePresentation(kind).form.title])) as Record<CadFeature['kind'], string>;
 
-const planeOptions = (['XY', 'XZ', 'YZ'] satisfies CadPlane[]).map((value) => ({ value, label: `${value} plane` }));
-const operationOptions = [{ value: 'new', label: 'New body' }, { value: 'join', label: 'Join to body' }, { value: 'cut', label: 'Cut from body' }] satisfies { value: 'new' | 'join' | 'cut'; label: string }[];
+/** A choice as a select names it: its key, or its value where that is already a string. */
+const choiceKey = (choice: CadFeatureChoice) => choice.key ?? String(choice.value);
 
 function VectorFields({ label, unit, children }: { label: string; unit: 'mm' | 'deg'; children: React.ReactNode }) {
   return <div className="cad-vector-fields" role="group" aria-label={label}><div className="cad-field-section">{label}<small>{unit}</small></div><div className="cad-vector-row">{children}</div></div>;
@@ -247,9 +250,9 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
   const update = (next: CadFeature) => { setDraft(next); setError(null); };
   const featureIndex = document.features.findIndex((entry) => entry.id === feature.id);
   const preceding = featureIndex < 0 ? document.features : document.features.slice(0, featureIndex);
-  const visibleIds = cadVisibleBodyIds(preceding);
+  const visibleIds = cadVisibleBodyIds(preceding, document);
   const bodies = preceding.filter((entry) => visibleIds.includes(entry.id) && (!isNew || !currentBodyIds || currentBodyIds.includes(entry.id))).map((entry) => ({ value: entry.id, label: entry.name }));
-  const sketches = preceding.filter((entry) => entry.kind === 'sketch' && !entry.suppressed).map((entry) => ({ value: entry.id, label: entry.name }));
+  const sketches = preceding.filter((entry) => entry.kind === 'sketch' && cadFeatureActive(entry, document)).map((entry) => ({ value: entry.id, label: entry.name }));
   const scalar = (fieldKey: string, label: string, value: CadScalar, onChange: (next: CadScalar) => void, unit?: string, inputLabel?: string) => <CadScalarEditContext.Provider key={fieldKey} value={scalarContext}><ScalarField fieldKey={fieldKey} label={label} inputLabel={inputLabel} value={value} parameters={effectiveDocument.parameters} onChange={onChange} unit={unit} /></CadScalarEditContext.Provider>;
   const body = (label: string, value: string, onChange: (next: string) => void) => {
     // A suppressed feature can retain unavailable inputs. Never let the native
@@ -275,53 +278,84 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
           endPick(token, true);
         }, onCancel: () => endPick(token) });
     }}><SelectIcon size={13} />{target.kind === 'shell' ? 'Choose opening' : 'Choose edges'}</Button></div> : null;
+  // Kinds with a fields form are drawn from their definition's controls, in order; the parts below are drawn by their kind.
+  const definition = cadFeatureDefinition(draft.kind), form = cadFeaturePresentation(draft.kind).form;
+  const stored = (field: string) => (draft as unknown as Readonly<Record<string, unknown>>)[field];
+  const store = (field: string, value: unknown) => update({ ...draft, [field]: value } as CadFeature);
+  const edged = draft.kind === 'fillet' || draft.kind === 'chamfer' ? draft : null;
+  const tangentId = `${previewOwner}-tangent`;
+  const part = (name: CadFeatureFormPart): React.ReactNode => {
+    const misplaced = () => { throw new Error(`The ${name} part does not belong to ${draft.kind} features.`); };
+    switch (name) {
+      case 'sketch-source': return draft.kind === 'revolve' ? <CadSketchSourceField document={effectiveDocument} sketches={sketches} purpose="revolve" sketchId={draft.sketchId} onChange={sketchId => update({ ...draft, sketchId })} /> : misplaced();
+      case 'loft-sections': return draft.kind === 'loft' ? <CadLoftSections document={effectiveDocument} featureId={feature.id} sketchIds={draft.sketchIds} applyError={error} onChange={sketchIds => update({ ...draft, sketchIds })} /> : misplaced();
+      case 'sweep-sources': return draft.kind === 'sweep' ? <CadSweepSources document={effectiveDocument} featureId={feature.id} applyError={error} sketchId={draft.sketchId} curveId={draft.curveId} onChange={sources => update({ ...draft, ...sources })} /> : misplaced();
+      case 'edge-scope': {
+        if (!edged) return misplaced();
+        const { tangentPropagation: _tangent, ...strict } = edged;
+        return <SelectField label="Scope" value={edged.selection ? 'selected' : 'all'} options={[
+          { value: 'all', label: 'All edges of the body' },
+          { value: 'selected', label: capturedEdges ? edged.tangentPropagation
+            ? `${capturedEdges.expectedCount} ${capturedEdges.expectedCount === 1 ? 'edge' : 'edges'} + tangents` : `Selected edges (${capturedEdges.expectedCount})`
+            : 'Selected edges, pick before starting', disabled: !capturedEdges },
+        ]} onChange={scope => update(scope === 'selected' ? { ...edged, selection: capturedEdges } : { ...strict, selection: null })} />;
+      }
+      case 'topology-picker': return draft.kind === 'fillet' || draft.kind === 'chamfer' || draft.kind === 'shell' ? topologyPicker(draft) : misplaced();
+      case 'tangent-chain': {
+        if (!edged) return misplaced();
+        const { tangentPropagation: _tangent, ...strict } = edged;
+        return edged.selection && <><div className="cad-check"><Input id={tangentId} type="checkbox" aria-label="Follow tangent edges" checked={edged.tangentPropagation === true}
+          onChange={event => update(event.target.checked ? { ...edged, tangentPropagation: true }
+            : (feature.kind === 'fillet' || feature.kind === 'chamfer') && typeof feature.tangentPropagation === 'boolean' ? { ...edged, tangentPropagation: false } : strict)} />
+          <label htmlFor={tangentId}>Follow tangent edges</label><CadContextHelp label="Follow tangent edges">
+            Continue along smoothly connected edges using the native tangent chain. The selected count is your picked seeds; the operation also follows their chains, including split circular rims. Disconnected rims stay separate.
+          </CadContextHelp></div><CadTopologyQuerySummary selection={edged.selection} /></>;
+      }
+      case 'opening-summary': return draft.kind === 'shell' ? <CadTopologyQuerySummary selection={draft.opening} /> : misplaced();
+    }
+  };
+  const choices = (field: string, label: string, onChange: (value: unknown) => void) => {
+    const declared = definition.fields[field]?.choices ?? [], value = stored(field), current = declared.find(choice => choice.value === value);
+    return <SelectField label={label} value={current ? choiceKey(current) : String(value)} options={declared.map(choice => ({ value: choiceKey(choice), label: choice.label }))}
+      onChange={key => onChange(declared.find(choice => choiceKey(choice) === key)?.value)} />;
+  };
+  const control = (entry: CadFeatureFormControl): React.ReactNode => {
+    if (entry.control === 'part') return part(entry.part);
+    const { field, label } = entry, value = stored(field);
+    switch (entry.control) {
+      case 'body': return body(label, (value as string | null) ?? '', next => store(field, next));
+      case 'scalar': return scalar(field, label, value as CadScalar, next => store(field, next), entry.unit);
+      case 'vector': {
+        const vector = value as CadPoint3;
+        return <VectorFields label={label} unit={entry.unit}>{entry.components.map((component, axis) => scalar(`${field}.${axis}`, component.label, vector[axis],
+          next => store(field, vector.map((held, index) => index === axis ? next : held)), component.unit, component.inputLabel))}</VectorFields>;
+      }
+      case 'choice': return choices(field, label, next => store(field, next));
+      case 'count': {
+        const count = definition.fields[field]?.scalar;
+        return <label className="cad-field"><span>{label}</span><Input type="number" min={String(count?.min)} max={String(count?.max)} value={value as number} onChange={(event) => store(field, Number(event.target.value))} /></label>;
+      }
+      case 'operation': {
+        // The target is held only where the operation keeps one; choosing such an operation proposes the latest body.
+        const target = stored(entry.target) as string | null, absentWhen = definition.fields[entry.target]?.condition?.absentWhen;
+        return <>{choices(field, label, operation => update({ ...draft, [field]: operation, [entry.target]: operation === absentWhen ? null : target ?? bodies.at(-1)?.value ?? null } as CadFeature))}
+          {value !== absentWhen && body(entry.targetLabel, target ?? '', next => store(entry.target, next))}</>;
+      }
+    }
+  };
   let fields: React.ReactNode;
-  switch (draft.kind) {
+  if (form.editor === 'fields') fields = <>{form.controls.map((entry, index) => <Fragment key={index}>{control(entry)}</Fragment>)}</>;
+  else switch (draft.kind) {
     case 'datum-plane': fields = <CadScalarEditContext.Provider value={scalarContext}><CadDatumPlaneFields feature={draft} parameters={effectiveDocument.parameters} onChange={update} /></CadScalarEditContext.Provider>; break;
-    case 'sweep': fields = <><CadSweepSources document={effectiveDocument} featureId={feature.id} applyError={error} sketchId={draft.sketchId} curveId={draft.curveId} onChange={sources => update({ ...draft, ...sources })} /><SelectField label="Operation" value={draft.operation} options={operationOptions} onChange={operation => update({ ...draft, operation, targetId: operation === 'new' ? null : draft.targetId ?? bodies.at(-1)?.value ?? null })} />{draft.operation !== 'new' && body('Target body', draft.targetId ?? '', targetId => update({ ...draft, targetId }))}</>; break;
     case 'imported': fields = <><dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Format</dt><dd>{draft.source.format.toUpperCase()}</dd>{draft.source.format === 'stl' && <><dt>Source units</dt><dd>{draft.source.units === 'inch' ? 'inch' : 'mm'}</dd></>}</dl></>; break;
-    case 'sketch': fields = <><CadPlacementField features={document.features} featureId={draft.id} plane={draft.plane} onChange={plane => update({ ...draft, plane })} />{scalar('offset', 'Plane offset', draft.offset, (offset) => update({ ...draft, offset }))}<CadPlacementNormal plane={draft.plane} document={effectiveDocument} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
-    case 'curve': fields = <><CadPlacementField features={document.features} featureId={draft.id} plane={draft.plane} onChange={plane => update({ ...draft, plane })} />{scalar('offset', 'Plane offset', draft.offset, offset => update({ ...draft, offset }))}<CadPlacementNormal plane={draft.plane} document={effectiveDocument} /><CadPathSegmentFields label="Curve" segments={draft.segments} parameters={effectiveDocument.parameters} onChange={segments => update({ ...draft, segments })} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
+    case 'sketch': fields = <><CadPlacementField document={document} featureId={draft.id} plane={draft.plane} onChange={plane => update({ ...draft, plane })} />{scalar('offset', 'Plane offset', draft.offset, (offset) => update({ ...draft, offset }))}<CadPlacementNormal plane={draft.plane} document={effectiveDocument} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
+    case 'curve': fields = <><CadPlacementField document={document} featureId={draft.id} plane={draft.plane} onChange={plane => update({ ...draft, plane })} />{scalar('offset', 'Plane offset', draft.offset, offset => update({ ...draft, offset }))}<CadPlacementNormal plane={draft.plane} document={effectiveDocument} /><CadPathSegmentFields label="Curve" segments={draft.segments} parameters={effectiveDocument.parameters} onChange={segments => update({ ...draft, segments })} />{draft.source && <dl className="cad-topology-details"><dt>Source file</dt><dd>{draft.source.fileName}</dd><dt>Source units</dt><dd>{draft.source.units ?? 'File declaration'}</dd></dl>}</>; break;
     case 'extrude':
     case 'pocket': {
       if (feature.kind !== 'extrude' && feature.kind !== 'pocket') throw new Error('Extrude editor source changed.');
       fields = <CadScalarEditContext.Provider value={scalarContext}><CadExtrudeFields feature={draft} initialFeature={feature} revision={accepted} document={effectiveDocument} bodies={bodies} sketches={sketches} onChange={update} /></CadScalarEditContext.Provider>; break;
     }
-    case 'revolve': {
-      fields = <><CadSketchSourceField document={effectiveDocument} sketches={sketches} purpose="revolve" sketchId={draft.sketchId} onChange={sketchId => update({ ...draft, sketchId })} />
-        {scalar('angle', 'Angle', draft.angle, (angle) => update({ ...draft, angle }), 'deg')}<SelectField label="Sketch axis" value={draft.axis} options={[{ value: 'x', label: 'Horizontal X' }, { value: 'y', label: 'Vertical Y' }]} onChange={(axis) => update({ ...draft, axis })} />
-        <SelectField label="Operation" value={draft.operation} options={operationOptions} onChange={(operation) => update({ ...draft, operation, targetId: operation === 'new' ? null : draft.targetId ?? bodies.at(-1)?.value ?? null })} />
-        {draft.operation !== 'new' && body('Target body', draft.targetId ?? '', (targetId) => update({ ...draft, targetId }))}
-      </>; break;
-    }
-    case 'loft': fields = <><CadLoftSections document={effectiveDocument} featureId={feature.id} sketchIds={draft.sketchIds} applyError={error} onChange={sketchIds => update({ ...draft, sketchIds })} /><SelectField label="Transition" value={draft.ruled ? 'ruled' : 'smooth'} options={[{ value: 'smooth', label: 'Smooth' }, { value: 'ruled', label: 'Ruled' }]} onChange={transition => update({ ...draft, ruled: transition === 'ruled' })} /><SelectField label="Operation" value={draft.operation} options={operationOptions} onChange={operation => update({ ...draft, operation, targetId: operation === 'new' ? null : draft.targetId ?? bodies.at(-1)?.value ?? null })} />{draft.operation !== 'new' && body('Target body', draft.targetId ?? '', targetId => update({ ...draft, targetId }))}</>; break;
-    case 'fillet':
-    case 'chamfer': {
-      const { tangentPropagation: _tangent, ...strict } = draft;
-      const tangentId = `${previewOwner}-tangent`;
-      fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}
-        <SelectField label="Scope" value={draft.selection ? 'selected' : 'all'} options={[
-          { value: 'all', label: 'All edges of the body' },
-          { value: 'selected', label: capturedEdges ? draft.tangentPropagation
-            ? `${capturedEdges.expectedCount} ${capturedEdges.expectedCount === 1 ? 'edge' : 'edges'} + tangents` : `Selected edges (${capturedEdges.expectedCount})`
-            : 'Selected edges, pick before starting', disabled: !capturedEdges },
-        ]} onChange={scope => update(scope === 'selected' ? { ...draft, selection: capturedEdges } : { ...strict, selection: null })} />
-        {topologyPicker(draft)}
-        {scalar('radius', draft.kind === 'fillet' ? 'Radius' : 'Distance', draft.radius, radius => update({ ...draft, radius }))}
-        {draft.selection && <><div className="cad-check"><Input id={tangentId} type="checkbox" aria-label="Follow tangent edges" checked={draft.tangentPropagation === true}
-          onChange={event => update(event.target.checked ? { ...draft, tangentPropagation: true }
-            : (feature.kind === 'fillet' || feature.kind === 'chamfer') && typeof feature.tangentPropagation === 'boolean' ? { ...draft, tangentPropagation: false } : strict)} />
-          <label htmlFor={tangentId}>Follow tangent edges</label><CadContextHelp label="Follow tangent edges">
-            Continue along smoothly connected edges using the native tangent chain. The selected count is your picked seeds; the operation also follows their chains, including split circular rims. Disconnected rims stay separate.
-          </CadContextHelp></div><CadTopologyQuerySummary selection={draft.selection} /></>}
-      </>; break;
-    }
-    case 'shell': fields = <>{body('Body', draft.targetId, (targetId) => update({ ...draft, targetId }))}{topologyPicker(draft)}{scalar('thickness', 'Wall thickness', draft.thickness, (thickness) => update({ ...draft, thickness }))}<CadTopologyQuerySummary selection={draft.opening} /></>; break;
-    case 'boolean': fields = <>{body('Target body', draft.targetId, (targetId) => update({ ...draft, targetId }))}{body('Tool body', draft.toolId, (toolId) => update({ ...draft, toolId }))}<SelectField label="Operation" value={draft.operation} options={[{ value: 'union', label: 'Union' }, { value: 'cut', label: 'Subtract tool' }, { value: 'intersect', label: 'Intersection' }]} onChange={(operation) => update({ ...draft, operation })} /></>; break;
-    case 'transform': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<VectorFields label="Translation" unit="mm">{scalar('translation.0', 'X', draft.translation[0], (value) => update({ ...draft, translation: [value, draft.translation[1], draft.translation[2]] }), undefined, 'Translation X')}{scalar('translation.1', 'Y', draft.translation[1], (value) => update({ ...draft, translation: [draft.translation[0], value, draft.translation[2]] }), undefined, 'Translation Y')}{scalar('translation.2', 'Z', draft.translation[2], (value) => update({ ...draft, translation: [draft.translation[0], draft.translation[1], value] }), undefined, 'Translation Z')}</VectorFields><VectorFields label="Rotation about world origin" unit="deg">{scalar('rotation.0', 'Around X', draft.rotation[0], (value) => update({ ...draft, rotation: [value, draft.rotation[1], draft.rotation[2]] }), 'deg')}{scalar('rotation.1', 'Around Y', draft.rotation[1], (value) => update({ ...draft, rotation: [draft.rotation[0], value, draft.rotation[2]] }), 'deg')}{scalar('rotation.2', 'Around Z', draft.rotation[2], (value) => update({ ...draft, rotation: [draft.rotation[0], draft.rotation[1], value] }), 'deg')}</VectorFields></>; break;
-    case 'linear-pattern': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<label className="cad-field"><span>Instances, including original</span><Input type="number" min="2" max="100" value={draft.count} onChange={(event) => update({ ...draft, count: Number(event.target.value) })} /></label><VectorFields label="Spacing between instances" unit="mm">{scalar('spacing.0', 'X', draft.spacing[0], (value) => update({ ...draft, spacing: [value, draft.spacing[1], draft.spacing[2]] }), undefined, 'Spacing X')}{scalar('spacing.1', 'Y', draft.spacing[1], (value) => update({ ...draft, spacing: [draft.spacing[0], value, draft.spacing[2]] }), undefined, 'Spacing Y')}{scalar('spacing.2', 'Z', draft.spacing[2], (value) => update({ ...draft, spacing: [draft.spacing[0], draft.spacing[1], value] }), undefined, 'Spacing Z')}</VectorFields></>; break;
-    case 'circular-pattern': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<label className="cad-field"><span>Instances, including original</span><Input type="number" min="2" max="100" value={draft.count} onChange={(event) => update({ ...draft, count: Number(event.target.value) })} /></label><SelectField label="Axis" value={draft.axis} options={[{ value: 'x', label: 'World X' }, { value: 'y', label: 'World Y' }, { value: 'z', label: 'World Z' }]} onChange={axis => update({ ...draft, axis })} />{scalar('angle', 'Angular extent', draft.angle, angle => update({ ...draft, angle }), 'deg')}<VectorFields label="Axis center" unit="mm">{scalar('center.0', 'Center X', draft.center[0], value => update({ ...draft, center: [value, draft.center[1], draft.center[2]] }))}{scalar('center.1', 'Center Y', draft.center[1], value => update({ ...draft, center: [draft.center[0], value, draft.center[2]] }))}{scalar('center.2', 'Center Z', draft.center[2], value => update({ ...draft, center: [draft.center[0], draft.center[1], value] }))}</VectorFields></>; break;
-    case 'mirror': fields = <>{body('Body', draft.sourceId, (sourceId) => update({ ...draft, sourceId }))}<SelectField label="Mirror plane through origin" value={draft.plane} options={planeOptions} onChange={(plane) => update({ ...draft, plane })} /></>; break;
+    default: throw new Error(`${form.title} features have no editor of their own.`);
   }
   const pickingContext = useMemo<ContextType<typeof CadFeatureReferencePickingContext>>(() => {
     if (!onReferencePick || !documentVersion || staleDraft) return null;
@@ -338,7 +372,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
           onSelect(id) { if (!owns(token) || !eligibleIds.includes(id)) return; onSelect(id); endPick(token, true); }, onCancel: () => endPick(token) });
       },
       beginRegions(sketchId, cells, placement, selection, onSelect) {
-        if ((draft.kind !== 'extrude' && draft.kind !== 'pocket') || draft.sketchId !== sketchId || !preceding.some(feature => feature.id === sketchId && feature.kind === 'sketch' && !feature.suppressed)) return;
+        if ((draft.kind !== 'extrude' && draft.kind !== 'pocket') || draft.sketchId !== sketchId || !preceding.some(feature => feature.id === sketchId && feature.kind === 'sketch' && cadFeatureActive(feature, document))) return;
         const token = begin(); if (!token) return;
         regionStart.current = { feature: draft, document, version: documentVersion };
         setPicker({ kind: 'pick-regions', owner: previewOwner, expectedVersion: documentVersion, label: 'Sketch areas', sketchId, cells, placement, selection,

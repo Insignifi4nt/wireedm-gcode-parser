@@ -104,7 +104,7 @@ export function createCadFeatureInputCoordinator(bindings: Bindings) {
       const index = base.document.features.findIndex(feature => feature.id === captured.featureId), feature = base.document.features[index];
       if (!feature || (feature.kind !== 'fillet' && feature.kind !== 'chamfer' && feature.kind !== 'shell')) throw new ToolError('INVALID_FEATURE_INPUT', 'Choose an existing Fillet, Chamfer or Shell.');
       const document = parseCadDocument({ ...base.document, features: base.document.features.slice(0, index) });
-      if (!cadVisibleBodyIds(document.features).includes(captured.bodyId)) throw new ToolError('NOT_FOUND', 'The chosen body is unavailable before this feature.');
+      if (!cadVisibleBodyIds(document.features, document).includes(captured.bodyId)) throw new ToolError('NOT_FOUND', 'The chosen body is unavailable before this feature.');
       if (active) release(active);
       const job: Job = { token: crypto.randomUUID(), version: expectedVersion, featureId: captured.featureId, bodyId: captured.bodyId, purpose: feature.kind, scope,
         base, controller: new AbortController(), client: null, snapshot: null, removeAbort: () => signal?.removeEventListener('abort', cancel) };

@@ -1,10 +1,8 @@
-import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { CadCurveFeature, CadFeature, CadSketchFeature, CadSweepFeature } from './cadDocument';
 export type { CadSweepFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { isCadImportData } from './cadImportData';
-import { CadFeatureBaseSchemaFields, CadIdentifierSchema } from './cadPrimitives';
 import { inspectCadLoftSketch, type CadLoftSection } from './cadLoft';
 import { resolveCadCurve, type CadResolvedCurve } from './cadCurve';
 import type { CadNumericPoint3 } from './cadPlanes';
@@ -13,12 +11,13 @@ import { cadOrderedCurveEntities } from './cadAnalyticSegments';
 import { cadProfileToEntities } from './cadSketchGeometry';
 import { prepareCadDatumFrames, type CadDatumFrameLookup } from './cadDatumPlanes';
 import { resolveCadSweepPlacement, type CadSweepPlacement } from './cadSweepPlacement';
+import { cadFeatureActive } from './features/cadFeatureActivity';
+import { CadSweepFeatureSchema } from './features/kinds/solids';
 
 export const MAX_CAD_SWEEP_SEGMENTS = 64;
 export const MAX_CAD_SWEEP_WORK = 2048;
 export { CAD_SWEEP_NATIVE_PRECISION, CAD_SWEEP_TOPOLOGY_TOLERANCE } from './cadSweepClearance';
-export const CadSweepFeatureSchema = Type.Object({ ...CadFeatureBaseSchemaFields, kind: Type.Literal('sweep'), sketchId: CadIdentifierSchema, curveId: CadIdentifierSchema,
-  operation: Type.Union([Type.Literal('new'), Type.Literal('join'), Type.Literal('cut')]), targetId: Type.Union([CadIdentifierSchema, Type.Null()]) }, { additionalProperties: false });
+export { CadSweepFeatureSchema };
 export type CadSweepSection = CadLoftSection;
 export type CadSweepSketchInspection = { readonly eligible: true; readonly section: CadSweepSection } | { readonly eligible: false; readonly code: string; readonly message: string };
 export interface CadResolvedSweepInputs {
@@ -52,7 +51,7 @@ export function resolveCadSweepInputs(feature: CadSweepFeature, precedingFeature
   const frames = lookup ?? prepareCadDatumFrames([...precedingFeatures.values()], parameters);
   const sectionInspection = inspectCadSweepSketch(sketch, parameters, frames);
   if (!sectionInspection.eligible) throw new CadError(sectionInspection.code, sectionInspection.message);
-  if (curveFeature.suppressed) throw new CadError('suppressed-curve', `Sweep curve "${curveFeature.name}" is suppressed.`);
+  if (!cadFeatureActive(curveFeature, { parameters })) throw new CadError('suppressed-curve', `Sweep curve "${curveFeature.name}" is suppressed.`);
   const section = sectionInspection.section; const curve = resolveCadCurve(curveFeature, parameters, frames);
   const resolvedPlacement = resolveCadSweepPlacement(section, curve);
   if (curve.segments.length > MAX_CAD_SWEEP_SEGMENTS) throw new CadError('sweep-work-limit', `Sweep currently supports at most ${MAX_CAD_SWEEP_SEGMENTS} curve segments. The reference curve remains valid; simplify it for this solid operation.`);

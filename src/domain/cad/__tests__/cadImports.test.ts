@@ -68,7 +68,7 @@ describe('portable CAD import sources', () => {
     const feature = { id: 'imported', name: 'Part', suppressed: false, kind: 'imported' as const, source };
     const document = parseCadDocument({ ...createCadDocument(), features: [feature] });
     expect(cadFeatureDependencies(document.features[0])).toEqual([]);
-    expect(cadVisibleBodyIds(document.features)).toEqual(['imported']);
+    expect(cadVisibleBodyIds(document.features, document)).toEqual(['imported']);
     expect(document.features[0]).toEqual(feature);
     const large = { ...source, data: 'x'.repeat(2 * 1024 * 1024 + 1) };
     const accepted = parseCadDocument({ ...document, features: [{ ...feature, source: large }, { ...feature, id: 'other', source: large }] });
