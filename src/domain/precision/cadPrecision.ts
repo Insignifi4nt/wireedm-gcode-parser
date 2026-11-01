@@ -38,6 +38,15 @@ const roles = {
    * parameters connect, by their summed movements, and the one that keeps the earlier relation's earlier start goes first.
    */
   mirrorPairingTieRelative: 1e-9,
+  /**
+   * A solve that keeps a curve Symmetric collapses a mirrored curve when it leaves the curve's size, a line's length or an arc's or
+   * circle's radius, below this fraction of its size before the solve, or below `minimumLengthMm`, whichever is larger. A solver that
+   * meets a mirror by collapsing curves stops wherever its tolerances are met, leaving a size the sketch never asked for: the measured
+   * case, a 15 mm line solved to 2.6e-6 mm, is 1.7e-7 of its size, 58 times below. A resize a sketch asks for keeps far more: a 100 mm
+   * line may still become 1 µm, the resolution of a three-decimal post, below which a curve vanishes from output anyway. Only the curve
+   * Symmetric's guard reads it, so no other sketch changes.
+   */
+  mirrorCollapseRelative: 1e-5,
   /** Cross product of two line directions, in square millimetres, at or below which legacy profile checks treat lines as parallel. */
   parallelCrossFloorMm2: 1e-14,
   /** Smallest size a pointer-drawn sketch shape accepts: circle radius, rectangle side, slot width or distinct arc centre. */

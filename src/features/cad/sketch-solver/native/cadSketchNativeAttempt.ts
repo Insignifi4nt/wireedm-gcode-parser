@@ -1,5 +1,5 @@
 import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
-import { CAD_SKETCH_MIRROR_COLLAPSE, cadSketchMirrorCollapsed } from '../../../../domain/cad/cadSketchSymmetryRelations';
+import { CAD_SKETCH_MIRROR_COLLAPSE, cadSketchMirrorCollapses } from '../../../../domain/cad/cadSketchSymmetryRelations';
 import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from '../cadSketchSolverStages';
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations, type CadSketchCompiledSketch } from '../../../../domain/cad/sketch-solver/compileCadSketchEquations';
@@ -116,7 +116,9 @@ function searchStarts(input: CadSketchSolveInput, first: Tried, solver: CadSketc
   const failing = (tried: Omit<Tried, 'attempt'>) => {
     let graph: CadSketchGraph | undefined;
     try { graph = applyCadSketchEquationSolution(input.graph, tried.model, tried.solution.values); } catch { return undefined; }
-    return graph ? cadSketchFailingComponents(input.graph, tried.model, tried.solution, check(graph, input.parameters), components) : undefined;
+    if (!graph) return undefined;
+    const issues = check(graph, input.parameters);
+    return cadSketchFailingComponents(input.graph, tried.model, tried.solution, issues, components, cadSketchMirrorCollapses(input.graph, graph, issues, input.parameters));
   };
   const named = failing(first), every = !named?.size;
   let chosen: Readonly<Record<string, number>> = {}, best: Pick<Tried, 'model' | 'attempt'> = first;
@@ -289,15 +291,20 @@ function solvedAttempt(input: CadSketchSolveInput, model: CadSketchEquationModel
   const kept = (values: readonly number[]) => values.map((value, index) => keep.has(group[index]) ? model.values[index] : value);
   const snapped = snap ? shortDecimals(model, solution.values, index => keep.has(group[index])) : undefined;
   const candidates = [snapped && keep.size ? kept(snapped) : undefined, snapped, keep.size ? kept(solution.values) : undefined, solution.values];
-  let issues: readonly CadSketchGraphIssue[] = [];
+  // A mirror of curves the solver met only by collapsing them, or by shrinking them to almost nothing, which the graph checks accept, is
+  // a failure from this start, which another start may not share.
+  const collapsed = (issues: readonly CadSketchGraphIssue[]): CadSketchNativeAttempt =>
+    ({ reason: 'graph-check', result: { kind: 'rejected', reason: 'failed', message: CAD_SKETCH_MIRROR_COLLAPSE, diagnostics: { ...diagnostics, issues } } });
+  let issues: readonly CadSketchGraphIssue[] = [], graph: CadSketchGraph | undefined;
   for (const values of candidates) {
     if (!values) continue;
-    const graph = applyCadSketchEquationSolution(input.graph, model, values)!;
+    graph = applyCadSketchEquationSolution(input.graph, model, values)!;
     issues = check(graph, input.parameters);
-    if (!issues.length) return { result: { kind: 'solved', graph, diagnostics }, movedGroups: moved.size, keptGroups: values === solution.values || values === snapped ? 0 : keep.size };
+    if (issues.length) continue;
+    if (cadSketchMirrorCollapses(input.graph, graph, issues, input.parameters).length) return collapsed(issues);
+    return { result: { kind: 'solved', graph, diagnostics }, movedGroups: moved.size, keptGroups: values === solution.values || values === snapped ? 0 : keep.size };
   }
-  // A mirror of curves the solver met only by collapsing them is a failure from this start, which another start may not share.
-  if (cadSketchMirrorCollapsed(input.graph, issues)) return { reason: 'graph-check', result: { kind: 'rejected', reason: 'failed', message: CAD_SKETCH_MIRROR_COLLAPSE, diagnostics: { ...diagnostics, issues } } };
+  if (graph && cadSketchMirrorCollapses(input.graph, graph, issues, input.parameters).length) return collapsed(issues);
   return { reason: 'graph-check',
     result: { kind: 'rejected', reason: 'invalid-solution', message: 'The sketch solution does not satisfy its geometry and relations.', diagnostics: { ...diagnostics, issues } } };
 }

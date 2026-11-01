@@ -10,6 +10,7 @@ import { CadSketchExtendDependencyError, prepareCadSketchExtend, prepareCadSketc
 import { cadSketchRelationOffers } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
 import { cadSketchRelationKey, cadSketchRelationKindName, cadSketchRelationMeaning } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { compileCadSketchEquations } from '@/domain/cad/sketch-solver/compileCadSketchEquations';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 import { cadSketchConstraintChoices, cadSketchConstraintStep } from './cadSketchConstraintTool';
 import { loadCadSketchTestNativeSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 import { attemptCadSketchNativeSolve } from './sketch-solver/native/cadSketchNativeAttempt';
@@ -509,7 +510,9 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     // its own: the first solve fails in both, the second keeps the first copy's second start, and the third adds the second copy's, so
     // three native solves, the sum of their starts and not the product. Retrying one mirror never resets the other's. Parallel between
     // the two mirrors joins the copies into one component, whose combinations are tried least moved first: both first starts, then one
-    // second start and the other, then both, which solves on the fourth solve with each copy as it solves alone.
+    // second start and the other, then both, which solves on the fourth solve with each copy as it solves alone. Stored after the copies,
+    // Parallel changes the order the solver receives equations, and one of the mixed combinations then meets every relation by shrinking
+    // A to about 2.6e-6 mm: that counts as collapsed and blames the component, so the search still reaches both second starts.
     const native = await loadCadSketchTestNativeSolver();
     let solves = 0;
     const solver = { ...native, solve: (...args: Parameters<typeof native.solve>) => { solves++; return native.solve(...args); } };
@@ -517,7 +520,8 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     const apart = { points: [...first.points, ...second.points], entities: [...first.entities, ...second.entities], relations: [...first.relations, ...second.relations] };
     const cases = [
       ['apart', apart, [['mirrored'], ['mirrored2']], 3, 8],
-      ['with parallel mirrors', { ...apart, relations: [{ id: 'kept', kind: 'parallel', lineIds: ['mirror', 'mirror2'] }, ...apart.relations] }, [['mirrored', 'mirrored2']], 4, 7]
+      ['with parallel mirrors', { ...apart, relations: [{ id: 'kept', kind: 'parallel', lineIds: ['mirror', 'mirror2'] }, ...apart.relations] }, [['mirrored', 'mirrored2']], 4, 7],
+      ['with parallel mirrors stored after the copies', { ...apart, relations: [...apart.relations, { id: 'kept', kind: 'parallel', lineIds: ['mirror', 'mirror2'] }] }, [['mirrored', 'mirrored2']], 4, 7]
     ] as const;
     for (const [where, raw, grouped, count, freedom] of cases) {
       const graph = parseCadSketchGraph(raw);
@@ -531,6 +535,31 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       expectFolded(result.graph);
       expectFolded(result.graph, '2', 100);
       expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
+    }
+  });
+
+  it('refuse a mirror that shrinks its curves below a fraction of their size as collapsed, and keep one that shrinks them just less', async () => {
+    // Lines and circles already mirrored about V, A's start or centre held by Fix, and A's length or radius set by a dimension to just
+    // over and just under `mirrorCollapseRelative` of its size before the solve. Both solves meet every relation and pass the graph
+    // checks; the one under the fraction is refused with the collapse reason, as a solve that collapsed the curves is.
+    const solver = await loadCadSketchTestNativeSolver();
+    const scenes = [
+      { name: 'lines', size: 15, points: { a1: [10, 5], a2: [25, 5], b1: [-10, 5], b2: [-25, 5] }, entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2')],
+        relations: (value: number) => [{ id: 'fix', kind: 'fixed-point', pointId: 'a1', position: [10, 5] }, { id: 'h', kind: 'horizontal', pointIds: ['a1', 'a2'] },
+          { id: 'length', kind: 'distance', pointIds: ['a1', 'a2'], value }],
+        sized: (at: ReturnType<typeof positions>) => Math.hypot(at.get('a2')!.x - at.get('a1')!.x, at.get('a2')!.y - at.get('a1')!.y) },
+      { name: 'circles', size: 4, points: { k1: [15, 8], k2: [-15, 8] }, entities: [circle('A', 'k1'), circle('B', 'k2')],
+        relations: (value: number) => [{ id: 'fix', kind: 'fixed-point', pointId: 'k1', position: [15, 8] }, { id: 'radius', kind: 'radial-size', entityId: 'A', quantity: 'radius', value }],
+        sized: (_: ReturnType<typeof positions>, graph: CadSketchGraph) => Number((graph.entities.find(entity => entity.id === 'B') as { readonly radius: number }).radius) }
+    ] as const;
+    for (const { name, size, points, entities, relations, sized } of scenes) for (const [where, fraction] of [['just over', 1.01], ['just under', .99]] as const) {
+      const value = size * CAD_PRECISION.mirrorCollapseRelative * fraction, label = `${name} ${where} the fraction`;
+      const graph = parseCadSketchGraph({ points: Object.entries(points).map(([id, position]) => ({ id, position })), entities, relations: [...relations(value), mirrored('@v')] });
+      const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
+      if (fraction < 1) { expect(result, label).toMatchObject({ kind: 'rejected', reason: 'failed', message: CAD_SKETCH_MIRROR_COLLAPSE }); continue; }
+      if (result.kind !== 'solved') throw new Error(`${label}: ${result.message}`);
+      expect(sized(positions(result.graph), result.graph), label).toBeCloseTo(value, 12);
+      expect(checkCadSketchGraph(result.graph, {}), label).toEqual([]);
     }
   });
 

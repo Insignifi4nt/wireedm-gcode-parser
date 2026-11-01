@@ -155,15 +155,41 @@ export function cadSketchMirrorImage(point: Point2, axis: Axis): Point2 {
   return { x: 2 * (axis.start.x + along * axis.x) - point.x, y: 2 * (axis.start.y + along * axis.y) - point.y };
 }
 
-/** Why a solve is refused when it met a mirror of curves only by collapsing them, which the graph checks never accept. */
+/** Why a solve is refused when it met a mirror of curves only by collapsing them. */
 export const CAD_SKETCH_MIRROR_COLLAPSE = 'Symmetric could only be met from here by collapsing the mirrored curves. Move the curves or the mirror line nearer to a mirror image first.';
 /**
- * Whether a solution's graph check issues collapse a curve Symmetric's curves or its mirror line: a line or arc whose ends meet, or a
- * radius that is no longer valid, in any curve Symmetric `graph` stores.
+ * The curve Symmetrics, in graph order, whose curves or mirror line a solution collapses: a line or arc whose ends meet, or a radius
+ * no longer valid, as the graph checks of the solved graph `after` report (`issues`); or a mirrored curve whose size, a line's length or
+ * an arc's or circle's radius, falls below `mirrorCollapseRelative` of its size in `before`, the graph the solve set out from, or
+ * below `minimumLengthMm`, whichever is larger, which the graph checks accept. A size that cannot be read is not compared. Empty for a
+ * sketch with no curve Symmetric, which reads nothing else.
  */
-export function cadSketchMirrorCollapsed(graph: CadSketchGraph, issues: readonly CadSketchGraphIssue[]): boolean {
+export function cadSketchMirrorCollapses(before: CadSketchGraph, after: CadSketchGraph, issues: readonly CadSketchGraphIssue[],
+  parameters: Readonly<Record<string, number>>): readonly string[] {
+  const mirrors = after.relations.filter((relation): relation is CadSketchSymmetricCurvesRelation => relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation));
+  if (!mirrors.length) return [];
   const collapsed = new Set(issues.filter(issue => issue.source.kind === 'entity' && (issue.code === 'degenerate-entity' || issue.code === 'invalid-radius')).map(issue => issue.source.id));
-  return collapsed.size > 0 && graph.relations.some(relation => relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation) && [...relation.curveIds, relation.lineId].some(id => collapsed.has(id)));
+  const [was, now] = [curveSizes(before, parameters), curveSizes(after, parameters)];
+  const shrunk = (id: string) => {
+    const [from, to] = [was(id), now(id)];
+    return from !== undefined && to !== undefined && to < Math.max(CAD_PRECISION.mirrorCollapseRelative * from, CAD_PRECISION.minimumLengthMm);
+  };
+  return mirrors.filter(relation => [...relation.curveIds, relation.lineId].some(id => collapsed.has(id)) || relation.curveIds.some(shrunk)).map(relation => relation.id);
+}
+/** A line's length or an arc's or circle's radius in `graph`, by edge id; undefined where it cannot be read. */
+function curveSizes(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>) {
+  const points = new Map(graph.points.map(point => [point.id, point])), entities = new Map(graph.entities.map(entity => [entity.id, entity]));
+  const scalar = (value: number | string) => { try { return evaluateCadScalar(value, parameters); } catch { return undefined; } };
+  const span = (from: string, to: string) => {
+    const [a, b] = [points.get(from), points.get(to)];
+    const [ax, ay, bx, by] = a && b ? [...a.position, ...b.position].map(scalar) : [];
+    return ax === undefined || ay === undefined || bx === undefined || by === undefined ? undefined : Math.hypot(bx - ax, by - ay);
+  };
+  return (id: string) => {
+    const entity = entities.get(id);
+    return entity?.kind === 'line' ? span(entity.startPointId, entity.endPointId) : entity?.kind === 'arc' ? span(entity.centerPointId, entity.startPointId)
+      : entity?.kind === 'circle' ? scalar(entity.radius) : undefined;
+  };
 }
 
 /** Reflection in the infinite line support; both components are physical world millimeters. */
