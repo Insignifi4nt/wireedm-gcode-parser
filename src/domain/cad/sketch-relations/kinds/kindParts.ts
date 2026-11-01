@@ -12,8 +12,8 @@ export const ROUND_SLOT = { role: 'Arc or circle', accepts: ['round'] } as const
 export const CAD_SKETCH_POINT_PAIR_OPERANDS = {
   slots: [{ role: 'First point', accepts: ['point'] }, { role: 'Second point', accepts: ['point'] }], unordered: [[0, 1]]
 } as const satisfies CadSketchOperandSignature;
-/** One point. */
-export const CAD_SKETCH_POINT_OPERANDS = { slots: [POINT_SLOT] } as const satisfies CadSketchOperandSignature;
+/** One point that moves: the origin is fixed already. */
+export const CAD_SKETCH_POINT_OPERANDS = { slots: [{ ...POINT_SLOT, needs: ['movable'] }] } as const satisfies CadSketchOperandSignature;
 
 /** Picks of two of one type: the first with each later one. */
 export const chainedPair = (slot: CadSketchOperandSlot): CadSketchOperandSignature => ({ slots: [slot, slot], unordered: [[0, 1]], expand: 'chain-from-first' });

@@ -25,6 +25,7 @@ import { cadKernelAx1, cadKernelBuilders, cadKernelScaledUnitVector } from './ca
 import { exportCadKernelStep } from './cadKernelExport';
 import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
+import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
 
 /** BRep state stays inside the worker. Only tessellation and export bytes leave it. */
 export interface CadKernelModel {
@@ -36,7 +37,7 @@ export interface CadKernelModel {
   dispose(): void;
 }
 
-const meshOptions = { tolerance: 0.05, angularTolerance: 0.15 };
+const meshOptions = { tolerance: CAD_PRECISION.tessellationMm, angularTolerance: CAD_PRECISION.tessellationAngleRad };
 
 /**
  * Returns the solid count and whole-shape volume so callers reuse the measurement.
@@ -58,7 +59,7 @@ function validateSolid(shape: Shape3D, topologyChecked = false): { solidCount: n
 }
 
 function positiveVolume(volume: number) {
-  return Number.isFinite(volume) && volume > 1e-9;
+  return Number.isFinite(volume) && volume > CAD_PRECISION.kernelMinimumVolumeMm3;
 }
 
 function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology, { solidCount, volume }: { solidCount: number; volume: number }): CadMesh {
@@ -242,11 +243,11 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           if (!topology) throw new CadError('missing-body', 'The shell target body is unavailable.');
           instances = instancesOf(feature.targetId);
           result = own(applyCadShell(target, topology.selectedFace(feature.opening, document.parameters), number(feature.thickness)));
-          if (!(measureVolume(result) < measureVolume(target) - 1e-9)) throw new CadError('shell-failed', 'The inward shell did not remove material. Reduce its thickness or choose another opening.');
+          if (!(measureVolume(result) < measureVolume(target) - CAD_PRECISION.kernelMinimumVolumeMm3)) throw new CadError('shell-failed', 'The inward shell did not remove material. Reduce its thickness or choose another opening.');
           const originalBox = target.boundingBox; const shellBox = result.boundingBox;
           try {
             const [originalMin, originalMax] = originalBox.bounds; const [shellMin, shellMax] = shellBox.bounds;
-            if (shellMin.some((value, axis) => value < originalMin[axis] - 1e-6) || shellMax.some((value, axis) => value > originalMax[axis] + 1e-6)) {
+            if (shellMin.some((value, axis) => value < originalMin[axis] - CAD_PRECISION.kernelBoundsSlackMm) || shellMax.some((value, axis) => value > originalMax[axis] + CAD_PRECISION.kernelBoundsSlackMm)) {
               throw new CadError('shell-failed', 'The kernel shell extended outside the original body instead of producing inward walls.');
             }
           } finally { originalBox.delete(); shellBox.delete(); }

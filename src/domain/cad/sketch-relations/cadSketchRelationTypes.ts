@@ -3,6 +3,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphIssue, CadSket
 import type { CadSketchGraphSelection } from '../cadSketchGraphSelection';
 import type { CadSketchQuantity } from '../cadSketchQuantity';
 import type { CadSketchLoweringContext } from '../sketch-solver/cadSketchLoweringContext';
+import type { CadSketchVirtualAxis, CadSketchVirtualPoint } from './cadSketchVirtualElements';
 import type { Point2 } from '@/domain/path-intel/types';
 
 export type CadSketchRelationKind = CadSketchGraphRelation['kind'];
@@ -12,12 +13,21 @@ export type CadSketchRelationOf<K extends CadSketchRelationKind> = Narrowed<CadS
 /** A relation without its identity: what an offer adds once it is given one. */
 export type CadSketchRelationIntent<K extends CadSketchRelationKind = CadSketchRelationKind> = K extends CadSketchRelationKind ? Omit<CadSketchRelationOf<K>, 'id'> : never;
 
-export type CadSketchOperandType = 'point' | 'line' | 'arc' | 'circle';
+/** What an operand is: a point, the origin among them, or an edge, with the H and V axes as `axis`. */
+export type CadSketchOperandType = 'point' | 'line' | 'arc' | 'circle' | 'axis';
 /**
- * What a slot accepts: one type, or a group of them. A curve is any line, arc or circle, a round an arc or circle, and an axis a line
- * that gives a direction. The origin and the X and Y axes are not operands yet; they keep their own cases until they are.
+ * What a slot accepts: one type, or a group of them. A curve is any line, arc, circle or axis and a round an arc or circle. A `line` slot
+ * takes the H and V axes too, as infinite lines; an `axis` slot takes only them.
  */
-export type CadSketchOperandTrait = CadSketchOperandType | 'curve' | 'round' | 'axis';
+export type CadSketchOperandTrait = CadSketchOperandType | 'curve' | 'round';
+/**
+ * What a slot may need of its operand beyond its type. The origin and the axes are fixed, so they are not `movable`; an axis is
+ * infinite, so it has no `ends`, `length` or `midpoint`.
+ */
+export type CadSketchOperandCapability = 'movable' | 'ends' | 'length' | 'midpoint';
+/** A point or edge an operand names: one of the sketch's own, or the origin or an axis. */
+export type CadSketchElement = CadSketchGraphPoint | CadSketchVirtualPoint | CadSketchGraphEntity | CadSketchVirtualAxis;
+export type CadSketchEdge = CadSketchGraphEntity | CadSketchVirtualAxis;
 /** The error a parse gives for operands that cannot take a relation. */
 export interface CadSketchRefusal { readonly code: string; readonly message: string }
 
@@ -25,6 +35,8 @@ export interface CadSketchOperandSlot {
   /** What the operand is to the relation, in sentence case, as people and agents are told. */
   readonly role: string;
   readonly accepts: readonly CadSketchOperandTrait[];
+  /** What the operand must also give; an operand without one is refused with the reason that capability gives. */
+  readonly needs?: readonly CadSketchOperandCapability[];
   /** A point of the entity in the slot before it, such as the end it joins at. That entity already names it, so it adds no reference of its own. */
   readonly end?: true;
   /** Refuse an operand that is missing or has none of the accepted traits, with this error. Without it, the point references check covers the slot. */
@@ -43,7 +55,7 @@ export interface CadSketchOperandSignature {
   readonly expand?: 'each' | 'chain-from-first';
 }
 /** The element each slot names, or undefined where a slot without a refusal names nothing. */
-export type CadSketchResolvedOperands = readonly (CadSketchGraphPoint | CadSketchGraphEntity | undefined)[];
+export type CadSketchResolvedOperands = readonly (CadSketchElement | undefined)[];
 /** How operand labels name points and edges, such as "Point 3" and "Line 5". */
 export interface CadSketchOperandNames { point(id: string): string; entity(id: string): string }
 /** Points and edges a relation made and keeps: removing it removes them. Their own points belong to it too. */
@@ -67,8 +79,10 @@ export type CadSketchRelationPlan =
  */
 export interface CadSketchRelationPlanner {
   readonly graph: CadSketchGraph;
-  point(id: string): CadSketchGraphPoint | undefined;
-  entity(id: string): CadSketchGraphEntity | undefined;
+  /** A point by id, the origin included. */
+  point(id: string): CadSketchGraphPoint | CadSketchVirtualPoint | undefined;
+  /** An edge by id, the H and V axes included. */
+  entity(id: string): CadSketchEdge | undefined;
   /** The point's Coincident identity: points that Coincident joins share one. */
   identity(id: string): string;
   /** Two points kept level or upright. */
@@ -77,16 +91,21 @@ export interface CadSketchRelationPlanner {
   coincide(pair: readonly [string, string]): CadSketchRelationPlan;
   /** Two arcs or circles that share one centre. */
   concentric(first: Round, second: Round): CadSketchRelationPlan;
+  /** An arc or circle centred on a point, the origin included, or on an axis. */
+  centre(curve: Round, targetId: string): CadSketchRelationPlan;
   /** Two lines that keep one direction, a right angle, or one line between them. */
   orient(kind: 'parallel' | 'perpendicular' | 'collinear', pair: readonly [string, string]): CadSketchRelationPlan;
   /** A point kept on a line, at its middle, or on an arc or circle. */
   place(relation: CadSketchRelationIntent<'point-on-line' | 'midpoint' | 'point-on-curve'>): CadSketchRelationPlan;
-  /** A line and an arc, in either order, joined smoothly at the one pair of their ends that share a place. */
-  tangent(first: CadSketchGraphEntity, second: CadSketchGraphEntity): CadSketchRelationPlan;
+  /**
+   * A line and an arc, in either order, joined smoothly at the one pair of their ends that share a place; or an arc or circle and an
+   * axis it touches.
+   */
+  tangent(first: CadSketchEdge, second: CadSketchEdge): CadSketchRelationPlan;
   /** Two lines of one length, or two arcs or circles of one radius. */
-  equal(first: CadSketchGraphEntity, second: CadSketchGraphEntity): CadSketchRelationPlan;
-  /** Two points, or a circle by its centre, mirrored about a line. */
-  mirror(targets: readonly [CadSketchGraphSelection, CadSketchGraphSelection], line: Line): CadSketchRelationPlan;
+  equal(first: CadSketchEdge, second: CadSketchEdge): CadSketchRelationPlan;
+  /** Two points, or a circle by its centre, mirrored about a line or an axis. */
+  mirror(targets: readonly [CadSketchGraphSelection, CadSketchGraphSelection], line: Line | CadSketchVirtualAxis): CadSketchRelationPlan;
   /** A point held where it is: as one fixed point, or as each numeric coordinate that nothing holds yet. */
   fix(pointId: string): CadSketchRelationPlan;
 }

@@ -239,19 +239,19 @@ describe('sketch dimension selection', () => {
     expect(cadSketchDimensionSelectionStatus(graph, ['gone'])).toBeNull();
   });
 
-  it('describes a relation glyph selection by the relation names, X and Y held at 0 on one place as the point at the origin, and a mixed one by its counts', () => {
+  it('describes a relation glyph selection by the relation names, X and Y held at 0 on one place as one Coincident with the origin, and a mixed one by its counts', () => {
     expect(cadSketchDimensionSelectionStatus(graph, ['parallel-free'])).toBe('Horizontal selected · Delete removes');
     // Held away from the axes, X and Y are two Distance dimensions.
     expect(cadSketchDimensionSelectionStatus(graph, ['x'])).toBe('Distance selected · Double-click or Enter edits · Delete removes');
     expect(cadSketchDimensionSelectionStatus(graph, ['x', 'y'])).toBe('2 dimensions selected · Delete removes them');
-    // Held at 0, each is a relation named after the axis it keeps the point on, and both on one place, or on Coincident points, read as one glyph.
+    // Held at 0, each is the Coincident that keeps the point on an axis, and both on one place, or on Coincident points, read as one with the origin.
     const zero = parseCadSketchGraph({ ...graph, points: [...graph.points, { id: 'p', position: [0, 0] }],
       relations: [...graph.relations.filter(relation => relation.kind !== 'fixed-axis'), { id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 0 },
         { id: 'y', kind: 'fixed-axis', pointId: 'o', axis: 'y', value: '0 * 2' }, { id: 'join', kind: 'coincident', pointIds: ['p', 'a'] }, { id: 'ay', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 0 },
         { id: 'ax', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 }, { id: 'away', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 40 }, { id: 'cy', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 0 }] });
-    expect(cadSketchDimensionSelectionStatus(zero, ['x'])).toBe('On the Y axis selected · Delete removes');
-    expect(cadSketchDimensionSelectionStatus(zero, ['x', 'y'])).toBe('At the origin selected · Delete removes');
-    expect(cadSketchDimensionSelectionStatus(zero, ['ay', 'ax'])).toBe('At the origin selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(zero, ['x'])).toBe('Coincident selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(zero, ['x', 'y'])).toBe('Coincident selected · Delete removes');
+    expect(cadSketchDimensionSelectionStatus(zero, ['ay', 'ax'])).toBe('Coincident selected · Delete removes');
     expect(cadSketchDimensionSelectionStatus(zero, ['x', 'ay'])).toBe('2 relations selected · Delete removes them');
     // One coordinate at 0 and the other away from it is a relation and a dimension, never one glyph.
     expect(cadSketchDimensionSelectionStatus(zero, ['away', 'cy'])).toBe('1 dimension and 1 relation selected · Delete removes them');
@@ -260,7 +260,7 @@ describe('sketch dimension selection', () => {
   });
 
   it('selects the relations of one glyph together: a click replaces the selection, Shift adds them or, when all are selected, removes them', () => {
-    // X and Y held at 0 on one point draw one At the origin glyph.
+    // X and Y held at 0 on one point draw one Coincident glyph with the origin.
     const origin = parseCadSketchGraph({ ...graph, relations: graph.relations.map(relation => relation.kind === 'fixed-axis' ? { ...relation, value: 0 } : relation) });
     const glyph = (id: string) => { const found = cadSketchDimensionPick(cadSketchDrawnAnnotations(origin, drawn(origin), true), id); if (!found) throw new Error(`${id} is not drawn`); return found; };
     const fixed = [glyph('x'), glyph('y')], one = selectCadSketchAnnotations(NO_SKETCH_DIMENSIONS, [pick('length')], origin);
@@ -279,21 +279,21 @@ describe('sketch dimension selection', () => {
 describe('sketch relation highlight', () => {
   const highlight = (id: string) => cadSketchRelationHighlight(graph, graph.relations.find(relation => relation.id === id)!);
   it('names the measured points and the line they span for a length', () => {
-    expect(highlight('length')).toEqual({ pointIds: ['a', 'b'], entityIds: ['base'], datums: [] });
-    expect(highlight('diagonal')).toEqual({ pointIds: ['a', 'c'], entityIds: [], datums: [] });
-    expect(highlight('rise')).toEqual({ pointIds: ['b', 'c'], entityIds: ['side'], datums: [] });
+    expect(highlight('length')).toEqual({ pointIds: ['a', 'b'], entityIds: ['base'] });
+    expect(highlight('diagonal')).toEqual({ pointIds: ['a', 'c'], entityIds: [] });
+    expect(highlight('rise')).toEqual({ pointIds: ['b', 'c'], entityIds: ['side'] });
   });
   it('names the lines of an angle and the curve of a radius or diameter', () => {
-    expect(highlight('angle')).toEqual({ pointIds: [], entityIds: ['base', 'side'], datums: [] });
-    expect(highlight('size')).toEqual({ pointIds: [], entityIds: ['hole'], datums: [] });
+    expect(highlight('angle')).toEqual({ pointIds: [], entityIds: ['base', 'side'] });
+    expect(highlight('size')).toEqual({ pointIds: [], entityIds: ['hole'] });
   });
-  it('names the datum a coordinate is measured from', () => {
-    expect(highlight('x')).toEqual({ pointIds: ['o'], entityIds: [], datums: ['y-axis'] });
-    expect(highlight('y')).toEqual({ pointIds: ['o'], entityIds: [], datums: ['x-axis'] });
+  it('names the axis a coordinate is measured from', () => {
+    expect(highlight('x')).toEqual({ pointIds: ['o'], entityIds: ['@v'] });
+    expect(highlight('y')).toEqual({ pointIds: ['o'], entityIds: ['@h'] });
     // A distance to a line kept upright along the Y axis lights that line too; held on the axis, it is a relation about its point alone.
     const upright = { ...graph, relations: [...graph.relations, { id: 'v', kind: 'vertical' as const, pointIds: ['c', 'b'] as const }] };
-    expect(cadSketchRelationHighlight(upright, { id: 'sideX', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 })).toEqual({ pointIds: ['b'], entityIds: ['side'], datums: ['y-axis'] });
-    expect(cadSketchRelationHighlight(upright, { id: 'sideX', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 0 })).toEqual({ pointIds: ['b'], entityIds: [], datums: ['y-axis'] });
+    expect(cadSketchRelationHighlight(upright, { id: 'sideX', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 })).toEqual({ pointIds: ['b'], entityIds: ['side', '@v'] });
+    expect(cadSketchRelationHighlight(upright, { id: 'sideX', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 0 })).toEqual({ pointIds: ['b'], entityIds: ['@v'] });
   });
   it('names every line between the two points in graph order, whichever way each runs, and each graph from its own geometry', () => {
     const lines = parseCadSketchGraph({
@@ -302,8 +302,8 @@ describe('sketch relation highlight', () => {
         { id: 'a', kind: 'line', startPointId: 'p', endPointId: 'q', construction: true }],
       relations: [{ id: 'level', kind: 'horizontal', pointIds: ['p', 'q'] }, { id: 'upright', kind: 'vertical', pointIds: ['r', 'q'] }]
     });
-    expect(cadSketchRelationHighlight(lines, lines.relations[0])).toEqual({ pointIds: ['p', 'q'], entityIds: ['z', 'a'], datums: [] });
-    expect(cadSketchRelationHighlight(lines, lines.relations[1])).toEqual({ pointIds: ['r', 'q'], entityIds: ['other'], datums: [] });
+    expect(cadSketchRelationHighlight(lines, lines.relations[0])).toEqual({ pointIds: ['p', 'q'], entityIds: ['z', 'a'] });
+    expect(cadSketchRelationHighlight(lines, lines.relations[1])).toEqual({ pointIds: ['r', 'q'], entityIds: ['other'] });
     const removed = { ...lines, entities: lines.entities.filter(entity => entity.id !== 'z') };
     expect(cadSketchRelationHighlight(removed, removed.relations[0]).entityIds).toEqual(['a']);
   });
@@ -314,8 +314,8 @@ describe('sketch relation highlight', () => {
       relations: [{ id: 'jp', kind: 'coincident', pointIds: ['p', 'pp'] }, { id: 'jq', kind: 'coincident', pointIds: ['qq', 'q'] },
         { id: 'level', kind: 'horizontal', pointIds: ['pp', 'qq'] }, { id: 'span', kind: 'distance', pointIds: ['qq', 'p'], value: 10 }]
     });
-    expect(cadSketchRelationHighlight(joined, joined.relations[2])).toEqual({ pointIds: ['pp', 'qq'], entityIds: ['base'], datums: [] });
-    expect(cadSketchRelationHighlight(joined, joined.relations[3])).toEqual({ pointIds: ['qq', 'p'], entityIds: ['base'], datums: [] });
+    expect(cadSketchRelationHighlight(joined, joined.relations[2])).toEqual({ pointIds: ['pp', 'qq'], entityIds: ['base'] });
+    expect(cadSketchRelationHighlight(joined, joined.relations[3])).toEqual({ pointIds: ['qq', 'p'], entityIds: ['base'] });
   });
 });
 
@@ -325,9 +325,9 @@ describe('sketch highlight store', () => {
     store.show('dimension:length', { kind: 'relation', relationId: 'length' });
     store.show('dimension:length', { kind: 'relation', relationId: 'length' });
     expect(listener).toHaveBeenCalledOnce();
-    store.show('row', { kind: 'geometry', pointIds: ['a'], entityIds: [], datums: [] });
+    store.show('row', { kind: 'geometry', pointIds: ['a'], entityIds: [] });
     store.hide('dimension:length');
-    expect(store.getSnapshot()).toEqual({ kind: 'geometry', pointIds: ['a'], entityIds: [], datums: [] });
+    expect(store.getSnapshot()).toEqual({ kind: 'geometry', pointIds: ['a'], entityIds: [] });
     store.hide('row');
     expect(store.getSnapshot()).toBeNull(); expect(listener).toHaveBeenCalledTimes(3);
     stop(); store.show('row', { kind: 'relation', relationId: 'size' });

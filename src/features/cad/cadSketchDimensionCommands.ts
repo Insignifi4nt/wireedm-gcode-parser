@@ -4,6 +4,7 @@ import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPa
 import { cadSketchExternalReferenceLockReason } from '@/domain/cad/cadSketchExternalReferences';
 import { resolveCadSketchPointIdentities } from '@/domain/cad/cadSketchGraphJoints';
 import { withCadSketchCarriedPlacement } from '@/domain/cad/cadSketchPlacedDimensions';
+import { cadSketchAxisNormal, isCadSketchVirtualAxisId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 
 type Measurement = CadSketchReferenceDimension['measurement'];
 /** Both relations name the same two points, in either order. */
@@ -64,7 +65,10 @@ export function cadSketchReferenceDrivingLock(graph: CadSketchGraph, relation: C
     : target.kind === 'point-line-distance' ? [{kind:'point' as const,id:target.pointId}, {kind:'entity' as const,id:target.lineId}] : [{kind:'entity' as const,id:target.entityId}];
   const owned = selections.map(atom => cadSketchLinearPatternLockReason(graph,atom)).find(Boolean); if (owned) return owned;
   if (target.kind === 'point-line-distance') {
-    if (cadSketchPointLineDistanceFor(graph, target)) return 'An existing dimension already drives this distance. Edit that dimension instead.';
+    // A distance from an axis is stored as the coordinate it holds, so a hold on that coordinate already drives it.
+    const identity = resolveCadSketchPointIdentities(graph), lineId = target.lineId, point = identity(target.pointId);
+    const held = isCadSketchVirtualAxisId(lineId) && graph.relations.some(item => item.kind === 'fixed-axis' && item.axis === cadSketchAxisNormal(lineId) && identity(item.pointId) === point);
+    if (held || cadSketchPointLineDistanceFor(graph, target)) return 'An existing dimension already drives this distance. Edit that dimension instead.';
   } else if (target.kind === 'distance') {
     const linked = relation.measurement.kind === 'line-length' ? cadSketchExternalReferenceLockReason(graph, {kind:'entity',id:relation.measurement.entityId}) : null;
     if (linked) return linked;
@@ -83,13 +87,13 @@ export function cadSketchReferenceDrivingLock(graph: CadSketchGraph, relation: C
 export type CadSketchDimensionConversion = { readonly relation: CadSketchGraphRelation; readonly reason: null } | { readonly relation: null; readonly reason: string };
 const unavailable = (reason: string): CadSketchDimensionConversion => ({ relation: null, reason });
 /** Why a distance from the origin or an axis takes no reference form, when placed and once placed. */
-export const CAD_SKETCH_NO_REFERENCE_DATUM = 'A distance from the origin or an axis has no reference form yet.';
+export const CAD_SKETCH_NO_REFERENCE_HOLD = 'A distance from the origin or an axis has no reference form yet.';
 
 /** A driving length, distance, point to line distance, radius or diameter becomes a reference that measures the same thing and keeps its identity and placement. */
 export function cadSketchDimensionToReference(graph: CadSketchGraph, relation: CadSketchGraphRelation): CadSketchDimensionConversion {
   if (relation.kind === 'reference-dimension') return unavailable('This is already a reference dimension.');
   if (relation.kind === 'fillet-corner' || relation.kind === 'chamfer-corner') return unavailable('A corner treatment owns its fillet or chamfer size. Edit the corner instead.');
-  if (relation.kind === 'fixed-axis') return unavailable(CAD_SKETCH_NO_REFERENCE_DATUM);
+  if (relation.kind === 'fixed-axis') return unavailable(CAD_SKETCH_NO_REFERENCE_HOLD);
   if (relation.kind !== 'distance' && relation.kind !== 'point-line-distance' && relation.kind !== 'radial-size') return unavailable('Reference dimensions measure lengths, point distances, point to line distances, radii and diameters.');
   const line = relation.kind === 'distance' && graph.entities.find(entity => entity.kind === 'line' && cadSketchRelationHasPointPair(relation, [entity.startPointId, entity.endPointId]));
   const measurement: Measurement = relation.kind === 'radial-size' ? { kind: 'radial-size', entityId: relation.entityId, quantity: relation.quantity }

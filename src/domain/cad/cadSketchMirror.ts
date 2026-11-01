@@ -16,10 +16,13 @@ import { classifyPathSegmentIntersection } from '@/domain/path-intel/intersectio
 import { createArcSegment, createCircleSegment, createLineSegment, cross, dot } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
+import { CAD_SKETCH_ELEMENT_ID_PATTERN, CadSketchPositions, cadSketchVirtualAxis } from './sketch-relations/cadSketchVirtualElements';
 
 export const CadSketchMirrorRequestSchema = Type.Object({
   entityIds: Type.Array(CadIdentifierSchema, { minItems: 1, maxItems: 64, uniqueItems: true }),
-  axisLineId: CadIdentifierSchema,
+  /** A graph line, or the H or V axis. */
+  axisLineId: Type.String({ pattern: CAD_SKETCH_ELEMENT_ID_PATTERN }),
   idPrefix: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' })
 }, { additionalProperties: false });
 type Immutable<T> = { readonly [K in keyof T]: Immutable<T[K]> };
@@ -65,11 +68,11 @@ export function prepareCadSketchMirror({ sketch, parameters, ...request }: CadSk
     if (!entity) throw new CadError('missing-sketch-entity', 'One selected mirror source no longer exists.');
     return entity;
   });
-  const axis = byId.get(request.axisLineId);
-  if (axis?.kind !== 'line' || sourceEntityIds.includes(axis.id))
-    throw new CadError('invalid-sketch-mirror-axis', 'Choose a graph line outside the copied set.');
+  const axis = byId.get(request.axisLineId) ?? cadSketchVirtualAxis(request.axisLineId);
+  if (axis?.kind !== 'line' && axis?.kind !== 'axis' || sourceEntityIds.includes(axis.id))
+    throw new CadError('invalid-sketch-mirror-axis', 'Choose a graph line outside the copied set, or the H or V axis.');
   const sourceGeometry = compileCadSketchGraph(graph, parameters);
-  const positions = new Map(graph.points.map(point => [point.id, { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) }]));
+  const positions = new CadSketchPositions(graph.points.map(point => [point.id, { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) }]));
   const position = (id: string, values: ReadonlyMap<string, Point2> = positions): Point2 => {
     const point = values.get(id);
     if (!point) throw new CadError('missing-sketch-point', 'A mirror support point no longer exists.');
@@ -131,7 +134,7 @@ export function prepareCadSketchMirror({ sketch, parameters, ...request }: CadSk
       const c = vector(entity.centerPointId, entity.startPointId, reflected), d = vector(entity.centerPointId, entity.endPointId, reflected);
       const sourceSide = Math.sign(Math.abs(old.sweepRadians) - Math.PI);
       const angleError = Math.abs(old.sweepRadians + next.sweepRadians), tolerance = cadPathClosureTolerance([a, b, c, d]);
-      if (angleError > 1e-12 || angleError * old.radius > tolerance || Math.abs(old.radius - next.radius) > tolerance
+      if (angleError > CAD_PRECISION.angularAccuracyRad || angleError * old.radius > tolerance || Math.abs(old.radius - next.radius) > tolerance
         || Math.abs(Math.hypot(b.x, b.y) - Math.hypot(d.x, d.y)) > tolerance
         || sourceSide !== 0 && sourceSide !== Math.sign(Math.abs(next.sweepRadians) - Math.PI)
         || cross(a, b) !== 0 && Math.sign(cross(c, d)) !== -Math.sign(cross(a, b))) throw precision();

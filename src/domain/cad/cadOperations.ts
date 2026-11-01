@@ -10,10 +10,11 @@ import { addCadSketchDimension, cadSketchDimensionScalar, CadSketchDimensionCons
 import { CadPoint2Schema, CadScalarSchema } from './cadPrimitives';
 import { evaluateCadScalar } from './cadExpression';
 import { CadSketchHandleSchema, moveCadSketchHandle, type CadSketchHandle } from './cadSketchHandles';
-import { CadSketchGraphSchema, type CadSketchGraph, type CadSketchGraphRelation } from './cadSketchGraph';
+import { CadSketchGraphSchema, assertNoReservedCadSketchIds, type CadSketchGraph, type CadSketchGraphRelation } from './cadSketchGraph';
 import { appendCadSketchEntities, deleteCadSketchElements, setCadSketchConstruction } from './cadSketchGraphEdits';
 import { CadSketchCornerCommandTreatmentSchema, createCadSketchCornerTreatmentFromIds, type CadSketchCornerCommandTreatment } from './cadSketchCornerTreatment';
 import { CAD_SKETCH_SELECTION_LIMIT, CadSketchGraphSelectionSchema, type CadSketchGraphSelection } from './cadSketchGraphSelection';
+import { cadSketchFixedElementError, isCadSketchReservedId, isCadSketchVirtualId } from './sketch-relations/cadSketchVirtualElements';
 import { translateCadSketchGraph } from './cadSketchTranslation';
 import { keepCadSketchLineSides } from './cadSketchPointLineDistanceRelations';
 import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
@@ -135,9 +136,45 @@ export function placeCadSketchDimensions(document: CadDocument, edits: readonly 
   return placed;
 }
 
+/** The sketch edits that move, cut, delete, convert or copy the points and edges they name, which the origin and the axes refuse. */
+const SKETCH_ELEMENT_EDITS: ReadonlySet<string> = new Set(['translate-sketch-geometry', 'place-sketch-geometry', 'create-sketch-corner',
+  'split-sketch-entity', 'trim-sketch-entity', 'extend-sketch-entity', 'offset-sketch-loop', 'mirror-sketch-geometry', 'use-sketch-entity',
+  'delete-sketch-elements', 'set-sketch-construction', 'move-sketch-point']);
+/**
+ * The ids these edits only read, as `parent.key`: a mirror's axis line, and the boundary a trim cuts at or an extension reaches. An axis
+ * may be named there; every other id an edit names is something it moves, cuts, removes, converts or copies, or a new id.
+ */
+const SKETCH_READ_REFERENCES: ReadonlySet<string> = new Set(['.axisLineId', 'boundary.entityId', 'boundaries.entityId']);
+/** Refuse an edit that names the origin or an axis as something it changes, with that reason rather than as malformed. */
+function refuseFixedSketchElements(edit: unknown): void {
+  if (!edit || typeof edit !== 'object' || !SKETCH_ELEMENT_EDITS.has((edit as { kind?: unknown }).kind as string)) return;
+  const visit = (value: unknown, key: string, parent: string): void => {
+    if (typeof value === 'string') {
+      if (/(?:^i|I)ds?$/.test(key) && isCadSketchVirtualId(value) && !SKETCH_READ_REFERENCES.has(`${parent}.${key}`)) throw cadSketchFixedElementError();
+    } else if (Array.isArray(value)) for (const item of value) visit(item, key, parent);
+    else if (value && typeof value === 'object') for (const [name, item] of Object.entries(value)) visit(item, name, key);
+  };
+  visit(edit, '', '');
+}
+
+/**
+ * The sketch data an edit adds, read for reserved ids before the schema check, as a document's is: a sketch feature's graph, appended
+ * geometry, a relation, and the prefix new ids are made from.
+ */
+function refuseReservedSketchIds(edit: unknown): void {
+  if (!edit || typeof edit !== 'object') return;
+  const fields = edit as { readonly kind?: unknown; readonly feature?: { readonly kind?: unknown; readonly graph?: unknown } | null; readonly geometry?: unknown;
+    readonly relation?: unknown; readonly idPrefix?: unknown };
+  if ((fields.kind === 'add-feature' || fields.kind === 'update-feature') && fields.feature?.kind === 'sketch') assertNoReservedCadSketchIds(fields.feature.graph);
+  else if (fields.kind === 'append-sketch-entities') assertNoReservedCadSketchIds(fields.geometry);
+  else if (fields.kind === 'set-sketch-relation') assertNoReservedCadSketchIds({ relations: [fields.relation] });
+  if (typeof fields.idPrefix === 'string' && SKETCH_ELEMENT_EDITS.has(fields.kind as string) && isCadSketchReservedId(fields.idPrefix))
+    throw new CadError('reserved-sketch-id', `Sketch id prefix "${fields.idPrefix}" is reserved: ids starting with "@" name the origin and the H and V axes.`);
+}
 export function validateCadEditBatch(edits: readonly CadEdit[]): void {
   if (!isCadImportData(edits) || !Array.isArray(edits)) throw new CadError('invalid-edit', 'CAD edits must contain their own complete JSON data fields.');
   if (edits.length > 256) throw new CadError('edit-limit', 'An edit batch may contain at most 256 edits.');
+  for (const edit of edits) { refuseReservedSketchIds(edit); refuseFixedSketchElements(edit); }
   for (const edit of edits) if (!Value.Check(CadEditSchema, edit)) throw new CadError('invalid-edit', 'Malformed CAD edit.');
 }
 

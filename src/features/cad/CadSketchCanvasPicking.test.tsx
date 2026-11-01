@@ -84,18 +84,18 @@ describe('sketch canvas profile picking', () => {
       await h.pointer('pointermove', { ...h.position(x, y), button: 0, buttons: 0 });
       const found = container.querySelector('.cad-sketch-snap-hint'); return [found?.getAttribute('data-cad-sketch-snap-kind'), found?.getAttribute('aria-label')];
     };
-    expect(inference().checked).toBe(true); expect(await hint(.05, .05)).toEqual(['origin', 'Origin · Fixed at origin']);
+    expect(inference().checked).toBe(true); expect(await hint(.05, .05)).toEqual(['origin', 'Origin · Coincident']);
     await relations(false); expect(await hint(.05, .05)).toEqual(['origin', 'Origin · No relation']);
-    await relations(true); expect(await hint(.05, .05)).toEqual(['origin', 'Origin · Fixed at origin']); await h.click(.05, .05);
+    await relations(true); expect(await hint(.05, .05)).toEqual(['origin', 'Origin · Coincident']); await h.click(.05, .05);
     expect(await hint(8, 3.25)).toEqual(['on-entity', 'On line · Point on line']); await h.click(8, 3.25);
-    expect(await hint(.03, 20)).toEqual(['on-axis', 'On Y axis · Fixed X at 0']); await h.click(.03, 20);
+    expect(await hint(.03, 20)).toEqual(['on-axis', 'On V axis · Coincident']); await h.click(.03, 20);
     expect(container.querySelector('[aria-label="Pending relations"]')?.textContent).toBe('3 attached');
     // Clicking the start again closes the polyline on the start itself, which keeps only its own attachment.
     expect(await hint(.05, .05)).toEqual(['draft-start', 'Close chain']); await h.click(0, 0);
     expect(onAddPath).toHaveBeenCalledExactlyOnceWith({ kind: 'ready', mode: 'line', start: [0, 0],
-      startPick: { kind: 'datum', point: [0, 0], datum: 'origin', relationIds: [expect.any(String), expect.any(String)] }, segments: [
+      startPick: { kind: 'fixed', point: [0, 0], targetId: '@origin', relationIds: [expect.any(String), expect.any(String)] }, segments: [
         expect.objectContaining({ end: [expect.closeTo(8, 10), 3.2], endPick: { kind: 'on-line', point: [expect.closeTo(8, 10), 3.2], lineId: 'line', relationId: expect.any(String) } }),
-        expect.objectContaining({ end: [0, expect.closeTo(20, 10)], endPick: { kind: 'datum', point: [0, expect.closeTo(20, 10)], datum: 'y-axis', relationIds: [expect.any(String)] } }),
+        expect.objectContaining({ end: [0, expect.closeTo(20, 10)], endPick: { kind: 'fixed', point: [0, expect.closeTo(20, 10)], targetId: '@v', relationIds: [expect.any(String)] } }),
         expect.objectContaining({ end: [0, 0] })] }, true, expect.any(AbortSignal));
     expect(onAddPath.mock.calls[0][0].segments[2]).not.toHaveProperty('endPick');
   });

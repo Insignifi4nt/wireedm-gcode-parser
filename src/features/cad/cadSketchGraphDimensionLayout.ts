@@ -11,6 +11,8 @@ import { cadSketchLineAngleGeometry, resolveCadSketchAngleRays, type CadSketchLi
 import { cadSketchLineDirection } from '@/domain/cad/cadSketchLineRelations';
 import { cadSketchSignedPointLineDistance, resolveCadSketchPointLineDistanceOperands } from '@/domain/cad/cadSketchPointLineDistanceRelations';
 import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
+import { CadSketchPositions } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
@@ -71,7 +73,7 @@ function alignedGeometry(a: Point2, b: Point2, nx: number, ny: number, mmPerPixe
   const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy), ux = length === 0 ? -ny : dx / length, uy = length === 0 ? nx : dy / length;
   const { x: readX, y: readY } = reading(ux, uy);
   // A dimension being placed sits where the pointer put it, `placedOffset` screen pixels out.
-  const upX = -readY, upY = readX, lineOffset = placedOffset ?? (upX * nx + upY * ny < -1e-12 ? 20 + isoInwardClearance : 20);
+  const upX = -readY, upY = readX, lineOffset = placedOffset ?? (upX * nx + upY * ny < -CAD_PRECISION.annotationReadingTie ? 20 + isoInwardClearance : 20);
   const liftX = upX, liftY = upY;
   const offset = (point: Point2, pixels: number): SketchPoint => [point.x + nx * pixels * mmPerPixel, point.y + ny * pixels * mmPerPixel];
   const line: Pair = [offset(a, lineOffset), offset(b, lineOffset)];
@@ -131,7 +133,7 @@ function separateAlignedDimensions(dimensions: readonly CadSketchGraphDimensionL
       // A placed dimension close to its geometry has no extensions; with no length either it has no direction to compare.
       const otherGuide = other.extensions[0], ox = otherGuide ? otherGuide[1][0] - otherGuide[0][0] : 0, oy = otherGuide ? otherGuide[1][1] - otherGuide[0][1] : 0;
       if (!otherLength && !otherGuide) return [];
-      if (otherLength ? Math.abs(ux * vy - uy * vx) > otherLength * 1e-12 : Math.abs(nx * oy - ny * ox) > Math.hypot(ox, oy) * 1e-12) return [];
+      if (otherLength ? Math.abs(ux * vy - uy * vx) > otherLength * CAD_PRECISION.annotationParallelRelative : Math.abs(nx * oy - ny * ox) > Math.hypot(ox, oy) * CAD_PRECISION.annotationParallelRelative) return [];
       const interval = span(other, ux, uy);
       if (occupied[0] > interval[1] || occupied[1] < interval[0]) return [];
       // Each strip holds its line and its lifted text; a shift must clear the other strip by the margin.
@@ -182,7 +184,7 @@ const linear = (offset: number, along: number): CadSketchLinearAnnotation => ({ 
 const wrapAngle = (angle: number) => angle - 2 * Math.PI * Math.floor((angle + Math.PI) / (2 * Math.PI));
 /** The read-up direction of text along a line, ISO 129: readable from the bottom or right. */
 function reading(ux: number, uy: number): Point2 {
-  return ux < -1e-12 || Math.abs(ux) <= 1e-12 && uy < 0 ? { x: -ux, y: -uy } : { x: ux, y: uy };
+  return ux < -CAD_PRECISION.annotationReadingTie || Math.abs(ux) <= CAD_PRECISION.annotationReadingTie && uy < 0 ? { x: -ux, y: -uy } : { x: ux, y: uy };
 }
 /**
  * A linear placement's `along` is the text's place on its dimension line as a fraction of the line's length from its start, taken of at
@@ -359,9 +361,9 @@ function anglePart(geometry: CadSketchLineAngleGeometry, sense: 'cw' | 'ccw', va
   const { vertex, first, signedSweepRadians: sweep } = geometry, startAngle = Math.atan2(first.direction.y, first.direction.x);
   const box = cadSketchGraphDimensionLabel(value, 'angle');
   // Text beyond the sweep draws the arc out to it, never round past a full turn.
-  const fits = (along: number) => Math.abs(sweep) * (Math.max(1, along) - Math.min(0, along)) < 2 * Math.PI - 1e-9;
+  const fits = (along: number) => Math.abs(sweep) * (Math.max(1, along) - Math.min(0, along)) < 2 * Math.PI - CAD_PRECISION.annotationFullTurnSlackRad;
   const distance = (pointer: Point2) => Math.hypot(pointer.x - vertex.x, pointer.y - vertex.y);
-  const bounded = (radius: number) => Math.min(1e6, Math.max(1e-6, radius));
+  const bounded = (radius: number) => Math.min(CAD_PRECISION.modelExtentMm, Math.max(CAD_PRECISION.annotationMinimumRadiusMm, radius));
   return { kind: 'angle', value,
     auto: mmPerPixel => angleGeometry(geometry, sense, value, mmPerPixel),
     at: (placement, mmPerPixel) => placement.kind !== 'angle' || !fits(placement.along) ? null
@@ -531,7 +533,7 @@ function pointLineGeometry(point: Point2, axis: Support, valueMm: number, mmPerP
   const foot = { x: point.x + axis.y * signed, y: point.y - axis.x * signed };
   const ux = length === 0 ? -axis.y : (point.x - foot.x) / length, uy = length === 0 ? axis.x : (point.y - foot.y) / length;
   let readX = ux, readY = uy;
-  if (readX < -1e-12 || Math.abs(readX) <= 1e-12 && readY < 0) { readX = -readX; readY = -readY; }
+  if (readX < -CAD_PRECISION.annotationReadingTie || Math.abs(readX) <= CAD_PRECISION.annotationReadingTie && readY < 0) { readX = -readX; readY = -readY; }
   const box = cadSketchGraphDimensionLabel(valueMm, 'point-line', reference), lift = (box.height / 2 + isoTextGap) * mmPerPixel;
   const headLength = Math.min(ARROW_LENGTH_PIXELS * mmPerPixel, length / 4), headWidth = Math.min(ARROW_HALF_WIDTH_PIXELS * mmPerPixel, length / 8);
   const arrow = (tip: Point2, sign: number): Arrow => [[tip.x, tip.y],
@@ -567,7 +569,8 @@ interface Resolving {
 /** The numeric frame dimensions of `graph` resolve against, or null when it has no extent to draw them in. */
 function resolving(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): Resolving | null {
   const value = (scalar: CadScalar) => { try { return evaluateCadScalar(scalar, parameters); } catch { return NaN; } };
-  const points = new Map<string, Point2>();
+  // The origin and the axis samples resolve as points too, so distances and angles from them draw.
+  const points = new CadSketchPositions();
   for (const point of graph.points) {
     const x = value(point.position[0]), y = value(point.position[1]);
     if (Number.isFinite(x) && Number.isFinite(y)) points.set(point.id, { x, y });
@@ -759,9 +762,9 @@ const samePlacement = (a: CadSketchDimensionPartPlacement, b: CadSketchDimension
 function boundedPlacement(placement: CadSketchDimensionPartPlacement): CadSketchDimensionPartPlacement | null {
   const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
   if (!placementValues(placement).every(Number.isFinite)) return null;
-  if (placement.kind === 'linear') return { kind: 'linear', offset: clamp(placement.offset, -1e6, 1e6), along: clamp(placement.along, -1e4, 1e4) };
-  if (placement.kind === 'angle') return { kind: 'angle', radius: clamp(placement.radius, 1e-6, 1e6), along: clamp(placement.along, -1e4, 1e4) };
-  return { kind: 'radial', angle: clamp(placement.angle, -Math.PI, Math.PI), distance: clamp(placement.distance, 0, 1e6) };
+  if (placement.kind === 'linear') return { kind: 'linear', offset: clamp(placement.offset, -CAD_PRECISION.modelExtentMm, CAD_PRECISION.modelExtentMm), along: clamp(placement.along, -1e4, 1e4) };
+  if (placement.kind === 'angle') return { kind: 'angle', radius: clamp(placement.radius, CAD_PRECISION.annotationMinimumRadiusMm, CAD_PRECISION.modelExtentMm), along: clamp(placement.along, -1e4, 1e4) };
+  return { kind: 'radial', angle: clamp(placement.angle, -Math.PI, Math.PI), distance: clamp(placement.distance, 0, CAD_PRECISION.modelExtentMm) };
 }
 
 /**

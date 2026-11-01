@@ -2,16 +2,19 @@ import { CadError } from './cadError';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
 import type { CadSketchGraph } from './cadSketchGraph';
 import type { Point2 } from '@/domain/path-intel/types';
+import { isCadSketchVirtualId } from './sketch-relations/cadSketchVirtualElements';
 
 /** Declared source identities only; numeric intent may still be unsolved. */
 export function resolveCadSketchPointIdentities(graph: CadSketchGraph): (pointId: string) => string {
+  // The origin and the axes are their own identity: nothing stored joins them, since a point at the origin is stored as its coordinates.
   if (!graph.relations.some(relation => relation.kind === 'coincident')) return id => id;
   const parents = new Map(graph.points.map(point => [point.id, point.id]));
   const parentOf = (id: string): string => {
     const parent = parents.get(id);
-    if (parent === undefined) throw new CadError('missing-sketch-point', `Sketch point "${id}" is missing.`);
+    if (parent === undefined) return isCadSketchVirtualId(id) ? id : fail(id);
     return parent;
   };
+  const fail = (id: string): never => { throw new CadError('missing-sketch-point', `Sketch point "${id}" is missing.`); };
   const root = (id: string): string => {
     let current = id;
     for (let parent = parentOf(current); parent !== current; parent = parentOf(current)) current = parent;

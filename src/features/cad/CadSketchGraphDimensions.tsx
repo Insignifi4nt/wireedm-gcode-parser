@@ -41,7 +41,7 @@ export interface CadSketchGraphDimensionsProps {
    * cross keeps its own picks. Without it only the value labels take the pointer.
    */
   readonly hitLayer?: SVGGElement | null;
-  /** Whether a datum, profile grip or profile edge under the pointer keeps the pick from a dimension line or arrow. Labels always keep theirs. */
+  /** Whether the origin, an axis, a profile grip or a profile edge under the pointer keeps the pick from a dimension line or arrow. Labels always keep theirs. */
   covered?(event: { readonly clientX: number; readonly clientY: number; readonly target: EventTarget | null; readonly nativeEvent: Event }): boolean;
 }
 
@@ -272,7 +272,7 @@ export function CadSketchGraphDimensions({ graph, parameters, center, mmPerPixel
         else if (menu) { const box = event.currentTarget.getBoundingClientRect(); onMenu?.(pick, { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }); }
         else onDelete?.(pick, event.key === 'Delete' ? 'Delete' : 'Backspace');
       };
-      // A datum, profile grip or profile edge under a line or arrow keeps the pointer: the dimension leaves that event to the canvas.
+      // The origin, an axis, a profile grip or a profile edge under a line or arrow keeps the pointer: the dimension leaves that event to the canvas.
       const pointerOver = (event: PointerEvent<SVGGElement>) => {
         if (!interactive) return;
         if (covered?.(event)) { if (hovered.current === owner) hide(); else if (pointed.current?.key === elementKey) point(null); return; }

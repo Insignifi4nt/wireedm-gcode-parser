@@ -6,6 +6,7 @@ import { isAcceptedCadSketchGraph, parseCadSketchGraph, type CadSketchGraph, typ
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 import { cadSketchEntityPointIds, cadSketchRelationEntityIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
+import { cadSupportedLength } from '../precision/cadPrecision';
 
 const invalid = (message: string): never => { throw new CadError('invalid-sketch-pattern', message); };
 const locked = () => new CadError('owned-sketch-pattern', 'Edit the seed or detach its linear pattern before editing generated geometry.');
@@ -80,7 +81,7 @@ function values(graph: CadSketchGraph, parameters: Readonly<Record<string, numbe
   if (seed?.kind !== 'circle' || !center) return invalid('The pattern seed is unavailable.');
   const spacing = evaluateCadScalar(relation.spacing, parameters), radius = evaluateCadScalar(seed.radius, parameters);
   const origin = center.position.map(value => evaluateCadScalar(value, parameters));
-  if (!(spacing > 0) || !Number.isFinite(spacing) || !(radius > 1e-7 && radius <= 1e6)) return invalid('Pattern spacing and seed radius must be positive supported sizes.');
+  if (!(spacing > 0) || !Number.isFinite(spacing) || !cadSupportedLength(radius)) return invalid('Pattern spacing and seed radius must be positive supported sizes.');
   const axis = relation.direction.endsWith('x') ? 0 : 1, sign = relation.direction.startsWith('-') ? -1 : 1;
   const positions = cadSketchLinearPatternInstances(relation).filter(member => member.active).map(member => {
     const step = sign * member.index * spacing, position = [origin[0], origin[1]] as [number, number]; position[axis] += step;

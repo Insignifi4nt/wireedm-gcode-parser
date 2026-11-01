@@ -159,8 +159,13 @@ describe('CAD tool argument boundary and discovery', () => {
     if (!trimEdit) throw new Error('Missing Trim edit discovery.');
     expect(Value.Check(trimEdit, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: circle })).toBe(true);
     expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', trimAt: { entityId: 'ab', parameter: .1 } })).toBe(true);
+    // The axes a query names to cut at go beside Trim or Extend, and a target may name one as its boundary.
+    expect(Value.Check(inspect.inputSchema, { expectedVersion: 'current', sketchId: 'regions', trimAt: { entityId: 'ab', parameter: .1 }, axes: ['@h', '@v'] })).toBe(true);
+    expect(Value.Check(trimEdit, { kind: 'trim-sketch-entity', sketchId: 'sketch', trim: { ...endTrim, boundary: { ...endTrim.boundary, entityId: '@h' } } })).toBe(true);
     for (const input of [{ trimAt: { entityId: 'ab', parameter: .1 }, proposal: { trim: endTrim } },
-      { trimAt: { entityId: 'ab', parameter: .1, cutPointId: 'forbidden' } }, { trimAt: { entityId: 'ab', parameter: 2 } }])
+      { trimAt: { entityId: 'ab', parameter: .1, cutPointId: 'forbidden' } }, { trimAt: { entityId: 'ab', parameter: 2 } },
+      { axes: ['@h'] }, { proposal: { trim: endTrim }, axes: ['@h'] }, { trimAt: { entityId: 'ab', parameter: .1 }, axes: ['@origin'] },
+      { extendAt: { entityId: 'ab', end: 'start' }, axes: ['@v', '@v'] }])
       expect(await inspect.execute({ expectedVersion: 'current', sketchId: 'regions', ...input })).toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
     for (const tool of [inspect, read]) {
       const query = { expectedVersion: 'current', sketchId: 'regions', ...(tool === read ? { boundaryProfileId: 'outer' } : {}) };

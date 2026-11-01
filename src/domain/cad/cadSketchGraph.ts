@@ -5,18 +5,22 @@ import { isCadImportData } from './cadImportData';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { cadPathClosureTolerance } from './cadAnalyticSegments';
-import type { Point2 } from '@/domain/path-intel/types';
 import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
 import { cadSketchExternalReferenceComponents } from './cadSketchExternalReferences';
 import { deepFreezeCadData } from './cadDeepFreeze';
 import { cadSketchRelationsEqualButPlacement } from './cadSketchPlacedDimensions';
 import { cadSketchRelationDefinition, checkCadSketchRelationOperands } from './sketch-relations/cadSketchRelationRegistry';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
+import { cadSketchCanonicalForm, cadSketchCanonicalRefusal } from './sketch-relations/cadSketchCanonicalForms';
+import { CAD_SKETCH_ELEMENT_ID_PATTERN, CadSketchPositions, isCadSketchReservedId } from './sketch-relations/cadSketchVirtualElements';
 
 const strict = { additionalProperties: false };
-const id = CadIdentifierSchema, pair = Type.Tuple([id, id]);
+const id = CadIdentifierSchema;
+/** An id a relation names: a stored point or edge, or the origin or an axis by its reserved id. */
+const ref = Type.String({ pattern: CAD_SKETCH_ELEMENT_ID_PATTERN }), refPair = Type.Tuple([ref, ref]);
 const entity = { id, construction: Type.Boolean() };
-const angleRay = Type.Object({ lineId: id, towardPointId: id }, strict);
-const tangentEndpoint = Type.Object({ entityId: id, pointId: id }, strict);
+const angleRay = Type.Object({ lineId: ref, towardPointId: ref }, strict);
+const tangentEndpoint = Type.Object({ entityId: ref, pointId: ref }, strict);
 /**
  * Where a dimension is drawn, in sketch millimetres relative to the geometry it measures, so it follows that geometry. Display only:
  * no solver, analysis or output reads it, and a dimension without one is laid out automatically.
@@ -24,11 +28,11 @@ const tangentEndpoint = Type.Object({ entityId: id, pointId: id }, strict);
  * [0, 1] beyond the extension lines. An angle's `radius` is its arc's distance from the vertex and `along` the text's fraction of the
  * sweep. A radius or diameter's `angle` is its leader's direction in sketch radians and `distance` its text's distance from the centre.
  */
-const placementOffset = Type.Number({ minimum: -1e6, maximum: 1e6 }), placementAlong = Type.Number({ minimum: -1e4, maximum: 1e4 });
+const placementOffset = Type.Number({ minimum: -CAD_PRECISION.modelExtentMm, maximum: CAD_PRECISION.modelExtentMm }), placementAlong = Type.Number({ minimum: -1e4, maximum: 1e4 });
 const linearPlacement = { offset: placementOffset, along: placementAlong };
 const linearAnnotation = Type.Object({ kind: Type.Literal('linear'), ...linearPlacement }, strict);
-const angleAnnotation = Type.Object({ kind: Type.Literal('angle'), radius: Type.Number({ exclusiveMinimum: 0, maximum: 1e6 }), along: placementAlong }, strict);
-const radialAnnotation = Type.Object({ kind: Type.Literal('radial'), angle: Type.Number({ minimum: -Math.PI, maximum: Math.PI }), distance: Type.Number({ minimum: 0, maximum: 1e6 }) }, strict);
+const angleAnnotation = Type.Object({ kind: Type.Literal('angle'), radius: Type.Number({ exclusiveMinimum: 0, maximum: CAD_PRECISION.modelExtentMm }), along: placementAlong }, strict);
+const radialAnnotation = Type.Object({ kind: Type.Literal('radial'), angle: Type.Number({ minimum: -Math.PI, maximum: Math.PI }), distance: Type.Number({ minimum: 0, maximum: CAD_PRECISION.modelExtentMm }) }, strict);
 /** A chamfer's two setbacks, each placed or, when null, laid out automatically. */
 const setbacksAnnotation = Type.Object({ kind: Type.Literal('setbacks'), sides: Type.Tuple([Type.Union([Type.Object(linearPlacement, strict), Type.Null()]),
   Type.Union([Type.Object(linearPlacement, strict), Type.Null()])]) }, strict);
@@ -48,41 +52,43 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ ...entity, kind: Type.Literal('circle'), centerPointId: id, radius: CadScalarSchema }, strict)
   ])),
   relations: Type.Array(Type.Union([
-    Type.Object({ id, kind: Type.Literal('linear-pattern'), seed: Type.Object({ kind: Type.Literal('circle'), entityId: id, centerPointId: id }, strict),
+    Type.Object({ id, kind: Type.Literal('linear-pattern'), seed: Type.Object({ kind: Type.Literal('circle'), entityId: ref, centerPointId: ref }, strict),
       idPrefix: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' }), direction: Type.Union((['+x', '-x', '+y', '-y'] as const).map(direction => Type.Literal(direction))),
       count: Type.Integer({ minimum: 1, maximum: 32 }), spacing: CadScalarSchema,
       omittedInstances: Type.Array(Type.Integer({ minimum: 1, maximum: 31 }), { uniqueItems: true, maxItems: 31 }) }, strict),
     Type.Object({ id, kind: Type.Literal('reference-dimension'), measurement: Type.Union([
-      Type.Object({ kind: Type.Literal('line-length'), entityId: id }, strict),
-      Type.Object({ kind: Type.Literal('point-distance'), pointIds: pair }, strict),
-      Type.Object({ kind: Type.Literal('point-line-distance'), pointId: id, lineId: id }, strict),
-      Type.Object({ kind: Type.Literal('radial-size'), entityId: id, quantity: Type.Union([Type.Literal('radius'), Type.Literal('diameter')]) }, strict)
+      Type.Object({ kind: Type.Literal('line-length'), entityId: ref }, strict),
+      Type.Object({ kind: Type.Literal('point-distance'), pointIds: refPair }, strict),
+      Type.Object({ kind: Type.Literal('point-line-distance'), pointId: ref, lineId: ref }, strict),
+      Type.Object({ kind: Type.Literal('radial-size'), entityId: ref, quantity: Type.Union([Type.Literal('radius'), Type.Literal('diameter')]) }, strict)
     ]), ...annotations.reference }, strict),
     Type.Object({ id, kind: Type.Literal('external-reference'), entityId: id, sourceSketchId: id, source: Type.Union([
       Type.Object({ kind: Type.Literal('line'), entityId: id, startPointId: id, endPointId: id }, strict),
       Type.Object({ kind: Type.Literal('circle'), entityId: id, centerPointId: id }, strict)
     ]) }, strict),
-    ...(['coincident', 'horizontal', 'vertical'] as const).map(kind => Type.Object({ id, kind: Type.Literal(kind), pointIds: pair }, strict)),
-    Type.Object({ id, kind: Type.Literal('parallel'), lineIds: pair }, strict),
-    Type.Object({ id, kind: Type.Literal('perpendicular'), lineIds: pair }, strict),
-    Type.Object({ id, kind: Type.Literal('collinear'), lineIds: pair }, strict),
-    Type.Object({ id, kind: Type.Literal('midpoint'), pointId: id, lineId: id }, strict),
-    Type.Object({ id, kind: Type.Literal('point-on-line'), pointId: id, lineId: id }, strict),
-    Type.Object({ id, kind: Type.Literal('point-on-curve'), pointId: id, curveId: id }, strict),
+    ...(['coincident', 'horizontal', 'vertical'] as const).map(kind => Type.Object({ id, kind: Type.Literal(kind), pointIds: refPair }, strict)),
+    Type.Object({ id, kind: Type.Literal('parallel'), lineIds: refPair }, strict),
+    Type.Object({ id, kind: Type.Literal('perpendicular'), lineIds: refPair }, strict),
+    Type.Object({ id, kind: Type.Literal('collinear'), lineIds: refPair }, strict),
+    Type.Object({ id, kind: Type.Literal('midpoint'), pointId: ref, lineId: ref }, strict),
+    Type.Object({ id, kind: Type.Literal('point-on-line'), pointId: ref, lineId: ref }, strict),
+    Type.Object({ id, kind: Type.Literal('point-on-curve'), pointId: ref, curveId: ref }, strict),
     Type.Object({ id, kind: Type.Literal('tangent-joint'), endpoints: Type.Tuple([tangentEndpoint, tangentEndpoint]) }, strict),
-    Type.Object({ id, kind: Type.Literal('symmetric'), pointIds: pair, lineId: id }, strict),
-    Type.Object({ id, kind: Type.Literal('equal-length'), lineIds: pair }, strict),
-    Type.Object({ id, kind: Type.Literal('equal-radius'), curveIds: pair }, strict),
+    // An arc or circle touching an axis, on either side of it.
+    Type.Object({ id, kind: Type.Literal('tangent'), curveIds: refPair }, strict),
+    Type.Object({ id, kind: Type.Literal('symmetric'), pointIds: refPair, lineId: ref }, strict),
+    Type.Object({ id, kind: Type.Literal('equal-length'), lineIds: refPair }, strict),
+    Type.Object({ id, kind: Type.Literal('equal-radius'), curveIds: refPair }, strict),
     Type.Object({ id, kind: Type.Literal('line-angle'), rays: Type.Tuple([angleRay, angleRay]), sense: Type.Union([Type.Literal('cw'), Type.Literal('ccw')]), value: CadScalarSchema, ...annotations.angle }, strict),
-    Type.Object({ id, kind: Type.Literal('radial-size'), entityId: id, quantity: Type.Union([Type.Literal('radius'), Type.Literal('diameter')]), value: CadScalarSchema, ...annotations.radial }, strict),
-    Type.Object({ id, kind: Type.Literal('fixed-point'), pointId: id, position: CadPoint2Schema }, strict),
-    Type.Object({ id, kind: Type.Literal('fixed-axis'), pointId: id, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema, ...annotations.linear }, strict),
-    Type.Object({ id, kind: Type.Literal('distance'), pointIds: pair, value: CadScalarSchema, ...annotations.linear }, strict),
+    Type.Object({ id, kind: Type.Literal('radial-size'), entityId: ref, quantity: Type.Union([Type.Literal('radius'), Type.Literal('diameter')]), value: CadScalarSchema, ...annotations.radial }, strict),
+    Type.Object({ id, kind: Type.Literal('fixed-point'), pointId: ref, position: CadPoint2Schema }, strict),
+    Type.Object({ id, kind: Type.Literal('fixed-axis'), pointId: ref, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema, ...annotations.linear }, strict),
+    Type.Object({ id, kind: Type.Literal('distance'), pointIds: refPair, value: CadScalarSchema, ...annotations.linear }, strict),
     // The side is seen from the line's start looking toward its end.
-    Type.Object({ id, kind: Type.Literal('point-line-distance'), pointId: id, lineId: id, side: Type.Union([Type.Literal('left'), Type.Literal('right')]), value: CadScalarSchema, ...annotations.linear }, strict),
-    Type.Object({ id, kind: Type.Literal('axis-distance'), pointIds: pair, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema, ...annotations.linear }, strict),
-    Type.Object({ id, kind: Type.Literal('fillet-corner'), pointId: id, lineIds: pair, arcId: id, value: CadScalarSchema, ...annotations.radial }, strict),
-    Type.Object({ id, kind: Type.Literal('chamfer-corner'), pointId: id, lineIds: pair, chamferId: id, values: Type.Tuple([CadScalarSchema, CadScalarSchema]), ...annotations.setbacks }, strict)
+    Type.Object({ id, kind: Type.Literal('point-line-distance'), pointId: ref, lineId: ref, side: Type.Union([Type.Literal('left'), Type.Literal('right')]), value: CadScalarSchema, ...annotations.linear }, strict),
+    Type.Object({ id, kind: Type.Literal('axis-distance'), pointIds: refPair, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), value: CadScalarSchema, ...annotations.linear }, strict),
+    Type.Object({ id, kind: Type.Literal('fillet-corner'), pointId: ref, lineIds: refPair, arcId: id, value: CadScalarSchema, ...annotations.radial }, strict),
+    Type.Object({ id, kind: Type.Literal('chamfer-corner'), pointId: ref, lineIds: refPair, chamferId: id, values: Type.Tuple([CadScalarSchema, CadScalarSchema]), ...annotations.setbacks }, strict)
   ]))
 }, strict);
 type Immutable<T> = { readonly [K in keyof T]: Immutable<T[K]> };
@@ -105,6 +111,7 @@ export type CadSketchPointOnLineRelation = Extract<CadSketchGraphRelation, { kin
 export type CadSketchPointOnCurveRelation = Extract<CadSketchGraphRelation, { kind: 'point-on-curve' }>;
 export type CadSketchPointLineDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'point-line-distance' }>;
 export type CadSketchTangentJointRelation = Extract<CadSketchGraphRelation, { kind: 'tangent-joint' }>;
+export type CadSketchTangentRelation = Extract<CadSketchGraphRelation, { kind: 'tangent' }>;
 export type CadSketchDimensionAnnotation = Immutable<Static<typeof CadSketchDimensionAnnotationSchema>>;
 export type CadSketchLinearAnnotation = Extract<CadSketchDimensionAnnotation, { kind: 'linear' }>;
 export type CadSketchAngleAnnotation = Extract<CadSketchDimensionAnnotation, { kind: 'angle' }>;
@@ -153,7 +160,9 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   if (!isCadImportData(value)) throw invalid();
   let graph: CadSketchGraph;
   try { graph = structuredClone(value) as CadSketchGraph; } catch { throw invalid(); }
-  if (!isCadImportData(graph) || !Value.Check(CadSketchGraphSchema, graph)) throw invalid();
+  if (!isCadImportData(graph)) throw invalid();
+  assertNoReservedCadSketchIds(graph);
+  if (!Value.Check(CadSketchGraphSchema, graph)) throw invalid();
   const ids = new Set<string>(), points = new Set(graph.points.map(point => point.id));
   for (const item of [...graph.points, ...graph.entities, ...graph.relations]) {
     if (ids.has(item.id)) throw new CadError('duplicate-sketch-id', `Duplicate sketch graph identity "${item.id}".`);
@@ -167,12 +176,32 @@ export function parseCadSketchGraph(value: unknown): CadSketchGraph {
   // Each kind's definition checks its operands: the slots that refuse missing or mistyped ones, then its own checks.
   for (const item of graph.relations) {
     checkCadSketchRelationOperands(graph, item);
+    const canonical = cadSketchCanonicalForm(graph, item);
+    if (canonical) throw cadSketchCanonicalRefusal(item, canonical);
     assertCadSketchPlacementFits(item);
     references(item.id, cadSketchRelationPointIds(graph, item));
   }
   deepFreezeCadData(graph);
   acceptedGraphs.add(graph);
   return graph;
+}
+
+/**
+ * Ids starting with `@` name the origin and the H and V axes, which every sketch has and none stores, so a stored point, edge or relation
+ * cannot take one, and an edge cannot end at one. Read before the schema check, which would give no reason, by every reader of stored or
+ * submitted sketch data: a graph, a document and the edits that add points, edges or relations. Anything but a graph's lists is left to
+ * the schema check.
+ */
+export function assertNoReservedCadSketchIds(graph: unknown) {
+  if (typeof graph !== 'object' || graph === null) return;
+  const lists = graph as { readonly points?: unknown; readonly entities?: unknown; readonly relations?: unknown };
+  for (const list of [lists.points, lists.entities, lists.relations]) if (Array.isArray(list)) for (const item of list as unknown[]) {
+    if (typeof item !== 'object' || item === null) continue;
+    for (const [key, value] of Object.entries(item)) if ((key === 'id' || list === lists.entities && key.endsWith('PointId')) && typeof value === 'string' && isCadSketchReservedId(value)) {
+      throw new CadError('reserved-sketch-id', key === 'id' ? `Sketch id "${value}" is reserved: ids starting with "@" name the origin and the H and V axes.`
+        : `Sketch edge "${String((item as { id?: unknown }).id)}" cannot end at "${value}": only relations name the origin and the axes.`);
+    }
+  }
 }
 
 /** A placement the schema admits for every relation that has one, but that fits only some of its measurements, is refused. */
@@ -270,7 +299,7 @@ export function cadSketchGraphWithSolvedValues(source: CadSketchGraph, values: r
 
 /** Nonrepairing acceptance check. Empty issues means current numeric geometry and relations agree. */
 export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): readonly CadSketchGraphIssue[] {
-  const issues: CadSketchGraphIssue[] = [], points = new Map<string, Point2>();
+  const issues: CadSketchGraphIssue[] = [], points = new CadSketchPositions();
   const scalar = (value: number | string) => evaluateCadScalar(value, parameters);
   const report = (source: CadSketchGraphIssue['source'], code: CadSketchGraphIssue['code'], message: string, residualMm?: number) => {
     issues.push({ source, code, message, ...(residualMm === undefined ? {} : { residualMm }) });
@@ -288,18 +317,18 @@ export function checkCadSketchGraph(graph: CadSketchGraph, parameters: Readonly<
     try {
       if (item.kind === 'circle') {
         const radius = scalar(item.radius);
-        if (radius <= 1e-7 || radius > 1e6) report(source, 'invalid-radius', 'Circle radius must be positive and within one million millimetres.');
+        if (radius <= CAD_PRECISION.minimumLengthMm || radius > CAD_PRECISION.modelExtentMm) report(source, 'invalid-radius', 'Circle radius must be positive and within one million millimetres.');
         continue;
       }
       const start = points.get(item.startPointId), end = points.get(item.endPointId);
       if (!start || !end) continue;
-      if (Math.hypot(start.x - end.x, start.y - end.y) <= 1e-7) {
+      if (Math.hypot(start.x - end.x, start.y - end.y) <= CAD_PRECISION.minimumLengthMm) {
         report(source, 'degenerate-entity', 'A line or endpoint arc needs distinct endpoints; use a circle for a full turn.'); continue;
       }
       if (item.kind === 'arc') {
         const center = points.get(item.centerPointId); if (!center) continue;
         const radius = Math.hypot(start.x - center.x, start.y - center.y), other = Math.hypot(end.x - center.x, end.y - center.y);
-        if (radius <= 1e-7 || radius > 1e6) report(source, 'invalid-radius', 'Arc radius must be positive and within one million millimetres.');
+        if (radius <= CAD_PRECISION.minimumLengthMm || radius > CAD_PRECISION.modelExtentMm) report(source, 'invalid-radius', 'Arc radius must be positive and within one million millimetres.');
         const residual = Math.abs(radius - other);
         if (residual > cadPathClosureTolerance([center, start, end])) report(source, 'arc-radius-mismatch', 'Arc endpoints must share their declared center and radius.', residual);
       }

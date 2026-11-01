@@ -3,10 +3,11 @@ import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
 import { normalizeDxfGeometry } from './normalizeDxfGeometry';
 import type { DxfEntity } from './types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export const DEFAULT_DXF_UPID_OPTIONS: PathPlanningOptions = {
   endpointTolerance: 0,
-  coincidenceEpsilon: 0.000002,
+  coincidenceEpsilon: CAD_PRECISION.dxfCamCoincidenceMm,
   allowReverseOpenChains: false
 };
 

@@ -19,6 +19,7 @@ import type {
 import { approximateSpline } from './approximateSpline';
 import { signedDxfArcSweepRadians } from './arcSweep';
 import { assertDxfTextSize, DXF_RESOURCE_LIMITS, DxfResourceBudget, DxfResourceLimitError } from './dxfResourceLimits';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 interface DxfPair {
   code: number;
@@ -104,10 +105,10 @@ type TransformEntityResult =
 const IGNORED_LAYOUT_ENTITY_TYPES = new Set(['VIEWPORT']);
 const SUPPORTED_ENTITY_TYPES = new Set(['LINE', 'ARC', 'CIRCLE', 'LWPOLYLINE', 'POLYLINE', 'SPLINE']);
 const OCS_COORDINATE_ENTITY_TYPES = new Set(['ARC', 'CIRCLE', 'LWPOLYLINE', 'POLYLINE']);
-const DEFAULT_CURVE_CHORD_ERROR = 0.001;
-const PLANAR_NORMAL_EPSILON = 1e-12;
+const DEFAULT_CURVE_CHORD_ERROR = CAD_PRECISION.approximationChordMm;
+const PLANAR_NORMAL_EPSILON = CAD_PRECISION.dxfPlanarNormal;
 // WCS entities may lie at any elevation, but all points must share one XY-parallel plane.
-const WCS_PLANAR_Z_EPSILON = 1e-9;
+const WCS_PLANAR_Z_EPSILON = CAD_PRECISION.dxfPlanarZMm;
 const SPLINE_APPROXIMATION_WARNING = 'Flattened DXF SPLINE geometry into line segments.';
 
 export function parseDxf(text: string, options: DxfParseOptions = {}): DxfParseResult {

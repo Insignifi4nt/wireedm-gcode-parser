@@ -7,6 +7,7 @@ import { CadError } from './cadError';
 import type { Point2 } from '@/domain/path-intel/types';
 import { Type, type Static } from '@sinclair/typebox';
 import { CadIdentifierSchema, CadScalarSchema } from './cadPrimitives';
+import { CAD_PRECISION, cadSupportedLength } from '@/domain/precision/cadPrecision';
 
 const commandIds = { trimPointIds: Type.Tuple([CadIdentifierSchema, CadIdentifierSchema]), entityId: CadIdentifierSchema, relationId: CadIdentifierSchema };
 export const CadSketchCornerCommandTreatmentSchema = Type.Union([
@@ -54,10 +55,10 @@ export function createCadSketchCornerTreatment({ graph: input, parameters, point
   function point(x: number, y: number) { const value = { id: createId(), position: [x, y] as const }; points.push(value); return value.id; }
   const values = treatment.kind === 'fillet' ? [evaluateCadScalar(treatment.radius, parameters)]
     : treatment.setbacks.map(value => evaluateCadScalar(value, parameters));
-  if (values.some(value => !(value > 1e-7 && value <= 1e6))) throw new CadError('invalid-corner-dimension', 'Corner dimensions must be positive and within one million millimetres.');
+  if (values.some(value => !cadSupportedLength(value))) throw new CadError('invalid-corner-dimension', 'Corner dimensions must be positive and within one million millimetres.');
   const da = treatment.kind === 'fillet' ? values[0] / Math.tan(frame.angle / 2) : values[0];
   const db = treatment.kind === 'fillet' ? da : values[1];
-  if (frame.lengthA - da <= 1e-7 || frame.lengthB - db <= 1e-7) throw new CadError('invalid-corner-dimension', 'The corner treatment must leave a positive segment on both lines.');
+  if (frame.lengthA - da <= CAD_PRECISION.minimumLengthMm || frame.lengthB - db <= CAD_PRECISION.minimumLengthMm) throw new CadError('invalid-corner-dimension', 'The corner treatment must leave a positive segment on both lines.');
   const p = point(vertex.x + da * frame.u.x, vertex.y + da * frame.u.y), q = point(vertex.x + db * frame.v.x, vertex.y + db * frame.v.y);
   let entity: CadSketchGraphEntity, relation: CadSketchCornerRelation;
   if (treatment.kind === 'fillet') {

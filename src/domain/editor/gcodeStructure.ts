@@ -6,6 +6,7 @@ import {
   type GCodeInterpretedMotion
 } from './gcodeBlockInterpreter';
 import { isRecognizedGCodeSetup } from './gcodeCommands';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export interface GCodeStructuredLine {
   num: number;
@@ -68,7 +69,7 @@ interface ActiveToolpath {
   lines: string[];
 }
 
-const POSITION_EPSILON = 1e-9;
+const POSITION_EPSILON = CAD_PRECISION.gcodePositionMm;
 
 export function isHeaderCommand(raw: string) {
   if (!raw) return false;
@@ -351,7 +352,7 @@ function distance(a: XYPosition, b: XYPosition) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-function coordinatesEqual(a: XYPosition, b: XYPosition, tolerance = 1e-4) {
+function coordinatesEqual(a: XYPosition, b: XYPosition, tolerance = CAD_PRECISION.gcodeStructureMatchMm) {
   return Math.abs(a.x - b.x) <= tolerance && Math.abs(a.y - b.y) <= tolerance;
 }
 

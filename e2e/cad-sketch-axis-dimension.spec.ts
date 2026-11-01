@@ -4,7 +4,7 @@ import { prepareCadTools, callCadTool as call, rawCadToolCall as rawCall, cadCon
 type Point = { id: string; position: [number, number] };
 type Line = { id: string; kind: string; startPointId: string; endPointId: string };
 
-test('dimensions a rectangle side from the Y axis in either pick order as a plain Distance, and explains a side across the axis', async ({ page }) => {
+test('dimensions a rectangle side from the V axis in either pick order as a plain Distance, and explains a side across the axis', async ({ page }) => {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const sketch = { id: 'plate', kind: 'sketch', name: 'Axis plate', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: { points: [], entities: [], relations: [] } };
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
@@ -14,7 +14,7 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   await enableGridSnap(page);
 
   const canvas = page.getByLabel('Sketch drawing canvas'), tool = page.getByRole('button', { name: 'Dimension', exact: true });
-  const preview = page.locator('[data-cad-dimension-preview]'), yAxis = page.locator('[data-cad-sketch-datum="y-axis"]');
+  const preview = page.locator('[data-cad-dimension-preview]'), vAxis = page.locator('[data-cad-sketch-fixed="@v"]');
   const project = async (x: number, y: number) => {
     const current = await context(page), center = (await call(page, 'cad_get_viewport', { expectedVersion: current.version })).view.centerMm as [number, number];
     return canvas.evaluate((element, { x, y, center }) => {
@@ -31,7 +31,7 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   };
   const startDimension = async () => { if (await tool.getAttribute('aria-pressed') !== 'true') await tool.click(); await expect(tool).toHaveAttribute('aria-pressed', 'true'); };
 
-  // A rectangle drawn across the Y axis, its sides kept level and upright by the relations Rectangle creates.
+  // A rectangle drawn across the V axis, its sides kept level and upright by the relations Rectangle creates.
   await page.getByRole('button', { name: 'Rectangle', exact: true }).click();
   await clickAt(-20, 10); await clickAt(30, 40);
   await expect.poll(async () => (await settled()).entities.length).toBe(4);
@@ -48,11 +48,11 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   const distance = { id: expect.any(String), kind: 'fixed-axis', pointId: right.startPointId, axis: 'x', value: 30, annotation: { kind: 'linear', offset: expect.closeTo(5, 0), along: 0.5 } };
   const label = (relations: unknown[]) => page.locator(`[data-cad-sketch-dimension="${(relations.at(-1) as { id: string }).id}"] [role="button"]`);
 
-  // Dimension, the Y axis, then the right side: the preview shows the distance, a click places it, it draws, and a double-click edits it as Distance.
+  // Dimension, the V axis, then the right side: the preview shows the distance, a click places it, it draws, and a double-click edits it as Distance.
   await startDimension(); await clickAt(0, 25);
-  await expect(canvas).toHaveAccessibleDescription(/^Dimension · Choose a point, an arc, a circle or a line to dimension from the Y axis/);
+  await expect(canvas).toHaveAccessibleDescription(/^Dimension · Choose a point, a line, an arc or a circle to dimension from the V axis/);
   await clickAt(30, 25); await hover(42, 30);
-  await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'datum'); await expect(preview).toContainText('30 mm');
+  await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'point-line'); await expect(preview).toContainText('30 mm');
   await expect(canvas).toHaveAccessibleDescription(/^Distance · Click or press Enter to place/);
   await clickAt(42, 30);
   await expect.poll(async () => (await settled()).relations.length).toBe(drawn.relations.length + 1);
@@ -71,9 +71,9 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   for (let step = 0; step < 2; step++) { await canvas.focus(); await page.keyboard.press('Control+z'); }
   await expect.poll(async () => (await settled()).relations).toEqual(drawn.relations);
 
-  // The right side first, then the Y axis, places the same distance.
+  // The right side first, then the V axis, places the same distance.
   await startDimension(); await clickAt(30, 25); await clickAt(0, 25); await hover(42, 30);
-  await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'datum');
+  await expect(preview).toHaveAttribute('data-cad-dimension-preview', 'point-line');
   await expect(canvas).toHaveAccessibleDescription(/^Distance · Click or press Enter to place/);
   await clickAt(42, 30);
   await expect.poll(async () => (await settled()).relations.length).toBe(drawn.relations.length + 1);
@@ -83,15 +83,16 @@ test('dimensions a rectangle side from the Y axis in either pick order as a plai
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect((await settled()).relations).toEqual([...drawn.relations, distance]); expect((await context(page)).version).toBe(again.version);
 
-  // The top side runs across the Y axis, so it has no distance from it: the reason shows, and the picks stay for another choice.
-  const refused = /^Dimension · This line is not parallel to the Y axis, so it has no distance from it\./;
+  // The top side runs across the V axis, so it takes an angle to it rather than a distance; Horizontal keeps that angle already, so the
+  // reason shows, and the picks, the axis among them, stay for another choice.
+  const refused = /^Dimension · Remove Horizontal before adding Angle\./;
   await startDimension(); await clickAt(10, 40); await clickAt(0, 25);
   await expect(canvas).toHaveAccessibleDescription(refused); await expect(preview).toHaveCount(0);
-  await expect(yAxis).toHaveClass(/is-selected/);
-  expect((await call(page, 'cad_get_viewport', { expectedVersion: again.version })).selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: top.id }]);
+  await expect(vAxis).toHaveClass(/is-selected/);
+  expect((await call(page, 'cad_get_viewport', { expectedVersion: again.version })).selectedSketchGeometrySet).toEqual([{ kind: 'entity', id: top.id }, { kind: 'entity', id: '@v' }]);
   // Enter cannot place it either; the status message, named for the part, gives the same reason.
   await canvas.focus(); await page.keyboard.press('Enter');
-  await expect(page.getByText(/: This line is not parallel to the Y axis, so it has no distance from it\.$/).first()).toBeVisible();
-  await expect(canvas).toHaveAccessibleDescription(refused); await expect(yAxis).toHaveClass(/is-selected/);
+  await expect(page.getByText(/: Remove Horizontal before adding Angle\.$/).first()).toBeVisible();
+  await expect(canvas).toHaveAccessibleDescription(refused); await expect(vAxis).toHaveClass(/is-selected/);
   expect((await context(page)).version).toBe(again.version);
 });

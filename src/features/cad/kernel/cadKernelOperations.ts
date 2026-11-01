@@ -1,6 +1,7 @@
 import { cast, getOC, isShape3D, type Edge, type Face, type Shape3D } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadKernelDisposeOwned, cadKernelSolids } from './cadKernelShapes';
+import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
 
 /** Explicit native builder lifetimes also cover rejected kernel operations. */
 export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], kind: 'fillet' | 'chamfer', radius: number, tangentPropagation = false): Shape3D {
@@ -35,7 +36,7 @@ export function applyCadEdgeOperation(shape: Shape3D, edges: readonly Edge[], ki
 }
 
 export function applyCadShell(shape: Shape3D, opening: Face, thickness: number): Shape3D {
-  if (thickness <= 1e-7) throw new CadError('shell-thickness', 'Shell thickness must exceed the kernel tolerance of 0.0000001 mm.');
+  if (thickness <= CAD_PRECISION.minimumLengthMm) throw new CadError('shell-thickness', 'Shell thickness must exceed the kernel tolerance of 0.0000001 mm.');
   const solids = cadKernelSolids(shape);
   try {
     if (solids.length !== 1) throw new CadError('shell-components', 'Shell currently requires one connected solid. Choose a body without disconnected pattern instances.');
@@ -46,7 +47,7 @@ export function applyCadShell(shape: Shape3D, opening: Face, thickness: number):
   try {
     faces.Append(opening.wrapped);
     // OpenCascade uses negative offset for inward walls; the public feature is positive.
-    builder.MakeThickSolidByJoin(shape.wrapped, faces, -thickness, 1e-7,
+    builder.MakeThickSolidByJoin(shape.wrapped, faces, -thickness, CAD_PRECISION.kernelConfusionMm,
       oc.BRepOffset_Mode.BRepOffset_Skin, false, false, oc.GeomAbs_JoinType.GeomAbs_Arc, false);
     if (!builder.IsDone()) throw new CadError('shell-failed', 'OpenCascade could not shell this body. Reduce the thickness or choose another planar opening.');
     const raw = builder.Shape();

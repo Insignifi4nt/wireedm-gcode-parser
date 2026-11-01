@@ -13,7 +13,7 @@ import { prepareCadSketchGraphCells } from './cadSketchGraphCells';
 export type { CadSketchCellMode, CadSketchCellId } from './cadSketchRegionSelection';
 import { readCadSketchGeometryParameters, sameCadSketchGeometryValues } from './cadSketchParameterReads';
 import { CadSketchSplitTargetSchema, splitCadSketchEntity, type CadSketchSplitTarget } from './cadSketchSplit';
-import { CadSketchTrimTargetSchema, prepareCadSketchTrim, trimCadSketchEntity, type CadSketchTrimTarget,
+import { CadSketchCutAxesSchema, CadSketchTrimTargetSchema, prepareCadSketchTrim, trimCadSketchEntity, type CadSketchTrimTarget,
   CadSketchExtendTargetSchema, prepareCadSketchExtend, extendCadSketchEntity, type CadSketchExtendTarget } from './cadSketchTrimExtend';
 import { CadSketchOffsetRequestSchema, prepareCadSketchOffset, type CadSketchOffsetRequest } from './cadSketchOffset';
 import { CadSketchMirrorRequestSchema, prepareCadSketchMirror, type CadSketchMirrorRequest } from './cadSketchMirror';
@@ -230,9 +230,9 @@ export const CadSketchTrimAtSchema = Type.Object({ entityId: CadSketchTrimTarget
 export const CadSketchExtendAtSchema = Type.Object({ entityId: CadSketchExtendTargetSchema.properties.entityId,
   end: CadSketchExtendTargetSchema.properties.end }, { additionalProperties: false });
 export type CadSketchRegionInspectionInput = { readonly offset?: number; readonly limit?: number; readonly mode?: CadSketchCellMode } & (
-  | { readonly proposal?: CadSketchRegionProposal; readonly trimAt?: never; readonly extendAt?: never }
-  | { readonly trimAt: Readonly<Pick<CadSketchTrimTarget, 'entityId' | 'parameter'>>; readonly proposal?: never; readonly extendAt?: never }
-  | { readonly extendAt: Readonly<Pick<CadSketchExtendTarget, 'entityId' | 'end'>>; readonly proposal?: never; readonly trimAt?: never }
+  | { readonly proposal?: CadSketchRegionProposal; readonly trimAt?: never; readonly extendAt?: never; readonly axes?: never }
+  | { readonly trimAt: Readonly<Pick<CadSketchTrimTarget, 'entityId' | 'parameter'>>; readonly proposal?: never; readonly extendAt?: never; readonly axes?: readonly string[] }
+  | { readonly extendAt: Readonly<Pick<CadSketchExtendTarget, 'entityId' | 'end'>>; readonly proposal?: never; readonly trimAt?: never; readonly axes?: readonly string[] }
 );
 
 /** The requested window is a read boundary, not an authored cell-count ceiling. */
@@ -246,16 +246,18 @@ export function inspectCadSketchRegions(document: CadDocument, sketchId: string,
   if (input.mode !== undefined && input.mode !== 'contours' && input.mode !== 'graph-cells'
     || [input.proposal, input.trimAt, input.extendAt].filter(mode => mode !== undefined).length > 1
     || input.trimAt !== undefined && (!isCadImportData(input.trimAt) || !Value.Check(CadSketchTrimAtSchema, input.trimAt))
-    || input.extendAt !== undefined && (!isCadImportData(input.extendAt) || !Value.Check(CadSketchExtendAtSchema, input.extendAt)))
+    || input.extendAt !== undefined && (!isCadImportData(input.extendAt) || !Value.Check(CadSketchExtendAtSchema, input.extendAt))
+    // The axes named to cut at belong to a Trim or Extend query.
+    || input.axes !== undefined && (input.trimAt === undefined && input.extendAt === undefined || !isCadImportData(input.axes) || !Value.Check(CadSketchCutAxesSchema, input.axes)))
     throw new CadError('invalid-region-proposal', 'Query one accepted Trim or Extend target separately from a proposed source.');
   const { sketch, parameters } = activeSketch(document, sketchId, input.proposal);
   const trimPreview = input.trimAt === undefined ? undefined : (() => {
     if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
-    return prepareCadSketchTrim({ graph: sketch.graph, parameters, ...input.trimAt });
+    return prepareCadSketchTrim({ graph: sketch.graph, parameters, ...input.trimAt, axes: input.axes });
   })();
   const extendPreview = input.extendAt === undefined ? undefined : (() => {
     if (!sketch.graph) throw new CadError('missing-sketch-graph', 'Choose an existing entity-based sketch.');
-    return prepareCadSketchExtend({ graph: sketch.graph, parameters, ...input.extendAt });
+    return prepareCadSketchExtend({ graph: sketch.graph, parameters, ...input.extendAt, axes: input.axes });
   })();
   const prepared = prepareCadSketchCells(sketch, parameters, input.mode ?? 'contours');
   const start = Math.min(offset, prepared.cells.length), end = start + Math.min(limit, prepared.cells.length - start);

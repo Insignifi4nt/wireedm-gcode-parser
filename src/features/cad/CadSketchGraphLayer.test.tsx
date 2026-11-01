@@ -244,7 +244,7 @@ describe('graph point interaction ownership', () => {
     await h.pointer(h.point(), 'pointerdown');
     await h.pointer(h.point(), 'pointermove', { clientX: 110, clientY: 100 });
     // The joined alias moves along; only the X axis the point slides on attracts it.
-    expect(container.querySelector('[data-cad-sketch-snap]')?.getAttribute('data-cad-sketch-snap')).toBe('x-axis');
+    expect(container.querySelector('[data-cad-sketch-snap]')?.getAttribute('data-cad-sketch-snap')).toBe('@h');
     expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('10');
     await h.key(h.point(), 'Escape');
     await h.pointer(h.point('mixed'), 'pointerdown');
@@ -277,7 +277,7 @@ describe('graph point interaction ownership', () => {
     expect(hint()?.getAttribute('aria-label')).toMatch(/^On line · vertical with point · /);
     expect(container.querySelector('.cad-sketch-drag-target')?.getAttribute('cx')).toBe('30');
     await h.pointer(h.point('p'), 'pointermove', { clientX: 89.7, clientY: 90 });
-    expect(hint()?.getAttribute('data-cad-sketch-snap')).toBe('y-axis');
+    expect(hint()?.getAttribute('data-cad-sketch-snap')).toBe('@v');
     await h.pointer(h.point('p'), 'pointerup', { clientX: 89.7, clientY: 90 });
     expect(h.edited).toHaveBeenCalledExactlyOnceWith([{ kind: 'move-sketch-point', sketchId: 'sketch', pointId: 'p', translation: [-10, 10] }], expect.any(AbortSignal));
   });

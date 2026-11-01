@@ -6,6 +6,7 @@ import { cadKernelBuilders } from './cadKernelBuilders';
 import { cadSolidImportBytes, parseCadSolidImportSource, type CadSolidImportResult, type CadSolidImportSource } from '../../../domain/cad/cadImports';
 import { CadKernelTopology } from './cadKernelTopology';
 import { assertCadStepLengthUnits } from './cadKernelStepUnits';
+import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
 
 function castSolid(raw: TopoDS_Shape): Shape3D {
   const shape = cast(raw);
@@ -67,7 +68,7 @@ function readStl(path: string, bytes: Uint8Array, units: 'mm' | 'inch'): Shape3D
   if (facets < 4) throw new CadError('stl-facets', 'Closed faceted STL import requires at least four complete triangles.');
   const oc = getOC(); const reader = new oc.StlAPI_Reader(); const raw = new oc.TopoDS_Shell();
   let input: Shape3D | undefined;
-  const sewing = new oc.BRepBuilderAPI_Sewing(1e-7, true, true, false, false);
+  const sewing = new oc.BRepBuilderAPI_Sewing(CAD_PRECISION.kernelConfusionMm, true, true, false, false);
   try {
     if (!reader.Read(raw, path) || raw.IsNull()) throw new CadError('stl-read', 'OpenCascade could not read this STL file.');
     input = castSolid(raw);
@@ -128,7 +129,7 @@ function analyze(shape: Shape3D, source: CadSolidImportSource, sourceBytes: numb
       try {
         oc.BRepGProp.VolumeProperties(solid.wrapped, properties, false, false, false);
         const componentVolume = properties.Mass();
-        if (!Number.isFinite(componentVolume) || componentVolume <= 1e-9) throw new CadError('import-volume', 'Every imported solid must have positive volume and consistent outward orientation.');
+        if (!Number.isFinite(componentVolume) || componentVolume <= CAD_PRECISION.kernelMinimumVolumeMm3) throw new CadError('import-volume', 'Every imported solid must have positive volume and consistent outward orientation.');
         volume += componentVolume;
       } finally { properties.delete(); }
     }

@@ -9,6 +9,8 @@ import { checkCadSketchLineRelation, cadSketchLineDirection, resolveCadSketchLin
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { cadSketchLineSupportIntersection } from './cadSketchAngleRelations';
 import type { Point2 } from '@/domain/path-intel/types';
+import { cadRoundoff } from '@/domain/precision/cadPrecision';
+import { CadSketchPositions } from './sketch-relations/cadSketchVirtualElements';
 
 const positive = 'Point to line distance must be a positive length; use Point on line for zero.';
 
@@ -134,7 +136,7 @@ interface CreationInput {
 }
 function numericPoints(input: CreationInput, pointIds: readonly string[]): ReadonlyMap<string, Point2> {
   if (!Value.Check(CadIdentifierSchema, input.relationId)) throw new CadError('invalid-sketch-point-line-distance', 'Choose a valid distance relation identity.');
-  return new Map(input.graph.points.filter(point => pointIds.includes(point.id)).map(point => [point.id,
+  return new CadSketchPositions(input.graph.points.filter(point => pointIds.includes(point.id)).map(point => [point.id,
     { x: evaluateCadScalar(point.position[0], input.parameters), y: evaluateCadScalar(point.position[1], input.parameters) }]));
 }
 
@@ -169,7 +171,7 @@ export function createCadSketchLinePairDistance(input: CreationInput & { readonl
   const points = numericPoints(input, [first.startPointId, first.endPointId, second.startPointId, second.endPointId]);
   const a = cadSketchLineDirection(first, points), b = cadSketchLineDirection(second, points);
   if (!a || !b) throw new CadError('missing-sketch-point', 'The distance needs numeric source points.');
-  const parallel = Math.abs(a.x * b.y - a.y * b.x) <= 32 * Number.EPSILON
+  const parallel = Math.abs(a.x * b.y - a.y * b.x) <= cadRoundoff(32)
     || !checkCadSketchLineRelation(input.graph, { id: input.relationId, kind: 'parallel', lineIds: input.lineIds }, points).length;
   if (!parallel && !cornerTooFar(a, b)) return null;
   const identity = resolveCadSketchPointIdentities(input.graph), shared = new Set([first.startPointId, first.endPointId].map(identity));

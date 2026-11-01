@@ -12,6 +12,7 @@ import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { createArcSegment, createCircleSegment, createLineSegment } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export const CadSketchProfileCopyRequestSchema = Type.Object({
   sourceSketchId: CadIdentifierSchema, profileId: CadIdentifierSchema, newSketchId: CadIdentifierSchema,
@@ -45,14 +46,14 @@ function checkSupport(source: PathSegment, result: PathSegment): void {
     const a = { x: source.end.x - source.start.x, y: source.end.y - source.start.y };
     const b = { x: result.end.x - result.start.x, y: result.end.y - result.start.y };
     const q = Math.abs((a.x / source.length) * (b.y / result.length) - (a.y / source.length) * (b.x / result.length));
-    if (q > 1e-12 || q * Math.max(source.length, result.length) > tolerance || a.x * b.x + a.y * b.y <= 0) return precision();
+    if (q > CAD_PRECISION.angularAccuracyRad || q * Math.max(source.length, result.length) > tolerance || a.x * b.x + a.y * b.y <= 0) return precision();
   } else if (source.kind !== 'line' && result.kind !== 'line') {
     if (source.center.x !== result.center.x || source.center.y !== result.center.y || Math.abs(source.radius - result.radius) > tolerance) return precision();
     if (source.kind === 'arc' && result.kind === 'arc') {
       const error = Math.abs(source.sweepRadians - result.sweepRadians), side = Math.sign(Math.abs(source.sweepRadians) - Math.PI);
       const cross = (edge: typeof source) => (edge.start.x - edge.center.x) * (edge.end.y - edge.center.y) - (edge.start.y - edge.center.y) * (edge.end.x - edge.center.x);
       // Exact authored half-turns have no strict minor/major side. No near-π classification.
-      if (error > 1e-12 || error * source.radius > tolerance || Math.sign(source.sweepRadians) !== Math.sign(result.sweepRadians)
+      if (error > CAD_PRECISION.angularAccuracyRad || error * source.radius > tolerance || Math.sign(source.sweepRadians) !== Math.sign(result.sweepRadians)
         || side !== 0 && (side !== Math.sign(Math.abs(result.sweepRadians) - Math.PI) || cross(source) !== 0 && Math.sign(cross(source)) !== Math.sign(cross(result)))
         || [result.start, result.end].some(point => Math.abs(Math.hypot(point.x - source.center.x, point.y - source.center.y) - source.radius) > tolerance)) return precision();
     }

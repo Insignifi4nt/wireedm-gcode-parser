@@ -8,20 +8,22 @@ import { cadSketchLineAngleSectors, createCadSketchLineAngleRelation, type CadSk
 import type { Point2 } from '@/domain/path-intel/types';
 import { measureCadSketchReferenceDimension } from '@/domain/cad/cadSketchReferenceDimensions';
 import { userFacingMessage } from '@/lib/userMessage';
-import { CAD_SKETCH_NO_REFERENCE_DATUM, cadSketchDistanceForPair, cadSketchMatchingReference, cadSketchPointLineDistanceFor, cadSketchRadialRelationForEntity } from './cadSketchDimensionCommands';
+import { CAD_SKETCH_NO_REFERENCE_HOLD, cadSketchDistanceForPair, cadSketchMatchingReference, cadSketchPointLineDistanceFor, cadSketchRadialRelationForEntity, cadSketchSameIdentityPair } from './cadSketchDimensionCommands';
 import { isCadSketchDimensionRelation } from './cadSketchDimensionSelection';
-import { cadSketchDatumName, type CadSketchDatum, type CadSketchGraphSelection } from './cadSketchGraphSelection';
+import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
+import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_ORIGIN_ID, CAD_SKETCH_V_AXIS_ID, cadSketchAxisNormal, cadSketchVirtualPosition, cadSketchVirtualSubject,
+  isCadSketchVirtualAxisId, isCadSketchVirtualSelection, type CadSketchVirtualAxisId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 
-/** One pick of the Dimension tool: sketch geometry, or the plane origin or one of its axes. */
-export type CadSketchDimensionOperand = CadSketchGraphSelection | { readonly kind: 'datum'; readonly id: CadSketchDatum };
+/** One pick of the Dimension tool: a sketch point or edge, the origin as a point, or the H or V axis as an edge. */
+export type CadSketchDimensionOperand = CadSketchGraphSelection;
 
 /**
- * What a placed dimension measures. Point pairs, a line's ends, curve centers and a point with the origin take `aligned`, `horizontal`
- * or `vertical`; an arc or circle takes `radius` or `diameter`; a point, arc or circle with a line, or two parallel lines, take
- * `point-line`; other line pairs take `angle`; `datum` holds a point, a center or a line parallel to an axis at its distance from the
- * axis, or a point at its position from the origin.
+ * What a placed dimension measures. Point pairs, a line's ends, curve centers and a point or center with the origin take `aligned`,
+ * `horizontal` or `vertical`; an arc or circle takes `radius` or `diameter`; a point, the origin, an arc or circle with a line, a point,
+ * arc or circle with an axis, two parallel lines and a line along an axis take `point-line`; other line pairs, and a line with an axis,
+ * take `angle`.
  */
-export type CadSketchDimensionForm = 'aligned' | 'horizontal' | 'vertical' | 'radius' | 'diameter' | 'point-line' | 'angle' | 'datum';
+export type CadSketchDimensionForm = 'aligned' | 'horizontal' | 'vertical' | 'radius' | 'diameter' | 'point-line' | 'angle';
 
 /**
  * The measurements of a candidate, and an angle's sectors that the pointer chooses among; nothing in it depends on the pointer, so the plan
@@ -31,9 +33,7 @@ export type CadSketchDimensionPreviewSource =
   | { readonly kind: 'pair'; readonly form: 'aligned' | 'horizontal' | 'vertical'; readonly points: readonly [Point2, Point2]; readonly value: number }
   | { readonly kind: 'point-line'; readonly point: Point2; readonly line: readonly [Point2, Point2]; readonly value: number }
   | { readonly kind: 'radial'; readonly quantity: 'radius' | 'diameter'; readonly center: Point2; readonly radius: number; readonly value: number }
-  | { readonly kind: 'angle'; readonly sectors: readonly CadSketchDimensionAngleSector[]; readonly fallback: number | null }
-  /** Each axis draws the point's coordinate from the other axis: X from the Y axis, Y from the X axis. */
-  | { readonly kind: 'datum'; readonly point: Point2; readonly axes: readonly ('x' | 'y')[] };
+  | { readonly kind: 'angle'; readonly sectors: readonly CadSketchDimensionAngleSector[]; readonly fallback: number | null };
 export interface CadSketchDimensionAngleSector { readonly relation: Extract<CadSketchGraphRelation, { kind: 'line-angle' }>; readonly geometry: CadSketchLineAngleGeometry }
 
 interface CandidateBase { readonly form: CadSketchDimensionForm; readonly label: string }
@@ -43,8 +43,7 @@ interface CandidateBase { readonly form: CadSketchDimensionForm; readonly label:
  *   Parallel that keeps two lines parallel, which is left out when the sketch already holds it. `reference` is the reference form that
  *   measures the same quantity, or null with `referenceReason`. `reuses` names a relation that already measures this, or part of it, and
  *   stays: one end of a line held from an axis without Horizontal, where `relations` holds only the implied relation that keeps it measuring
- *   the picks, or the one coordinate a point already keeps from the origin, where `relations` holds the other. Placing selects what it reuses
- *   and adds that is a dimension, which leaves out a coordinate held at a plain 0: that is the relation that keeps a point on an axis.
+ *   the picks. Placing selects what it reuses and adds that is a dimension.
  * - `existing` names the relations that already measure this; placing selects those that are dimensions.
  * - `blocked` says why the picks cannot take this form as a driving dimension. When the reference model still measures the quantity, such as
  *   a zero distance, `reference` and `preview` carry its reference form, which the menu can place.
@@ -89,10 +88,7 @@ export function cadSketchPointPairDimensionForm(a: Point2, b: Point2, pointer: P
 export function cadSketchDimensionCandidateAt(plan: CadSketchDimensionPlan, pointer: Point2 | null): CadSketchDimensionCandidate | null {
   if (!plan.candidates.length) return null;
   const form = plan.pair && pointer ? cadSketchPointPairDimensionForm(plan.pair[0], plan.pair[1], pointer) : plan.defaultForm;
-  const datumPair = plan.candidates.some(candidate => candidate.form === 'datum') && plan.pair;
-  // The origin and a point have no aligned distance; inside their box the point takes its position from the origin, both X and Y.
-  const wanted = datumPair && form === 'aligned' ? 'datum' : form;
-  const chosen = plan.candidates.find(candidate => candidate.form === wanted);
+  const chosen = plan.candidates.find(candidate => candidate.form === form);
   return chosen && chosen.state !== 'blocked' ? chosen : plan.candidates.find(candidate => candidate.form === plan.defaultForm) ?? plan.candidates[0];
 }
 
@@ -155,97 +151,93 @@ export function cadSketchDimensionRetry(feedback: CadSketchDimensionFeedback | n
   return !attempt.reference && attempt.hasReference && (feedback.reason === 'redundant' || feedback.reason === 'conflicting') ? 'reference' : null;
 }
 
-/** The geometry, points and plane references the Dimension tool takes next. */
-export interface CadSketchDimensionEligibility { readonly entityIds: readonly string[]; readonly pointIds: readonly string[]; readonly datums: readonly CadSketchDatum[] }
-const ALL_DATUMS: readonly CadSketchDatum[] = Object.freeze(['origin', 'x-axis', 'y-axis']), AXES: readonly CadSketchDatum[] = Object.freeze(['x-axis', 'y-axis']);
-const NOTHING: CadSketchDimensionEligibility = Object.freeze({ entityIds: [], pointIds: [], datums: [] });
+/** The points and edges the Dimension tool takes next, the origin among the points and the axes among the edges. */
+export interface CadSketchDimensionEligibility { readonly entityIds: readonly string[]; readonly pointIds: readonly string[] }
+const NOTHING: CadSketchDimensionEligibility = Object.freeze({ entityIds: [], pointIds: [] });
 /**
  * What the next pick may be, from `targets`, the edges and points a dimension may measure at all:
- * - first: any edge, point, the origin or an axis;
+ * - first: any edge or point, the origin or an axis;
  * - after a point: another point, a line it does not end, a curve it is not the center of, the origin or an axis;
- * - after a line: any other edge, the same line again to place its length when it can take one, a point it does not end, or an axis;
+ * - after a line: any other edge, the same line again to place its length when it can take one, a point it does not end, the origin or
+ *   an axis;
  * - after an arc or circle: any other edge, the same one again to place its size when it can take one, a point other than its center,
  *   the origin or an axis;
  * Edges outside `sizedEntityIds`, such as linked ones, take no size of their own and pair only with other picks.
- * - after the origin: a point, an arc or a circle; after an axis: a point, an arc, a circle or a line. A line across the axis, or a point or
- *   line on it, stays pickable, so the tool can say why it takes no distance;
+ * - after the origin or an axis: any point or edge of the sketch, but not the origin or an axis, which are fixed together already. A line
+ *   across an axis, or a point or line on it, stays pickable, so the tool can say why it takes no distance;
  * - after two picks: nothing, so a click anywhere places the dimension.
  */
 export function cadSketchDimensionPickEligibility(graph: CadSketchGraph, targets: { readonly entityIds: readonly string[]; readonly sizedEntityIds: readonly string[]; readonly pointIds: readonly string[] },
   operands: readonly CadSketchDimensionOperand[]): CadSketchDimensionEligibility {
   if (operands.length > 1) return NOTHING;
   const first = operands[0];
-  if (!first) return { entityIds: targets.entityIds, pointIds: targets.pointIds, datums: ALL_DATUMS };
+  const withOrigin = (ids: readonly string[]) => [...ids, CAD_SKETCH_ORIGIN_ID], withAxes = (ids: readonly string[]) => [...ids, CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_V_AXIS_ID];
+  if (!first) return { entityIds: withAxes(targets.entityIds), pointIds: withOrigin(targets.pointIds) };
+  if (isCadSketchVirtualSelection(first)) return { entityIds: targets.entityIds, pointIds: targets.pointIds };
   const entityOf = (id: string) => graph.entities.find(entity => entity.id === id);
-  if (first.kind === 'datum') return { entityIds: first.id === 'origin' ? targets.entityIds.filter(id => entityOf(id)?.kind !== 'line') : targets.entityIds, pointIds: targets.pointIds, datums: [] };
-  if (first.kind === 'point') return { entityIds: targets.entityIds.filter(id => {
+  if (first.kind === 'point') return { entityIds: withAxes(targets.entityIds.filter(id => {
     const entity = entityOf(id);
     return entity?.kind === 'line' ? entity.startPointId !== first.id && entity.endPointId !== first.id : entity?.centerPointId !== first.id;
-  }), pointIds: targets.pointIds.filter(id => id !== first.id), datums: ALL_DATUMS };
+  })), pointIds: withOrigin(targets.pointIds.filter(id => id !== first.id)) };
   const entity = entityOf(first.id);
   if (!entity) return NOTHING;
-  const entityIds = targets.entityIds.filter(id => id !== entity.id || targets.sizedEntityIds.includes(id));
-  if (entity.kind === 'line') return { entityIds, pointIds: targets.pointIds.filter(id => id !== entity.startPointId && id !== entity.endPointId), datums: AXES };
-  return { entityIds, pointIds: targets.pointIds.filter(id => id !== entity.centerPointId), datums: ALL_DATUMS };
+  const entityIds = withAxes(targets.entityIds.filter(id => id !== entity.id || targets.sizedEntityIds.includes(id)));
+  if (entity.kind === 'line') return { entityIds, pointIds: withOrigin(targets.pointIds.filter(id => id !== entity.startPointId && id !== entity.endPointId)) };
+  return { entityIds, pointIds: withOrigin(targets.pointIds.filter(id => id !== entity.centerPointId)) };
 }
 /** Whether `operand` may follow the picks `eligibility` was made for. */
 export function cadSketchDimensionPickAllowed(eligibility: CadSketchDimensionEligibility, operand: CadSketchDimensionOperand): boolean {
-  return operand.kind === 'datum' ? eligibility.datums.includes(operand.id) : operand.kind === 'point' ? eligibility.pointIds.includes(operand.id) : eligibility.entityIds.includes(operand.id);
+  return (operand.kind === 'point' ? eligibility.pointIds : eligibility.entityIds).includes(operand.id);
 }
 /** Preselected operands the tool can start from, in the order given, or none when they do not form picks it takes. */
 export function cadSketchDimensionPreselection(graph: CadSketchGraph, targets: Parameters<typeof cadSketchDimensionPickEligibility>[1], operands: readonly CadSketchDimensionOperand[]): readonly CadSketchDimensionOperand[] {
   if (operands.length > 2) return [];
   // The same edge twice places its own dimension; as a preselection it is one pick.
   return operands.every((operand, index) => cadSketchDimensionPickAllowed(cadSketchDimensionPickEligibility(graph, targets, operands.slice(0, index)), operand)
-    && !(index === 1 && operand.kind !== 'datum' && operands[0].kind === operand.kind && operands[0].id === operand.id)) ? operands : [];
+    && !(index === 1 && operands[0].kind === operand.kind && operands[0].id === operand.id)) ? operands : [];
 }
 
 const NO_REFERENCE_PAIR ='A horizontal or vertical distance has no reference form yet.';
 const NO_REFERENCE_ANGLE = 'An angle has no reference form yet.';
-const NO_REFERENCE_DATUM = CAD_SKETCH_NO_REFERENCE_DATUM;
+const NO_REFERENCE_HOLD = CAD_SKETCH_NO_REFERENCE_HOLD;
 /** Why placing selects a dimension that already measures the picks instead of adding one. */
 export const CAD_SKETCH_DIMENSION_EXISTING_REASON = 'This is already dimensioned. Placing selects that dimension and moves it where the preview shows it.';
 const EXISTING = CAD_SKETCH_DIMENSION_EXISTING_REASON;
 const REUSED = 'This is already dimensioned. Placing selects that dimension, moves it where the preview shows it and adds the relation that keeps it measuring these picks.';
 /**
- * What placing says when none of the relations it placed or reused is a dimension: each is a coordinate held at a plain 0, the relation that
- * keeps a point on an axis, or at the origin with both. Null when one of them is a dimension, or when they are not all such coordinates.
- */
-export function cadSketchDimensionOnDatumReason(relations: readonly CadSketchGraphRelation[]): string | null {
-  if (!relations.length || relations.some(relation => relation.kind !== 'fixed-axis' || isCadSketchDimensionRelation(relation))) return null;
-  const axes = new Set(relations.flatMap(relation => relation.kind === 'fixed-axis' ? [relation.axis] : []));
-  return axes.size === 2 ? 'The point sits at the origin, so relations keep it there and there is no dimension to select.'
-    : `The point sits on the ${cadSketchDatumName(axes.has('x') ? 'y-axis' : 'x-axis')}, so a relation keeps it there and there is no dimension to select.`;
-}
-
-/**
  * The dimensions `operands` can take, in the Dimension tool's pick rules: one line or sized arc or circle; two points; a point, arc or
  * circle with a line; two lines; a point with an arc or circle, or two of them, by their centers; a point, an arc or circle center or a
- * line with the origin or an axis. Values are the current measurements, so placing one moves nothing. One line always places its length; its
- * horizontal and vertical distances are candidates the menu names, and only a pair of positions lets the pointer choose among them.
+ * line with the origin or an axis. The origin is a point and the axes are lines, so they take the dimensions a point or line takes, kept in
+ * the form the sketch stores: a distance along an axis from the origin, or from an axis, holds the coordinate it measures. Values are the
+ * current measurements, so placing one moves nothing. One line always places its length; its horizontal and vertical distances are
+ * candidates the menu names, and only a pair of positions lets the pointer choose among them.
  */
 export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, operands: readonly CadSketchDimensionOperand[],
   newId: () => string, sizedEntityIds?: readonly string[]): CadSketchDimensionPlan {
   const at = (pointId: string): Point2 => {
+    if (pointId === CAD_SKETCH_ORIGIN_ID) return ORIGIN;
     const point = graph.points.find(item => item.id === pointId);
     if (!point) throw new CadError('missing-sketch-point', 'The picked geometry is no longer available.');
     return { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) };
   };
   const entityOf = (id: string) => graph.entities.find(entity => entity.id === id);
-  const datum = operands.find((operand): operand is Extract<CadSketchDimensionOperand, { kind: 'datum' }> => operand.kind === 'datum')?.id ?? null;
-  const geometry = operands.filter((operand): operand is CadSketchGraphSelection => operand.kind !== 'datum');
+  const axis = operands.find(operand => operand.kind === 'entity' && isCadSketchVirtualAxisId(operand.id))?.id as CadSketchVirtualAxisId | undefined;
+  const geometry = operands.filter(operand => !isCadSketchVirtualSelection(operand));
   const lines = geometry.flatMap(operand => { const entity = operand.kind === 'entity' ? entityOf(operand.id) : undefined; return entity?.kind === 'line' ? [entity] : []; });
   const curves = geometry.flatMap(operand => { const entity = operand.kind === 'entity' ? entityOf(operand.id) : undefined; return entity && entity.kind !== 'line' ? [entity] : []; });
   const points = geometry.filter(operand => operand.kind === 'point').map(operand => operand.id);
   if (geometry.length !== lines.length + curves.length + points.length) return NO_SKETCH_DIMENSION_PLAN;
+  // The origin and the axes are fixed together, so they take a dimension only with one point or edge of the sketch.
+  if (geometry.length < operands.length && (operands.length !== 2 || geometry.length !== 1)) return NO_SKETCH_DIMENSION_PLAN;
   const plan = (candidates: readonly CadSketchDimensionCandidate[], defaultForm: CadSketchDimensionForm, pair: readonly [Point2, Point2] | null = null): CadSketchDimensionPlan =>
     Object.freeze({ operands, candidates, pair, defaultForm, graph, parameters });
   try {
-    if (datum) {
-      if (geometry.length !== 1) return NO_SKETCH_DIMENSION_PLAN;
-      if (lines.length) return lineFromDatum(lines[0], datum);
-      const pointId = points[0] ?? curves[0].centerPointId;
-      return pointFromDatum(pointId, datum);
+    if (axis) return lines.length ? linePairPlan([lines[0].id, axis]) : plan([pointFromAxis(points[0] ?? curves[0].centerPointId, axis)], 'point-line');
+    if (geometry.length === 1 && operands.length === 2) {
+      // The origin is a point: a line takes its distance from it, and a point or center the distances of a pair.
+      if (lines.length) return plan([pointLine(CAD_SKETCH_ORIGIN_ID, lines[0].id)], 'point-line');
+      const own = points[0] ?? curves[0].centerPointId;
+      return pairPlan(operands[0].id === CAD_SKETCH_ORIGIN_ID ? [CAD_SKETCH_ORIGIN_ID, own] : [own, CAD_SKETCH_ORIGIN_ID], null, curves.length ? 'center' : 'points');
     }
     if (geometry.length === 1) {
       // An edge that takes no size of its own, such as a linked one, waits for a partner.
@@ -278,9 +270,12 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
       return blockedAll(context === 'centers' ? 'These curves share a center. Use Concentric to keep them together.' : context === 'center' ? 'This point is the center. Pick another point.' : 'These points are joined, so they have no distance.');
     const tolerance = cadSketchDriverTolerance([a, b]), length = Math.hypot(b.x - a.x, b.y - a.y);
     const measurement = lineId ? { kind: 'line-length', entityId: lineId } as const : { kind: 'point-distance', pointIds: pointIds } as const;
+    const fromOrigin = pointIds.indexOf(CAD_SKETCH_ORIGIN_ID);
     if (!(length > tolerance)) {
       // Distinct points at one position have no driving distance, but a reference still measures their zero distance.
-      const reason = context === 'centers' ? 'These curves share a center. Use Concentric to keep them together.' : 'These points share one position, so they have no distance.';
+      const reason = context === 'centers' ? 'These curves share a center. Use Concentric to keep them together.'
+        : fromOrigin >= 0 ? `${context === 'center' ? 'This center' : 'This point'} is at the origin, so it has no distance from it. Use Coincident to keep it there.`
+          : 'These points share one position, so they have no distance.';
       const preview = { kind: 'pair', form: 'aligned', points: [a, b], value: length } as const, label = pairLabel('aligned', lineId !== null);
       const existing = cadSketchMatchingReference(graph, measurement), reference = existing ? null : measuredReference(newId(), measurement);
       const aligned: CadSketchDimensionCandidate | null = existing ? { form: 'aligned', label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview }
@@ -298,9 +293,14 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
     };
     const axisCandidate = (form: 'horizontal' | 'vertical'): CadSketchDimensionCandidate => {
       const axis = form === 'horizontal' ? 'x' : 'y', label = pairLabel(form, lineId !== null), delta = axis === 'x' ? b.x - a.x : b.y - a.y;
-      if (!(Math.abs(delta) > tolerance)) return { form, label, state: 'blocked', reason: form === 'horizontal' ? 'These points are upright, so they have no horizontal distance.' : 'These points are level, so they have no vertical distance.' };
       // The preview runs between the points in the order the distance takes them, so placing keeps its drawing.
-      const preview = { kind: 'pair', form, points: (delta >= 0 ? [a, b] : [b, a]) as readonly [Point2, Point2], value: Math.abs(delta) } as const, existing = cadSketchDistanceForPair(graph, pointIds, axis);
+      const preview = { kind: 'pair', form, points: (delta >= 0 ? [a, b] : [b, a]) as readonly [Point2, Point2], value: Math.abs(delta) } as const;
+      const kept = fromOrigin >= 0 ? keptCoordinate(pointIds[1 - fromOrigin], axis, form, label, preview) : null;
+      if (kept) return kept;
+      if (!(Math.abs(delta) > tolerance)) return { form, label, state: 'blocked', reason: form === 'horizontal' ? 'These points are upright, so they have no horizontal distance.' : 'These points are level, so they have no vertical distance.' };
+      // Along an axis from the origin, a point keeps that coordinate.
+      if (fromOrigin >= 0) return coordinateHold(pointIds[1 - fromOrigin], axis, form, label, preview);
+      const existing = cadSketchDistanceForPair(graph, pointIds, axis);
       if (existing) return { form, label, state: 'existing', relationIds: [existing.id], reason: EXISTING, preview };
       // The distance runs from the left or lower point, so its value reads positive.
       const ordered: readonly [string, string] = delta >= 0 ? pointIds : [pointIds[1], pointIds[0]];
@@ -350,12 +350,17 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
         : { form: 'point-line', label, state: 'blocked', reason, reference, preview: measured };
     }
   }
+  /** Two lines, or a line and an axis, which the sketch keeps level or upright where it keeps them parallel or square. */
   function linePairPlan(lineIds: readonly [string, string]): CadSketchDimensionPlan {
-    const orientation = graph.relations.find(relation => (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear')
-      && relation.lineIds.includes(lineIds[0]) && relation.lineIds.includes(lineIds[1]));
+    const axisId = isCadSketchVirtualAxisId(lineIds[1]) ? lineIds[1] : null, line = entityOf(lineIds[0]);
+    const ends = axisId && line?.kind === 'line' ? [line.startPointId, line.endPointId] as const : null, identity = identityOf();
+    const orientation = ends ? graph.relations.find(relation => (relation.kind === 'horizontal' || relation.kind === 'vertical') && cadSketchSameIdentityPair(identity, relation.pointIds, ends))
+      : graph.relations.find(relation => (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear')
+        && relation.lineIds.includes(lineIds[0]) && relation.lineIds.includes(lineIds[1]));
     let distance: CadSketchDimensionCandidate;
     let parallel = false;
-    try {
+    if (axisId) ({ distance, along: parallel } = lineFromAxis(lineIds[0], axisId));
+    else try {
       const created = createCadSketchLinePairDistance({ graph, parameters, lineIds, relationId: newId() });
       if (!created) distance = { form: 'point-line', label: 'Distance', state: 'blocked', reason: 'These lines are not parallel, so they take an angle. Pick a point and a line for a distance.' };
       else {
@@ -394,72 +399,81 @@ export function planCadSketchDimension(graph: CadSketchGraph, parameters: Readon
       try { preview = anglePreview(); } catch (cause) { if (!(cause instanceof CadError)) throw cause; }
       angle = { form: 'angle', label: 'Angle', state: 'existing', relationIds: [existingAngle.id], reason: EXISTING, preview };
     }
-    else if (parallel) angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: 'These lines are parallel, so they have no angle.' };
-    else if (orientation) angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: `Remove ${orientation.kind === 'parallel' ? 'Parallel' : orientation.kind === 'perpendicular' ? 'Perpendicular' : 'Collinear'} before adding Angle.` };
+    else if (parallel) angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: axisId ? `This line is parallel to ${cadSketchVirtualSubject(axisId)}, so it has no angle to it.` : 'These lines are parallel, so they have no angle.' };
+    else if (orientation) angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: `Remove ${ORIENTATION_NAMES[orientation.kind as keyof typeof ORIENTATION_NAMES]} before adding Angle.` };
     else {
       try { angle = { form: 'angle', label: 'Angle', state: 'available', relations: [], implied: null, reuses: null, reference: null, referenceReason: NO_REFERENCE_ANGLE, preview: anglePreview() }; }
       catch (cause) { angle = { form: 'angle', label: 'Angle', state: 'blocked', reason: userFacingMessage(cause, 'These lines cannot take an angle.') }; }
     }
     return plan([distance, angle], distance.state === 'blocked' ? 'angle' : 'point-line');
   }
-  /** A point keeps its coordinate from the other axis; the origin gives both, and by the pointer one of them. */
-  function pointFromDatum(pointId: string, from: CadSketchDatum): CadSketchDimensionPlan {
-    const identity = identityOf(), own = identity(pointId), aliases = graph.points.filter(point => identity(point.id) === own), ids = new Set(aliases.map(alias => alias.id));
-    const point = at(pointId), held = graph.relations.some(relation => relation.kind === 'fixed-point' && ids.has(relation.pointId));
-    const candidate = (form: 'horizontal' | 'vertical' | 'datum', axes: readonly ('x' | 'y')[], label: string): CadSketchDimensionCandidate => {
-      if (held) return { form, label, state: 'blocked', reason: 'This point already has its position from a fixed point or an expression.' };
-      const existing: string[] = [], relations: CadSketchGraphRelation[] = [];
-      for (const axis of axes) {
-        const index = axis === 'x' ? 0 : 1, found = graph.relations.find(relation => relation.kind === 'fixed-axis' && ids.has(relation.pointId) && relation.axis === axis);
-        if (found) existing.push(found.id);
-        else if (aliases.every(alias => typeof alias.position[index] === 'number')) relations.push({ id: newId(), kind: 'fixed-axis', pointId, axis, value: axis === 'x' ? point.x : point.y });
-      }
-      const preview = { kind: 'datum', point, axes } as const;
-      if (!relations.length) return existing.length ? { form, label, state: 'existing', relationIds: existing, reason: EXISTING, preview }
-        : { form, label, state: 'blocked', reason: 'This point already has its position from a fixed point or an expression.' };
-      // Of two coordinates at most one is kept already, and it stays with the one added.
-      return { form, label, state: 'available', relations, implied: null, reuses: existing[0] ?? null, reference: null, referenceReason: NO_REFERENCE_DATUM, preview };
-    };
-    if (from !== 'origin') {
-      // An axis is a line: a point on it has no distance from it, and holding it there is Coincident's, not a dimension's.
-      if (!(Math.abs(from === 'x-axis' ? point.y : point.x) > cadSketchDriverTolerance([point])))
-        return plan([{ form: 'datum', label: 'Distance', state: 'blocked', reason: `This point is on the ${cadSketchDatumName(from)}, so it has no distance from it. Use Coincident to keep it there.` }], 'datum');
-      return plan([candidate('datum', [from === 'x-axis' ? 'y' : 'x'], 'Distance')], 'datum');
-    }
-    return plan([candidate('datum', ['x', 'y'], 'Position from the origin'), candidate('horizontal', ['x'], 'Horizontal distance from the origin'),
-      candidate('vertical', ['y'], 'Vertical distance from the origin')], 'datum', [{ x: 0, y: 0 }, point]);
+  /** Why a point or center has no distance from an axis, or the hold that keeps it, as a candidate. */
+  function pointFromAxis(pointId: string, axisId: CadSketchVirtualAxisId): CadSketchDimensionCandidate {
+    const across = cadSketchAxisNormal(axisId), point = at(pointId), coordinate = across === 'x' ? point.x : point.y;
+    const preview = { kind: 'point-line', point, line: [ORIGIN, cadSketchVirtualPosition(axisId)!], value: Math.abs(coordinate) } as const;
+    const kept = keptCoordinate(pointId, across, 'point-line', 'Distance', preview);
+    if (kept) return kept;
+    // An axis is a line: a point on it has no distance from it, and holding it there is Coincident's, not a dimension's.
+    if (!(Math.abs(coordinate) > cadSketchDriverTolerance([point])))
+      return { form: 'point-line', label: 'Distance', state: 'blocked', reason: `This point is on ${cadSketchVirtualSubject(axisId)}, so it has no distance from it. Use Coincident to keep it there.` };
+    return coordinateHold(pointId, across, 'point-line', 'Distance', preview);
   }
-  /** A line along an axis keeps its distance from it, through one end and Horizontal or Vertical; an angle to an axis has no relation yet. */
-  function lineFromDatum(line: Extract<CadSketchGraph['entities'][number], { kind: 'line' }>, from: CadSketchDatum): CadSketchDimensionPlan {
-    if (from === 'origin') return plan([{ form: 'datum', label: 'Distance from the origin', state: 'blocked', reason: 'A line has no distance from the origin yet. Dimension a point on it from the origin instead.' }], 'datum');
-    const label = 'Distance', a = at(line.startPointId), b = at(line.endPointId), tolerance = cadSketchDriverTolerance([a, b]);
-    const along = from === 'x-axis' ? Math.abs(b.y - a.y) <= tolerance : Math.abs(b.x - a.x) <= tolerance;
-    const angle: CadSketchDimensionCandidate = { form: 'angle', label: 'Angle', state: 'blocked', reason: `An angle to the ${cadSketchDatumName(from)} is not available yet. Draw a construction line along the axis and dimension the angle to it.` };
-    if (!along) return plan([{ form: 'datum', label, state: 'blocked', reason: `This line is not parallel to the ${cadSketchDatumName(from)}, so it has no distance from it.` }, angle], 'datum');
-    const axis = from === 'x-axis' ? 'y' : 'x', kind: 'horizontal' | 'vertical' = from === 'x-axis' ? 'horizontal' : 'vertical', identity = identityOf();
-    const aliases = (pointId: string) => { const own = identity(pointId); return graph.points.filter(point => identity(point.id) === own); };
+  /**
+   * A point's distance along an axis from the origin, or square to an axis, is the coordinate it keeps: the sketch stores it as that
+   * coordinate held at its current value.
+   */
+  /**
+   * The coordinate a point keeps already as a dimension, which placing selects: also at 0 when a parameter gives that 0, where the point lies
+   * on the axis but the hold stays a dimension. A plain 0 is the Coincident that keeps the point there, which no dimension reuses.
+   */
+  function keptCoordinate(pointId: string, axis: 'x' | 'y', form: CadSketchDimensionForm, label: string, preview: CadSketchDimensionPreviewSource): CadSketchDimensionCandidate | null {
+    const identity = identityOf(), own = identity(pointId);
+    const found = graph.relations.find(relation => relation.kind === 'fixed-axis' && relation.axis === axis && identity(relation.pointId) === own);
+    return found && isCadSketchDimensionRelation(found) ? { form, label, state: 'existing', relationIds: [found.id], reason: EXISTING, preview } : null;
+  }
+  function coordinateHold(pointId: string, axis: 'x' | 'y', form: CadSketchDimensionForm, label: string, preview: CadSketchDimensionPreviewSource): CadSketchDimensionCandidate {
+    const identity = identityOf(), own = identity(pointId), aliases = graph.points.filter(point => identity(point.id) === own), ids = new Set(aliases.map(alias => alias.id));
+    const fixed = 'This point already has its position from a fixed point or an expression.';
+    if (graph.relations.some(relation => relation.kind === 'fixed-point' && ids.has(relation.pointId))) return { form, label, state: 'blocked', reason: fixed };
+    const found = graph.relations.find(relation => relation.kind === 'fixed-axis' && ids.has(relation.pointId) && relation.axis === axis);
+    if (found) return { form, label, state: 'existing', relationIds: [found.id], reason: EXISTING, preview };
+    if (!aliases.every(alias => typeof alias.position[axis === 'x' ? 0 : 1] === 'number')) return { form, label, state: 'blocked', reason: fixed };
+    const point = at(pointId);
+    return { form, label, state: 'available', relations: [{ id: newId(), kind: 'fixed-axis', pointId, axis, value: axis === 'x' ? point.x : point.y }], implied: null, reuses: null,
+      reference: null, referenceReason: NO_REFERENCE_HOLD, preview };
+  }
+  /** A line along an axis keeps its distance from it, through one end held from the axis and Horizontal or Vertical. */
+  function lineFromAxis(lineId: string, axisId: CadSketchVirtualAxisId): { readonly distance: CadSketchDimensionCandidate; readonly along: boolean } {
+    const line = entityOf(lineId);
+    if (line?.kind !== 'line') throw new CadError('missing-sketch-line', 'The picked line is no longer available.');
+    const label = 'Distance', a = at(line.startPointId), b = at(line.endPointId), tolerance = cadSketchDriverTolerance([a, b]), name = cadSketchVirtualSubject(axisId);
+    const axis = cadSketchAxisNormal(axisId), kind: 'horizontal' | 'vertical' = axis === 'y' ? 'horizontal' : 'vertical';
+    const along = axis === 'y' ? Math.abs(b.y - a.y) <= tolerance : Math.abs(b.x - a.x) <= tolerance;
+    const result = (distance: CadSketchDimensionCandidate) => ({ distance, along });
+    if (!along) return result({ form: 'point-line', label, state: 'blocked', reason: `This line is not parallel to ${name}, so it has no distance from it.` });
+    const identity = identityOf(), aliases = (pointId: string) => { const own = identity(pointId); return graph.points.filter(point => identity(point.id) === own); };
     const ends = [...aliases(line.startPointId), ...aliases(line.endPointId)], ids = new Set(ends.map(point => point.id));
     const middle = { x: a.x / 2 + b.x / 2, y: a.y / 2 + b.y / 2 }, value = axis === 'y' ? a.y : a.x;
-    const preview = { kind: 'datum', point: middle, axes: [axis] } as const;
-    if (!(Math.abs(value) > tolerance))
-      return plan([{ form: 'datum', label, state: 'blocked', reason: `This line is on the ${cadSketchDatumName(from)}, so it has no distance from it. Use Coincident to keep it there.` }, angle], 'datum');
+    const preview = { kind: 'point-line', point: middle, line: [ORIGIN, cadSketchVirtualPosition(axisId)!], value: Math.abs(value) } as const;
+    if (!(Math.abs(value) > tolerance)) return result({ form: 'point-line', label, state: 'blocked', reason: `This line is on ${name}, so it has no distance from it. Use Collinear to keep it there.` });
     if (graph.relations.some(relation => relation.kind === 'fixed-point' && ids.has(relation.pointId)) || ends.some(point => typeof point.position[axis === 'x' ? 0 : 1] !== 'number'))
-      return plan([{ form: 'datum', label, state: 'blocked', reason: 'This line already has its position from a fixed point or an expression.' }, angle], 'datum');
+      return result({ form: 'point-line', label, state: 'blocked', reason: 'This line already has its position from a fixed point or an expression.' });
     const startAliases = new Set(aliases(line.startPointId).map(point => point.id)), endAliases = new Set(aliases(line.endPointId).map(point => point.id));
     const heldFrom = (end: ReadonlySet<string>) => graph.relations.find(relation => relation.kind === 'fixed-axis' && relation.axis === axis && end.has(relation.pointId));
     const level = graph.relations.some(relation => relation.kind === kind && (startAliases.has(relation.pointIds[0]) && endAliases.has(relation.pointIds[1]) || startAliases.has(relation.pointIds[1]) && endAliases.has(relation.pointIds[0])));
     // One held end keeps the line's distance only while Horizontal or Vertical, or a hold on its other end too, keeps it along the axis.
     const holds = [heldFrom(startAliases), heldFrom(endAliases)].filter(relation => relation !== undefined), existing = holds[0], kept = level || holds.length === 2;
-    if (existing && kept) return plan([{ form: 'datum', label, state: 'existing', relationIds: holds.map(relation => relation.id), reason: EXISTING, preview }, angle], 'datum');
+    if (existing && kept) return result({ form: 'point-line', label, state: 'existing', relationIds: holds.map(relation => relation.id), reason: EXISTING, preview });
     const implied = level ? null : { id: newId(), kind, pointIds: [line.startPointId, line.endPointId] as const };
-    if (existing && implied) return plan([{ form: 'datum', label, state: 'available', relations: [implied], implied: implied.id, reuses: existing.id,
-      reference: null, referenceReason: REUSED, preview }, angle], 'datum');
+    if (existing && implied) return result({ form: 'point-line', label, state: 'available', relations: [implied], implied: implied.id, reuses: existing.id, reference: null, referenceReason: REUSED, preview });
     const relations: CadSketchGraphRelation[] = [{ id: newId(), kind: 'fixed-axis', pointId: line.startPointId, axis, value }, ...implied ? [implied] : []];
-    return plan([{ form: 'datum', label, state: 'available', relations, implied: implied?.id ?? null, reuses: null, reference: null, referenceReason: NO_REFERENCE_DATUM, preview }, angle], 'datum');
+    return result({ form: 'point-line', label, state: 'available', relations, implied: implied?.id ?? null, reuses: null, reference: null, referenceReason: NO_REFERENCE_HOLD, preview });
   }
 }
+
+const ORIGIN: Point2 = Object.freeze({ x: 0, y: 0 });
+const ORIENTATION_NAMES = { parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', horizontal: 'Horizontal', vertical: 'Vertical' } as const;
 
 function pairLabel(form: 'aligned' | 'horizontal' | 'vertical', line: boolean) {
   return form === 'aligned' ? line ? 'Length' : 'Aligned distance' : form === 'horizontal' ? 'Horizontal distance' : 'Vertical distance';
 }
-

@@ -47,7 +47,7 @@
     "prepare": "npm run icons:build",
     "prebuild": "npm run icons:build",
     "predev": "npm run icons:build",
-    "lint": "oxlint --deny-warnings"
+    "lint": "oxlint --deny-warnings && tsx scripts/check-precision-literals.ts"
   },
   "keywords": [
     "wire-edm",
