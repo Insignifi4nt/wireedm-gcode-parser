@@ -41,6 +41,7 @@ Units: `Mm` millimetres, `Mm2` square millimetres, `Mm3` cubic millimetres, `Rad
 | | `frameOrthonormalResidual` | 64 ε | Orthonormality residual of a datum or placement frame. |
 | | `tessellationMm`, `tessellationAngleRad` | 0.05, 0.15 | Display mesh deviation. |
 | | `kernelBooleanSimplifyRad` | 0.001 | Angular tolerance within which `SimplifyResult` merges tangent faces and edges after fuse, cut and intersect (OpenCascade's `theAngularTol`). Replicad 1.1's value, so boolean results stay the same. |
+| | `kernelProfilePointMm` | 1e-6 | Two profile points within this distance on each axis are the same when a profile's lines and arcs are oriented and its outline is closed. Replicad 1.1's `samePoint`, so profile curves stay the same. |
 | Gears | `gearAngleMarginRad` | 1e-6 | Keeps tooth half-angles away from pointed tips and overlap. |
 | | `gearParameterSlackRad` | 1e-10 | Allowed slack below zero for the flank's first roll parameter. |
 | | `gearJoinPerModule` | 1e-8 | Largest rack envelope to involute gap, per module. |

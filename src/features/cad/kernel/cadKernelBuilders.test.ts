@@ -11,7 +11,7 @@ import { cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKerne
 import { cadKernelRotateDrawing, cadKernelSketchFace, cadKernelSketchOnPlane, cadKernelTranslateDrawing } from './cadKernelSketch';
 import { cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelEdges, cadKernelFaces, cadKernelIsValid } from './cadKernelShapes';
 import { watchCadKernelBuilders, type CadKernelBuilderKind } from './__tests__/cadKernelBuilderWatch';
-import { watchCadKernelNativeObjects } from './__tests__/cadKernelNativeObjects';
+import { watchCadKernelNativeObjects, watchEveryCadKernelNativeObject } from './__tests__/cadKernelNativeObjects';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -23,6 +23,8 @@ beforeAll(async () => {
 const target = (): Shape3D => makeBox([0, 0, 0], [20, 16, 10]);
 const tool = (): Shape3D => makeCylinder(4, 16, [12, 8, -3]);
 const ball = (): Shape3D => makeSphere(7);
+// A tool that does not meet the target.
+const far = (): Shape3D => makeCylinder(4, 16, [100, 100, 100]);
 
 function same(owned: Shape3D, reference: Shape3D, label: string) {
   try {
@@ -54,7 +56,14 @@ const operations: readonly Operation[] = [
     owned: ([a]) => cadKernelBuilders.mirror(a, plane), replicad: ([a]) => a.mirror(plane) })),
   { name: 'scale', kind: 'transform', inputs: () => [tool()], owned: ([a]) => cadKernelBuilders.scale(a, 25.4), replicad: ([a]) => a.scale(25.4) },
   { name: 'filletAll', kind: 'fillet', inputs: () => [target()], owned: ([a]) => cadKernelBuilders.filletAll(a, 1.5), replicad: ([a]) => a.fillet(1.5) },
-  { name: 'chamferAll', kind: 'chamfer', inputs: () => [target()], owned: ([a]) => cadKernelBuilders.chamferAll(a, 1.5), replicad: ([a]) => a.chamfer(1.5) }
+  { name: 'chamferAll', kind: 'chamfer', inputs: () => [target()], owned: ([a]) => cadKernelBuilders.chamferAll(a, 1.5), replicad: ([a]) => a.chamfer(1.5) },
+  // Zero and identity inputs, and operands that do not meet.
+  { name: 'translate by zero', kind: 'transform', inputs: () => [tool()], owned: ([a]) => cadKernelBuilders.translate(a, [0, 0, 0]), replicad: ([a]) => a.translate(0, 0, 0) },
+  ...([0, 360] as const).map((angle): Operation => ({ name: `rotate by ${angle} degrees`, kind: 'transform', inputs: () => [tool()],
+    owned: ([a]) => cadKernelBuilders.rotate(a, angle, [1, -2, 3], [0.3, -0.4, 0.866]), replicad: ([a]) => a.rotate(angle, [1, -2, 3], [0.3, -0.4, 0.866]) })),
+  { name: 'scale by 1', kind: 'transform', inputs: () => [tool()], owned: ([a]) => cadKernelBuilders.scale(a, 1), replicad: ([a]) => a.scale(1) },
+  { name: 'cut by a tool that does not meet it', kind: 'cut', inputs: () => [target(), far()], owned: ([a, b]) => cadKernelBuilders.cut(a, b), replicad: ([a, b]) => a.cut(b) },
+  { name: 'common with a shape that does not meet it', kind: 'common', inputs: () => [target(), far()], owned: ([a, b]) => cadKernelBuilders.common(a, b), replicad: ([a, b]) => a.intersect(b) }
 ];
 
 describe('owned builder adapters', () => {
@@ -82,6 +91,34 @@ describe('owned builder adapters', () => {
       expect(watch.failed).toHaveLength(1); expect(watch.outstanding()).toBe(0); expect(objects.outstanding()).toEqual({});
       intact(...inputs);
     } finally { objects.restore(); watch.restore(); inputs.forEach(cadKernelDisposeShape); }
+  });
+});
+
+// OpenCascade refuses these with its own exception, from the owned adapters as from Replicad. The owned adapters leave no
+// native object; Replicad leaves its builder or temporaries.
+const openCascadeException = (WebAssembly as unknown as { Exception: new (...input: never[]) => unknown }).Exception;
+const failures: readonly { name: string; owned: (box: Shape3D) => unknown; replicad: (box: Shape3D) => unknown; replicadLeaves: Readonly<Record<string, number>> }[] = [
+  { name: 'a fillet larger than the box', owned: box => cadKernelBuilders.filletAll(box, 20), replicad: box => box.fillet(20), replicadLeaves: { BRepFilletAPI_MakeFillet: 1, 'TopExp_Explorer.Current': 24, 'TopoDS.Edge': 12 } },
+  { name: 'a chamfer larger than the box', owned: box => cadKernelBuilders.chamferAll(box, 20), replicad: box => box.chamfer(20), replicadLeaves: { BRepFilletAPI_MakeChamfer: 1, 'TopExp_Explorer.Current': 24, 'TopoDS.Edge': 12 } },
+  { name: 'a rotation about an axis of zero direction', owned: box => cadKernelBuilders.rotate(box, 30, [1, 2, 3], [0, 0, 0]),
+    replicad: box => box.rotate(30, [1, 2, 3], [0, 0, 0]), replicadLeaves: { gp_Trsf: 1, gp_Vec: 1, 'gp_Vec.XYZ': 1 } },
+  { name: 'an extrusion along a zero direction', owned: () => cadKernelScaledUnitVector([0, 0, 0], 12.5),
+    replicad: () => new Vector([0, 0, 0]).normalized().multiply(12.5), replicadLeaves: { gp_Vec: 1 } },
+  { name: 'a revolve axis of zero direction', owned: () => cadKernelAx1([1.5, -2, 7e3], [0, 0, 0]), replicad: () => makeAx1([1.5, -2, 7e3], [0, 0, 0]),
+    replicadLeaves: { gp_Pnt: 1, gp_Vec: 1, 'gp_Vec.XYZ': 2 } }
+];
+describe('owned adapters on inputs OpenCascade refuses', () => {
+  it.each(failures)('refuses $name as Replicad does and leaves no native object', failure => {
+    const owned = target(), consumed = target();
+    try {
+      const objects = watchEveryCadKernelNativeObject();
+      try { expect(() => failure.owned(owned)).toThrow(openCascadeException); expect(objects.made()).toBeGreaterThan(0); expect(objects.outstanding()).toEqual({}); }
+      finally { objects.restore(); }
+      intact(owned);
+      const control = watchEveryCadKernelNativeObject();
+      try { expect(() => failure.replicad(consumed)).toThrow(openCascadeException); expect(control.outstanding()).toEqual(failure.replicadLeaves); }
+      finally { control.restore(); }
+    } finally { cadKernelDisposeShape(owned); cadKernelDisposeShape(consumed); }
   });
 });
 
@@ -241,18 +278,20 @@ describe('owned drawing transforms', () => {
       expect(sketches[0].wire.serialize()).toBe(sketches[1].wire.serialize());
     } finally { sketches.forEach(sketch => sketch.delete()); }
   }
-  it.each(shapes)('translates $name like Replicad\'s Drawing.translate and deletes its transforms', shape => {
+  const offsets = shapes.flatMap(shape => ([[3.5, -7.25], [0, 0]] as const).map(([x, y]) => ({ ...shape, x, y })));
+  it.each(offsets)('translates $name by ($x, $y) like Replicad\'s Drawing.translate and deletes its transforms', shape => {
     const source = shape.drawing(), objects = watchCadKernelNativeObjects(transforms2d);
     let owned: Drawing;
-    try { owned = cadKernelTranslateDrawing(source, 3.5, -7.25); expect(objects.made()).toBe(3); expect(objects.outstanding()).toEqual({}); } finally { objects.restore(); }
-    const reference = source.translate(3.5, -7.25);
+    try { owned = cadKernelTranslateDrawing(source, shape.x, shape.y); expect(objects.made()).toBe(3); expect(objects.outstanding()).toEqual({}); } finally { objects.restore(); }
+    const reference = source.translate(shape.x, shape.y);
     try { compare(owned, reference); } finally { [owned, reference, source].forEach(drawing => drawing.blueprint.delete()); }
   });
-  it.each(shapes)('rotates $name like Replicad\'s Drawing.rotate about the origin and deletes its transforms', shape => {
+  const angles = shapes.flatMap(shape => [37.5, 0, 360].map(angle => ({ ...shape, angle })));
+  it.each(angles)('rotates $name by $angle degrees like Replicad\'s Drawing.rotate about the origin and deletes its transforms', shape => {
     const source = shape.drawing(), objects = watchCadKernelNativeObjects(transforms2d);
     let owned: Drawing;
-    try { owned = cadKernelRotateDrawing(source, 37.5); expect(objects.made()).toBe(3); expect(objects.outstanding()).toEqual({}); } finally { objects.restore(); }
-    const reference = source.rotate(37.5, [0, 0]);
+    try { owned = cadKernelRotateDrawing(source, shape.angle); expect(objects.made()).toBe(3); expect(objects.outstanding()).toEqual({}); } finally { objects.restore(); }
+    const reference = source.rotate(shape.angle, [0, 0]);
     try { compare(owned, reference); } finally { [owned, reference, source].forEach(drawing => drawing.blueprint.delete()); }
   });
   it('sees the gp_Trsf2d Replicad\'s Drawing.translate never deletes', () => {

@@ -7,17 +7,15 @@ import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSket
 import { cadKernelDisposeOwned } from './cadKernelShapes';
 import { cadKernelShapeTolerance as pocketShapeTolerance, cadKernelSolidEvidence as solidEvidence } from './cadKernelCutEvidence';
 import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
+import { cadKernelBounds } from './cadKernelQueries';
 
 export function prepareCadPocketExtent(target: Shape3D, inputs: CadResolvedPocketInputs): ReturnType<typeof resolveCadPocketExtent> {
   // A Boolean may omit an unresolved target component completely. Its absence
   // from Common cannot be certified by inspecting only the returned material.
   solidEvidence(target, 'target');
-  const box = target.boundingBox;
-  try {
-    const [min, max] = box.bounds;
-    return resolveCadPocketExtent({ plane: inputs.plane, offsetMm: inputs.offset,
-      direction: inputs.direction, sectionScaleMm: inputs.sectionScaleMm, targetBounds: { min, max }, nativeToleranceMm: pocketShapeTolerance(target) });
-  } finally { box.delete(); }
+  const [min, max] = cadKernelBounds(target);
+  return resolveCadPocketExtent({ plane: inputs.plane, offsetMm: inputs.offset,
+    direction: inputs.direction, sectionScaleMm: inputs.sectionScaleMm, targetBounds: { min, max }, nativeToleranceMm: pocketShapeTolerance(target) });
 }
 
 function extrudePocketRegion(wires: readonly Sketch[], span: number, normal: SimplePoint): Shape3D {

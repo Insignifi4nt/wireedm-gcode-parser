@@ -1,8 +1,9 @@
-import { getOC, measureArea, measureVolume, type Shape3D } from 'replicad';
+import { getOC, type Shape3D } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 import { cadKernelBuilders } from './cadKernelBuilders';
 import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
+import { cadKernelArea, cadKernelVolume } from './cadKernelQueries';
 
 type MaterialOperation = 'Pocket' | 'Cut';
 type MaterialContext = 'target' | 'tool' | 'common' | 'result';
@@ -52,7 +53,7 @@ export function cadKernelSolidEvidence(shape: Shape3D, context: MaterialContext,
       }
     }
     for (const solid of solids) {
-      const componentVolume = measureVolume(solid);
+      const componentVolume = cadKernelVolume(solid);
       if (!Number.isFinite(componentVolume) || componentVolume <= (context === 'common' ? 0 : CAD_PRECISION.kernelMinimumVolumeMm3)) {
         throw new CadError(`unsupported-${prefix}-precision`, `${operation} material volume cannot be confirmed at the supported precision.`);
       }
@@ -68,7 +69,7 @@ export function cadKernelSolidEvidence(shape: Shape3D, context: MaterialContext,
       volume += componentVolume;
       const componentTolerance = cadKernelShapeTolerance(solid, operation); tolerance = Math.max(tolerance, componentTolerance);
       if (context !== 'result') {
-        const componentArea = measureArea(solid); surfaceArea += componentArea;
+        const componentArea = cadKernelArea(solid); surfaceArea += componentArea;
         if (!Number.isFinite(componentArea)) throw new CadError(`unsupported-${prefix}-precision`, `${operation} material area exceeds supported precision.`);
         // Reuse Pocket's existing safety evidence and solid-volume floor.
         // Check every cutting component before Common can omit it.

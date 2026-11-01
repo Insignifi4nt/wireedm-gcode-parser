@@ -7,6 +7,7 @@ import { cadSolidImportBytes, parseCadSolidImportSource, type CadSolidImportResu
 import { CadKernelTopology } from './cadKernelTopology';
 import { assertCadStepLengthUnits } from './cadKernelStepUnits';
 import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
+import { cadKernelBounds } from './cadKernelQueries';
 
 function castSolid(raw: TopoDS_Shape): Shape3D {
   const shape = cast(raw);
@@ -133,13 +134,10 @@ function analyze(shape: Shape3D, source: CadSolidImportSource, sourceBytes: numb
         volume += componentVolume;
       } finally { properties.delete(); }
     }
-    const box = shape.boundingBox;
-    try {
-      const [min, max] = box.bounds;
-      if ([...min, ...max].some(value => !Number.isFinite(value) || Math.abs(value) > 1e9) || !Number.isFinite(volume)) throw new CadError('import-bounds', 'Imported dimensions exceed the finite millimetre coordinate budget.');
-      return { format: source.format, fileName: source.fileName, representation: source.format === 'step' ? 'exact-brep' : 'faceted-brep', volume,
-        bounds: { min, max }, solidCount: solids.length, sourceBytes };
-    } finally { box.delete(); }
+    const [min, max] = cadKernelBounds(shape);
+    if ([...min, ...max].some(value => !Number.isFinite(value) || Math.abs(value) > 1e9) || !Number.isFinite(volume)) throw new CadError('import-bounds', 'Imported dimensions exceed the finite millimetre coordinate budget.');
+    return { format: source.format, fileName: source.fileName, representation: source.format === 'step' ? 'exact-brep' : 'faceted-brep', volume,
+      bounds: { min, max }, solidCount: solids.length, sourceBytes };
   } finally { for (const solid of solids) cadKernelDisposeOwned(solid); }
 }
 

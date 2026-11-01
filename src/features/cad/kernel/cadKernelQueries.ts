@@ -1,5 +1,5 @@
 import { getOC, type Face } from 'replicad';
-import type { gp_Pln, gp_Pnt, gp_Vec } from 'replicad-opencascadejs';
+import type { gp_Pln, gp_Pnt, gp_Vec, TopoDS_Shape } from 'replicad-opencascadejs';
 
 /**
  * Owned curve, face and plane queries for the kernel's topology descriptors and sections.
@@ -7,8 +7,9 @@ import type { gp_Pln, gp_Pnt, gp_Vec } from 'replicad-opencascadejs';
  * Replicad 1.1's Curve.startPoint, endPoint and pointAt wrap the gp_Pnt that `Value` returns in a
  * Vector and never delete it, and every Vector built from a native point, vector or direction
  * copies it through a gp_XYZ it never deletes. Curve.tangentAt, Face.normalAt and makePln leak
- * such a copy too. Each query here makes Replicad's native calls with the same parameters, so it
- * returns the same numbers, and deletes everything it makes before it returns or throws.
+ * such a copy too. measureVolume and measureArea leave their GProp_GProps to garbage collection, and
+ * lose it if the measurement throws. Each query here makes Replicad's native calls with the same
+ * parameters, so it returns the same numbers, and deletes everything it makes before it returns or throws.
  */
 export type CadKernelVector = [number, number, number];
 
@@ -67,4 +68,22 @@ export function cadKernelPlaneThrough(origin: readonly [number, number, number],
     const direction = new oc.gp_Dir(normal[0], normal[1], normal[2]);
     try { return new oc.gp_Pln(point, direction); } finally { direction.delete(); }
   } finally { point.delete(); }
+}
+/**
+ * Replicad's Shape.boundingBox corners: the optimal axis-aligned box of the shape's exact geometry, from BRepBndLib.AddOptimal
+ * with the same flags. Replicad's box is left to garbage collection when AddOptimal throws; this one is deleted.
+ */
+export function cadKernelBounds(shape: { readonly wrapped: TopoDS_Shape }): [CadKernelVector, CadKernelVector] {
+  const oc = getOC(); const box = new oc.Bnd_Box();
+  try { oc.BRepBndLib.AddOptimal(shape.wrapped, box, false, false); return [read(box.CornerMin()), read(box.CornerMax())]; } finally { box.delete(); }
+}
+/** Replicad's measureVolume: the volume of a shape from its exact geometry. */
+export function cadKernelVolume(shape: { readonly wrapped: TopoDS_Shape }): number {
+  const oc = getOC(); const properties = new oc.GProp_GProps();
+  try { oc.BRepGProp.VolumeProperties(shape.wrapped, properties, false, false, false); return properties.Mass(); } finally { properties.delete(); }
+}
+/** Replicad's measureArea: the area of a shape's faces from their exact geometry. */
+export function cadKernelArea(shape: { readonly wrapped: TopoDS_Shape }): number {
+  const oc = getOC(); const properties = new oc.GProp_GProps();
+  try { oc.BRepGProp.SurfaceProperties(shape.wrapped, properties, false, false); return properties.Mass(); } finally { properties.delete(); }
 }

@@ -28,7 +28,7 @@ const VERSION_2: Readonly<Record<CadPrecisionRole, number>> = {
   annotationReadingTie: 1e-12, annotationParallelRelative: 1e-12, annotationFullTurnSlackRad: 1e-9, annotationMinimumRadiusMm: 1e-6,
   kernelConfusionMm: 1e-7, minimumLengthMm: 1e-7, minimumAngleDeg: 1e-7, modelExtentMm: 1e6, sweepTopologyMm: 2e-7,
   kernelMinimumVolumeMm3: 1e-9, kernelBoundsSlackMm: 1e-6, pocketCapMarginFloorMm: 1e-6, kernelDirection: 1e-10,
-  frameOrthonormalResidual: 64 * Number.EPSILON, tessellationMm: 0.05, tessellationAngleRad: 0.15, kernelBooleanSimplifyRad: 0.001,
+  frameOrthonormalResidual: 64 * Number.EPSILON, tessellationMm: 0.05, tessellationAngleRad: 0.15, kernelBooleanSimplifyRad: 0.001, kernelProfilePointMm: 1e-6,
   gearAngleMarginRad: 1e-6, gearParameterSlackRad: 1e-10, gearJoinPerModule: 1e-8, gearUndercutShiftSlack: 1e-12, gearBoundReserveRelative: 1e-12,
   camHandoffEndpointMm: 1e-7, camHandoffCoincidenceMm: 1e-9, camDefaultEndpointMm: 0.001, camDefaultCoincidenceMm: 1e-5,
   dxfCamCoincidenceMm: 0.000002, camDegenerateAreaMm2: 1e-9, camClosingDuplicateMm: 1e-9, camTieMm: 1e-12,

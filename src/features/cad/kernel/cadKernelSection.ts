@@ -4,7 +4,7 @@ import type { CadSectionResult } from '../../../domain/cad/cadSection';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadEntitiesToCam } from '../../../domain/cad/cadCam';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
-import { cadKernelCurveEnd, cadKernelCurveStart, cadKernelCurveTangentAt, cadKernelPlaneThrough } from './cadKernelQueries';
+import { cadKernelBounds, cadKernelCurveEnd, cadKernelCurveStart, cadKernelCurveTangentAt, cadKernelPlaneThrough } from './cadKernelQueries';
 import { cadKernelDisposeOwned, cadKernelEdges, cadKernelSolids } from './cadKernelShapes';
 import { assertCadSectionClosedEndpoints } from './cadKernelSectionEndpoints';
 import { CAD_PRECISION, cadRoundoff } from '../../../domain/precision/cadPrecision';
@@ -20,23 +20,17 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
   // Refuse a tangent/outside plane: cap-face intersections do not prove a cutting section.
   const normalAxis = section.plane === 'XY' ? 2 : section.plane === 'XZ' ? 1 : 0;
   const coordinate = origin[normalAxis];
-  const box = shape.boundingBox;
-  try {
-    const [min, max] = box.bounds;
-    if (coordinate <= min[normalAxis] + tolerance * 10 || coordinate >= max[normalAxis] - tolerance * 10) {
-      throw new CadError('empty-section', 'The section plane must pass through the interior of the body; tangent and outside sections cannot be transferred to CAM.');
-    }
-  } finally { box.delete(); }
+  const [min, max] = cadKernelBounds(shape);
+  if (coordinate <= min[normalAxis] + tolerance * 10 || coordinate >= max[normalAxis] - tolerance * 10) {
+    throw new CadError('empty-section', 'The section plane must pass through the interior of the body; tangent and outside sections cannot be transferred to CAM.');
+  }
   const components = cadKernelSolids(shape);
   try {
     for (const component of components) {
-      const componentBox = component.boundingBox;
-      try {
-        const [min, max] = componentBox.bounds;
-        if (Math.abs(coordinate - min[normalAxis]) <= tolerance * 10 || Math.abs(coordinate - max[normalAxis]) <= tolerance * 10) {
-          throw new CadError('tangent-section', 'The plane touches the end of a solid component. Choose an offset that cuts through material instead of lying on an end face.');
-        }
-      } finally { componentBox.delete(); }
+      const [min, max] = cadKernelBounds(component);
+      if (Math.abs(coordinate - min[normalAxis]) <= tolerance * 10 || Math.abs(coordinate - max[normalAxis]) <= tolerance * 10) {
+        throw new CadError('tangent-section', 'The plane touches the end of a solid component. Choose an offset that cuts through material instead of lying on an end face.');
+      }
     }
   } finally { for (const component of components) cadKernelDisposeOwned(component); }
   const plane = cadKernelPlaneThrough(origin, basis.normal);

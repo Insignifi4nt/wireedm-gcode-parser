@@ -22,6 +22,13 @@ export function cadKernelDisposeOwned(value: { delete(): void }): void {
   else value.delete();
 }
 
+/** Runs body and disposes everything it owns, last first, as cadKernelDisposeOwned does, when it returns or throws. */
+export function cadKernelScope<T>(body: (own: <V extends { delete(): void }>(value: V) => V) => T): T {
+  const owned: { delete(): void }[] = [];
+  try { return body(value => { owned.push(value); return value; }); }
+  finally { for (const value of owned.reverse()) cadKernelDisposeOwned(value); }
+}
+
 /** Full geometric/topological validation. The repaired pinned binding destroys
  * the analyzer and its result map normally; no neutral geometry is retained. */
 export function cadKernelIsValid(shape: Shape3D): boolean {

@@ -1,4 +1,4 @@
-import { cast, Compound, getOC, isShape3D, measureVolume, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
+import { cast, Compound, getOC, isShape3D, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
 import type { CadBuildResult, CadDocument, CadFeature, CadMesh, CadScalar, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { evaluateCadAngle, evaluateCadScalar } from '../../../domain/cad/cadExpression';
 import { CadError } from '../../../domain/cad/cadError';
@@ -26,6 +26,7 @@ import { exportCadKernelStep } from './cadKernelExport';
 import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
+import { cadKernelBounds, cadKernelVolume } from './cadKernelQueries';
 
 /** BRep state stays inside the worker. Only tessellation and export bytes leave it. */
 export interface CadKernelModel {
@@ -48,12 +49,12 @@ function validateSolid(shape: Shape3D, topologyChecked = false): { solidCount: n
   if (shape.isNull) throw new CadError('empty-solid', 'The operation produced no solid.');
   const solids = cadKernelSolids(shape);
   try {
-    if (!solids.length || solids.some(solid => !positiveVolume(measureVolume(solid)))) {
+    if (!solids.length || solids.some(solid => !positiveVolume(cadKernelVolume(solid)))) {
       throw new CadError('empty-solid', 'The operation must contain closed solids with positive volume.');
     }
   } finally { for (const solid of solids) cadKernelDisposeShape(solid); }
   if (!topologyChecked && !cadKernelIsValid(shape)) throw new CadError('invalid-solid', 'OpenCascade rejected the resulting topology. Reduce the dimensions or choose a different feature.');
-  const volume = measureVolume(shape);
+  const volume = cadKernelVolume(shape);
   if (!positiveVolume(volume)) throw new CadError('empty-solid', 'The operation must produce a closed solid with positive volume.');
   return { solidCount: solids.length, volume };
 }
@@ -63,16 +64,13 @@ function positiveVolume(volume: number) {
 }
 
 function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology, { solidCount, volume }: { solidCount: number; volume: number }): CadMesh {
-  const box = shape.boundingBox;
-  try {
-    const [min, max] = box.bounds;
-    const { mesh, edgeMesh } = meshCadKernelPreview(shape, { min, max }, meshOptions);
-    const groups = topology.meshGroups(mesh, edgeMesh);
-    // The face groups that meshGroups keeps, in its order: those with triangles.
-    const faceSolids = solidCount > 1 ? cadKernelFaceSolids(shape, mesh.faceGroups.filter(group => group.count > 0).map(group => group.faceId)) : undefined;
-    return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
-      edges: edgeMesh.lines, ...groups, volume, solidCount, ...(faceSolids ? { faceSolids } : {}), bounds: { min, max } };
-  } finally { box.delete(); }
+  const [min, max] = cadKernelBounds(shape);
+  const { mesh, edgeMesh } = meshCadKernelPreview(shape, { min, max }, meshOptions);
+  const groups = topology.meshGroups(mesh, edgeMesh);
+  // The face groups that meshGroups keeps, in its order: those with triangles.
+  const faceSolids = solidCount > 1 ? cadKernelFaceSolids(shape, mesh.faceGroups.filter(group => group.count > 0).map(group => group.faceId)) : undefined;
+  return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
+    edges: edgeMesh.lines, ...groups, volume, solidCount, ...(faceSolids ? { faceSolids } : {}), bounds: { min, max } };
 }
 
 /** Operations commit only after exact topology validation and successful meshing. */
@@ -243,14 +241,11 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           if (!topology) throw new CadError('missing-body', 'The shell target body is unavailable.');
           instances = instancesOf(feature.targetId);
           result = own(applyCadShell(target, topology.selectedFace(feature.opening, document.parameters), number(feature.thickness)));
-          if (!(measureVolume(result) < measureVolume(target) - CAD_PRECISION.kernelMinimumVolumeMm3)) throw new CadError('shell-failed', 'The inward shell did not remove material. Reduce its thickness or choose another opening.');
-          const originalBox = target.boundingBox; const shellBox = result.boundingBox;
-          try {
-            const [originalMin, originalMax] = originalBox.bounds; const [shellMin, shellMax] = shellBox.bounds;
-            if (shellMin.some((value, axis) => value < originalMin[axis] - CAD_PRECISION.kernelBoundsSlackMm) || shellMax.some((value, axis) => value > originalMax[axis] + CAD_PRECISION.kernelBoundsSlackMm)) {
-              throw new CadError('shell-failed', 'The kernel shell extended outside the original body instead of producing inward walls.');
-            }
-          } finally { originalBox.delete(); shellBox.delete(); }
+          if (!(cadKernelVolume(result) < cadKernelVolume(target) - CAD_PRECISION.kernelMinimumVolumeMm3)) throw new CadError('shell-failed', 'The inward shell did not remove material. Reduce its thickness or choose another opening.');
+          const [originalMin, originalMax] = cadKernelBounds(target); const [shellMin, shellMax] = cadKernelBounds(result);
+          if (shellMin.some((value, axis) => value < originalMin[axis] - CAD_PRECISION.kernelBoundsSlackMm) || shellMax.some((value, axis) => value > originalMax[axis] + CAD_PRECISION.kernelBoundsSlackMm)) {
+            throw new CadError('shell-failed', 'The kernel shell extended outside the original body instead of producing inward walls.');
+          }
           consumed.push(feature.targetId); break;
         }
         case 'boolean': {
