@@ -157,7 +157,8 @@ export interface CadSketchRemapRule<R extends CadSketchGraphRelation = CadSketch
   readonly ends?: (graph: CadSketchGraph, relation: R) => readonly (string | undefined)[];
   /** An edit that changes geometry the relation owns is confirmed, removing the relation, or refused until the relation is detached. */
   readonly owned?: 'confirm' | 'refuse';
-  readonly copy: { readonly mirror: CadSketchCopyRule; readonly offset: CadSketchCopyRule };
+  /** What a mirror copy, an offset copy and a linear pattern's occurrences keep. Occurrences are owned by their pattern, so they keep only reference dimensions. */
+  readonly copy: { readonly mirror: CadSketchCopyRule; readonly offset: CadSketchCopyRule; readonly pattern: CadSketchCopyRule };
   /** The relation with its stored side or sense set for a reflection, and for operands now on pieces that run the other way. */
   readonly orient?: (relation: R, change: { readonly reflected: boolean; readonly reversed: readonly boolean[] }) => R;
   /** The relation in its stored form after its operands change, such as a corner's lines in id order. */

@@ -32,7 +32,7 @@ export const linearPattern: CadSketchRelationDefinition<'linear-pattern'> = {
     }
   },
   check: (graph, relation, _, parameters) => checkCadSketchLinearPattern(graph, parameters, relation),
-  remap: { roles: ['source', 'end'], owned: 'refuse', copy: { mirror: 'drop', offset: 'drop' } },
+  remap: { roles: ['source', 'end'], owned: 'refuse', copy: { mirror: 'drop', offset: 'drop', pattern: 'drop' } },
   agent: { exposed: true, summary: 'Copies of a circle repeat at a set spacing along X or Y.',
     meaning: 'Owns a row of circles. Copies follow the seed center and radius at the declared signed axis pitch. Edit this owner to change count, direction or exclusions; detach before independent copy edits.' }
 };
@@ -50,7 +50,7 @@ export const externalReference: CadSketchRelationDefinition<'external-reference'
   // Its edge's points and radius follow the source, so they compile as fixed values and it adds no equation.
   lower: () => {},
   check: (graph, relation) => checkCadSketchExternalReferenceOwnership(graph, relation),
-  remap: { roles: [], owned: 'refuse', copy: { mirror: 'drop', offset: 'drop' } },
+  remap: { roles: [], owned: 'refuse', copy: { mirror: 'drop', offset: 'drop', pattern: 'drop' } },
   agent: { exposed: true, summary: 'A construction line or circle follows an edge of another sketch.',
     meaning: 'Linked construction geometry follows a stable preceding sketch edge along the shared plane normal. Detach explicitly to retain its current numeric shape without the source link.' }
 };
@@ -69,7 +69,7 @@ const CORNER = {
 const CORNER_REMAP = {
   roles: ['point', 'joint', 'joint'],
   ends: (graph, relation) => { const { trimPointIds } = resolveCadSketchCornerTopology(graph, relation); return [undefined, trimPointIds[0], trimPointIds[1]]; },
-  owned: 'confirm', copy: { mirror: 'drop', offset: 'drop' }
+  owned: 'confirm', copy: { mirror: 'drop', offset: 'drop', pattern: 'drop' }
 } as const satisfies CadSketchRemapRule<CadSketchRelationOf<'fillet-corner' | 'chamfer-corner'>>;
 export const filletCorner: CadSketchRelationDefinition<'fillet-corner'> = {
   kind: 'fillet-corner', family: 'composite', name: 'Fillet',

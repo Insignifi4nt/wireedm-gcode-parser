@@ -1,13 +1,16 @@
-import { isAcceptedCadSketchGraph, type CadSketchGraph, type CadSketchGraphEntity, type CadSketchGraphRelation } from '../cadSketchGraph';
+import { isAcceptedCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from '../cadSketchGraph';
 import { resolveCadSketchPointIdentities } from '../cadSketchGraphJoints';
+import { cadSketchCurveTraits, type CadSketchCurveCapabilities, type CadSketchCurveTraits } from './cadSketchCurveCapabilities';
 import { cadSketchRelationDefinition, cadSketchRelationSignature } from './cadSketchRelationRegistry';
 import type { CadSketchCopyRule, CadSketchRemapRole, CadSketchRemapRule } from './cadSketchRelationTypes';
 import { CAD_SKETCH_ORIGIN_ID, isCadSketchVirtualId, type CadSketchVirtualAxisId } from './cadSketchVirtualElements';
 
 // What a geometry-changing edit does to the relations and dimensions on what it changes, by the rule each kind declares (`remap` on its
-// definition). Trim, extend, split, pattern omission, mirror and offset describe their edit or copy here and read one outcome for each
-// relation, so no operation carries a rule of its own. Each operand follows by its role: a curve's carrier, extent, joint or ray end, or
-// a point, so a new kind of curve (an ellipse, a spline) needs only its pieces and their ends, never a rule per operation.
+// definition). Trim, extend, split, pattern omission, mirror, offset and the linear pattern's occurrences describe their edit or copy here
+// and read one outcome for each relation, so no operation carries a rule of its own. Each operand follows by its role: a curve's carrier,
+// extent, joint or ray end, or a point. Curves are read only through their traits (`cadSketchCurveTraits`), so a new kind of curve (an
+// ellipse, a spline) needs only its traits and its pieces' intervals, never a rule per operation. A sketch circular pattern, should one be
+// added, must copy through `copyCadSketchRelations` as a rotation, as the linear pattern copies as a translation.
 
 /**
  * One curve of the edited graph that covers a span of an old curve. `interval` is the span of the old curve's parameter it covers, from
@@ -31,13 +34,16 @@ export interface CadSketchRelationEdit {
   readonly curves: ReadonlyMap<string, readonly CadSketchRemapPiece[]>;
   readonly points?: ReadonlyMap<string, string | null>;
   readonly identity?: (pointId: string) => string;
+  /** How to read curves of a kind `cadSketchCurveTraits` does not know yet. */
+  readonly traits?: CadSketchCurveCapabilities;
 }
 /**
- * A copy of some of the sketch's geometry, as a map from each copied curve and point to its copy. A mirror reflects, and an offset moves
- * each curve along its normal. Elements in `invariant`, such as the mirror line and its ends, are their own copies.
+ * A copy of some of the sketch's geometry, as a map from each copied curve and point to its copy. A mirror reflects, an offset moves each
+ * curve along its normal, and a pattern translates its seed to each occurrence it generates. Elements in `invariant`, such as the mirror
+ * line and its ends, are their own copies.
  */
 export interface CadSketchRelationCopy {
-  readonly kind: 'mirror' | 'offset';
+  readonly kind: 'mirror' | 'offset' | 'pattern';
   readonly curves: ReadonlyMap<string, CadSketchRemapPiece>;
   readonly points: ReadonlyMap<string, string>;
   readonly invariant?: ReadonlySet<string>;
@@ -48,6 +54,8 @@ export interface CadSketchRelationCopy {
   readonly axis?: CadSketchVirtualAxisId;
   /** The id of the `index`th relation copied, in graph order. */
   readonly relationId: (relation: CadSketchGraphRelation, index: number) => string;
+  /** How to read curves of a kind `cadSketchCurveTraits` does not know yet. */
+  readonly traits?: CadSketchCurveCapabilities;
 }
 /**
  * What an edit does to one relation: keeps it, replaces it with relations of the same kind on new operands, removes it, or blocks the
@@ -62,29 +70,45 @@ export type CadSketchRemapOutcome =
   | { readonly kind: 'blocked'; readonly relation: CadSketchGraphRelation; readonly reason: string; readonly confirmable: boolean };
 export type CadSketchBlockedRemap = Extract<CadSketchRemapOutcome, { kind: 'blocked' }>;
 
-type Ended = Extract<CadSketchGraphEntity, { kind: 'line' | 'arc' }>;
 const ruleOf = (relation: CadSketchGraphRelation): CadSketchRemapRule => cadSketchRelationDefinition(relation).remap as CadSketchRemapRule;
 const rolesOf = (relation: CadSketchGraphRelation, rule: CadSketchRemapRule) => typeof rule.roles === 'function' ? rule.roles(relation) : rule.roles;
 const isPoint = (role: CadSketchRemapRole | undefined) => role === 'point' || role === 'end';
 
 interface GraphIndex {
-  readonly entities: ReadonlyMap<string, CadSketchGraphEntity>;
+  /** Each curve's traits, by id. */
+  readonly curves: ReadonlyMap<string, CadSketchCurveTraits>;
   readonly pointIds: ReadonlySet<string>;
   /** Each point or edge id with the relations that name it as an operand or own it, in graph order. */
   readonly naming: ReadonlyMap<string, readonly number[]>;
-  /** Each pair of end points, sorted and joined by a space, with the lines and arcs that end there. */
-  readonly ended: ReadonlyMap<string, readonly Ended[]>;
-  /** Each centre with the arcs and circles about it. */
-  readonly centred: ReadonlyMap<string, readonly CadSketchGraphEntity[]>;
+  /** Each pair of end points, sorted and joined by a space, with the curves that end there. */
+  readonly ended: ReadonlyMap<string, readonly string[]>;
+  /** Each centre with the curves drawn about it. */
+  readonly centred: ReadonlyMap<string, readonly string[]>;
 }
 const indexes = new WeakMap<CadSketchGraph, GraphIndex>();
+const identities = new WeakMap<CadSketchGraph, (pointId: string) => string>();
+/**
+ * Which points the graph joins, by Coincident: each point id to the id standing for its joined group. An accepted graph keeps its
+ * identities, as it keeps its index, so trim, extend and each remap of it resolve them once.
+ */
+export function cadSketchPointIdentities(graph: CadSketchGraph): (pointId: string) => string {
+  const kept = identities.get(graph);
+  if (kept) return kept;
+  const identity = resolveCadSketchPointIdentities(graph);
+  if (isAcceptedCadSketchGraph(graph)) identities.set(graph, identity);
+  return identity;
+}
 const pairKey = (a: string, b: string) => a < b ? `${a} ${b}` : `${b} ${a}`;
 const push = <T>(map: Map<string, T[]>, key: string, value: T) => { const list = map.get(key); if (list) list.push(value); else map.set(key, [value]); };
-/** The graph read once for remapping; an accepted graph keeps its index, so each later edit visits only the relations it touches. */
-function graphIndex(graph: CadSketchGraph): GraphIndex {
-  const kept = indexes.get(graph);
+/**
+ * The graph read once for remapping; an accepted graph keeps its index, so each later edit visits only the relations it touches. Curves
+ * of a kind only the caller knows are read through its own `traits`, and that index is not kept.
+ */
+function graphIndex(graph: CadSketchGraph, traits: CadSketchCurveCapabilities = cadSketchCurveTraits): GraphIndex {
+  const shared = traits === cadSketchCurveTraits, kept = shared ? indexes.get(graph) : undefined;
   if (kept) return kept;
-  const naming = new Map<string, number[]>(), ended = new Map<string, Ended[]>(), centred = new Map<string, CadSketchGraphEntity[]>();
+  const naming = new Map<string, number[]>(), ended = new Map<string, string[]>(), centred = new Map<string, string[]>();
+  const curves = new Map<string, CadSketchCurveTraits>();
   const add = (id: string, at: number) => { const list = naming.get(id); if (!list) naming.set(id, [at]); else if (list.at(-1) !== at) list.push(at); };
   graph.relations.forEach((relation, at) => {
     const definition = cadSketchRelationDefinition(relation), owned = definition.owns?.(relation);
@@ -92,11 +116,13 @@ function graphIndex(graph: CadSketchGraph): GraphIndex {
     for (const id of [...owned?.entityIds ?? [], ...owned?.pointIds ?? []]) add(id, at);
   });
   for (const entity of graph.entities) {
-    if (entity.kind !== 'circle') push(ended, pairKey(entity.startPointId, entity.endPointId), entity);
-    if (entity.kind !== 'line') push(centred, entity.centerPointId, entity);
+    const curve = traits(entity);
+    curves.set(entity.id, curve);
+    if (curve.ends) push(ended, pairKey(curve.ends[0], curve.ends[1]), entity.id);
+    if (curve.centre !== null) push(centred, curve.centre, entity.id);
   }
-  const index = { entities: new Map(graph.entities.map(entity => [entity.id, entity])), pointIds: new Set(graph.points.map(point => point.id)), naming, ended, centred };
-  if (isAcceptedCadSketchGraph(graph)) indexes.set(graph, index);
+  const index = { curves, pointIds: new Set(graph.points.map(point => point.id)), naming, ended, centred };
+  if (shared && isAcceptedCadSketchGraph(graph)) indexes.set(graph, index);
   return index;
 }
 /** The relations that name any of `ids`, and those that hold the direction of a line ending at a point in `ends`, in graph order. */
@@ -110,10 +136,10 @@ function touched(graph: CadSketchGraph, index: GraphIndex, ids: Iterable<string>
 const whole = (pieces: readonly CadSketchRemapPiece[] | undefined) => pieces !== undefined && pieces.length === 1 && pieces[0].interval[0] === 0 && pieces[0].interval[1] === 1;
 /** The piece that keeps a curve's id, else its first: its pieces share its carrier. */
 const primary = (id: string, pieces: readonly CadSketchRemapPiece[]) => pieces.find(piece => piece.entityId === id) ?? pieces[0];
-/** Which end of the old curve a point is: 0 for its start, 1 for its end. */
-function sideOf(curve: CadSketchGraphEntity | undefined, pointId: string): 0 | 1 | null {
-  if (!curve || curve.kind === 'circle') return null;
-  return curve.startPointId === pointId ? 0 : curve.endPointId === pointId ? 1 : null;
+/** Which end of the old curve a point is: 0 for its start, 1 for its end, and null for a curve without ends. */
+function sideOf(curve: CadSketchCurveTraits | undefined, pointId: string): 0 | 1 | null {
+  const ends = curve?.ends;
+  return !ends ? null : ends[0] === pointId ? 0 : ends[1] === pointId ? 1 : null;
 }
 /** The piece that still has the old curve's end on `side`, with that end where it was. */
 const holder = (pieces: readonly CadSketchRemapPiece[], side: 0 | 1) => pieces.find(piece => piece.interval[side] === side);
@@ -140,6 +166,12 @@ const REASONS = {
   apart: 'A point it keeps apart from the curve\'s ends becomes one of them.'
 } as const;
 const block = (reason: string, confirmable = true): Failure => ({ reason, confirmable });
+/** Why a copy's kind leaves a relation out by its rule; geometry outside the copy is a separate reason. */
+const COPY_DROPS: Readonly<Record<CadSketchRelationCopy['kind'], string>> = {
+  mirror: 'A mirrored copy does not keep it.',
+  offset: 'An offset copy does not keep it.',
+  pattern: 'The pattern owns its occurrences, which keep only reference dimensions: it drives them through the seed instead.'
+};
 
 /** The operands an edit gives a relation, by its rule, or why the edit cannot keep it. */
 function resolveEdit(graph: CadSketchGraph, index: GraphIndex, edit: CadSketchRelationEdit, relation: CadSketchGraphRelation, identity: () => (id: string) => string): Resolved {
@@ -151,8 +183,8 @@ function resolveEdit(graph: CadSketchGraph, index: GraphIndex, edit: CadSketchRe
     return rule.owned === 'refuse' ? block(REASONS.source, false) : block(REASONS.owned);
   // Two points at the ends of one line, and of no other edge, hold that line's direction: each follows the line's end on its side.
   const pair = rule.direction && ids.length === 2 ? index.ended.get(pairKey(ids[0], ids[1])) : undefined;
-  if (pair?.length === 1 && pair[0].kind === 'line' && edit.curves.has(pair[0].id)) {
-    const line = pair[0], pieces = edit.curves.get(line.id)!;
+  if (pair?.length === 1 && index.curves.get(pair[0])?.straight && edit.curves.has(pair[0])) {
+    const line = index.curves.get(pair[0]), pieces = edit.curves.get(pair[0])!;
     for (const at of [0, 1]) {
       const side = sideOf(line, ids[at])!, kept = holder(pieces, side), moved = kept ? null : reaching(pieces, side);
       if (!kept && !moved) return block(REASONS.curveLeaves);
@@ -196,7 +228,7 @@ function resolveEdit(graph: CadSketchGraph, index: GraphIndex, edit: CadSketchRe
       continue;
     }
     // A joint or a ray: the curve with one of its ends, in the next slot or as the kind gives it.
-    const endId = endSlot !== null ? ids[endSlot] : ends?.[at], side = endId === undefined ? null : sideOf(index.entities.get(id), endId);
+    const endId = endSlot !== null ? ids[endSlot] : ends?.[at], side = endId === undefined ? null : sideOf(index.curves.get(id), endId);
     if (side === null) return block(REASONS.joint);
     const kept = holder(pieces, side);
     if (kept) {
@@ -240,10 +272,11 @@ function outcome(relation: CadSketchGraphRelation, resolved: Resolved): CadSketc
  * visits only relations that name an edited curve or point, or that hold the direction of an edited line through its ends.
  */
 export function remapCadSketchRelations(graph: CadSketchGraph, edit: CadSketchRelationEdit): readonly CadSketchRemapOutcome[] {
-  const index = graphIndex(graph), points = edit.points ?? new Map<string, string | null>();
-  const ends = [...edit.curves.keys()].flatMap(id => { const curve = index.entities.get(id); return curve && curve.kind !== 'circle' ? [curve.startPointId, curve.endPointId] : []; });
+  const index = graphIndex(graph, edit.traits), points = edit.points ?? new Map<string, string | null>();
+  const ends = [...edit.curves.keys()].flatMap(id => index.curves.get(id)?.ends ?? []);
+  // Resolved at most once per call, and kept with an accepted graph for later calls.
   let identity = edit.identity;
-  const identities = () => identity ??= resolveCadSketchPointIdentities(graph);
+  const identities = () => identity ??= cadSketchPointIdentities(graph);
   return touched(graph, index, [...edit.curves.keys(), ...points.keys()], ends).map(relation => outcome(relation, resolveEdit(graph, index, edit, relation, identities)));
 }
 /** The outcomes that block the edit, in graph order. */
@@ -255,7 +288,7 @@ function resolveCopy(index: GraphIndex, copy: CadSketchRelationCopy, relation: C
   const definition = cadSketchRelationDefinition(relation), rule = ruleOf(relation), roles = rolesOf(relation, rule);
   if (definition.owns) return 'It owns geometry, which the copy keeps plain.';
   const copies: CadSketchCopyRule = rule.copy[copy.kind];
-  if (copies === 'drop') return `${copy.kind === 'mirror' ? 'A mirrored' : 'An offset'} copy does not keep it.`;
+  if (copies === 'drop') return COPY_DROPS[copy.kind];
   if (copies === 'axes' && !copy.axis) return 'It holds the H or V direction, which a mirror about this line does not keep.';
   const ids = definition.operands(relation), next = [...ids], reversed = ids.map(() => false), invariant = copy.invariant ?? new Set<string>();
   let kept = false;
@@ -295,9 +328,9 @@ function resolveCopy(index: GraphIndex, copy: CadSketchRelationCopy, relation: C
   const pointSlots = roles.flatMap((role, at) => isPoint(role) ? [at] : []);
   if (new Set(pointSlots.map(at => next[at])).size < new Set(pointSlots.map(at => ids[at])).size) return 'The copy joins points it names apart.';
   if (copies === 'unjoined' && ids.every(id => copy.points.has(id))) return 'The copy already joins these points.';
-  if (copies === 'ends' && !(ids.length === 2 && (index.ended.get(pairKey(ids[0], ids[1])) ?? []).some(curve => curve.kind === 'line' && copy.curves.has(curve.id))))
+  if (copies === 'ends' && !(ids.length === 2 && (index.ended.get(pairKey(ids[0], ids[1])) ?? []).some(id => index.curves.get(id)?.straight && copy.curves.has(id))))
     return 'An offset keeps a direction only between the two ends of one copied line.';
-  if (copies === 'centres' && !ids.every(id => (index.centred.get(id) ?? []).some(curve => copy.curves.has(curve.id))))
+  if (copies === 'centres' && !ids.every(id => (index.centred.get(id) ?? []).some(curve => copy.curves.has(curve))))
     return 'An offset keeps only centres of copied arcs and circles together; it joins its other points itself.';
   return { ids: next, reversed };
 }
@@ -309,7 +342,7 @@ function resolveCopy(index: GraphIndex, copy: CadSketchRelationCopy, relation: C
  * dimension placement. The original relations always stay.
  */
 export function copyCadSketchRelations(graph: CadSketchGraph, copy: CadSketchRelationCopy): readonly CadSketchRemapOutcome[] {
-  const index = graphIndex(graph);
+  const index = graphIndex(graph, copy.traits);
   let copied = 0;
   return touched(graph, index, [...copy.curves.keys(), ...copy.points.keys()], []).map((relation): CadSketchRemapOutcome => {
     const resolved = resolveCopy(index, copy, relation);

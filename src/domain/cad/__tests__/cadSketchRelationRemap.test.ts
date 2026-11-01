@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { CadSketchFeature } from '../cadDocument';
+import { createCadDocument, parseCadDocument } from '../cadSchema';
 import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph, type CadSketchGraphRelation } from '../cadSketchGraph';
 import { compileCadSketchGraph } from '../cadSketchGraphGeometry';
 import { applyCadEdits } from '../cadOperations';
 import { prepareCadSketchMirror } from '../cadSketchMirror';
 import { prepareCadSketchOffset } from '../cadSketchOffset';
+import { inspectCadSketchRegions, validateCadSketchRegionProposal } from '../cadSketchRegionInspection';
 import { splitCadSketchEntity } from '../cadSketchSplit';
 import { prepareCadSketchTrim, trimCadSketchEntity } from '../cadSketchTrimExtend';
 import { applyCadSketchRemapOutcomes, blockedCadSketchRemaps, copyCadSketchRelations, remapCadSketchRelations, type CadSketchRemapPiece } from '../sketch-relations/cadSketchRelationRemap';
 import { circleRow, circleRowPart, rowSketch } from './cadSketchLinearPatternFixtures';
+import { mirrorBoreRequest, pairedBoreMirrorPart } from './cadSketchMirrorFixtures';
 
 type Points = Readonly<Record<string, readonly [number, number]>>;
 const graphOf = (points: Points, entities: readonly unknown[], relations: readonly CadSketchGraphRelation[]): CadSketchGraph =>
@@ -105,6 +108,22 @@ describe('relation remap by role', () => {
     expect(summary(outcomes)).toEqual([['about-v', 'retain'], ['reach', 'retain'], ['rise', 'retain']]);
   });
 
+  it('routes a curve kind it does not know by the traits the edit gives, and by nothing else', () => {
+    // A stand-in for a later curve kind, such as a spline: the rule reads only its ends, its centre and whether it is straight.
+    const graph = { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }, { id: 'x', position: [5, 5] }],
+      entities: [{ id: 'wave', kind: 'spline', construction: false, startPointId: 'a', endPointId: 'b' }],
+      relations: [{ id: 'level', kind: 'horizontal', pointIds: ['a', 'b'] }, { id: 'span', kind: 'distance', pointIds: ['a', 'x'], value: 7 },
+        { id: 'same', kind: 'equal-length', lineIds: ['wave', 'wave'] }] } as unknown as CadSketchGraph;
+    const cut = { curves: new Map([['wave', [piece('wave', [0, .5], ['a', 'm'])]]]), points: new Map([['b', null]]) };
+    const traits = (straight: boolean) => () => ({ ends: ['a', 'b'] as const, centre: null, straight });
+    // Straight, its two ends hold its direction and follow them; otherwise they are two points, one of which leaves.
+    expect(summary(remapCadSketchRelations(graph, { ...cut, traits: traits(true) }))).toEqual([
+      ['level', 'replace', [{ ...graph.relations[0], pointIds: ['a', 'm'] }]], ['same', 'blocked', true]]);
+    expect(summary(remapCadSketchRelations(graph, { ...cut, traits: traits(false) }))).toEqual([['level', 'blocked', true], ['same', 'blocked', true]]);
+    // Without traits for it, the stored kinds' reader names the kind it lacks instead of guessing.
+    expect(() => remapCadSketchRelations(graph, cut)).toThrow('No curve traits for spline.');
+  });
+
   it('treats construction geometry like any other', () => {
     for (const construction of [false, true]) {
       const graph = graphOf({ a: [0, 0], b: [40, 20], p: [10, 5] }, [line('guide', 'a', 'b', construction)], [{ id: 'on', kind: 'point-on-line', pointId: 'p', lineId: 'guide' }]);
@@ -195,6 +214,52 @@ describe('copies with relations', () => {
       { id: 'f_r1', kind: 'line-angle', rays: [{ lineId: 'f_e1', towardPointId: 'f_p2' }, { lineId: '@h', towardPointId: '@origin' }], sense: 'ccw', value: 90 },
       { id: 'f_r2', kind: 'distance', pointIds: ['f_p0', '@origin'], value: 10 }]);
     expect(checkCadSketchGraph(mirrored, {})).toEqual([]);
+  });
+
+  it('copies only reference dimensions onto a pattern occurrence, with one reason for drivers and another for other geometry', () => {
+    const graph = graphOf({ c: [10, 10], far: [40, 10] }, [{ id: 'seed', kind: 'circle', construction: false, centerPointId: 'c', radius: 3 }], [
+      { id: 'size', kind: 'radial-size', entityId: 'seed', quantity: 'radius', value: 3 },
+      { id: 'measure', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'seed', quantity: 'diameter' } },
+      { id: 'reach', kind: 'reference-dimension', measurement: { kind: 'point-distance', pointIds: ['c', 'far'] } },
+      { id: 'pin', kind: 'fixed-point', pointId: 'c', position: [10, 10] }]);
+    const outcomes = copyCadSketchRelations(graph, { kind: 'pattern', curves: new Map([['seed', piece('row_i1_e0', [0, 1])]]),
+      points: new Map([['c', 'row_i1_p0']]), relationId: (_relation, index) => `row_i1_r${index}` });
+    expect(outcomes.flatMap(item => item.kind === 'replace' ? item.relations : [])).toEqual([
+      { id: 'row_i1_r0', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'row_i1_e0', quantity: 'diameter' } }]);
+    const reasons = Object.fromEntries(outcomes.flatMap(item => item.kind === 'remove' ? [[item.relation.id, item.reason]] : []));
+    expect(Object.keys(reasons)).toEqual(['size', 'reach', 'pin']);
+    expect(reasons.size).toMatch(/pattern owns its occurrences/);
+    expect(reasons.pin).toBe(reasons.size);
+    expect(reasons.reach).toMatch(/outside the copy/);
+  });
+
+  it('takes copyRelations in the shared mirror and offset requests, so a proposal previews exactly what the edit commits', () => {
+    const plate = pairedBoreMirrorPart(), plateSketch = plate.features[0];
+    if (plateSketch.kind !== 'sketch' || !plateSketch.graph) throw new Error('Bore plate missing.');
+    const sized = parseCadDocument({ ...plate, features: [{ ...plateSketch, graph: { ...plateSketch.graph,
+      relations: [{ id: 'bore-size', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'bore', quantity: 'diameter' } }] } }] });
+    const mirror = { ...mirrorBoreRequest, copyRelations: true } as const;
+    const mirrored = applyCadEdits(sized, [{ kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirror }]), source = sized.features[0] as CadSketchFeature;
+    expect(mirrored.features[0]).toEqual(prepareCadSketchMirror({ sketch: source, parameters: sized.parameters, ...mirror }).sketch);
+    expect((mirrored.features[0] as CadSketchFeature).graph!.relations.map(relation => relation.id)).toEqual(['bore-size', 'mirror_r0']);
+    expect(inspectCadSketchRegions(sized, 'sketch', { mode: 'graph-cells', proposal: { mirror } }))
+      .toEqual({ ...inspectCadSketchRegions(mirrored, 'sketch', { mode: 'graph-cells' }), proposed: true });
+
+    const box = graphOf({ a: [0, 0], b: [10, 0], c: [10, 5], d: [0, 5] }, [line('ab', 'a', 'b'), line('bc', 'b', 'c'), line('cd', 'c', 'd'), line('da', 'd', 'a')],
+      [{ id: 'square', kind: 'perpendicular', lineIds: ['ab', 'bc'] }]);
+    const boxPart = parseCadDocument({ ...createCadDocument('Box', 'box'), schemaVersion: 2, features: [sketchOf(box)] });
+    const offset = { source: { kind: 'graph-cycle', sourceRefs: compileCadSketchGraph(box, {}).cycles[0].sourceRefs }, distance: 2, idPrefix: 'o', copyRelations: true } as const;
+    const grown = applyCadEdits(boxPart, [{ kind: 'offset-sketch-loop', sketchId: 'sketch', ...offset }]);
+    expect(grown.features[0]).toEqual(prepareCadSketchOffset({ sketch: boxPart.features[0] as CadSketchFeature, parameters: {}, ...offset }).sketch);
+    expect((grown.features[0] as CadSketchFeature).graph!.relations.map(relation => relation.id)).toEqual(['square', 'o_r0']);
+    expect(inspectCadSketchRegions(boxPart, 'sketch', { mode: 'graph-cells', proposal: { offset } }))
+      .toEqual({ ...inspectCadSketchRegions(grown, 'sketch', { mode: 'graph-cells' }), proposed: true });
+
+    // Both refuse a malformed flag alike.
+    expect(() => validateCadSketchRegionProposal({ mirror: { ...mirrorBoreRequest, copyRelations: 'yes' } } as never))
+      .toThrowError(expect.objectContaining({ code: 'invalid-region-proposal' }));
+    expect(() => applyCadEdits(sized, [{ kind: 'mirror-sketch-geometry', sketchId: 'sketch', ...mirrorBoreRequest, copyRelations: 'yes' } as never]))
+      .toThrowError(expect.objectContaining({ code: 'invalid-edit' }));
   });
 
   it('carries directions, angles and parallels onto an offset loop, but no length the offset changes', () => {

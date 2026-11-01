@@ -25,7 +25,9 @@ export const CadSketchOffsetSourceSchema = Type.Union([
   Type.Object({ kind: Type.Literal('graph-cycle'), sourceRefs: Type.Array(Type.Object({ entityId: CadIdentifierSchema, reversed: Type.Boolean() }, strict), { minItems: 1 }) }, strict)
 ]);
 export const CadSketchOffsetRequestSchema = Type.Object({ source: CadSketchOffsetSourceSchema, distance: CadScalarSchema,
-  idPrefix: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' }) }, strict);
+  idPrefix: Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' }),
+  /** Also carry the relations internal to a graph loop that an offset keeps exact onto the copy. */
+  copyRelations: Type.Optional(Type.Boolean()) }, strict);
 type Immutable<T> = { readonly [K in keyof T]: Immutable<T[K]> };
 export type CadSketchOffsetSource = Immutable<Static<typeof CadSketchOffsetSourceSchema>>;
 export type CadSketchOffsetRequest = Immutable<Static<typeof CadSketchOffsetRequestSchema>>;
@@ -138,11 +140,12 @@ function offsetCopy(entities: readonly CadSketchGraphEntity[], sourceRefs: reado
  * One exact detached copy. Positive distance is outward, independent of source winding. `copyRelations` carries the relations internal
  * to a graph loop onto the copy by each kind's rule: directions, angles and joints, but no length or radius the offset changes.
  */
-export function prepareCadSketchOffset({ sketch, parameters, copyRelations = false, ...request }: CadSketchOffsetRequest & {
-  readonly sketch: CadSketchFeature; readonly parameters: Readonly<Record<string, number>>; readonly copyRelations?: boolean;
+export function prepareCadSketchOffset({ sketch, parameters, ...request }: CadSketchOffsetRequest & {
+  readonly sketch: CadSketchFeature; readonly parameters: Readonly<Record<string, number>>;
 }): CadSketchOffsetPreparation {
   if (!isCadImportData(request) || !Value.Check(CadSketchOffsetRequestSchema, request))
     throw new CadError('invalid-sketch-offset', 'Offset requires one exact loop, a distance and an identifier prefix of at most 64 characters.');
+  const copyRelations = request.copyRelations === true;
   if (!cadFeatureActive(sketch, { parameters })) return fail('Resume the sketch before offsetting a loop.');
   const { source, idPrefix } = request, distanceMm = evaluateCadScalar(request.distance, parameters);
   if (source.kind === 'profile') {

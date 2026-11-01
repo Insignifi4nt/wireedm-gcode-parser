@@ -7,7 +7,7 @@ import { isCadImportData } from './cadImportData';
 import { compileCadSketchGraph } from './cadSketchGraphGeometry';
 import { cadPathClosureTolerance, cadPathTangentContact } from './cadAnalyticSegments';
 import { cadSketchEntityPointIds, cadSketchRelationPointIds } from './cadSketchGraphReferences';
-import { resolveCadSketchGraphJoints, resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
+import { resolveCadSketchGraphJoints } from './cadSketchGraphJoints';
 import { evaluateCadScalar } from './cadExpression';
 import { classifyLineRayPathSegmentIntersection, classifyParameterizedPathSegmentIntersection } from '@/domain/path-intel/intersections';
 import { createArcSegment, createCircleSegment, createLineSegment, distance, pointOnArcAtParameter } from '@/domain/path-intel/segments';
@@ -15,7 +15,7 @@ import type { ArcPathSegment, CirclePathSegment, LinePathSegment, PathSegment, P
 import { deepFreezeCadData } from './cadDeepFreeze';
 import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 import { cadSketchAxisNormal, isCadSketchVirtualAxisId, type CadSketchVirtualAxisId } from './sketch-relations/cadSketchVirtualElements';
-import { applyCadSketchRemapOutcomes, blockedCadSketchRemaps, remapCadSketchRelations, type CadSketchRemapOutcome, type CadSketchRemapPiece } from './sketch-relations/cadSketchRelationRemap';
+import { applyCadSketchRemapOutcomes, blockedCadSketchRemaps, cadSketchPointIdentities, remapCadSketchRelations, type CadSketchRemapOutcome, type CadSketchRemapPiece } from './sketch-relations/cadSketchRelationRemap';
 
 const strict = { additionalProperties: false }, id = CadIdentifierSchema;
 const parameter = Type.Number({ minimum: 0, maximum: 1 });
@@ -223,7 +223,7 @@ interface TrimRemap { readonly outcomes: readonly CadSketchRemapOutcome[]; reado
  * until it is detached. `cuts` and `newEntityId` are the ids the request gives, or stand-ins before it gives them.
  */
 function trimRemap(graph: CadSketchGraph, entity: SourceEntity, shape: TrimShape, witnesses: readonly Witness[], cuts: readonly string[], newEntityId: string): TrimRemap {
-  const identity = resolveCadSketchPointIdentities(graph), own = cadSketchEntityPointIds(entity);
+  const identity = cadSketchPointIdentities(graph), own = cadSketchEntityPointIds(entity);
   const old = entity.kind === 'circle' || shape.kind !== 'end' ? null : shape.end === 'start' ? entity.startPointId : entity.endPointId;
   const orphans = shape.kind === 'delete' ? orphanedPoints(graph, entity, own, [], identity)
     : old ? orphanedPoints(graph, entity, [old], own.filter(id => id !== old), identity) : new Set<string>();
@@ -249,7 +249,7 @@ const pendingCuts = (witnesses: readonly Witness[]) => witnesses.map((witness, i
  * expression places it, or that a blocked relation names, since the extension would drop that driver.
  */
 function extendRemap(graph: CadSketchGraph, entity: SourceEdge, end: 'start' | 'end', endPointId: string): readonly CadSketchRemapOutcome[] {
-  const identity = resolveCadSketchPointIdentities(graph), old = end === 'start' ? entity.startPointId : entity.endPointId;
+  const identity = cadSketchPointIdentities(graph), old = end === 'start' ? entity.startPointId : entity.endPointId;
   const orphans = orphanedPoints(graph, entity, [old], cadSketchEntityPointIds(entity).filter(id => id !== old), identity);
   const piece: CadSketchRemapPiece = { entityId: entity.id, interval: end === 'end' ? [0, 2] : [-1, 1], orientation: 'same',
     ends: end === 'end' ? [entity.startPointId, endPointId] : [endPointId, entity.endPointId] };
@@ -316,7 +316,7 @@ function middleArcPieces(segment: ArcPathSegment, left: Event, right: Event) {
 function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, segments: readonly PathSegment[], query: BoundaryQuery): Event[] {
   const { segment } = query, operation = query.kind;
   const numericPoints = new Map(graph.points.map(point => [point.id, { x: evaluateCadScalar(point.position[0], parameters), y: evaluateCadScalar(point.position[1], parameters) }]));
-  const joint = resolveCadSketchGraphJoints(graph, numericPoints), events: Event[] = [];
+  const joint = resolveCadSketchGraphJoints(graph, numericPoints, cadSketchPointIdentities(graph)), events: Event[] = [];
   const support = query.kind === 'extend' && segment.kind === 'arc'
     ? createCircleSegment({ id: segment.id, source: segment.source, center: segment.center, radius: segment.radius }) : null;
   const endpointIds = (id: string) => { const entity = graph.entities.find(item => item.id === id); return entity && entity.kind !== 'circle' ? [entity.startPointId, entity.endPointId] : []; };
@@ -641,7 +641,7 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
     if (circle.kind !== 'circle' || !('survivor' in prepared) || prepared.survivor?.kind !== 'arc') throw precision();
     for (const [index, witness] of trim.boundaries.entries()) if (witness.endpointPointId !== undefined && trim.cutPointIds[index] !== witness.endpointPointId)
       throw new CadError('invalid-sketch-trim-point', 'Use the exact witnessed boundary endpoint identity.');
-    const joint = resolveCadSketchPointIdentities(graph), keys = trim.boundaries.map((witness, index) => witness.endpointPointId === undefined
+    const joint = cadSketchPointIdentities(graph), keys = trim.boundaries.map((witness, index) => witness.endpointPointId === undefined
       ? trim.cutPointIds[index] : joint(trim.cutPointIds[index]));
     if (keys[0] === keys[1] || keys.includes(joint(circle.centerPointId))) throw new CadError('invalid-sketch-trim-point', 'The circle cuts and center need distinct point identities.');
     const candidate = parseCadSketchGraph({ ...graph,
@@ -661,7 +661,7 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
     for (const [index, witness] of trim.boundaries.entries()) if (witness.endpointPointId !== undefined && trim.cutPointIds[index] !== witness.endpointPointId)
       throw new CadError('invalid-sketch-trim-point', 'Use the exact witnessed boundary endpoint identity.');
     if (source.kind === 'arc') {
-      const joint = resolveCadSketchPointIdentities(graph), outer = [source.centerPointId, source.startPointId, source.endPointId].map(joint);
+      const joint = cadSketchPointIdentities(graph), outer = [source.centerPointId, source.startPointId, source.endPointId].map(joint);
       const cuts = trim.boundaries.map((witness, index) => witness.endpointPointId === undefined ? trim.cutPointIds[index] : joint(trim.cutPointIds[index]));
       if (cuts[0] === cuts[1] || cuts.some(cut => outer.includes(cut))) throw new CadError('invalid-sketch-trim-point', 'Arc cuts need distinct identities from the original center and endpoints.');
     }
@@ -707,7 +707,7 @@ export function prepareCadSketchExtend({ graph: input, parameters, entityId, end
   const tolerance = cadPathClosureTolerance([segment.center, segment.start, segment.end, event.point]), minimum = Math.max(CAD_PRECISION.minimumLengthMm, tolerance);
   if (distance(current, event.point) <= minimum || distance(opposite, event.point) <= minimum) throw precision('extend');
   if (event.witness.endpointPointId !== undefined) {
-    const joint = resolveCadSketchPointIdentities(graph), key = joint(event.witness.endpointPointId);
+    const joint = cadSketchPointIdentities(graph), key = joint(event.witness.endpointPointId);
     if (key === joint(entity.centerPointId) || key === joint(end === 'start' ? entity.endPointId : entity.startPointId)) throw precision('extend');
   }
   const make = (start: Point2, finish: Point2) => createArcSegment({ id: segment.id, source: segment.source, center: segment.center,
@@ -753,7 +753,7 @@ export function extendCadSketchEntity({ graph: input, parameters, extend }: Sour
   if (source.kind === 'arc') {
     if (extend.boundary.endpointPointId !== undefined && endPointId !== extend.boundary.endpointPointId)
       throw new CadError('invalid-sketch-extend-point', 'Use the exact witnessed boundary endpoint identity.');
-    const joint = resolveCadSketchPointIdentities(graph), key = extend.boundary.endpointPointId === undefined ? endPointId : joint(endPointId);
+    const joint = cadSketchPointIdentities(graph), key = extend.boundary.endpointPointId === undefined ? endPointId : joint(endPointId);
     if (key === joint(source.centerPointId) || key === joint(extend.end === 'start' ? source.endPointId : source.startPointId))
       throw new CadError('invalid-sketch-extend-point', 'The arc endpoint needs a distinct identity from its center and opposite endpoint.');
   }
