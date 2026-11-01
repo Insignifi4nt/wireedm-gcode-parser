@@ -94,6 +94,13 @@ export async function openSketchRelations(page: Page, target?: Locator) {
   await page.getByRole('menuitem', { name: 'Constraints and dimensions', exact: true }).click();
 }
 
+/** Opens the relations list under the sketch being edited, which starts closed, and stays open once opened. */
+export async function openRelationsList(page: Page) {
+  const toggle = page.locator('[data-cad-sketch-relation-list] .cad-sketch-relation-list-toggle');
+  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+}
+
 /** A relation the selection can take, in the icon row beside it: pressing it applies the relation, or removes it once applied. */
 export function relationOffer(page: Page, name: string): Locator {
   return page.getByRole('toolbar', { name: 'Relations for the selection', exact: true }).getByRole('button', { name, exact: true });

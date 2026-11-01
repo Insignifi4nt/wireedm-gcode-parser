@@ -69,9 +69,17 @@ export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, g
     const host = element.offsetParent?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
     const clamp = (value: number, size: number, limit: number) => Math.max(8, Math.min(limit - size - 8, value));
     if (!anchor) { setPosition({ left: clamp((host.width - width) / 2, width, host.width), top: 48 }); return; }
-    // Below the label when it fits, else above it, so the value stays readable while it is typed.
+    // Below the label when it fits, else above it, so the value stays readable while it is typed. The tool dock and the sketch bar float
+    // over the view, so where the editor would share their columns it keeps above the dock and below the bar, and Apply stays reachable.
+    const left = clamp(anchor.left - host.left + anchor.width / 2 - width / 2, width, host.width);
+    const across = (selector: string) => {
+      const rect = element.closest('.cad-workbench')?.querySelector(selector)?.getBoundingClientRect();
+      return rect && rect.width > 0 && rect.height > 0 && rect.left - host.left < left + width && rect.right - host.left > left ? rect : null;
+    };
+    const dock = across('[data-cad-command-dock]'), bar = across('[data-cad-sketch-header]');
+    const floor = dock ? Math.min(host.height, dock.top - host.top) : host.height, ceiling = bar ? Math.max(8, bar.bottom - host.top + 6) : 8;
     const below = anchor.bottom - host.top + 6, above = anchor.top - host.top - height - 6;
-    setPosition({ left: clamp(anchor.left - host.left + anchor.width / 2 - width / 2, width, host.width), top: below + height + 8 <= host.height ? below : Math.max(8, above) });
+    setPosition({ left, top: below + height + 8 <= floor ? below : Math.max(ceiling, above) });
   }, [relationId, findAnchor]);
   // The first editable value takes focus, ready for typing.
   useLayoutEffect(() => {

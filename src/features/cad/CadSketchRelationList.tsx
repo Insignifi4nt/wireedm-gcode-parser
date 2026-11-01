@@ -1,6 +1,6 @@
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { Button } from '@/components/ui/button';
-import { SelectIcon, type WorkbenchDrawnIconComponent } from '@wire-edm/icons-react';
+import { ExpandRightIcon, SelectIcon, type WorkbenchDrawnIconComponent } from '@wire-edm/icons-react';
 import type { CadDocument, CadScalar } from '@/domain/cad/cadDocument';
 import type { CadSketchGraph, CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
@@ -90,16 +90,39 @@ export interface CadSketchRelationListProps {
   onMenu(relation: CadSketchGraphRelation, at: { readonly clientX: number; readonly clientY: number }): void;
   /** A relation to scroll into view, with a token that changes on every request. */
   readonly reveal?: { readonly relationId: string | null; readonly token: string } | null;
+  /** Whether the rows show. The list starts collapsed, so opening a sketch mounts no row; the workbench opens it on a reveal. */
+  readonly expanded: boolean;
+  onExpandedChange(expanded: boolean): void;
 }
 
 /**
  * The sketch's relations under it in the feature tree, every relation the canvas marks and those it cannot, as the canvas caps its marks
- * and some overlap. Rows render only where the list is scrolled, so a sketch with hundreds of relations opens and scrolls like a small one.
+ * and some overlap. Collapsed, it is one heading with the count; expanded, rows render only where the list is scrolled, so a sketch with
+ * hundreds of relations opens and scrolls like a small one.
  */
-export const CadSketchRelationList = memo(function CadSketchRelationList({ graph, parameters, issues, selectedIds, selection, onlySelection, onOnlySelection, locked, highlight,
-  onSelect, onOpen, onDelete, onMenu, reveal }: CadSketchRelationListProps) {
+export const CadSketchRelationList = memo(function CadSketchRelationList({ expanded, ...props }: CadSketchRelationListProps) {
+  const listId = useId(), toggle = useRef<HTMLButtonElement>(null);
+  const { graph, selection, onlySelection, onOnlySelection, onExpandedChange } = props;
+  return <div className="cad-sketch-relation-list" data-cad-sketch-relation-list="">
+    <div className="cad-sketch-relation-list-heading">
+      <Button ref={toggle} type="button" className="cad-sketch-relation-list-toggle" aria-expanded={expanded} aria-controls={expanded ? listId : undefined}
+        title={expanded ? 'Hide the relations of this sketch' : 'List the relations of this sketch'} onClick={() => onExpandedChange(!expanded)}>
+        <ExpandRightIcon size={10} />Relations <small aria-label={`${graph.relations.length} relations`}>{graph.relations.length}</small>
+      </Button>
+      {expanded && <Button type="button" size="icon" aria-label="Only the selection" aria-pressed={onlySelection} disabled={!selection.length && !onlySelection}
+        title="List only the relations on the selected points and edges" onClick={() => onOnlySelection(!onlySelection)}><SelectIcon size={12} /></Button>}
+    </div>
+    {expanded && <CadSketchRelationRows {...props} id={listId} onEmpty={() => toggle.current?.focus({ preventScroll: true })} />}
+  </div>;
+});
+
+/** The expanded list's rows. */
+function CadSketchRelationRows({ id, graph, parameters, issues, selectedIds, selection, onlySelection, locked, highlight, onSelect, onOpen, onDelete, onMenu, reveal, onEmpty }:
+  Omit<CadSketchRelationListProps, 'expanded'> & { readonly id: string; onEmpty(): void }) {
   const owner = useId(), scroller = useRef<HTMLDivElement>(null), shown = useRef<{ readonly graph: CadSketchGraph; readonly relation: CadSketchGraphRelation } | null>(null);
   const [scrollTop, setScrollTop] = useState(0), [focusId, setFocusId] = useState<string | null>(null), keyboardMove = useRef(false);
+  // Where the focused row was, and whether the rows still hold focus though it fell to the page, as when that row's relation was deleted.
+  const focusAt = useRef(0), holdsFocus = useRef(false);
   const relations = useMemo(() => {
     if (!onlySelection || !selection.length) return graph.relations;
     const points = new Set(selection.flatMap(pick => pick.kind === 'point' ? [pick.id] : graph.entities.filter(entity => entity.id === pick.id).flatMap(entity => entity.kind === 'line'
@@ -108,6 +131,7 @@ export const CadSketchRelationList = memo(function CadSketchRelationList({ graph
     return graph.relations.filter(relation => cadSketchRelationPointIds(graph, relation).some(id => points.has(id)) || cadSketchRelationHighlight(graph, relation).entityIds.some(id => entities.has(id)));
   }, [graph, onlySelection, selection]);
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const positions = useMemo(() => new Map(relations.map((relation, at) => [relation.id, at])), [relations]);
   const height = Math.max(1, Math.min(relations.length, VISIBLE_ROWS)) * CAD_SKETCH_RELATION_ROW_HEIGHT;
   const first = Math.max(0, Math.floor(scrollTop / CAD_SKETCH_RELATION_ROW_HEIGHT) - OVERSCAN);
   const last = Math.min(relations.length, Math.ceil((scrollTop + height) / CAD_SKETCH_RELATION_ROW_HEIGHT) + OVERSCAN);
@@ -125,6 +149,17 @@ export const CadSketchRelationList = memo(function CadSketchRelationList({ graph
     const at = reveal.relationId ? relations.findIndex(relation => relation.id === reveal.relationId) : 0;
     if (at >= 0) scrollTo(at);
   }, [reveal, relations]);
+  // The focused row's relation gone, as after Delete, the tab stop moves to the row that took its place, else the one before it, and focus
+  // follows it if the deleted row held it; with no row left, focus goes to the heading.
+  useLayoutEffect(() => {
+    if (focusId === null || positions.has(focusId)) return;
+    const at = Math.min(focusAt.current, relations.length - 1), next = relations[at];
+    const lost = holdsFocus.current && (document.activeElement === null || document.activeElement === document.body);
+    setFocusId(next?.id ?? null);
+    if (!next) { holdsFocus.current = false; if (lost) onEmpty(); return; }
+    focusAt.current = at;
+    if (lost) { keyboardMove.current = true; scrollTo(at); }
+  }, [positions, relations, focusId]);
   // A row the keyboard moves to takes focus once it renders, though the row it left may have scrolled out and taken focus with it.
   useLayoutEffect(() => {
     if (!focusId || !keyboardMove.current) return;
@@ -157,23 +192,29 @@ export const CadSketchRelationList = memo(function CadSketchRelationList({ graph
   };
   const menu = (event: MouseEvent<HTMLButtonElement>, relation: CadSketchGraphRelation) => { event.preventDefault(); event.stopPropagation(); if (!locked) onMenu(relation, event); };
   const issueStates = (list: readonly CadSketchIssue[] | undefined) => list?.length ? [...new Set(list.map(issue => issue.state))] : null;
-  return <div className="cad-sketch-relation-list" data-cad-sketch-relation-list="">
-    <div className="cad-sketch-relation-list-heading">
-      <span>Relations <small aria-label={`${graph.relations.length} relations`}>{graph.relations.length}</small></span>
-      <Button type="button" size="icon" aria-label="Only the selection" aria-pressed={onlySelection} disabled={!selection.length && !onlySelection}
-        title="List only the relations on the selected points and edges" onClick={() => onOnlySelection(!onlySelection)}><SelectIcon size={12} /></Button>
-    </div>
-    {relations.length === 0 ? <p className="cad-sketch-relation-list-empty">{onlySelection && selection.length ? 'Nothing constrains the selection.' : 'No relations yet.'}</p>
-      : <div ref={scroller} className="cad-sketch-relation-list-scroller" style={{ height }} onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
+  // The tab stop is the focused row, else the first row in view, so it survives scrolling and a deleted row.
+  const focusIndex = focusId === null ? undefined : positions.get(focusId);
+  const stopId = focusIndex !== undefined && focusIndex >= first && focusIndex < last ? focusId : relations[first]?.id;
+  // Focus moving elsewhere ends the rows' hold on it; focus falling to the page because its row went does not. A row being removed can be
+  // told blur while still in the page, so that case is decided once the render that removes it is done.
+  const blurred = (event: FocusEvent<HTMLButtonElement>) => {
+    hide();
+    const related = event.relatedTarget, row = event.currentTarget;
+    if (related instanceof Node) { if (!scroller.current?.contains(related)) holdsFocus.current = false; return; }
+    queueMicrotask(() => { if (row.isConnected && document.activeElement !== row) holdsFocus.current = false; });
+  };
+  return relations.length === 0 ? <p id={id} className="cad-sketch-relation-list-empty">{onlySelection && selection.length ? 'Nothing constrains the selection.' : 'No relations yet.'}</p>
+      : <div ref={scroller} id={id} className="cad-sketch-relation-list-scroller" style={{ height }} onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
         <ul aria-label="Sketch relations" style={{ height: relations.length * CAD_SKETCH_RELATION_ROW_HEIGHT }}>
           {relations.slice(first, last).map((relation, offset) => {
             const at = first + offset, row = cadSketchRelationRow(graph, relation), Icon = row.icon, states = issueStates(issues.byRelation.get(relation.id));
-            const value = cadSketchRelationRowQuantity(graph, relation, parameters), focusable = (focusId ?? relations[first]?.id) === relation.id;
+            const value = cadSketchRelationRowQuantity(graph, relation, parameters);
+            // A pending edit leaves the rows in place, inactive, so the focused row keeps focus while its deletion is judged.
             return <li key={relation.id} aria-setsize={relations.length} aria-posinset={at + 1} style={{ top: at * CAD_SKETCH_RELATION_ROW_HEIGHT }}>
               <Button type="button" className={`cad-sketch-relation-row${selected.has(relation.id) ? ' is-selected' : ''}${states ? ' has-issues' : ''}`} data-cad-sketch-relation-row={relation.id}
-                aria-label={[row.label, value, ...states ?? []].filter(Boolean).join(' · ')} aria-pressed={selected.has(relation.id)} disabled={locked} tabIndex={focusable ? 0 : -1}
-                onFocus={() => { setFocusId(relation.id); show(relation); }} onBlur={hide} onPointerEnter={() => show(relation)} onPointerLeave={hide}
-                onClick={event => onSelect(relation, event.shiftKey || event.ctrlKey || event.metaKey)} onDoubleClick={() => onOpen(relation)}
+                aria-label={[row.label, value, ...states ?? []].filter(Boolean).join(' · ')} aria-pressed={selected.has(relation.id)} aria-disabled={locked || undefined} tabIndex={stopId === relation.id ? 0 : -1}
+                onFocus={() => { setFocusId(relation.id); focusAt.current = at; holdsFocus.current = true; show(relation); }} onBlur={blurred} onPointerEnter={() => show(relation)} onPointerLeave={hide}
+                onClick={event => { if (!locked) onSelect(relation, event.shiftKey || event.ctrlKey || event.metaKey); }} onDoubleClick={() => { if (!locked) onOpen(relation); }}
                 onKeyDown={event => keyDown(event, relation, at)} onContextMenu={event => menu(event, relation)}>
                 <Icon size={12} /><span className="cad-sketch-relation-name">{row.title}</span><span className="cad-sketch-relation-operands">{row.operands}</span>
                 {value && <span className="cad-sketch-relation-value">{value}</span>}{states && <small className="cad-sketch-relation-state">{states.join(', ')}</small>}
@@ -181,6 +222,5 @@ export const CadSketchRelationList = memo(function CadSketchRelationList({ graph
             </li>;
           })}
         </ul>
-      </div>}
-  </div>;
-});
+      </div>;
+}

@@ -1,5 +1,9 @@
-/* The thin bar over a sketch being edited. */
-.cad-sketch-header { position: absolute; z-index: 8; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; max-width: calc(100% - 24px); height: 28px; padding: 0 4px 0 9px; background: var(--card); border: 1px solid var(--border); border-radius: 3px; font-size: 10px; color: var(--muted-foreground); white-space: nowrap; }
+/* The thin bar over a sketch being edited. Fit keeps a fitted sketch below it; geometry or a dimension panned under it stays in view, because
+   the bar is see-through and only its controls take the pointer, until the pointer or focus is on the bar. */
+.cad-sketch-header { position: absolute; z-index: 8; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; max-width: calc(100% - 24px); height: 28px; padding: 0 4px 0 9px; background: color-mix(in srgb, var(--card) 72%, transparent); border: 1px solid var(--border); border-radius: 3px; font-size: 10px; color: var(--muted-foreground); white-space: nowrap; pointer-events: none; transition: background-color var(--motion-fast); }
+.cad-sketch-header :is(button, input, select, a, [tabindex], .cad-sketch-header-issue-list) { pointer-events: auto; }
+.cad-sketch-header:is(:hover, :focus-within) { background: var(--card); }
+@media (prefers-reduced-motion: reduce) { .cad-sketch-header { transition: none; } }
 .cad-sketch-header-name { min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; color: var(--foreground); }
 .cad-sketch-header .cad-sketch-freedom { flex: 0 1 auto; min-width: 0; gap: 2px; padding: 0; border: 0; }
 .cad-sketch-header .cad-sketch-freedom > output { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

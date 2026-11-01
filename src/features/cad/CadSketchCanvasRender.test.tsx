@@ -301,7 +301,7 @@ describe('sketch canvas cursor rendering', () => {
     pending = await arm('s48a'); await act(async () => root.render(<></>)); expect(cleared(pending)).toBe(true);
   });
 
-  it('shows the selection icon row only in Select at rest, hides it while drawing, dragging or locked, and renders it no more as the pointer moves', async () => {
+  it('shows the selection icon row only in Select at rest, hides it while drawing or dragging, keeps it inactive while locked, and renders it no more as the pointer moves', async () => {
     const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line' as const, construction: false, startPointId, endPointId });
     const graph = { points: [{ id: 'a', position: [0, 0] as [number, number] }, { id: 'b', position: [40, 0] as [number, number] }, { id: 'e', position: [10, 8] as [number, number] },
       { id: 'f', position: [16, 8] as [number, number] }], entities: [line('bottom', 'a', 'b'), line('loose', 'e', 'f')], relations: [] };
@@ -312,7 +312,7 @@ describe('sketch canvas cursor rendering', () => {
     const model: CadSketchSelectionActionsModel = { graph, selection, dimensionAvailable: true, disabled: false, onOffer: vi.fn(), onDimension: vi.fn(), get offers() { reads += 1; return offers; } };
     await show({ graphControls: { ...props().graphControls!, selection, selectionActions: model } });
     const row = () => container.querySelector('[data-cad-sketch-selection-actions]');
-    expect([...row()!.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Horizontal', 'Vertical', 'Fix', 'Dimension the selection']);
+    expect([...row()!.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Horizontal', 'Vertical', 'Dimension the selection']);
     reads = 0; canvasRenders.mockClear();
     await move(5, 5); await move(8, 6); await move(13, 8); await move(30, 2);
     expect(canvasRenders).toHaveBeenCalled(); expect(reads).toBe(0);
@@ -323,10 +323,12 @@ describe('sketch canvas cursor rendering', () => {
     await pointer('pointerdown', 13, 8, loose); await pointer('pointermove', 14, 9, loose, 1);
     expect(row()).toBeNull();
     await pointer('pointerup', 14, 9, loose); expect(row()).not.toBeNull();
-    // A drawing tool, or a lock, hides it too.
+    // A drawing tool hides it too.
     await show({ tool: 'line' }); expect(row()).toBeNull();
-    await show({ tool: 'select' }); expect(row()).not.toBeNull();
-    await show({ interactionLocked: true }); expect(row()).toBeNull();
+    await show({ tool: 'select' }); expect(row()).not.toBeNull(); expect(row()!.hasAttribute('aria-busy')).toBe(false);
+    // A lock, such as an edit being judged, keeps it in place with every button inactive, so focus on it survives the edit.
+    await show({ interactionLocked: true }); expect(row()!.getAttribute('aria-busy')).toBe('true');
+    expect([...row()!.querySelectorAll('button')].every(button => button.getAttribute('aria-disabled') === 'true')).toBe(true);
   });
 
   it('drags geometry without rendering the relation glyphs it does not move, when the drag starts or ends', async () => {

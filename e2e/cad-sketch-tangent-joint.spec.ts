@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures/native-sketch-solver';
-import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationOffer, relationRow } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, openRelationsList, relationOffer, relationRow } from './cad-tool-helpers';
 
 test('keeps a rounded profile tangent through radius edits, private recovery, solid/export, exact history and saved agent parity',async({page})=>{
   await prepareCadTools(page);await call(page,'cad_open_workspace');
@@ -19,7 +19,7 @@ test('keeps a rounded profile tangent through radius edits, private recovery, so
   const tangent=relationOffer(page,'Tangent'),radius=relationRow(page,'Radius relation');
   await edit();await pick('line');await pick('arc',true);await tangent.click();await expect(tangent).toHaveAttribute('aria-pressed','true');
   await tangent.click();await expect(tangent).toHaveAttribute('aria-pressed','false');expect(await read(base.version)).toEqual(sketch);
-  await tangent.click();await expect(tangent).toHaveAttribute('aria-pressed','true');await pick('arc');await radius.dblclick();
+  await tangent.click();await expect(tangent).toHaveAttribute('aria-pressed','true');await pick('arc');await openRelationsList(page);await radius.dblclick();
   await page.getByRole('textbox',{name:'Radius mm',exact:true}).fill('-1');await expect(page.getByRole('button',{name:'Apply',exact:true})).toBeDisabled();await page.getByRole('button',{name:'Cancel',exact:true}).click();
   await radius.dblclick();await page.getByRole('textbox',{name:'Radius mm',exact:true}).fill('8');await apply();expect(await read(base.version)).toEqual(sketch);
   await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);

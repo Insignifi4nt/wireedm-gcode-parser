@@ -1,6 +1,10 @@
 /* The relations of the sketch being edited, under it in the feature tree. Rows have one fixed height, so only the scrolled rows render. */
 .cad-sketch-relation-list { width: 260px; margin: 2px 0 2px; }
-.cad-sketch-relation-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 1px 2px 1px 6px; font-size: 10px; color: var(--muted-foreground); }
+.cad-sketch-relation-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 1px 2px; font-size: 10px; color: var(--muted-foreground); }
+/* The heading is the list's disclosure: collapsed by default, so opening a sketch mounts no row. */
+.cad-workbench .cad-sketch-relation-list-toggle { height: 18px; padding: 0 4px 0 2px; gap: 3px; font-size: 10px; }
+.cad-sketch-relation-list-toggle > svg { width: 10px; height: 10px; }
+.cad-sketch-relation-list-toggle[aria-expanded="true"] > svg { transform: rotate(90deg); }
 .cad-sketch-relation-list-heading small { margin-left: 3px; }
 .cad-sketch-relation-list-empty { margin: 2px 6px 4px; font-size: 10px; color: var(--muted-foreground); }
 .cad-sketch-relation-list-scroller { position: relative; overflow-y: auto; pointer-events: auto; background: var(--card); border: 1px solid var(--border); border-radius: 3px; text-shadow: none; }

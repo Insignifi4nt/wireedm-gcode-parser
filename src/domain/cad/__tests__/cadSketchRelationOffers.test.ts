@@ -62,7 +62,7 @@ describe('sketch relation offers', () => {
   it('align a line by its own ends, and each of several lines', () => {
     const graph = sketch([{ id: 'level', kind: 'horizontal', pointIds: ['b', 'a'] }]);
     const one = cadSketchRelationOffers(graph, [edge('ab')]);
-    expect(kinds(one)).toEqual(['horizontal', 'vertical', 'fixed-point']);
+    expect(kinds(one)).toEqual(['horizontal', 'vertical']);
     expect(find(one, 'horizontal')).toMatchObject({ state: 'applied', relationIds: ['level'] });
     // A level line cannot also stand upright, as the Constrain tool says.
     expect(find(one, 'vertical')).toMatchObject({ state: 'blocked', reason: 'This is already horizontal.' });
@@ -94,7 +94,7 @@ describe('sketch relation offers', () => {
     const graph = sketch([{ id: 'kept', kind: 'parallel', lineIds: ['cd', 'ab'] }]);
     const offers = cadSketchRelationOffers(graph, [edge('ab'), edge('bc'), edge('cd')]);
     // Three lines also mirror the first two about the last; here bc ends at c, an end of cd, which only mirrors onto itself.
-    expect(kinds(offers)).toEqual(['horizontal', 'vertical', 'parallel', 'perpendicular', 'collinear', 'symmetric', 'equal-length', 'fixed-point']);
+    expect(kinds(offers)).toEqual(['horizontal', 'vertical', 'parallel', 'perpendicular', 'collinear', 'symmetric', 'equal-length']);
     expect(find(offers, 'symmetric')).toMatchObject({ state: 'blocked', operands: [[edge('ab'), edge('bc'), edge('cd')]],
       reason: 'A point at an end of the axis line can only mirror onto itself, so both curves need to share it.' });
     expect(find(offers, 'parallel')).toEqual({ kind: 'parallel', state: 'available', operands: [[edge('ab'), edge('bc')]],
@@ -106,7 +106,7 @@ describe('sketch relation offers', () => {
   it('put a point on a line or at its middle, in slot order whatever the pick order, unless it is one of its ends', () => {
     const graph = sketch();
     const offers = cadSketchRelationOffers(graph, [edge('ab'), point('m')]);
-    expect(kinds(offers)).toEqual(['midpoint', 'point-on-line', 'fixed-point']);
+    expect(kinds(offers)).toEqual(['midpoint', 'point-on-line']);
     expect(find(offers, 'midpoint')).toMatchObject({ state: 'available', operands: [[point('m'), edge('ab')]], relations: [{ kind: 'midpoint', pointId: 'm', lineId: 'ab' }] });
     expectAddable(graph, offers);
     const end = cadSketchRelationOffers(graph, [point('a'), edge('ab')]);
@@ -149,9 +149,8 @@ describe('sketch relation offers', () => {
 
   it('mirror two points, or a circle by its centre, about a line', () => {
     const graph = sketch(), offers = cadSketchRelationOffers(graph, [point('a'), edge('axis'), point('b')]);
-    // The axis line and the points also take a Fix for each.
     expect(offers).toEqual([{ kind: 'symmetric', state: 'available', operands: [[point('a'), point('b'), edge('axis')]],
-      relations: [{ kind: 'symmetric', pointIds: ['a', 'b'], lineId: 'axis' }], relationIds: [] }, expect.objectContaining({ kind: 'fixed-point', state: 'available' })]);
+      relations: [{ kind: 'symmetric', pointIds: ['a', 'b'], lineId: 'axis' }], relationIds: [] }]);
     expect(find(cadSketchRelationOffers(graph, [edge('c1'), point('m'), edge('axis')]), 'symmetric').relations).toEqual([{ kind: 'symmetric', pointIds: ['o1', 'm'], lineId: 'axis' }]);
     expectAddable(graph, offers);
     expect(find(cadSketchRelationOffers(graph, [point('a'), point('u'), edge('axis')]), 'symmetric')).toMatchObject({ state: 'blocked',
@@ -197,23 +196,6 @@ describe('sketch relation offers', () => {
     expect(find(cadSketchRelationOffers(graph, [point('a'), point('b'), point('w')]), 'fixed-point')).toMatchObject({ state: 'available', relationIds: ['held'],
       relations: [{ kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { kind: 'fixed-axis', pointId: 'w', axis: 'y', value: 4 }] });
     expectAddable(graph, cadSketchRelationOffers(graph, [point('a'), point('c'), point('w')]));
-  });
-
-  it('fix a whole line or arc through its points, shared corners once, and never a circle', () => {
-    const graph = sketch();
-    expect(find(cadSketchRelationOffers(graph, [edge('ab')]), 'fixed-point')).toEqual({ kind: 'fixed-point', state: 'available', operands: [[edge('ab')]],
-      relations: [{ kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { kind: 'fixed-point', pointId: 'b', position: [10, 0] }], relationIds: [] });
-    // Two edges that share b fix it once; the arc fixes its centre and both ends, c among them only once.
-    const chain = find(cadSketchRelationOffers(graph, [edge('ab'), edge('bc'), edge('arc1')]), 'fixed-point');
-    expect(chain.relations.map(relation => relation.kind === 'fixed-point' ? relation.pointId : null)).toEqual(['a', 'b', 'c', 'q', 'g']);
-    expectAddable(graph, [chain]);
-    // A point and an edge mix in one selection, as a box selection gives them.
-    expect(find(cadSketchRelationOffers(graph, [point('m'), edge('cd')]), 'fixed-point').relations).toHaveLength(3);
-    const held = sketch([{ id: 'fa', kind: 'fixed-point', pointId: 'a', position: [0, 0] }, { id: 'fb', kind: 'fixed-point', pointId: 'b', position: [10, 0] }]);
-    expect(find(cadSketchRelationOffers(held, [edge('ab')]), 'fixed-point')).toMatchObject({ state: 'applied', relationIds: ['fa', 'fb'] });
-    expect(find(cadSketchRelationOffers(held, [edge('bc')]), 'fixed-point')).toMatchObject({ state: 'available', relationIds: [], relations: [{ kind: 'fixed-point', pointId: 'c' }] });
-    expect(cadSketchRelationOffers(graph, [edge('c1')]).some(offer => offer.kind === 'fixed-point')).toBe(false);
-    expect(cadSketchRelationOffers(graph, [edge('ab'), edge('c1')]).some(offer => offer.kind === 'fixed-point')).toBe(false);
   });
 
   it('plan each part with the relations the parts before it add, as the tool would add them one after another', () => {

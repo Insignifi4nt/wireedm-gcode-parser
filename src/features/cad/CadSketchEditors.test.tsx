@@ -72,6 +72,30 @@ describe('value editor at a dimension', () => {
     await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(source);
   });
 
+  it('opens below its dimension unless the tool dock or the sketch bar would cover it there, keeping Apply reachable', async () => {
+    // The view: the dock floats over columns 300 to 700 from 700 px down, and the sketch bar over 380 to 720 down to 50 px.
+    const workbench = document.createElement('div'); workbench.className = 'cad-workbench'; document.body.append(workbench); workbench.append(container);
+    const dock = document.createElement('div'), bar = document.createElement('div'), label = document.createElement('div');
+    dock.setAttribute('data-cad-command-dock', ''); bar.setAttribute('data-cad-sketch-header', ''); workbench.append(dock, bar, label);
+    let anchor = new DOMRect(400, 600, 40, 12);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this === dock ? new DOMRect(300, 700, 400, 50) : this === bar ? new DOMRect(380, 8, 340, 42) : this === label ? anchor : new DOMRect(0, 0, 0, 0);
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(228); vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(120);
+    const source = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }], entities: [line('base', 'a', 'b')],
+      relations: [{ id: 'size', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] });
+    const top = () => (container.querySelector<HTMLFormElement>('form[data-cad-sketch-value-editor]')!).style.top;
+    const open = async () => { await act(async () => root.render(<></>)); await mount(source, props => <CadSketchDimensionValueEditor {...props} relationId="size" findAnchor={() => label} onClose={vi.fn()} onAccepted={vi.fn()} />); };
+    try {
+      // Below the label at 618 px it would reach 738 px, under the dock, so it opens above the label instead.
+      await open(); expect(top()).toBe('474px');
+      // Clear of the dock's columns it opens below.
+      anchor = new DOMRect(40, 600, 40, 12); await open(); expect(top()).toBe('618px');
+      // Under the dock with too little room above the label, it stops under the bar rather than over it.
+      anchor = new DOMRect(400, 150, 40, 12); vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(560); await open(); expect(top()).toBe('56px');
+    } finally { document.body.append(container); workbench.remove(); }
+  });
+
   it('keeps a distance from an axis on its side of the axis and edits an angle in degrees', async () => {
     const source = part({ points: [{ id: 'a', position: [-10, 0] }, { id: 'b', position: [0, 0] }, { id: 'c', position: [0, 10] }], entities: [line('base', 'a', 'b'), line('side', 'b', 'c')],
       relations: [{ id: 'left', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: -10 },

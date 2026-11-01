@@ -228,6 +228,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const submission = useCadEditSubmission();
   const [graphPending, setGraphPending] = useState(false);
   const [boxPending, setBoxPending] = useState(false);
+  // Whether the selection icon row found a place clear of the selection; without one the status line says where its commands are.
+  const [selectionActionsRoom, setSelectionActionsRoom] = useState(true);
   const [pickFilter, setPickFilter] = useState<CadSketchGraphPickFilter>('auto');
   const [overlap, setOverlap] = useState<CadSketchOverlapPick | null>(null);
   const [pickHighlight, setPickHighlight] = useState<CadSketchGraphSelection | null>(null);
@@ -694,7 +696,12 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const relationsShown = Boolean(graphControls) && graphControls?.showRelations !== false, sourceGraphValue = sourceSketch.kind === 'sketch' && sourceSketch.graph ? cadSketchGraphPlacedFrom(sourceSketch.graph) : undefined;
   const glyphCount = useMemo(() => relationsShown && sourceGraphValue ? countCadSketchRelationGlyphs(sourceGraphValue) : 0, [relationsShown, sourceGraphValue]);
   const glyphStatus = tool === 'select' && glyphCount > CAD_SKETCH_RELATION_GLYPH_LIMIT ? `Relations shown on selected or hovered geometry · ${glyphCount} marks in this sketch` : null;
-  const contextStatus = dimensionStatus && glyphStatus ? `${dimensionStatus} · ${glyphStatus}` : dimensionStatus ?? glyphStatus;
+  // The selection icon row hides while drawing, dragging or committing a drag; an edit or operation elsewhere, such as a press of the row itself,
+  // leaves it in place, inactive, so focus on it survives the edit.
+  const selectionActionsShown = Boolean(graphControls?.selectionActions && sourceGraph && tool === 'select' && !geometryPick && !positionPick && !isPreview && !boxPending
+    && !graphPending && !submission.applying && dragPreview === null && points.length === 0 && !pathPending);
+  const roomStatus = selectionActionsShown && !selectionActionsRoom ? 'No room beside the selection for its relation icons · Constrain and Dimension apply the same' : null;
+  const contextStatus = [dimensionStatus, glyphStatus, roomStatus].filter(Boolean).join(' · ') || null;
   const layerControls = useMemo(() => graphControls && boxSelections ? { ...graphControls, selection: boxSelections } : graphControls, [graphControls, boxSelections]);
   const graphPickAt = useRef<(event: { clientX: number; clientY: number }) => CadSketchGraphSelection | null>(() => null);
   graphPickAt.current = event => { const point = getRawPoint(event), rect = svg.current?.getBoundingClientRect(); return point && rect?.height ? graphPicks(point, span / rect.height)[0] ?? null : null; };
@@ -1698,9 +1705,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
       : !isPreview && contextStatus && <div className="cad-sketch-context" role="status" data-cad-dimension-status="">{contextStatus}</div>}
     <p id={instructionsId} className="cad-sr-only">{interactionLocked ? 'Drawing is paused while another edit or operation is active.' : currentTrim?.kind === 'ready' ? `${instruction}. ${currentTrim.help}` : instruction} Keyboard: arrow keys move the cursor, Shift moves ten grid steps, Space adds a point, Enter adds a point or finishes a line chain, Backspace undoes the last point or segment, Escape finishes a line chain or cancels drawing and, with nothing pending, returns to Select, F fits the sketch.</p>
     {viewTools}
-    {graphControls?.selectionActions && sourceGraph && tool === 'select' && !geometryPick && !positionPick && !isPreview && !interactionLocked && !submission.applying && !graphPending && !boxPending
-      && dragPreview === null && points.length === 0 && !pathPending && <CadSketchSelectionActions model={graphControls.selectionActions} prepared={sourceGraph} center={center} width={width} span={span}
-        pixelWidth={viewportSize.width} pixelHeight={viewportSize.height} onEscape={focusCanvas} />}
+    {selectionActionsShown && graphControls?.selectionActions && sourceGraph && <CadSketchSelectionActions model={graphControls.selectionActions} prepared={sourceGraph} center={center} width={width} span={span}
+      pixelWidth={viewportSize.width} pixelHeight={viewportSize.height} busy={interactionLocked} onEscape={focusCanvas} onRoomChange={setSelectionActionsRoom} />}
     {/* A chain that can stay open keeps the toolbar in view, since a tool switch saves it; its tools wait for a completed segment. */}
     {!externalInteractionLocked && (tool !== 'select' || points.length > 0) && <CadDrawingTools active={points.length > 0 || pathPending && !chainOpen}><div className={`cad-sketch-instruction ${chainTool ? 'cad-path-instruction' : ''}`} onKeyDown={event => {
       if (event.nativeEvent.isComposing) return;

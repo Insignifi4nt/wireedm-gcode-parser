@@ -815,13 +815,15 @@ describe('CAD sketch interaction', () => {
     expect(currentDocument).toEqual(original);
   });
 
-  it('reads current inspector bounds only on Fit and keeps the canvas/camera stable when the panel minimizes', async () => {
+  it('reads current inspector and sketch bar bounds only on Fit and keeps the canvas/camera stable when the panel minimizes', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(800);
     let panelHeight = 600;
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       if (this.hasAttribute('data-cad-model-tree')) return new DOMRect(110, 60, 180, 200);
       if (this.hasAttribute('data-cad-command-dock')) return new DOMRect(400, 789, 300, 55);
+      // The sketch bar, 8 px below the top of the view and centred.
+      if (this.hasAttribute('data-cad-sketch-header')) return new DOMRect(380, 58, 340, 30);
       const panel = this.hasAttribute('data-cad-properties');
       const left = panel ? 700 : 100, top = panel ? 62 : 50, width = panel ? 280 : 900, height = panel ? panelHeight : 800;
       return { x: left, y: top, left, top, right: left + width, bottom: top + height, width, height, toJSON: () => ({}) };
@@ -833,6 +835,8 @@ describe('CAD sketch interaction', () => {
     const scale = 800 / state.heightSpanMm;
     expect(450 + (50 - state.centerMm[0]) * scale).toBeLessThanOrEqual(600);
     expect(450 + (0 - state.centerMm[0]) * scale).toBeGreaterThanOrEqual(0);
+    // The plate's top edge, at y 40, starts below the bar, whose bottom is 38 px into the view.
+    expect(400 - (40 - state.centerMm[1]) * scale).toBeGreaterThanOrEqual(38);
     panelHeight = 24; await click('Minimize configuration');
     expect(viewport().getState().view).toEqual(state);
     await act(async () => viewport().apply({ kind: 'fit' }));
@@ -840,6 +844,23 @@ describe('CAD sketch interaction', () => {
     expect(minimized).not.toEqual(state);
     expect(container.querySelector('.cad-center')?.contains(container.querySelector('[data-cad-model-tree]'))).toBe(true);
     expect(currentDocument).toBe(initial);
+  });
+  it('fits a sketch below the sketch bar, which covers the top of a short wide view', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(900);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(300);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      // The bar, 8 px below the top of the view and centred; the panels lie outside the view.
+      if (this.hasAttribute('data-cad-sketch-header')) return new DOMRect(380, 58, 340, 30);
+      if (this.matches('[data-cad-properties], [data-cad-model-tree], [data-cad-command-dock]')) return new DOMRect(-500, -500, 10, 10);
+      return new DOMRect(100, 50, 900, 300);
+    });
+    await mount(solidDocument()); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+    const state = viewport().getState().view;
+    if (!state || state.mode === 'solid') throw new Error('Expected sketch view.');
+    // The 50 × 40 plate fills the height left under the bar, so its top edge, at y 40, lies below the bar's bottom, 38 px into the view.
+    const scale = 300 / state.heightSpanMm;
+    expect(150 - (40 - state.centerMm[1]) * scale).toBeGreaterThanOrEqual(38);
+    expect(150 - (0 - state.centerMm[1]) * scale).toBeLessThanOrEqual(300);
   });
   it('owns optional depth interaction through the real feature editor and releases one correlated batch to ordinary Apply/Undo', async () => {
     setCadPreferences({ navigationMode: 'mouse', showOnPartDimensions: true, showDepthHandles: true });
@@ -1605,15 +1626,16 @@ describe('CAD sketch interaction', () => {
     await act(async () => center.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
     expect(viewport().getState().selectedSketchGeometrySet).toEqual([{ kind: 'point', id: 'center' }]);
     expect(() => field('Plane offset')).toThrow('missing');
-    // Selection alone leaves the relations tree listing every relation; the geometry context menu lists only the selection's.
+    // The relations tree starts collapsed and selection leaves it so; the geometry context menu opens it on the selection's relations alone.
     const only = () => container.querySelector('[data-cad-sketch-relation-list] button[aria-label="Only the selection"]')?.getAttribute('aria-pressed');
-    expect(only()).toBe('false');
+    const expanded = () => container.querySelector('[data-cad-sketch-relation-list] .cad-sketch-relation-list-toggle')?.getAttribute('aria-expanded');
+    expect(expanded()).toBe('false'); expect(only()).toBeUndefined();
     const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]'); if (!canvas) throw new Error('Canvas missing.');
     vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
     await act(async () => { (center as SVGGElement).focus(); center.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })); });
     const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(entry => entry.textContent === 'Constraints and dimensions'); if (!item) throw new Error('Missing Constraints and dimensions.');
     await act(async () => item.click());
-    expect(only()).toBe('true');
+    expect(expanded()).toBe('true'); expect(only()).toBe('true');
     await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: null }));
     expect(field('Plane offset')).toBeTruthy();
   });
@@ -1974,11 +1996,15 @@ describe('CAD sketch interaction', () => {
         { id: 'angle', kind: 'line-angle', rays: [{ lineId: 'base', towardPointId: 'a' }, { lineId: 'side', towardPointId: 'c' }], sense: 'cw', value: 90 },
         { id: 'size', kind: 'radial-size', entityId: 'hole', quantity: 'diameter', value: 8 }, { id: 'x', kind: 'fixed-axis', pointId: 'o', axis: 'x', value: 10 },
         { id: 'measured', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'side' } }] } }] });
+    /** Opens the sketch, and its relations list under it, which starts collapsed. */
     const open = async (props?: Parameters<typeof mount>[1], source = bracket()) => {
       setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
       await mount(source, props); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+      await expandRelations();
       return source;
     };
+    const relationsToggle = () => container.querySelector<HTMLButtonElement>('[data-cad-sketch-relation-list] .cad-sketch-relation-list-toggle');
+    const expandRelations = async () => { const toggle = relationsToggle(); if (toggle?.getAttribute('aria-expanded') === 'false') await act(async () => toggle.click()); };
     const relations = () => { const feature = currentDocument.features[0]; if (feature.kind !== 'sketch' || !feature.graph) throw new Error('Sketch missing.'); return feature.graph.relations; };
     const label = (id: string) => {
       const found = container.querySelector<SVGGElement>(`[data-cad-sketch-dimension="${id}"] [role="button"]`); if (!found) throw new Error(`Dimension ${id} missing.`);
@@ -2266,14 +2292,16 @@ describe('CAD sketch interaction', () => {
         if (kind === 'focused') row.focus(); else row.closest('[data-cad-sketch-relation-list], .cad-sketch-header-issue-list')!.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: row }));
       });
 
-      it.each(['focused', 'hovered'] as const)('hides the highlight of a %s relation row that the edit removes', async kind => {
+      it.each(['focused', 'hovered'] as const)('hides the highlight of a %s relation row that the edit removes, a focused one handing focus to the next row', async kind => {
         await open(); await geometryMenu('base', 'Constraints and dimensions');
         const row = relationRow('Distance relation 1'); await enter(kind, row);
         expect(shown()).toEqual([['a', 'b'], ['base']]);
         let left = 0; for (const name of ['blur', 'focusout', 'pointerout', 'pointerleave']) row.addEventListener(name, () => { left += 1; });
         await replace(current => current.filter(relation => relation.id !== 'length'));
         expect(row.isConnected).toBe(false); expect(left).toBe(0); expect(container.querySelector('[data-cad-sketch-relation-list]')).not.toBeNull();
-        expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull();
+        if (kind === 'hovered') { expect(container.querySelector('[data-cad-sketch-highlight]')).toBeNull(); return; }
+        // The row that took its place, the diagonal from a to c, takes focus and lights its own geometry.
+        expect((document.activeElement as HTMLElement).dataset.cadSketchRelationRow).toBe('diagonal'); expect(shown()).toEqual([['a', 'c'], []]);
       });
 
       // The row keeps its relation's ID, so it stays mounted: the pointer stays over it and focus stays in it, and its highlight follows the edit.
@@ -2985,17 +3013,25 @@ describe('CAD sketch interaction', () => {
         for (const offset of [0, 7, 19, 40]) await act(async () => pointer(canvas, 'pointermove', { clientX: 200 + offset, clientY: 150 + offset }));
         expect(canvasRenders).toHaveBeenCalled(); expect(workbenchRenders).toBe(0);
         expect(offerRequests).toHaveBeenCalledTimes(asked); expect(inspect).toHaveBeenCalledTimes(inspected);
-        // Parallel adds one relation through the edit path, and shows pressed; pressing it again removes that relation.
-        await act(async () => offer('Parallel').click());
+        // Parallel adds one relation through the edit path, and shows pressed; pressing it again removes that relation. While the edit is
+        // judged the row stays in place, inactive, and the pressed button keeps focus, before and after.
+        let release = () => undefined as void;
+        onEditMany.mockImplementationOnce(edits => new Promise(resolve => { release = () => resolve(currentSession.edit(edits)); }));
+        await act(async () => { offer('Parallel').focus(); offer('Parallel').click(); });
+        expect(row()?.getAttribute('aria-busy')).toBe('true'); expect(document.activeElement).toBe(offer('Parallel'));
+        expect([...row()!.querySelectorAll('button')].every(button => button.getAttribute('aria-disabled') === 'true')).toBe(true);
+        await act(async () => offer('Perpendicular').click()); expect(onEditMany).toHaveBeenCalledOnce();
+        await act(async () => release());
+        expect(row()?.hasAttribute('aria-busy')).toBe(false); expect(document.activeElement).toBe(offer('Parallel'));
         expect(parallels()).toHaveLength(1); expect(offer('Parallel').getAttribute('aria-pressed')).toBe('true');
         const added = parallels()[0].id;
         await act(async () => offer('Parallel').click());
         expect(onEditMany.mock.lastCall?.[0]).toEqual([{ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId: added }]);
         expect(parallels()).toEqual([]); expect(offer('Parallel').getAttribute('aria-pressed')).toBe('false');
-        // An edge alone takes Fix; Escape on the row hands focus back to the canvas and keeps the selection.
+        // Fix holds points, so an edge alone offers none; Escape on the row hands focus back to the canvas and keeps the selection.
         await act(async () => viewport().apply({ kind: 'select-sketch-geometry', selection: { kind: 'entity', id: 'top' } }));
-        expect(offer('Fix').disabled).toBe(false);
-        await act(async () => { offer('Fix').focus(); offer('Fix').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+        expect(row()!.querySelector('button[aria-label="Fix"]')).toBeNull();
+        await act(async () => { offer('Dimension the selection').focus(); offer('Dimension the selection').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
         expect(document.activeElement).toBe(canvas); expect(geometry()).toEqual([{ kind: 'entity', id: 'top' }]);
         // Dimension starts the Dimension tool on the selection, and the row stays hidden while another tool draws.
         await act(async () => offer('Dimension the selection').click());
@@ -3088,6 +3124,102 @@ describe('CAD sketch interaction', () => {
         await glyphKey('level', 'ContextMenu'); await act(async () => menuItem('Delete').click());
         expect(relationIds()).toEqual(['upright', 'across', 'fx', 'fy', 'length']);
         expect(() => currentSession.assertWorkflowClosed()).not.toThrow();
+      });
+
+      const shiftClick = (target: Element) => act(async () => target.dispatchEvent(new MouseEvent('click', { button: 0, shiftKey: true, detail: 1, bubbles: true, cancelable: true })));
+      const pressedRows = () => [...container.querySelectorAll('ul[aria-label="Sketch relations"] button[aria-pressed="true"]')].map(row => row.getAttribute('data-cad-sketch-relation-row'));
+      const rowOf = (id: string) => { const found = container.querySelector<HTMLButtonElement>(`button[data-cad-sketch-relation-row="${id}"]`); if (!found) throw new Error(`Row ${id} missing.`); return found; };
+
+      it('keeps drawn dimensions and the rows of relations the canvas does not draw in one selection that Shift extends either way, and deletes it as one undo step', async () => {
+        const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+        const source = await openPlate({ build: null, buildState: 'idle', onEditMany });
+        // With Show relations off, the Horizontal and Vertical relations are reached only through their tree rows.
+        await act(async () => setCadPreferences({ ...getCadPreferences(), showRelations: false }));
+        const removes = (...ids: string[]) => ids.map(relationId => ({ kind: 'remove-sketch-relation', sketchId: 'sketch', relationId }));
+        // A dimension, then a row added with Shift.
+        await act(async () => label('length').dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true, cancelable: true })));
+        await shiftClick(rowOf('level'));
+        expect(selectedDimensions()).toEqual(['length']); expect(pressedRows()).toEqual(['level', 'length']);
+        // A row, then a dimension added with Shift, then another row.
+        await act(async () => rowOf('upright').click()); expect(selectedDimensions()).toEqual([]); expect(pressedRows()).toEqual(['upright']);
+        await shiftClick(label('length')); expect(selectedDimensions()).toEqual(['length']); expect(pressedRows()).toEqual(['upright', 'length']);
+        await shiftClick(rowOf('level')); expect(pressedRows()).toEqual(['level', 'upright', 'length']);
+        // Shift on a selected row takes only that row out.
+        await shiftClick(rowOf('upright')); expect(pressedRows()).toEqual(['level', 'length']); await shiftClick(rowOf('upright'));
+        // Delete on the canvas removes the whole selection in one edit, and one undo brings it back.
+        await canvasKey('Delete');
+        expect(onEditMany).toHaveBeenCalledOnce(); expect(onEditMany.mock.calls[0][0]).toEqual(removes('length', 'level', 'upright'));
+        expect(relationIds()).toEqual(['across', 'fx', 'fy']); expect(pressedRows()).toEqual([]);
+        await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source);
+        // Delete on a selected row does the same.
+        await act(async () => label('length').dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true, cancelable: true })));
+        await shiftClick(rowOf('upright'));
+        await rowKey(rowOf('upright'), 'Delete');
+        expect(onEditMany).toHaveBeenCalledTimes(2); expect(onEditMany.mock.calls[1][0]).toEqual(removes('length', 'upright'));
+        await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source);
+        // So does the row's menu, which names everything it removes.
+        await act(async () => rowOf('across').click()); await shiftClick(label('length'));
+        await rowKey(rowOf('across'), 'ContextMenu');
+        expect([...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim())).toContain('Delete 1 dimension and 1 relation');
+        await act(async () => menuItem('Delete 1 dimension and 1 relation').click());
+        expect(onEditMany).toHaveBeenCalledTimes(3); expect(onEditMany.mock.calls[2][0]).toEqual(removes('length', 'across'));
+        await act(async () => currentSession.undo()); expect(currentDocument).toEqual(source);
+        await act(async () => setCadPreferences({ ...getCadPreferences(), showRelations: true }));
+      });
+
+      it('keeps the marks of a sketch past the glyph limit, drawn or not, in one selection with its dimensions, and deletes them in one edit', async () => {
+        const onEditMany = vi.fn<CadWorkbenchProps['onEditMany']>(edits => currentSession.edit(edits));
+        // 51 squares with Horizontal and Vertical on each side: 204 marks, past the limit, so the canvas draws only the selection's. The
+        // Width comes first, so its row is among those the list renders.
+        const points: { id: string; position: [number, number] }[] = [], entities: ReturnType<typeof edge>[] = [];
+        const held: { id: string; kind: 'horizontal' | 'vertical'; pointIds: [string, string] }[] = [];
+        for (let square = 0; square < 51; square++) {
+          const x = square % 10 * 14, y = Math.floor(square / 10) * 14, ids = ['a', 'b', 'c', 'd'].map(corner => `s${square}${corner}`);
+          [[x, y], [x + 10, y], [x + 10, y + 10], [x, y + 10]].forEach(([px, py], corner) => points.push({ id: ids[corner], position: [px, py] }));
+          ids.forEach((id, side) => {
+            entities.push(edge(`s${square}e${side}`, id, ids[(side + 1) % 4]));
+            held.push({ id: `s${square}r${side}`, kind: side % 2 ? 'vertical' : 'horizontal', pointIds: [id, ids[(side + 1) % 4]] });
+          });
+        }
+        const capped = parseCadDocument({ ...createCadDocument(), schemaVersion: 2, features: [{ id: 'sketch', kind: 'sketch', name: 'Grid', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+          points, entities, relations: [{ id: 'width', kind: 'distance', pointIds: ['s0a', 's0b'], value: 10 }, ...held] } }] });
+        await open({ build: null, buildState: 'idle', onEditMany }, capped);
+        expect(glyphs('s0r1')).toEqual([]); expect(glyphs('s0r2')).toEqual([]);
+        // The dimension, then a mark the canvas does not draw, added from its row.
+        await act(async () => label('width').dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true, cancelable: true })));
+        await shiftClick(rowOf('s0r1'));
+        expect(selectedDimensions()).toEqual(['width']); expect(pressedRows()).toEqual(['width', 's0r1']);
+        // The other way: an undrawn mark's row, then the dimension added with Shift.
+        await act(async () => rowOf('s0r2').click()); expect(pressedRows()).toEqual(['s0r2']);
+        await shiftClick(label('width')); expect(pressedRows()).toEqual(['width', 's0r2']); expect(selectedDimensions()).toEqual(['width']);
+        await shiftClick(rowOf('s0r1')); expect(pressedRows()).toEqual(['width', 's0r1', 's0r2']);
+        await canvasKey('Delete');
+        expect(onEditMany).toHaveBeenCalledOnce();
+        expect(onEditMany.mock.calls[0][0].map(item => item.kind === 'remove-sketch-relation' ? item.relationId : item.kind).sort()).toEqual(['s0r1', 's0r2', 'width']);
+        expect(relations().map(relation => relation.id)).not.toEqual(expect.arrayContaining(['s0r1']));
+        await act(async () => currentSession.undo()); expect(currentDocument).toEqual(capped);
+      });
+
+      it('lists the relations under a collapsed heading that mounts no row, opens it to show a relation, and keeps it open for the next sketch', async () => {
+        const second = plate().features[0];
+        const source = parseCadDocument({ ...plate(), features: [...plate().features, { ...second, id: 'second', name: 'Second' }] });
+        setCadPreferences({ ...getCadPreferences(), showOnPartDimensions: true });
+        await mount(source); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'sketch' }));
+        expect(relationsToggle()?.getAttribute('aria-expanded')).toBe('false'); expect(relationsToggle()?.textContent).toBe('Relations 6');
+        expect(container.querySelector('[data-cad-sketch-relation-row]')).toBeNull();
+        // Show in relations list opens it on the relation's row.
+        const canvas = container.querySelector<SVGSVGElement>('[aria-label="Sketch drawing canvas"]')!;
+        vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) });
+        await glyphKey('upright', 'F10', true); await act(async () => menuItem('Show in relations list').click());
+        expect(relationsToggle()?.getAttribute('aria-expanded')).toBe('true'); expect(rowOf('upright').getAttribute('aria-pressed')).toBe('true');
+        // Collapsed again, it unmounts its rows; Enter on a mark opens it on that mark's row.
+        await canvasKey('Escape'); await act(async () => relationsToggle()!.click());
+        expect(container.querySelector('[data-cad-sketch-relation-row]')).toBeNull();
+        await glyphKey('across', 'Enter'); expect(relationsToggle()?.getAttribute('aria-expanded')).toBe('true'); expect(rowOf('across').getAttribute('aria-pressed')).toBe('true');
+        // Left open, it stays open for the next sketch.
+        await canvasKey('Escape'); await canvasKey('Escape');
+        await click('Finish sketch'); await act(async () => viewport().apply({ kind: 'edit-sketch', sketchId: 'second' }));
+        expect(relationsToggle()?.getAttribute('aria-expanded')).toBe('true'); expect(rowOf('level')).not.toBeNull();
       });
 
       it('lights the glyphs of a hovered relations list row and of the selected geometry', async () => {

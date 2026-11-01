@@ -46,16 +46,16 @@ const fixed = (page: Page, id: '@origin' | '@h' | '@v') => page.locator(`[data-c
 
 test('selects the H axis far from the origin with a line and lays the line on it from the Constrain menu', async ({ page }) => {
   const sketch = await openSketch(page, {
-    points: [{ id: 'a', position: [20, 10] }, { id: 'b', position: [40, 12] }],
+    points: [{ id: 'a', position: [20, 4] }, { id: 'b', position: [40, 6] }],
     entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: []
   });
-  // The view fits the line, so the origin may be off screen; the H axis still crosses the whole view. Aim at it far from the
+  // The view fits the line, below the sketch bar, so the origin may be off screen; the H axis, 5 mm under the line, still crosses the whole view. Aim at it far from the
   // origin and its arrow, and well below the line.
   const frame = await sketch.canvas.boundingBox(), origin = await sketch.project(0, 0); if (!frame) throw new Error('Sketch canvas unavailable.');
   const axisX = frame.x + frame.width * 0.25, hAxis = fixed(page, '@h');
   expect(Math.abs(origin.x - axisX)).toBeGreaterThan(150);
   // A drag that starts on the axis boxes geometry as it would anywhere else; only a press released in place takes the axis.
-  const onAxis = await sketch.project(30, 0), aboveLine = await sketch.project(25, 14);
+  const onAxis = await sketch.project(30, 0), aboveLine = await sketch.project(25, 9);
   await page.mouse.move(onAxis.x, onAxis.y); await page.mouse.down(); await page.mouse.move(aboveLine.x, aboveLine.y, { steps: 6 }); await page.mouse.up();
   expect(await sketch.selection()).toEqual([{ kind: 'entity', id: 'ab' }]);
   await expect(hAxis).toHaveAttribute('aria-pressed', 'false');
@@ -64,7 +64,7 @@ test('selects the H axis far from the origin with a line and lays the line on it
   await page.mouse.click(axisX, origin.y + 2);
   await expect(hAxis).toHaveAttribute('aria-pressed', 'true');
   // The axis is selected as an ordinary edge, beside the line.
-  await sketch.clickAt(30, 11, true);
+  await sketch.clickAt(30, 5, true);
   expect(await sketch.selection()).toEqual([{ kind: 'entity', id: '@h' }, { kind: 'entity', id: 'ab' }]);
   await expect(hAxis).toHaveAttribute('aria-pressed', 'true');
 

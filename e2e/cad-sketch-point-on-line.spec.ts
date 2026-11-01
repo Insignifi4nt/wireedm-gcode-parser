@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures/native-sketch-solver';
-import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, relationOffer, relationRow } from './cad-tool-helpers';
+import { prepareCadTools, callCadTool as call, cadContext as context, historyRow, openRelationsList, relationOffer, relationRow } from './cad-tool-helpers';
 
 test('slides a bore on an angled guide, locates it and follows guide edits through private Finish, history, agent parity and save',async({page})=>{
   await prepareCadTools(page);await call(page,'cad_open_workspace');
@@ -31,7 +31,7 @@ test('slides a bore on an angled guide, locates it and follows guide edits throu
   const canvas=page.getByLabel('Sketch drawing canvas');
   await pick('point','center');await page.locator('[data-cad-sketch-fixed="@v"]').press('Shift+Enter');await relationOffer(page,'Dimension the selection').click();
   await expect(canvas).toHaveAccessibleDescription(/Click or press Enter to place/);await canvas.press('Enter');
-  const distance=relationRow(page,'Distance relation 2');await expect(distance).toHaveCount(1);await canvas.press('Escape');
+  await openRelationsList(page);const distance=relationRow(page,'Distance relation 2');await expect(distance).toHaveCount(1);await canvas.press('Escape');
   await distance.dblclick();await page.getByRole('textbox',{name:'Distance mm',exact:true}).fill('30');await apply();
   await pick('point','guide-b');await page.getByRole('textbox',{name:'Y mm',exact:true}).fill('24');await apply();expect(await read(base.version)).toEqual(sketch);
   await page.getByRole('button',{name:'Finish sketch',exact:true}).click();await expect(page.getByRole('button',{name:'Finish sketch',exact:true})).toHaveCount(0);

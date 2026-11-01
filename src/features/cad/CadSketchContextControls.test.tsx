@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { parseCadDocument, createCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraph } from '@/domain/cad/cadSketchGraph';
 import { cadSketchRelationOffers, type CadSketchRelationOffer } from '@/domain/cad/sketch-relations/cadSketchRelationOffers';
@@ -38,10 +38,12 @@ describe('selection icon row', () => {
     const circles = cadSketchSelectionActions(graph, cadSketchRelationOffers(graph, [{ kind: 'entity', id: 'c1' }, { kind: 'entity', id: 'c2' }]));
     expect(circles.map(action => action.label)).toEqual(expect.arrayContaining(['Concentric', 'Equal radius']));
     expect(circles.find(action => action.label === 'Concentric')).toMatchObject({ key: 'concentric', state: 'available', help: 'Keeps the arcs and circles on one center, independently of their sizes.' });
-    // A line alone takes Horizontal, applied here and pressed to remove, Vertical, blocked with the judge's reason, and Fix for the whole edge.
+    // A line alone takes Horizontal, applied here and pressed to remove, and Vertical, blocked with the judge's reason; Fix holds points only.
     const edge = cadSketchSelectionActions(graph, cadSketchRelationOffers(graph, [{ kind: 'entity', id: 'ab' }]));
-    expect(edge.map(action => [action.label, action.state])).toEqual([['Horizontal', 'applied'], ['Vertical', 'blocked'], ['Fix', 'available']]);
+    expect(edge.map(action => [action.label, action.state])).toEqual([['Horizontal', 'applied'], ['Vertical', 'blocked']]);
     expect(edge[0].help).toBe('Applied. Press to remove horizontal.'); expect(edge[1].help).toBe('This is already horizontal.');
+    expect(cadSketchSelectionActions(graph, cadSketchRelationOffers(graph, [{ kind: 'point', id: 'c' }])).find(action => action.key === 'fixed-point'))
+      .toMatchObject({ label: 'Fix', state: 'available', help: 'Keeps each point where it is now.' });
     // Tangent and the tangent joint share a name: the row shows one button, the available offer over a blocked one in either order.
     const blocked: CadSketchRelationOffer = { kind: 'tangent', state: 'blocked', reason: 'These do not touch.', operands: [], relations: [], relationIds: [] };
     const available: CadSketchRelationOffer = { kind: 'tangent-joint', state: 'available', operands: [], relations: [], relationIds: [] };
@@ -67,20 +69,34 @@ describe('selection icon row', () => {
       expect(cadSketchCenterSymmetryOffer(graph, selection), JSON.stringify(selection)).toBeNull();
   });
 
-  it('sits above the selection, else below, beside or in a free corner, never over it, and inside the viewport margins', () => {
+  it('sits above the selection, else below, beside or in a corner, inside the viewport margins, and never over the selection', () => {
     const viewport = { width: 800, height: 600 }, size = { width: 160, height: 28 };
     expect(placeCadSketchSelectionActions({ left: 300, top: 300, right: 400, bottom: 360 }, size, viewport)).toEqual({ left: 270, top: 262, right: 430, bottom: 290 });
     // Under the header, the row goes below the selection.
-    expect(placeCadSketchSelectionActions({ left: 300, top: 50, right: 400, bottom: 80 }, size, viewport).top).toBe(90);
+    expect(placeCadSketchSelectionActions({ left: 300, top: 50, right: 400, bottom: 80 }, size, viewport)?.top).toBe(90);
     const overlaps = (a: { left: number; top: number; right: number; bottom: number }, b: typeof a) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-    for (let left = 0; left < 800; left += 37) for (let top = 0; top < 600; top += 41) for (const [w, h] of [[4, 4], [120, 30], [300, 200], [600, 420]]) {
+    let hidden = 0;
+    for (let left = 0; left < 800; left += 37) for (let top = 0; top < 600; top += 41) for (const [w, h] of [[4, 4], [120, 30], [300, 200], [600, 420], [790, 590]]) {
       const selection = { left, top, right: left + w, bottom: top + h }, box = placeCadSketchSelectionActions(selection, size, viewport);
+      if (!box) { hidden += 1; continue; }
       expect(box.left).toBeGreaterThanOrEqual(8); expect(box.right).toBeLessThanOrEqual(792); expect(box.top).toBeGreaterThanOrEqual(48); expect(box.bottom).toBeLessThanOrEqual(536);
-      const clear = [placeCadSketchSelectionActions(null, size, viewport)].some(corner => !overlaps(corner, selection));
-      if (clear) expect(overlaps(box, selection), JSON.stringify(selection)).toBe(false);
+      expect(overlaps(box, selection), JSON.stringify(selection)).toBe(false);
     }
-    // A selection that fills the view leaves no clear place: the row takes the first corner.
-    expect(placeCadSketchSelectionActions({ left: 0, top: 0, right: 800, bottom: 600 }, size, viewport)).toEqual({ left: 8, top: 48, right: 168, bottom: 76 });
+    expect(hidden).toBeGreaterThan(0);
+    // A selection whose box fills the view leaves no place clear of that box, so without its exact geometry the row has no room.
+    expect(placeCadSketchSelectionActions({ left: 0, top: 0, right: 800, bottom: 600 }, size, viewport)).toBeNull();
+  });
+
+  it('sits inside the selection box where the exact selected geometry leaves room, and has no room where it covers that geometry everywhere', () => {
+    const viewport = { width: 800, height: 600 }, size = { width: 160, height: 28 }, selection = { left: 0, top: 0, right: 800, bottom: 600 };
+    // A circle around the view: its box covers every place, but only a band near the rim touches the circle itself.
+    const ring = (box: { left: number; top: number; right: number; bottom: number }) => [[box.left, box.top], [box.right, box.top], [box.left, box.bottom], [box.right, box.bottom]]
+      .some(([x, y]) => Math.hypot(x - 400, y - 300) > 280) && [[box.left, box.top], [box.right, box.bottom]].some(([x, y]) => Math.hypot(x - 400, y - 300) < 320);
+    const box = placeCadSketchSelectionActions(selection, size, viewport, [], ring);
+    expect(box).not.toBeNull(); expect(ring(box!)).toBe(false);
+    // A place clear of a label still wins among the places the geometry leaves.
+    expect(placeCadSketchSelectionActions(selection, size, viewport, [{ left: 0, top: 0, right: 400, bottom: 600 }], ring)?.left).toBeGreaterThanOrEqual(400);
+    expect(placeCadSketchSelectionActions(selection, size, viewport, [], () => true)).toBeNull();
   });
 
   it('keeps clear of the dimension labels, marks and panels it is given where it can, and of the selection always', () => {
@@ -92,30 +108,39 @@ describe('selection icon row', () => {
       .toEqual({ left: 100, top: 90, right: 260, bottom: 118 });
     // Nowhere clear of them: the selection alone decides.
     expect(placeCadSketchSelectionActions(selection, size, viewport, [{ left: 0, top: 0, right: 800, bottom: 600 }])).toEqual(placeCadSketchSelectionActions(selection, size, viewport));
+    // With nothing but the origin or an axis selected, the row takes a free corner.
+    expect(placeCadSketchSelectionActions(null, size, viewport, [{ left: 0, top: 0, right: 400, bottom: 300 }])).toEqual({ left: 632, top: 48, right: 792, bottom: 76 });
   });
+
+  const prepared = { points: [], geometry: { segments: [] }, pickBox: () => [] } as never;
+  function mountRow(model: CadSketchSelectionActionsModel, extra: { prepared?: never; onRoomChange?: (room: boolean) => void } = {}) {
+    // Escape hands focus to the canvas, here a stand-in beside the row.
+    const canvas = document.body.appendChild(document.createElement('button')), onEscape = vi.fn(() => canvas.focus());
+    onTestFinished(() => canvas.remove());
+    const render = (next: CadSketchSelectionActionsModel, busy = false) => act(async () => root.render(<CadSketchSelectionActions model={next} prepared={extra.prepared ?? prepared} center={[0, 0]}
+      width={100} span={100} pixelWidth={800} pixelHeight={600} busy={busy} onEscape={onEscape} onRoomChange={extra.onRoomChange} />));
+    return { onEscape, render, canvas };
+  }
 
   it('presses offers through the model, shows applied ones pressed and blocked ones disabled, and moves focus with the arrows', async () => {
     const graph = plate(), selection = [{ kind: 'entity' as const, id: 'ab' }], offers = cadSketchRelationOffers(graph, selection);
-    const onOffer = vi.fn(), onDimension = vi.fn(), onEscape = vi.fn();
+    const onOffer = vi.fn(), onDimension = vi.fn();
     const model: CadSketchSelectionActionsModel = { graph, selection, offers, dimensionAvailable: true, disabled: false, onOffer, onDimension };
-    const prepared = { points: [], geometry: { segments: [] } } as never;
-    const render = (next: CadSketchSelectionActionsModel) => act(async () => root.render(<CadSketchSelectionActions model={next} prepared={prepared} center={[0, 0]} width={100} span={100}
-      pixelWidth={800} pixelHeight={600} onEscape={onEscape} />));
+    const { onEscape, render } = mountRow(model);
     await render(model);
     const row = container.querySelector('[role="toolbar"]')!;
     expect(row.getAttribute('aria-label')).toBe('Relations for the selection');
     expect(buttons(row).map(button => [button.getAttribute('aria-label'), button.getAttribute('aria-pressed'), button.disabled])).toEqual([
-      ['Horizontal', 'true', false], ['Vertical', 'false', true], ['Fix', 'false', false], ['Dimension the selection', null, false]]);
+      ['Horizontal', 'true', false], ['Vertical', 'false', true], ['Dimension the selection', null, false]]);
     expect(named('Vertical').dataset.state).toBe('blocked');
     await act(async () => named('Horizontal').click()); expect(onOffer).toHaveBeenCalledWith(offers.find(offer => offer.kind === 'horizontal'));
-    await act(async () => named('Fix').click()); expect(onOffer).toHaveBeenLastCalledWith(offers.find(offer => offer.kind === 'fixed-point'));
     await act(async () => named('Dimension the selection').click()); expect(onDimension).toHaveBeenCalledOnce();
     // One stop in the tab order; the arrows, Home and End move it, and Escape hands focus back to the canvas.
     expect(buttons(row).filter(button => button.tabIndex === 0)).toHaveLength(1);
     // Blocked Vertical cannot take focus, so the arrows step over it.
     await act(async () => named('Horizontal').focus()); await key(named('Horizontal'), 'ArrowRight');
-    expect(document.activeElement).toBe(named('Fix'));
-    await key(named('Fix'), 'ArrowLeft'); expect(document.activeElement).toBe(named('Horizontal'));
+    expect(document.activeElement).toBe(named('Dimension the selection'));
+    await key(named('Dimension the selection'), 'ArrowLeft'); expect(document.activeElement).toBe(named('Horizontal'));
     await key(named('Horizontal'), 'End'); expect(document.activeElement).toBe(named('Dimension the selection'));
     await key(named('Dimension the selection'), 'ArrowRight'); expect(document.activeElement).toBe(named('Horizontal'));
     await key(named('Horizontal'), 'Escape'); expect(onEscape).toHaveBeenCalledOnce();
@@ -123,9 +148,56 @@ describe('selection icon row', () => {
     const vertical = cadSketchRelationOffers(graph, [{ kind: 'entity', id: 'bc' }]).map(offer => offer.kind === 'horizontal' ? { ...offer, state: 'blocked' as const, reason: 'No.' } : offer);
     await render({ ...model, offers: vertical, selection: [{ kind: 'entity', id: 'bc' }] });
     expect(buttons(row).filter(button => button.tabIndex === 0).map(button => button.getAttribute('aria-label'))).toEqual(['Vertical']);
-    // A pending edit disables the whole row, the Dimension button with it.
-    await render({ ...model, disabled: true });
-    expect(buttons(row).every(button => button.disabled)).toBe(true);
+  });
+
+  it('keeps focus on the pressed button while its edit is pending, then on it, the nearest button that can be pressed, or the canvas', async () => {
+    const graph = plate(), selection = [{ kind: 'point' as const, id: 'a' }, { kind: 'point' as const, id: 'c' }], offers = cadSketchRelationOffers(graph, selection);
+    const onOffer = vi.fn();
+    const model: CadSketchSelectionActionsModel = { graph, selection, offers, dimensionAvailable: true, disabled: false, onOffer, onDimension: vi.fn() };
+    const { onEscape, render, canvas } = mountRow(model);
+    await render(model);
+    const row = container.querySelector<HTMLElement>('[role="toolbar"]')!, labels = () => buttons(row).map(button => button.getAttribute('aria-label'));
+    expect(labels()).toEqual(expect.arrayContaining(['Vertical', 'Coincident', 'Fix']));
+    await act(async () => { named('Vertical').focus(); named('Vertical').click(); }); expect(onOffer).toHaveBeenCalledOnce();
+    // Pending: the row stays, every button inactive but focusable, and focus stays on Vertical; a press does nothing.
+    await render({ ...model, disabled: true }, true);
+    expect(document.activeElement).toBe(named('Vertical')); expect(row.getAttribute('aria-busy')).toBe('true');
+    expect(buttons(row).map(button => button.getAttribute('aria-disabled'))).toEqual(buttons(row).map(() => 'true'));
+    await act(async () => named('Coincident').click()); await act(async () => named('Dimension the selection').click());
+    expect(onOffer).toHaveBeenCalledOnce(); expect(model.onDimension).not.toHaveBeenCalled();
+    // Accepted: Vertical now shows applied, and keeps focus.
+    const applied = offers.map(offer => offer.kind === 'vertical' ? { ...offer, state: 'applied' as const, relationIds: ['up'] } : offer);
+    await render({ ...model, offers: applied });
+    expect(document.activeElement).toBe(named('Vertical')); expect(named('Vertical').getAttribute('aria-pressed')).toBe('true'); expect(row.hasAttribute('aria-busy')).toBe(false);
+    // An edit that takes Vertical away hands focus to the nearest button that can be pressed.
+    const at = labels().indexOf('Vertical'), without = applied.filter(offer => offer.kind !== 'vertical');
+    await render({ ...model, disabled: true }, true); await render({ ...model, offers: without });
+    expect(labels()).not.toContain('Vertical'); expect(row.contains(document.activeElement)).toBe(true);
+    expect(labels().indexOf(document.activeElement!.getAttribute('aria-label'))).toBe(Math.min(at, labels().length - 1));
+    // One that leaves nothing to press hands focus to the canvas.
+    await render({ ...model, offers: without.map(offer => ({ ...offer, state: 'blocked' as const, reason: 'No.' })), dimensionAvailable: false });
+    expect(onEscape).toHaveBeenCalledOnce(); expect(document.activeElement).toBe(canvas);
+    // The row going while it holds focus hands focus to the canvas too.
+    await render(model); await act(async () => named('Fix').focus());
+    await act(async () => root.render(<></>)); expect(onEscape).toHaveBeenCalledTimes(2);
+  });
+
+  it('hides, and says it has no room, when every place would cover the selected geometry, and hands focus to the canvas if it held it', async () => {
+    const graph = plate(), selection = [{ kind: 'entity' as const, id: 'ab' }], offers = cadSketchRelationOffers(graph, selection), onRoomChange = vi.fn();
+    const model: CadSketchSelectionActionsModel = { graph, selection, offers, dimensionAvailable: true, disabled: false, onOffer: vi.fn(), onDimension: vi.fn() };
+    // A line across the whole view: its box and its exact geometry meet every place the row could take.
+    const across = { points: [], geometry: { segments: [{ id: 'ab', bounds: { minX: -60, minY: -60, maxX: 60, maxY: 60 } }] }, pickBox: () => [{ kind: 'entity', id: 'ab' }] } as never;
+    const clear = { points: [], geometry: { segments: [{ id: 'ab', bounds: { minX: -60, minY: -60, maxX: 60, maxY: 60 } }] }, pickBox: () => [] } as never;
+    const row = () => container.querySelector<HTMLElement>('[role="toolbar"]')!;
+    let h = mountRow(model, { prepared: clear, onRoomChange });
+    await h.render(model);
+    expect(row().hidden).toBe(false); expect(onRoomChange).toHaveBeenLastCalledWith(true);
+    await act(async () => named('Horizontal').focus());
+    h = mountRow(model, { prepared: across, onRoomChange });
+    await h.render(model);
+    expect(row().hidden).toBe(true); expect(onRoomChange).toHaveBeenLastCalledWith(false); expect(h.onEscape).toHaveBeenCalledOnce();
+    // Unmounting says the row no longer needs room.
+    await act(async () => root.render(<></>)); expect(onRoomChange).toHaveBeenLastCalledWith(true);
   });
 });
 
@@ -138,7 +210,7 @@ describe('relations under the sketch in the feature tree', () => {
   const noIssues = (graph: CadSketchGraph) => cadSketchIssuesStandInForD1({ sketchId: 'sketch', graph });
   function props(graph: CadSketchGraph, extra: Partial<CadSketchRelationListProps> = {}): CadSketchRelationListProps {
     return { graph, parameters: {}, issues: noIssues(graph), selectedIds: [], selection: [], onlySelection: false, onOnlySelection: vi.fn(), locked: false,
-      onSelect: vi.fn(), onOpen: vi.fn(), onDelete: vi.fn(), onMenu: vi.fn(), ...extra };
+      onSelect: vi.fn(), onOpen: vi.fn(), onDelete: vi.fn(), onMenu: vi.fn(), expanded: true, onExpandedChange: vi.fn(), ...extra };
   }
   const rows = () => [...container.querySelectorAll<HTMLButtonElement>('[data-cad-sketch-relation-row]')];
   const row = (id: string) => { const found = container.querySelector<HTMLButtonElement>(`[data-cad-sketch-relation-row="${id}"]`); if (!found) throw new Error(`Row ${id} missing.`); return found; };
@@ -149,6 +221,19 @@ describe('relations under the sketch in the feature tree', () => {
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, get: () => parseFloat(scroller.style.height) });
     return { scroller, scroll: (to: number) => act(async () => { top = to; scroller.dispatchEvent(new Event('scroll')); }) };
   }
+
+  it('starts as one collapsed heading with the count, mounting no row, and opens and closes through it', async () => {
+    const graph = many(300), base = props(graph, { expanded: false });
+    await act(async () => root.render(<CadSketchRelationList {...base} />));
+    const toggle = container.querySelector<HTMLButtonElement>('.cad-sketch-relation-list-toggle')!;
+    expect([toggle.getAttribute('aria-expanded'), toggle.textContent]).toEqual(['false', 'Relations 300']);
+    expect(rows()).toEqual([]); expect(container.querySelector('ul[aria-label="Sketch relations"]')).toBeNull(); expect(() => named('Only the selection')).toThrow();
+    await act(async () => toggle.click()); expect(base.onExpandedChange).toHaveBeenCalledWith(true);
+    await act(async () => root.render(<CadSketchRelationList {...base} expanded />));
+    expect(toggle.getAttribute('aria-expanded')).toBe('true'); expect(toggle.getAttribute('aria-controls')).toBe(container.querySelector('.cad-sketch-relation-list-scroller')!.id);
+    expect(rows().length).toBeGreaterThan(0);
+    await act(async () => toggle.click()); expect(base.onExpandedChange).toHaveBeenLastCalledWith(false);
+  });
 
   it('renders only the rows in view of 300 relations, and names each row once per accepted graph', async () => {
     const graph = many(300);
@@ -186,10 +271,37 @@ describe('relations under the sketch in the feature tree', () => {
     await key(row('h1'), 'End'); expect(document.activeElement).toBe(row('h29'));
     await key(row('h29'), 'Home'); expect(document.activeElement).toBe(row('h0'));
     const calls = [base.onSelect, base.onOpen, base.onDelete, base.onMenu].map(fn => vi.mocked(fn).mock.calls.length);
+    // Locked, the rows stay focusable but inactive, so a row focused while its deletion is judged keeps focus.
     await act(async () => root.render(<CadSketchRelationList {...base} locked />));
-    expect(rows().every(button => button.disabled)).toBe(true);
-    await key(row('h1'), 'Delete'); await key(row('h1'), 'Enter');
+    expect(document.activeElement).toBe(row('h0')); expect(rows().every(button => button.getAttribute('aria-disabled') === 'true' && !button.disabled)).toBe(true);
+    await key(row('h1'), 'Delete'); await key(row('h1'), 'Enter'); await act(async () => row('h1').click());
+    await act(async () => row('h1').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))); await key(row('h1'), 'F10', { shiftKey: true });
     expect([base.onSelect, base.onOpen, base.onDelete, base.onMenu].map(fn => vi.mocked(fn).mock.calls.length)).toEqual(calls);
+  });
+
+  it('moves focus and the tab stop to the nearest surviving row when the focused row is deleted, and to the heading when none is left', async () => {
+    const graph = many(6), base = props(graph);
+    await act(async () => root.render(<CadSketchRelationList {...base} />));
+    scrollable();
+    const without = (...ids: string[]) => ({ ...graph, relations: graph.relations.filter(relation => !ids.includes(relation.id)) });
+    const stops = () => rows().filter(button => button.tabIndex === 0).map(button => button.dataset.cadSketchRelationRow);
+    await act(async () => row('h2').focus());
+    // Deleting h2 while it is focused: the row that takes its place, h3, takes focus and the one tab stop.
+    await act(async () => root.render(<CadSketchRelationList {...base} graph={without('h2')} />));
+    expect(document.activeElement).toBe(row('h3')); expect(stops()).toEqual(['h3']);
+    // The last row deleted: the one before it.
+    await act(async () => row('h5').focus());
+    await act(async () => root.render(<CadSketchRelationList {...base} graph={without('h2', 'h5')} />));
+    expect(document.activeElement).toBe(row('h4')); expect(stops()).toEqual(['h4']);
+    // A focused row's relation deleted while focus is elsewhere moves only the tab stop.
+    const outside = document.createElement('button'); document.body.append(outside);
+    await act(async () => outside.focus());
+    await act(async () => root.render(<CadSketchRelationList {...base} graph={without('h2', 'h4', 'h5')} />));
+    expect(document.activeElement).toBe(outside); expect(stops()).toEqual(['h3']); outside.remove();
+    // Every row gone: focus goes to the heading.
+    await act(async () => row('h3').focus());
+    await act(async () => root.render(<CadSketchRelationList {...base} graph={{ ...graph, relations: [] }} />));
+    expect(document.activeElement).toBe(container.querySelector('.cad-sketch-relation-list-toggle'));
   });
 
   it('shows each row pressed with its mark, its value and its issue states, lights its geometry, and lists only the selection on request', async () => {
