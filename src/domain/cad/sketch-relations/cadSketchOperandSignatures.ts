@@ -142,6 +142,17 @@ export const CAD_SKETCH_SYMMETRY_OPERANDS = {
     { role: 'Axis line', accepts: ['line'], refusal: { code: 'invalid-sketch-symmetry', message: 'Symmetry needs an existing straight axis line.' } }],
   unordered: [[0, 1]]
 } as const satisfies CadSketchOperandSignature;
+const symmetricCurve = { code: 'invalid-sketch-symmetry', message: 'Symmetry needs two existing lines, arcs or circles.' } as const;
+/**
+ * Two lines, arcs or circles mirrored about a line or an axis. An axis is fixed, so it is never one of the mirrored pair; the parse
+ * refuses a pair of two kinds.
+ */
+export const CAD_SKETCH_CURVE_SYMMETRY_OPERANDS = {
+  slots: [{ role: 'First curve', accepts: ['line', 'arc', 'circle'], needs: ['movable'], refusal: symmetricCurve },
+    { role: 'Second curve', accepts: ['line', 'arc', 'circle'], needs: ['movable'], refusal: symmetricCurve },
+    { role: 'Axis line', accepts: ['line'], refusal: { code: 'invalid-sketch-symmetry', message: 'Symmetry needs an existing straight axis line.' } }],
+  unordered: [[0, 1]], distinct: { slots: [0, 1, 2], refusal: { code: 'invalid-sketch-symmetry', message: 'Symmetry needs two distinct curves and a separate line to mirror about.' } }
+} as const satisfies CadSketchOperandSignature;
 /** An angle's two lines, each with the end its ray points toward. */
 export const CAD_SKETCH_ANGLE_OPERANDS = {
   slots: [{ role: 'First line', accepts: ['line'], refusal: linePairRefusal }, { role: 'First ray end', accepts: ['point'], end: true },

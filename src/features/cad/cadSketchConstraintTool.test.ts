@@ -61,7 +61,7 @@ describe('cadSketchConstraintStep', () => {
   it('explains picks that cannot take the constraint instead of adding a duplicate or conflict', () => {
     expect(step('vertical', 'bc')).toEqual({ status: 'invalid', reason: 'Vertical is already applied here.', applied: ['v'] });
     expect(step('horizontal', 'b', 'c')).toEqual({ status: 'invalid', reason: 'This is already vertical.' });
-    expect(step('equal', 'ab', 'c1')).toEqual({ status: 'invalid', reason: 'Choose two lines, or two arcs or circles.' });
+    expect(step('equal', 'ab', 'c1')).toEqual({ status: 'invalid', reason: 'A line has a length and a circle a radius, so Equal cannot relate them.' });
     expect(step('tangent', 'cd', 'arc')).toMatchObject({ status: 'invalid', reason: 'Join these endpoints with Coincident before adding Tangent.' });
     expect(step('concentric', 'arc', 'c2')).toEqual({ status: 'invalid', reason: 'These already share a center.' });
     // A curve's own center and arc ends already sit on it.
@@ -336,9 +336,11 @@ describe('cadSketchConstraintChoices', () => {
       expect(names(shared, first, second)).toEqual([]);
     }
     // One point is not two to mirror: s mirrors o2 with a, not with itself.
-    for (const picks of [['o2', 'c2', 'cd'], ['c3', 'o2', 'cd'], ['c2', 'c3', 'cd'], ['cd', 'c3', 'c2']]) {
-      expect(stepIn(shared, 'symmetric', ...picks), picks.join(' ')).toEqual({ status: 'invalid', reason: mirror });
-      expect(choices(shared, ...picks), picks.join(' ')).toEqual([{ tool: 'symmetric', state: 'blocked', reason: mirror }]);
+    // Two circles on one centre mirror as circles, and are refused as circles that share it.
+    const circles = 'These circles share a center, so they cannot mirror each other.';
+    for (const [reason, picks] of [[mirror, ['o2', 'c2', 'cd']], [mirror, ['c3', 'o2', 'cd']], [circles, ['c2', 'c3', 'cd']], [circles, ['cd', 'c3', 'c2']]] as const) {
+      expect(stepIn(shared, 'symmetric', ...picks), picks.join(' ')).toEqual({ status: 'invalid', reason });
+      expect(choices(shared, ...picks), picks.join(' ')).toEqual([{ tool: 'symmetric', state: 'blocked', reason }]);
     }
     // The relations two distinct places do take are still named, and only those.
     expect(stepIn(shared, 'symmetric', 'a', 'cd', 'c2')).toEqual({ status: 'invalid', reason: 'Symmetric is already applied here.', applied: ['s'] });

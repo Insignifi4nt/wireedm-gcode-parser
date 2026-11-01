@@ -3,6 +3,7 @@ import { evaluateCadScalar } from '../cadExpression';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '../cadSketchGraph';
 import type { CadSketchEdge } from '../sketch-relations/cadSketchRelationTypes';
 import { CAD_SKETCH_ORIGIN_ID, cadSketchVirtualAxis, type CadSketchVirtualAxis } from '../sketch-relations/cadSketchVirtualElements';
+import { resolveCadSketchPointIdentities } from '../cadSketchGraphJoints';
 import { cadSketchLineDirection } from '../cadSketchLineRelations';
 import type { Point2 } from '../../path-intel/types';
 import { cadSketchRelationDefinition } from '../sketch-relations/cadSketchRelationRegistry';
@@ -34,6 +35,10 @@ export class CadSketchLoweringRefusal extends CadError {
  */
 export interface CadSketchLoweringContext {
   readonly graph: CadSketchGraph;
+  /** Each point's position before the edit, the origin's and the axes' sample ends' included: a branch read from it keeps the geometry it was made on. */
+  readonly starts: ReadonlyMap<string, Point2>;
+  /** The point's Coincident identity: points that Coincident joins share one. */
+  identity(pointId: string): string;
   /** A point's x and y parameters. */
   point(pointId: string): CadSketchPointParameters;
   /** The support from one point toward another. */
@@ -188,6 +193,7 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   private sourceId = '';
   private entities: Map<string, CadSketchGraphEntity> | undefined;
   private relations: Map<string, CadSketchGraphRelation> | undefined;
+  private identities: ((pointId: string) => string) | undefined;
   /**
    * The values made after the point and radius parameters, in the order they were made: the fixed values the origin and the axes
    * became, and the free radius an arc's relation makes.
@@ -208,6 +214,8 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     private readonly numericPoints: ReadonlyMap<string, Point2>, private readonly fixed: readonly boolean[]) {
     this.parameterCount = fixed.length;
   }
+  get starts(): ReadonlyMap<string, Point2> { return this.numericPoints; }
+  identity(pointId: string): string { return (this.identities ??= resolveCadSketchPointIdentities(this.graph))(pointId); }
 
   /**
    * Lowers one relation through its definition, whole or not at all: a relation whose lowering throws, a refusal or any other error,

@@ -11,7 +11,9 @@ export type CadSketchRelationKind = CadSketchGraphRelation['kind'];
 type Narrowed<R, K> = R extends { readonly kind: infer Stored } ? K extends Stored ? R & { readonly kind: K } : never : never;
 export type CadSketchRelationOf<K extends CadSketchRelationKind> = Narrowed<CadSketchGraphRelation, K>;
 /** A relation without its identity: what an offer adds once it is given one. */
-export type CadSketchRelationIntent<K extends CadSketchRelationKind = CadSketchRelationKind> = K extends CadSketchRelationKind ? Omit<CadSketchRelationOf<K>, 'id'> : never;
+// Each stored shape of a kind loses its identity on its own, so a kind with variants keeps each variant's operands.
+type WithoutId<R> = R extends unknown ? Omit<R, 'id'> : never;
+export type CadSketchRelationIntent<K extends CadSketchRelationKind = CadSketchRelationKind> = K extends CadSketchRelationKind ? WithoutId<CadSketchRelationOf<K>> : never;
 
 /** What an operand is: a point, the origin among them, or an edge, with the H and V axes as `axis`. */
 export type CadSketchOperandType = 'point' | 'line' | 'arc' | 'circle' | 'axis';
@@ -129,6 +131,8 @@ export interface CadSketchRelationDefinition<K extends CadSketchRelationKind> {
   readonly name: string;
   /** The name of one relation, where it depends on its data. */
   readonly nameOf?: (relation: CadSketchRelationOf<K>) => string;
+  /** What an inspection says one relation holds, where it depends on its data; otherwise the agent meaning of the kind. */
+  readonly meaningOf?: (relation: CadSketchRelationOf<K>) => string;
   /** The stored operands, in `operands` order; a relation whose data has variants gives the slots of its own variant. */
   readonly stored: CadSketchOperandSignature | ((relation: CadSketchRelationOf<K>) => CadSketchOperandSignature);
   readonly operands: (relation: CadSketchRelationOf<K>) => readonly string[];
