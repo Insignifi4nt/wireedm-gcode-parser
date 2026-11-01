@@ -217,6 +217,18 @@ describe('solid chains', () => {
     expect(contours.share({ edges: [...longest, 'edge-past'], closed: true, native: true })).toBeNull();
     contours.clear(); expect(contours.share(first)).not.toBe(stored);
   });
+  it('keeps a stored contour while anything holds it and drops it with the last hold', () => {
+    const contours = new CadTangentContours(), rim = { edges: ['rim-0', 'rim-1', 'rim-2'], closed: true, native: true };
+    const stored = contours.share(rim), again = contours.share({ ...rim, edges: ['rim-2', 'rim-0', 'rim-1'] });
+    if (!stored) throw new Error('Expected a stored contour');
+    expect(again).toBe(stored); expect(contours.size).toBe(1);
+    // An equal contour that was never stored, and so holds nothing, gives back nothing.
+    contours.release({ ...rim }); contours.release(stored); expect(contours.size).toBe(1); expect(contours.share(rim)).toBe(stored);
+    contours.release(stored); contours.release(stored); expect(contours.size).toBe(0);
+    // Gone, it is stored afresh, and a hold given back too often does not reach the new one.
+    const fresh = contours.share(rim); contours.release(stored);
+    expect(fresh).not.toBe(stored); expect(contours.size).toBe(1);
+  });
 });
 
 describe('window and crossing boxes', () => {

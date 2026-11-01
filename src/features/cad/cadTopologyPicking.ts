@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { cadClipRaycaster, cadKeptLineHits } from './view/cadSectionView';
 import type { CadMesh, CadMeshTopologyGroup } from '@/domain/cad/cadDocument';
 import type { CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
-import { CadTangentContours, type CadTopologyTangentChain } from '@/domain/cad/cadTopologyAdjacency';
+import { CadTangentContours, type CadTangentContour, type CadTopologyTangentChain } from '@/domain/cad/cadTopologyAdjacency';
 
 /** `auto` picks an edge near the pointer, else the face under it; the others restrict picking to one kind. */
 export type CadPickMode = 'auto' | 'body' | 'face' | 'edge';
@@ -43,30 +43,39 @@ export function sharedCadTopologyRead<T>(reads: Map<string, Promise<T>>, key: st
 }
 
 /**
- * One build's tangent chain reads, by seed edge, each shared by every later caller. Equal chains keep one stored contour, and a chain
- * longer than a selection holds is not kept. A read that fails, or whose chain a selection refused, is forgotten, so the next caller
- * reads again.
+ * One build's tangent chain reads, by seed edge, each shared by every later caller. Equal chains keep one stored contour, held by each
+ * kept read that answered with it, and a chain longer than a selection holds is not kept. A read that fails, or whose chain a selection
+ * refused, is forgotten, so the next caller reads again, and gives back its hold, so a contour no kept read holds goes too.
  */
 export class CadTangentChainReads {
   private readonly reads = new Map<string, Promise<CadTopologyTangentChain>>();
   private readonly keys = new WeakMap<Promise<CadTopologyTangentChain>, string>();
-  private readonly contours = new CadTangentContours();
+  private readonly holds = new WeakMap<Promise<CadTopologyTangentChain>, CadTangentContour>();
+  /** `contours` is where equal chains are stored; a caller passes its own only to look at what is kept. */
+  constructor(private readonly contours = new CadTangentContours()) {}
   read(key: string, start: () => Promise<CadTopologyTangentChain>): Promise<CadTopologyTangentChain> {
     const kept = this.reads.get(key);
     if (kept) return kept;
     const started: Promise<CadTopologyTangentChain> = start().then(chain => {
+      // A read forgotten before it answers takes no hold, as nothing would give it back.
+      if (this.reads.get(key) !== started) return chain;
       const stored = this.contours.share(chain);
       if (!stored) { this.forget(started); return chain; }
+      this.holds.set(started, stored);
       return { ...chain, edges: stored.edges };
     });
     this.reads.set(key, started); this.keys.set(started, key);
     started.catch(() => this.forget(started));
     return started;
   }
-  /** Forgets a read while it is still the one kept for its edge. */
+  /** Forgets a read while it is still the one kept for its edge, giving back its hold on a stored contour. */
   forget(read: Promise<CadTopologyTangentChain>) {
     const key = this.keys.get(read);
-    if (key !== undefined && this.reads.get(key) === read) this.reads.delete(key);
+    if (key === undefined || this.reads.get(key) !== read) return;
+    this.reads.delete(key);
+    // The read is no longer kept, so it gives back its hold only once.
+    const stored = this.holds.get(read);
+    if (stored) this.contours.release(stored);
   }
 }
 

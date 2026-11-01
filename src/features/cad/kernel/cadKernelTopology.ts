@@ -300,8 +300,9 @@ export class CadKernelTopology {
   /**
    * The tangent chain of an edge as native fillet makes it: a builder on `shape`, this inventory's body, takes the edge alone, and the
    * contour it builds is read back. Chamfer builds its contour the same way. Each edge's chain is kept for this build, and edges whose
-   * chains are equal point to one stored contour; a chain longer than a selection holds is read again each time instead. Where the
-   * builder makes no contour, the chain is the edge alone and says so.
+   * chains are equal point to one stored contour; a chain longer than a selection holds is read again each time instead. Nothing here
+   * forgets a kept chain before the build goes, so every stored contour stays held by an edge until then. Where the builder makes no
+   * contour, the chain is the edge alone and says so.
    */
   tangentChain(shape: Shape3D, bodyId: string, buildId: string, edgeKey: string): CadTopologyTangentChain {
     if (this.disposed) throw new CadError('STALE_BUILD', 'The topology snapshot has been disposed. Rebuild the current document.');

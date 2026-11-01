@@ -5,7 +5,7 @@ import { createCadDocument } from '@/domain/cad/cadSchema';
 import type { CadFeatureInputSnapshot } from './cadFeatureInput';
 import type { CadFeatureTopologyPickCommand } from './cadFeatureReferencePicking';
 import type { CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
-import type { CadTopologyAdjacency, CadTopologyTangentChain } from '@/domain/cad/cadTopologyAdjacency';
+import { CadTangentContours, type CadTopologyAdjacency, type CadTopologyTangentChain } from '@/domain/cad/cadTopologyAdjacency';
 import { CAD_TOPOLOGY_LONE_EDGE_NOTE } from '@/domain/cad/selection/cadTopologySelection';
 import { useCadFeatureTopologyPick, type CadFeatureInputPicking } from './useCadFeatureTopologyPick';
 
@@ -85,19 +85,25 @@ it('selects native tangent chains and adjacency loops, each read once for the in
 
 it('refuses a chain longer than a selection holds, or too long to add, without keeping it or changing the picks', async () => {
   const more = Array.from({ length: 64 }, (_, index) => `e${index}`), h = await mount(more), keys = () => picker.selection?.picks.length;
-  // Edge a's chain runs on through the 64 other edges, one more than a selection holds; edge b's chain is two edges.
-  h.operations.tangentChain.mockImplementation(async (_token, request) => chainOf(request.edgeKey, request.edgeKey === 'a' ? ['a', ...more] : ['b', 'e63']));
-  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
-  expect(picker.selection).toBeNull(); expect(picker.error).toContain('at most 64');
-  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
-  expect(h.operations.tangentChain).toHaveBeenCalledTimes(2);
-  // Added to 63 picks, edge b's chain would make 65: the picks stay, and the next chain on b reads again and, replacing them, is kept.
-  await act(async () => picker.set('pad', more.slice(0, 63).map(key => ({ kind: 'edge', key }))));
-  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', true, null));
-  expect(keys()).toBe(63); expect(picker.error).toContain('at most 64');
-  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', false, null));
-  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', false, null));
-  expect(keys()).toBe(2); expect(picker.error).toBeNull(); expect(h.operations.tangentChain).toHaveBeenCalledTimes(4);
+  // The contours the picker's chain cache stores, read from the store it shares them in.
+  const share = vi.spyOn(CadTangentContours.prototype, 'share'), stored = () => (share.mock.contexts[0] as CadTangentContours | undefined)?.size;
+  try {
+    // Edge a's chain runs on through the 64 other edges, one more than a selection holds; edge b's chain is two edges.
+    h.operations.tangentChain.mockImplementation(async (_token, request) => chainOf(request.edgeKey, request.edgeKey === 'a' ? ['a', ...more] : ['b', 'e63']));
+    await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+    expect(picker.selection).toBeNull(); expect(picker.error).toContain('at most 64'); expect(stored()).toBe(0);
+    await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+    expect(h.operations.tangentChain).toHaveBeenCalledTimes(2);
+    // Added to 63 picks, edge b's chain, disjoint from them, would make 65: the picks stay and its contour is not stored. The next chain
+    // on b reads again and, replacing the picks, is kept with its contour.
+    await act(async () => picker.set('pad', more.slice(0, 63).map(key => ({ kind: 'edge', key }))));
+    await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', true, null));
+    expect(keys()).toBe(63); expect(picker.error).toContain('at most 64'); expect(stored()).toBe(0);
+    await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', false, null));
+    await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', false, null));
+    expect(keys()).toBe(2); expect(picker.error).toBeNull(); expect(h.operations.tangentChain).toHaveBeenCalledTimes(4); expect(stored()).toBe(1);
+    expect(new Set(share.mock.contexts)).toHaveProperty('size', 1);
+  } finally { share.mockRestore(); }
 });
 
 it('drops a chain answered after a later pick, clear or chain, and its failure too', async () => {

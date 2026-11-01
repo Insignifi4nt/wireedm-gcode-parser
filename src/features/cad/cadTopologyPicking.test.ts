@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import type { CadMesh } from '@/domain/cad/cadDocument';
 import { CadTangentChainReads, mergeTopologySelection, orthographicPixelSize, pickTopology, topologyGroupAt, validateTopologySelection } from './cadTopologyPicking';
-import type { CadTopologyTangentChain } from '@/domain/cad/cadTopologyAdjacency';
+import { CadTangentContours, type CadTopologyTangentChain } from '@/domain/cad/cadTopologyAdjacency';
 import { cadLocalRenderPositions, cadRenderOrigin } from './cadRenderCoordinates';
 
 function scene(edgeHeight = 5, worldOffset = 0, scale = 1) {
@@ -29,24 +29,33 @@ function scene(edgeHeight = 5, worldOffset = 0, scale = 1) {
 }
 
 describe('CAD topology picking', () => {
-  it('shares each edge\'s tangent chain read, stores equal contours once and forgets failed, refused and overlong chains', async () => {
-    const reads = new CadTangentChainReads(), chainOf = (edgeKey: string, edges: readonly string[]): CadTopologyTangentChain => ({ bodyId: 'pad', buildId: 'build-1', edgeKey, edges: [...edges], closed: true, native: true });
+  it('shares each edge\'s tangent chain read, stores equal contours once and forgets failed, refused and overlong chains with their contours', async () => {
+    const contours = new CadTangentContours(), reads = new CadTangentChainReads(contours);
+    const chainOf = (edgeKey: string, edges: readonly string[]): CadTopologyTangentChain => ({ bodyId: 'pad', buildId: 'build-1', edgeKey, edges: [...edges], closed: true, native: true });
     const start = vi.fn((edgeKey: string, edges: readonly string[]) => Promise.resolve(chainOf(edgeKey, edges)));
     const a = await reads.read('a', () => start('a', ['a', 'b', 'c']));
     expect(await reads.read('a', () => start('a', ['a']))).toBe(a); expect(start).toHaveBeenCalledOnce();
     // Another seed of the same contour keeps its own answer, pointing to the edges stored first.
     const b = await reads.read('b', () => start('b', ['b', 'c', 'a']));
-    expect(b).toEqual(chainOf('b', ['a', 'b', 'c'])); expect(b.edges).toBe(a.edges);
-    // A refused chain is forgotten; forgetting it again leaves the newer read alone.
-    const refused = reads.read('a', () => start('a', ['a'])); reads.forget(refused);
+    expect(b).toEqual(chainOf('b', ['a', 'b', 'c'])); expect(b.edges).toBe(a.edges); expect(contours.size).toBe(1);
+    // A refused chain of its own is forgotten with its contour, however many chains are refused.
+    for (const seed of ['d', 'g', 'h']) { const read = reads.read(seed, () => start(seed, [seed, `${seed}-next`])); await read; expect(contours.size).toBe(2); reads.forget(read); }
+    expect(contours.size).toBe(1);
+    // A contour stays while another kept read holds it. Forgetting a refused read again leaves the newer read and its hold alone.
+    const refused = reads.read('a', () => start('a', ['a'])); reads.forget(refused); expect(contours.size).toBe(1);
     const newer = reads.read('a', () => start('a', ['a', 'b', 'c'])); reads.forget(refused);
-    expect(reads.read('a', () => start('a', ['a']))).toBe(newer); expect(start).toHaveBeenCalledTimes(3);
-    // A failed read and a chain longer than a selection holds reach their caller but are not kept.
+    expect(reads.read('a', () => start('a', ['a']))).toBe(newer); expect((await newer).edges).toBe(a.edges);
+    reads.forget(reads.read('b', () => start('b', ['b']))); expect(contours.size).toBe(1);
+    reads.forget(newer); expect(contours.size).toBe(0); expect(start).toHaveBeenCalledTimes(6);
+    // A read forgotten before it answers takes no hold.
+    const early = reads.read('e', () => start('e', ['e'])); reads.forget(early); await early; expect(contours.size).toBe(0);
+    // A failed read and a chain longer than a selection holds reach their caller but are not kept, and store nothing.
     await expect(reads.read('f', () => Promise.reject(new Error('The chain read failed.')))).rejects.toThrow('The chain read failed.');
-    await reads.read('f', () => start('f', ['f'])); expect(start).toHaveBeenCalledTimes(4);
+    expect(contours.size).toBe(0);
+    await reads.read('f', () => start('f', ['f'])); expect(start).toHaveBeenCalledTimes(8); expect(contours.size).toBe(1);
     const long = Array.from({ length: 65 }, (_, index) => `l${index}`);
     expect((await reads.read('l0', () => start('l0', long))).edges).toEqual(long);
-    await reads.read('l0', () => start('l0', long)); expect(start).toHaveBeenCalledTimes(6);
+    await reads.read('l0', () => start('l0', long)); expect(start).toHaveBeenCalledTimes(10); expect(contours.size).toBe(1);
   });
   it('picks far-origin two-millimetre faces and edges while retaining solid occlusion', () => {
     const visible = scene(5, 100000000, .05);
