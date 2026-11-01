@@ -739,6 +739,7 @@ function deriveMotion(
       start: copyPoint(start),
       end,
       center: center.point,
+      centerReference: center.mode,
       clockwise: command.arcDirection === 'clockwise',
       fullCircle: pointsCoincide(start, end)
     }
@@ -754,7 +755,7 @@ function deriveCenter(
   values: Readonly<Record<string, string | number>>,
   properties: Readonly<Record<string, PostPropertyValue>>,
   start: Point2
-): { ok: true; point: Point2 } | { ok: false; message: string } {
+): { ok: true; point: Point2; mode: 'absolute' | 'incremental' } | { ok: false; message: string } {
   const x = centerRole(command, values, 'motion.center-x', properties);
   const y = centerRole(command, values, 'motion.center-y', properties);
   if (!x.ok) return x;
@@ -762,6 +763,7 @@ function deriveCenter(
   if (x.mode !== y.mode) return { ok: false, message: 'Arc-center X and Y parameters must use the same reference mode.' };
   return {
     ok: true,
+    mode: x.mode,
     point: x.mode === 'absolute'
       ? { x: x.value, y: y.value }
       : { x: start.x + x.value, y: start.y + y.value }

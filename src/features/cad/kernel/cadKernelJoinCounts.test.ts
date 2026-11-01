@@ -1,13 +1,14 @@
 // @vitest-environment node
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, setOC } from 'replicad';
+import { setOC } from 'replicad';
 import { beforeAll, expect, it, vi } from 'vitest';
 import type { CadDocument, CadFeature, CadProfile, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import { buildCadKernelModel } from './cadKernelModel';
 import { prepareCadSolidImport } from './cadKernelImport';
 import { isCadKernelReply } from './cadKernelProtocol';
+import { cadKernelBuilders } from './cadKernelBuilders';
 
 beforeAll(async () => {
   setOC(await initOpenCascade({ wasmBinary: await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url)),
@@ -55,8 +56,8 @@ it.each(['extrude', 'revolve', 'loft', 'sweep', 'boolean'] as const)('%s Join re
   for (const placement of ['contained', 'face-contact', 'edge-contact', 'point-contact', 'disjoint'] as const) {
     const document = fixture(family, placement), original = JSON.stringify(document);
     // A metadata improvement must not introduce an extra Common/Cut into a successful Join.
-    const common = vi.spyOn(_3DShape.prototype, 'intersect').mockImplementation(() => { throw new Error('Unexpected material Common probe'); });
-    const cut = vi.spyOn(_3DShape.prototype, 'cut').mockImplementation(() => { throw new Error('Unexpected material Cut probe'); });
+    const common = vi.spyOn(cadKernelBuilders, 'common').mockImplementation(() => { throw new Error('Unexpected material Common probe'); });
+    const cut = vi.spyOn(cadKernelBuilders, 'cut').mockImplementation(() => { throw new Error('Unexpected material Cut probe'); });
     let model;
     try { model = buildCadKernelModel(document); } finally { common.mockRestore(); cut.mockRestore(); }
     try {

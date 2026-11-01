@@ -2,11 +2,13 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, Face, getOC, measureVolume, setOC, Sketch, type Shape3D, type Wire } from 'replicad';
+import { Face, getOC, measureVolume, setOC, Sketch, type Shape3D, type Wire } from 'replicad';
 import type { CadCurveFeature, CadDocument, CadFeature, CadPlane, CadProfile, CadSketchFeature, CadSweepFeature } from '../../../domain/cad/cadDocument';
 import { resolveCadSweepInputs } from '../../../domain/cad/cadSweep';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import { buildCadSweepSolid } from './cadKernelSweep';
+import { cadKernelBuilders } from './cadKernelBuilders';
+import { watchCadKernelBuilders } from './__tests__/cadKernelBuilderWatch';
 import { buildCadKernelModel, type CadKernelModel } from './cadKernelModel';
 import { prepareCadSolidImport } from './cadKernelImport';
 
@@ -175,27 +177,31 @@ describe('exact segmented Sweep solids', () => {
   });
   it('releases the generated Sweep after target fusion fails while retaining the original native body', () => {
     let generated: Shape3D | undefined; let target: Shape3D | undefined;
-    const fail = vi.spyOn(_3DShape.prototype, 'fuse').mockImplementation(function(this: Shape3D, other) { target = this; generated = other; throw new Error('Interrupted Sweep join'); });
+    const native = cadKernelBuilders.fuse, watch = watchCadKernelBuilders({ kinds: ['fuse'], call: 1, error: new Error('Interrupted Sweep join') });
+    const fail = vi.spyOn(cadKernelBuilders, 'fuse').mockImplementation((left, other) => { target = left; generated = other; return native(left, other); });
     try {
       built([...block, sketch(), rail(), sweep({ operation: 'join', targetId: 'block' })], model => {
         expect(model.result.diagnostics[0].message).toBe('Interrupted Sweep join'); expect(model.result.meshes[0].featureId).toBe('block');
         if (!generated || !target) throw new Error('Expected native operands');
         const released = generated; expect(() => released.wrapped).toThrow(); expect(measureVolume(target)).toBeCloseTo(500, 7);
+        expect(watch.failed).toHaveLength(1); expect(watch.outstanding()).toBe(0);
       });
-    } finally { fail.mockRestore(); }
+    } finally { fail.mockRestore(); watch.restore(); }
   });
   it('releases both staged primitives if an intermediate G1 fusion is interrupted', () => {
     const staged: Shape3D[] = [];
-    const fail = vi.spyOn(_3DShape.prototype, 'fuse').mockImplementation(function(this: Shape3D, other) {
-      staged.push(this, other); throw new Error('Interrupted staged Sweep fuse');
+    const native = cadKernelBuilders.fuse, watch = watchCadKernelBuilders({ kinds: ['fuse'], call: 1, error: new Error('Interrupted staged Sweep fuse') });
+    const fail = vi.spyOn(cadKernelBuilders, 'fuse').mockImplementation((left, other) => {
+      staged.push(left, other); return native(left, other);
     });
     try {
       built([...block, sketch(), rail(mixed), sweep()], model => {
         expect(model.result.diagnostics[0].message).toBe('Interrupted staged Sweep fuse'); expect(model.result.meshes[0].featureId).toBe('block');
         expect(staged).toHaveLength(2); for (const shape of staged) expect(() => shape.wrapped).toThrow();
         expect(model.result.meshes[0].volume).toBeCloseTo(500, 7);
+        expect(watch.failed).toHaveLength(1); expect(watch.outstanding()).toBe(0);
       });
-    } finally { fail.mockRestore(); }
+    } finally { fail.mockRestore(); watch.restore(); }
     built([sketch(), rail(mixed), sweep()], model => expect(model.result.diagnostics).toEqual([]));
   });
   it('rejects native tolerance growth instead of expanding the clearance reservation', () => {

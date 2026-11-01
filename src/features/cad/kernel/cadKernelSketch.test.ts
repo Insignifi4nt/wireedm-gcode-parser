@@ -2,9 +2,11 @@
 import { readFile } from 'node:fs/promises';
 import { beforeAll, expect, it, vi } from 'vitest';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, getOC, setOC, type Shape3D } from 'replicad';
+import { getOC, setOC, type Shape3D } from 'replicad';
 import { buildCadKernelModel } from './cadKernelModel';
 import { prepareCadSolidImport } from './cadKernelImport';
+import { cadKernelBuilders } from './cadKernelBuilders';
+import { watchCadKernelBuilders } from './__tests__/cadKernelBuilderWatch';
 import { cadBytesToBase64 } from '../../../domain/cad/cadImports';
 import type { CadDocument } from '../../../domain/cad/cadDocument';
 import type { TopoDS_Shape } from 'replicad-opencascadejs';
@@ -86,9 +88,9 @@ it('releases consumed transform inputs without changing their independently buil
     if (!(alias instanceof getOC().TopoDS_Shape)) throw new Error('Expected native shape alias');
     aliases.push(alias);
   }
-  const rotate = _3DShape.prototype.rotate, translate = _3DShape.prototype.translate;
-  const rotated = vi.spyOn(_3DShape.prototype, 'rotate').mockImplementation(function(this: Shape3D, ...args: Parameters<typeof rotate>) { capture(this); return rotate.apply(this, args); });
-  const translated = vi.spyOn(_3DShape.prototype, 'translate').mockImplementation(function(this: Shape3D, ...args: Parameters<typeof translate>) { capture(this); return translate.apply(this, args); });
+  const { rotate, translate } = cadKernelBuilders, watch = watchCadKernelBuilders();
+  const rotated = vi.spyOn(cadKernelBuilders, 'rotate').mockImplementation((shape, angle, center, direction) => { capture(shape); return rotate(shape, angle, center, direction); });
+  const translated = vi.spyOn(cadKernelBuilders, 'translate').mockImplementation((shape, offset) => { capture(shape); return translate(shape, offset); });
   const document: CadDocument = { format: 'wireedm-cad', schemaVersion: 1, id: 'consumed', name: 'Consumed', units: 'mm', parameters: {}, features: [
     { id: 'sketch', name: 'Rectangle', kind: 'sketch', suppressed: false, plane: 'XY', offset: 0, profiles: [
       { id: 'profile', name: 'Rectangle', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 0 } }
@@ -105,8 +107,9 @@ it('releases consumed transform inputs without changing their independently buil
     } finally { model.dispose(); }
     expect(aliases).toHaveLength(2);
     expect(aliases.every(alias => alias.IsNull())).toBe(true);
+    expect(watch.builders.map(item => item.kind)).toEqual(['transform', 'transform']); expect(watch.outstanding()).toBe(0);
   } finally {
-    rotated.mockRestore(); translated.mockRestore();
+    rotated.mockRestore(); translated.mockRestore(); watch.restore();
     for (const alias of aliases) { alias.Nullify(); alias.delete(); }
   }
 });

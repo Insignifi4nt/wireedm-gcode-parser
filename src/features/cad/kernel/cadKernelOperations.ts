@@ -45,7 +45,8 @@ export function applyCadShell(shape: Shape3D, opening: Face, thickness: number):
   const faces = new oc.NCollection_List_TopoDS_Shape();
   const builder = new oc.BRepOffsetAPI_MakeThickSolid();
   try {
-    faces.Append(opening.wrapped);
+    // Append returns a copy of the stored shape, which keeps the opening's topology alive until it is deleted.
+    faces.Append(opening.wrapped).delete();
     // OpenCascade uses negative offset for inward walls; the public feature is positive.
     builder.MakeThickSolidByJoin(shape.wrapped, faces, -thickness, CAD_PRECISION.kernelConfusionMm,
       oc.BRepOffset_Mode.BRepOffset_Skin, false, false, oc.GeomAbs_JoinType.GeomAbs_Arc, false);

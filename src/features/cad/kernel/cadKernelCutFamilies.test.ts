@@ -2,11 +2,13 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, isShape3D, measureVolume, setOC, type AnyShape, type Shape3D } from 'replicad';
+import { isShape3D, measureVolume, setOC, type Shape3D } from 'replicad';
 import type { CadDocument, CadFeature, CadProfile, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import { buildCadKernelModel } from './cadKernelModel';
 import { prepareCadSolidImport } from './cadKernelImport';
+import { cadKernelBuilders } from './cadKernelBuilders';
+import { watchCadKernelBuilders } from './__tests__/cadKernelBuilderWatch';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -77,9 +79,9 @@ describe('confirmed material removal across existing Cut families', () => {
   });
   it.each(families)('rejects entire %s erasure without consuming its target or accepted tool', family => {
     const input = fixture(family, 'erase'); let result: Shape3D | undefined;
-    const nativeCut = _3DShape.prototype.cut;
-    const capture = vi.spyOn(_3DShape.prototype, 'cut').mockImplementation(function(this: Shape3D, other: AnyShape) {
-      if (!isShape3D(other)) throw new Error('Expected cutting solid'); result = nativeCut.call(this, other); return result;
+    const nativeCut = cadKernelBuilders.cut, watch = watchCadKernelBuilders();
+    const capture = vi.spyOn(cadKernelBuilders, 'cut').mockImplementation((target, other) => {
+      if (!isShape3D(other)) throw new Error('Expected cutting solid'); result = nativeCut(target, other); return result;
     });
     try {
       const model = buildCadKernelModel(parseCadDocument(input.document));
@@ -88,15 +90,18 @@ describe('confirmed material removal across existing Cut families', () => {
         expect(model.result.meshes.map(mesh => mesh.featureId)).toEqual(input.prefix); expect(model.result.meshes[0].volume).toBeCloseTo(4000, 7);
         if (!result) throw new Error('Expected native result'); const rejected = result; expect(() => rejected.wrapped).toThrow();
         if (family === 'boolean') expect(model.result.meshes[2].volume).toBeCloseTo(input.toolVolume, 6);
+        expect(watch.builders.map(item => item.kind)).toContain('cut'); expect(watch.outstanding()).toBe(0);
       } finally { model.dispose(); }
-    } finally { capture.mockRestore(); }
+    } finally { capture.mockRestore(); watch.restore(); }
   });
   it.each(families.flatMap(family => (['intersect', 'cut'] as const).map(phase => ({ family, phase }))))('keeps native ownership after interrupted $family $phase', ({ family, phase }) => {
     const input = fixture(family, 'valid'); let target: Shape3D | undefined, tool: Shape3D | undefined, common: Shape3D | undefined;
-    const nativeCommon = _3DShape.prototype.intersect;
-    const commonSpy = phase === 'cut' ? vi.spyOn(_3DShape.prototype, 'intersect').mockImplementation(function(this: Shape3D, other: AnyShape) { common = nativeCommon.call(this, other); return common; }) : null;
-    const fail = vi.spyOn(_3DShape.prototype, phase).mockImplementation(function(this: Shape3D, other: AnyShape) {
-      if (!isShape3D(other)) throw new Error('Expected cutting solid'); target = this; tool = other; throw new Error(`Interrupted ${family} ${phase}`);
+    const { common: nativeCommon, cut: nativeCut } = cadKernelBuilders;
+    // The interrupted builder fails inside its adapter, after it has run, so the adapter's cleanup is under test.
+    const watch = watchCadKernelBuilders({ kinds: [phase === 'intersect' ? 'common' : 'cut'], call: 1, error: new Error(`Interrupted ${family} ${phase}`) });
+    const commonSpy = phase === 'cut' ? vi.spyOn(cadKernelBuilders, 'common').mockImplementation((left, right) => { common = nativeCommon(left, right); return common; }) : null;
+    const fail = vi.spyOn(cadKernelBuilders, phase === 'intersect' ? 'common' : 'cut').mockImplementation((left, other) => {
+      if (!isShape3D(other)) throw new Error('Expected cutting solid'); target = left; tool = other; return (phase === 'intersect' ? nativeCommon : nativeCut)(left, other);
     });
     try {
       const model = buildCadKernelModel(parseCadDocument(input.document));
@@ -108,7 +113,8 @@ describe('confirmed material removal across existing Cut families', () => {
         if (family === 'boolean') expect(measureVolume(retainedTool)).toBeCloseTo(input.toolVolume, 7);
         else expect(() => retainedTool.wrapped).toThrow();
         if (phase === 'cut') { if (!common) throw new Error('Expected owned Common'); const released = common; expect(() => released.wrapped).toThrow(); }
+        expect(watch.failed).toHaveLength(1); expect(watch.outstanding()).toBe(0);
       } finally { model.dispose(); }
-    } finally { fail.mockRestore(); commonSpy?.mockRestore(); }
+    } finally { fail.mockRestore(); commonSpy?.mockRestore(); watch.restore(); }
   });
 });

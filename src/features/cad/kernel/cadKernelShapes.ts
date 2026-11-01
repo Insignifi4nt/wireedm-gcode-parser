@@ -7,7 +7,7 @@ export function cadKernelDisposeShape(shape: { readonly wrapped: TopoDS_Shape; d
   let raw: TopoDS_Shape;
   try { raw = shape.wrapped; }
   catch (error) {
-    // Replicad transforms consume their input wrappers before returning.
+    // An already deleted wrapper has nothing left to release.
     if (error instanceof Error && error.message === 'This object has been deleted') return;
     throw error;
   }
@@ -22,15 +22,11 @@ export function cadKernelDisposeOwned(value: { delete(): void }): void {
   else value.delete();
 }
 
-/** Public embind clone keeps the same C++ wrapper alive while Replicad consumes
- * its JS owner. Release that wrapper's BRep reference after the transform. */
-export function cadKernelConsumeShape(shape: Shape3D, transform: (input: Shape3D) => Shape3D): Shape3D {
-  const raw = shape.wrapped;
-  if (!('clone' in raw) || typeof raw.clone !== 'function') throw new Error('The native shape binding does not support owned handle aliases.');
-  const alias: unknown = raw.clone();
-  if (!(alias instanceof getOC().TopoDS_Shape)) throw new Error('The native shape alias is invalid.');
-  try { return transform(shape); }
-  finally { alias.Nullify(); alias.delete(); }
+/** Runs body and disposes everything it owns, last first, as cadKernelDisposeOwned does, when it returns or throws. */
+export function cadKernelScope<T>(body: (own: <V extends { delete(): void }>(value: V) => V) => T): T {
+  const owned: { delete(): void }[] = [];
+  try { return body(value => { owned.push(value); return value; }); }
+  finally { for (const value of owned.reverse()) cadKernelDisposeOwned(value); }
 }
 
 /** Full geometric/topological validation. The repaired pinned binding destroys
