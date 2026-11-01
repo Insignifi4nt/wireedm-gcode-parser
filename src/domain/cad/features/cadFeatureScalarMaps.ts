@@ -2,7 +2,8 @@ import type { CadPathSegment, CadPoint2, CadPoint3, CadProfile, CadScalar } from
 import type { CadEdgePredicate, CadEdgeSelection, CadFaceQuery, CadFacePredicate } from '../cadTopology';
 import type { CadSketchGraph } from '../cadSketchGraph';
 import { mapCadSketchRelationScalars } from '../cadSketchGraphReferences';
-import type { CadScalarMapper } from './cadFeatureDefinitionTypes';
+import { CAD_SKETCH_RELATION_DEFINITIONS } from '../sketch-relations/cadSketchRelationRegistry';
+import type { CadFeatureNestedQuantity, CadFeatureQuantityPath, CadScalarMapper } from './cadFeatureDefinitionTypes';
 
 // Each maps the dimension-bearing scalars of one stored value, naming each by its path below `path`. Ids, source text and pinned
 // packages are left exact.
@@ -65,3 +66,47 @@ export function mapCadEdgeSelectionScalars(selection: CadEdgeSelection, path: st
 export function mapCadFaceQueryScalars(query: CadFaceQuery, path: string, map: CadScalarMapper): CadFaceQuery {
   return { ...query, predicates: query.predicates.map((predicate, index) => mapFacePredicate(predicate, `${path}.predicates.${index}`, map)) };
 }
+
+// What each number of those stored values measures, by its path below the value (see CadFeatureQuantityPath). Each maps the scalars
+// above, and also names the plain numbers a value holds: directions, areas, counts, places in a list and dimension placements.
+
+/** `paths` below `prefix`. */
+export function cadQuantitiesUnder(prefix: string, paths: readonly CadFeatureQuantityPath[]): readonly CadFeatureQuantityPath[] {
+  return paths.map(({ path, quantity }) => ({ path: !path ? prefix : path.startsWith('{') ? prefix + path : `${prefix}.${path}`, quantity }));
+}
+const each = (quantity: CadFeatureNestedQuantity, ...paths: readonly string[]) => paths.map(path => ({ path, quantity }));
+export const CAD_PATH_SEGMENT_QUANTITIES: readonly CadFeatureQuantityPath[] = [
+  ...each('length', '{line}.start.*', '{line}.end.*', '{arc}.center.*', '{arc}.radius'), ...each('angle', '{arc}.startAngle', '{arc}.sweep')];
+/** A sketch profile's geometry; a plugin's inputs measure what its pinned package declares. */
+export const CAD_PROFILE_QUANTITIES: readonly CadFeatureQuantityPath[] = [
+  ...each('length', '{rectangle}.x', '{rectangle}.y', '{rectangle}.width', '{rectangle}.height', '{rectangle}.cornerRadius', '{circle}.x', '{circle}.y',
+    '{circle}.radius', '{slot}.x', '{slot}.y', '{slot}.length', '{slot}.width', '{polygon}.points.*.*'),
+  ...each('angle', '{slot}.angle'), ...cadQuantitiesUnder('{path}.segments.*', CAD_PATH_SEGMENT_QUANTITIES), ...each('plugin', '{plugin}.inputs.*')];
+/**
+ * A sketch graph's point positions, circle radii and relation values, each relation's as its definition declares, a linear pattern's
+ * count and omitted instances, and where each dimension is drawn: offsets, radii and distances, fractions along, and a leader's
+ * direction in radians.
+ */
+export function cadSketchGraphQuantities(): readonly CadFeatureQuantityPath[] {
+  return [...each('length', 'points.*.position.*', 'entities.*{circle}.radius'),
+    ...Object.values(CAD_SKETCH_RELATION_DEFINITIONS).flatMap(({ kind, scalars }) =>
+      scalars ? scalars.keys.map(key => ({ path: `relations.*{${kind}}.${key}`, quantity: scalars.quantity[key] })) : []),
+    ...each('count', 'relations.*{linear-pattern}.count'), ...each('index', 'relations.*{linear-pattern}.omittedInstances.*'),
+    ...each('length', 'relations.*.annotation{linear}.offset', 'relations.*.annotation{angle}.radius', 'relations.*.annotation{radial}.distance',
+      'relations.*.annotation{setbacks}.sides.*.offset'),
+    ...each('ratio', 'relations.*.annotation{linear}.along', 'relations.*.annotation{angle}.along', 'relations.*.annotation{setbacks}.sides.*.along'),
+    ...each('radians', 'relations.*.annotation{radial}.angle')];
+}
+/** An edge selection: its queries' predicates, a direction's components, and the edges each query and the selection expect. */
+export const CAD_EDGE_SELECTION_QUANTITIES: readonly CadFeatureQuantityPath[] = [
+  ...cadQuantitiesUnder('queries.*.predicates.*', [
+    ...each('length', '{length}.value', '{on-plane}.offset', '{line-endpoints}.start.*', '{line-endpoints}.end.*', '{circle}.center.*', '{circle}.radius',
+      '{arc-points}.start.*', '{arc-points}.end.*', '{arc-points}.midpoint.*'),
+    ...each('ratio', '{on-plane}.normal.*', '{parallel}.direction.*', '{circle}.axis.*')]),
+  ...each('count', 'queries.*.expectedCount', 'expectedCount')];
+/** A face query: its predicates, a direction's components, and the faces it expects. */
+export const CAD_FACE_QUERY_QUANTITIES: readonly CadFeatureQuantityPath[] = [
+  ...cadQuantitiesUnder('predicates.*', [
+    ...each('length', '{plane}.offset', '{centroid}.point.*', '{cylinder}.origin.*', '{cylinder}.radius'), ...each('area', '{area}.value'),
+    ...each('ratio', '{plane}.normal.*', '{cylinder}.axis.*')]),
+  ...each('count', 'expectedCount')];

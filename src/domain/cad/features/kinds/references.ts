@@ -5,13 +5,14 @@ import { CadPluginProfileSchema } from '../../plugins/cadPlugins';
 import { CadIdentifierSchema, CadLabelSchema, CadPathSegmentSchema, CadPlaneSchema, CadPoint2Schema, CadScalarSchema, CadSketchPlaneSchema } from '../../cadPrimitives';
 import { CadDxfImportSourceSchema, parseCadDxfImportSource } from '../../cadDxfSource';
 import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from '../../cadSketchConstraints';
-import { CadSketchDimensionAnnotationSchema, CadSketchGraphSchema, parseCadSketchGraph, type CadSketchGraph } from '../../cadSketchGraph';
+import { CadSketchGraphSchema, parseCadSketchGraph, type CadSketchGraph } from '../../cadSketchGraph';
 import { assertCadSketchExternalReferences } from '../../cadSketchExternalReferences';
 import { resolveCadSketchPlacement, resolveCadWorldDatum } from '../../cadDatumPlanes';
 import { resolveCadCurveGeometry } from '../../cadCurve';
 import type { CadFeatureDefinition } from '../cadFeatureDefinitionTypes';
 import { cadFeatureField, cadFeatureScalarField, cadFeatureShape } from '../cadFeatureFields';
-import { mapCadPathSegments, mapCadPoint3, mapCadProfileScalars, mapCadSketchGraphScalars } from '../cadFeatureScalarMaps';
+import { CAD_PATH_SEGMENT_QUANTITIES, CAD_PROFILE_QUANTITIES, cadQuantitiesUnder, cadSketchGraphQuantities, mapCadPathSegments, mapCadPoint3, mapCadProfileScalars,
+  mapCadSketchGraphScalars } from '../cadFeatureScalarMaps';
 
 const strict = { additionalProperties: false };
 const scalar = CadScalarSchema;
@@ -40,20 +41,19 @@ const worldDefinition = Type.Object({ kind: Type.Literal('world'), basePlane: Ca
 const datumPlaneShape = cadFeatureShape(Type.Literal('datum-plane'), {
   // World origin in millimetres and rotation in degrees.
   definition: cadFeatureField<typeof worldDefinition, CadDatumPlaneFeature['definition']>(worldDefinition, {
-    scalars: (definition, path, map) => ({ ...definition, origin: mapCadPoint3(definition.origin, `${path}.origin`, map), rotation: mapCadPoint3(definition.rotation, `${path}.rotation`, map) }) })
+    scalars: (definition, path, map) => ({ ...definition, origin: mapCadPoint3(definition.origin, `${path}.origin`, map), rotation: mapCadPoint3(definition.rotation, `${path}.rotation`, map) }),
+    quantities: [{ path: '{world}.origin.*', quantity: 'length' }, { path: '{world}.rotation.*', quantity: 'angle' }] })
 });
 export const CadDatumPlaneFeatureSchema = datumPlaneShape.schema;
 
 export const datumPlane = {
   kind: 'datum-plane', family: 'reference', ...datumPlaneShape,
   outputs: ['plane'], body: 'none', suppression: 'no-output', evaluator: { owner: 'domain', version: 1 },
-  diagnostics: ['invalid-datum-plane', 'unsupported-datum-frame'],
+  diagnostics: ['invalid-datum-plane', 'invalid-plane', 'unsupported-datum-frame'],
   check(feature, context) {
     const resolved = resolveCadWorldDatum(feature, context.document.parameters);
     if (context.active) context.addDatumFrame(feature.id, resolved);
-  },
-  form: { editor: 'bespoke', title: 'Plane' },
-  agent: { exposed: true, description: 'An independent world reference plane. definition.kind=world uses basePlane XY/XZ/YZ, world origin in mm and rotation in degrees around world X then Y then Z. Rotation turns its basis without rotating its origin. All coordinates accept parameter expressions. Sketch/Curve plane may reference this preceding active feature with {kind:datum-plane,featureId}; offset remains along its normal. No body, material or CAM role. cad_inspect_plane resolves the frame without loading the solid engine. Datum Pad/Revolve/Loft/Sweep require conservative placement precision. Loft sections must share oriented axes and normal; use cad_inspect_loft before adding one. Sweep preserves authored section and rail frames; its section normal must align with the first rail tangent. Datum Through-all Pocket is not yet supported and is rejected before editing.' }
+  }
 } satisfies CadFeatureDefinition<'datum-plane'>;
 
 const sketchProfiles = Type.Array(CadSketchProfileSchema);
@@ -62,21 +62,37 @@ const sketchShape = cadFeatureShape(Type.Literal('sketch'), {
   plane: support,
   offset,
   profiles: cadFeatureField<typeof sketchProfiles, readonly CadSketchProfile[]>(sketchProfiles, {
-    scalars: (profiles, path, map) => profiles.map((profile, index) => ({ ...profile, geometry: mapCadProfileScalars(profile.geometry, `${path}.${index}.geometry`, map) })) }),
+    scalars: (profiles, path, map) => profiles.map((profile, index) => ({ ...profile, geometry: mapCadProfileScalars(profile.geometry, `${path}.${index}.geometry`, map) })),
+    quantities: cadQuantitiesUnder('*.geometry', CAD_PROFILE_QUANTITIES) }),
   source: importSource,
   graph: cadFeatureField<typeof optionalGraph, CadSketchGraph>(optionalGraph, {
     // Another sketch whose entities this one uses as read-only references.
     slot: { role: 'linked', accepts: ['sketch'], count: 'many',
       ids: graph => [...new Set(graph.relations.flatMap(relation => relation.kind === 'external-reference' ? [relation.sourceSketchId] : []))] },
-    scalars: mapCadSketchGraphScalars })
+    scalars: mapCadSketchGraphScalars, quantities: cadSketchGraphQuantities })
 });
 export const CadSketchFeatureSchema = sketchShape.schema;
 
 export const sketch = {
   kind: 'sketch', family: 'reference', ...sketchShape,
   outputs: ['sketch'], body: 'none', suppression: 'no-output', evaluator: { owner: 'domain', version: 1 },
-  diagnostics: ['unsupported-sketch-format', 'duplicate-sketch-constraint', 'invalid-profile', 'open-profile', 'profile-intersection', 'self-intersection',
-    'invalid-sketch-graph', 'invalid-sketch-reference', 'unavailable-sketch-reference', 'stale-sketch-reference', 'changed-sketch-reference', 'invalid-dxf-source', 'unsupported-datum-frame'],
+  diagnostics: [
+    // Format, ids and profiles.
+    'unsupported-sketch-format', 'reserved-sketch-id', 'duplicate-sketch-id', 'duplicate-sketch-constraint', 'invalid-dimension', 'invalid-profile', 'invalid-profile-role',
+    'open-profile', 'profile-intersection', 'self-intersection', 'invalid-radius', 'invalid-distance', 'invalid-corner-geometry', 'invalid-corner-topology',
+    'invalid-gear', 'invalid-plugin', 'invalid-plugin-inputs', 'invalid-plugin-rules', 'plugin-limit', 'plugin-size', 'invalid-dxf-source',
+    // The graph: its entities, relations, solution and annotations.
+    'invalid-sketch-graph', 'invalid-sketch-graph-geometry', 'sketch-graph-precision', 'missing-sketch-entity', 'missing-sketch-point', 'invalid-sketch-cycle',
+    'non-canonical-sketch-relation', 'relation-residual', 'fixed-sketch-relation', 'overconstrained-sketch-dimension', 'already-driven-sketch-radius',
+    'unsupported-sketch-dimension', 'unsupported-sketch-operand', 'invalid-sketch-operand', 'invalid-sketch-angle', 'invalid-sketch-angle-ray',
+    'invalid-sketch-line-pair', 'invalid-sketch-midpoint', 'invalid-sketch-pattern', 'owned-sketch-pattern', 'invalid-sketch-point-line-distance',
+    'invalid-sketch-point-on-curve', 'invalid-sketch-point-on-line', 'invalid-sketch-radial-entity', 'invalid-sketch-radius-pair',
+    'invalid-sketch-reference-dimension', 'invalid-sketch-symmetry', 'invalid-sketch-tangent', 'invalid-sketch-tangent-joint', 'invalid-sketch-annotation',
+    // Its regions.
+    'invalid-region-selection', 'stale-sketch-region', 'invalid-sketch-cells', 'invalid-sketch-cell-id', 'unsupported-sketch-cells',
+    // References to the geometry of other features, and its placement.
+    'invalid-sketch-reference', 'unavailable-sketch-reference', 'stale-sketch-reference', 'changed-sketch-reference', 'invalid-plane', 'unavailable-datum-plane',
+    'unsupported-datum-frame'],
   check(feature, context) {
     const { document } = context;
     context.scalar(feature, 'offset');
@@ -102,23 +118,15 @@ export const sketch = {
     }
     context.checkSketchGeometry(feature);
     if (context.active) resolveCadSketchPlacement(feature, document.parameters, context.datums);
-  },
-  form: { editor: 'bespoke', title: 'Sketch' },
-  agent: { exposed: true, description: 'Plane-local legacy closed profiles and optional schema-2 graph of stable open/closed line, arc and circle entities on XY/XZ/YZ or a preceding active datum-plane, with optional construction geometry. Offset follows the resolved plane normal; changing placement preserves local coordinates. Nesting automatically determines material, voids and islands. Dimensions accept finite arithmetic over document parameters. Use cad_inspect_plane for world placement.',
-    // Saved legacy contour roles remain parseable, but new contours use nesting.
-    authoringSchema: Type.Object({ ...CadSketchFeatureSchema.properties, profiles: Type.Array(Type.Omit(CadSketchProfileSchema, ['role'])) }, strict),
-    // A sketch definition repeats its scalar, identifier and dimension placement schemas dozens of times.
-    sharedDefinitions: {
-      CadScalar: CadScalarSchema, CadIdentifier: CadIdentifierSchema,
-      ...Object.fromEntries(CadSketchDimensionAnnotationSchema.anyOf.map(variant => [`CadSketch${variant.properties.kind.const[0].toUpperCase()}${variant.properties.kind.const.slice(1)}Annotation`, variant]))
-    } }
+  }
 } satisfies CadFeatureDefinition<'sketch'>;
 
 const curveSegments = Type.Array(CadPathSegmentSchema, { minItems: 1 });
 const curveShape = cadFeatureShape(Type.Literal('curve'), {
   plane: support,
   offset,
-  segments: cadFeatureField<typeof curveSegments, readonly CadPathSegment[]>(curveSegments, { scalars: mapCadPathSegments }),
+  segments: cadFeatureField<typeof curveSegments, readonly CadPathSegment[]>(curveSegments, { scalars: mapCadPathSegments,
+    quantities: cadQuantitiesUnder('*', CAD_PATH_SEGMENT_QUANTITIES) }),
   source: importSource
 });
 export const CadCurveFeatureSchema = curveShape.schema;
@@ -126,11 +134,10 @@ export const CadCurveFeatureSchema = curveShape.schema;
 export const curve = {
   kind: 'curve', family: 'reference', ...curveShape,
   outputs: ['curve'], body: 'none', suppression: 'no-output', evaluator: { owner: 'domain', version: 1 },
-  diagnostics: ['invalid-curve', 'invalid-curve-placement', 'closed-curve', 'disconnected-curve', 'self-intersection', 'invalid-dxf-source', 'unsupported-datum-frame'],
+  diagnostics: ['invalid-curve', 'closed-curve', 'disconnected-curve', 'self-intersection', 'invalid-profile', 'invalid-dxf-source', 'invalid-plane',
+    'unavailable-datum-plane', 'unsupported-datum-frame'],
   check(feature, context) {
     resolveCadCurveGeometry(feature, context.document.parameters);
     if (context.active) resolveCadSketchPlacement(feature, context.document.parameters, context.datums);
-  },
-  form: { editor: 'bespoke', title: 'Curve' },
-  agent: { exposed: true, description: 'An ordered open reference chain of exact lines and circular arcs on XY, XZ, YZ or a preceding active datum-plane at a signed normal offset. Dimensions accept parameter expressions. Segments must connect within modeling precision without closing, crossing, touching nonadjacent segments or overlapping. Sharp corners are allowed. Curves are independent references, never solid bodies or closed material profiles. Retains original DXF source when imported; exact open DXF export preserves traversal in local millimeters.' }
+  }
 } satisfies CadFeatureDefinition<'curve'>;

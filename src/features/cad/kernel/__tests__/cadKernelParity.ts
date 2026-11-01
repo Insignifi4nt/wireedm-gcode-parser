@@ -52,6 +52,17 @@ const rectangle = (x: number, y: number, width: number, height: number): Geometr
 const circle = (x: number, y: number, radius: number): Geometry => ({ kind: 'circle', x, y, radius });
 const grid = (columns: number, rows: number) => Array.from({ length: columns * rows }, (_, index) => circle(10 + 20 * (index % columns), 12.5 + 25 * Math.floor(index / columns), 3));
 const onDatum = { kind: 'datum-plane', featureId: 'datum' } as const;
+/** A box from the origin to `size` as ASCII STL in base64, each face two facets wound outward. */
+function stlBox([x, y, z]: readonly [number, number, number]): string {
+  const faces: readonly (readonly (readonly number[])[])[] = [
+    [[0, 0, -1], [0, 0, 0], [0, y, 0], [x, y, 0], [x, 0, 0]], [[0, 0, 1], [0, 0, z], [x, 0, z], [x, y, z], [0, y, z]],
+    [[0, -1, 0], [0, 0, 0], [x, 0, 0], [x, 0, z], [0, 0, z]], [[0, 1, 0], [0, y, 0], [0, y, z], [x, y, z], [x, y, 0]],
+    [[-1, 0, 0], [0, 0, 0], [0, 0, z], [0, y, z], [0, y, 0]], [[1, 0, 0], [x, 0, 0], [x, y, 0], [x, y, z], [x, 0, z]]];
+  const facet = (normal: readonly number[], ...corners: (readonly number[])[]) =>
+    [`facet normal ${normal.join(' ')}`, 'outer loop', ...corners.map(corner => `vertex ${corner.join(' ')}`), 'endloop', 'endfacet'];
+  const lines = faces.flatMap(([normal, a, b, c, d]) => [...facet(normal, a, b, c), ...facet(normal, a, c, d)]);
+  return btoa(['solid box', ...lines, 'endsolid box', ''].join('\n'));
+}
 const topFace = (offset: number) => ({ kind: 'faces' as const, expectedCount: 1, predicates: [{ kind: 'plane' as const, normal: [0, 0, 1] as [number, number, number], offset }] });
 
 /** A disk with 24 patterned bosses joined and 12 patterned holes cut. */
@@ -70,7 +81,7 @@ export interface CadKernelParityModel { readonly id: string; readonly document: 
 /**
  * Parts that exercise every owned builder: sketch faces with holes, prisms, revolves, booleans,
  * linear and circular patterns, mirror through each principal plane, transform, shell, all-edge
- * fillet and chamfer, loft, segment sweep, Pocket and datum-plane sketches, then every step of the
+ * fillet and chamfer, loft, segment sweep, Pocket and datum-plane sketches, a cut through an imported STL solid, then every step of the
  * shipped kernel benchmark cases. The 359.9999° pattern unites copies that nearly meet: its faces
  * and volume change if a boolean skips Replicad's second build.
  */
@@ -118,6 +129,10 @@ export function cadKernelParityModels(): CadKernelParityModel[] {
       pad('plate', 'outline', 6),
       sketch('ring_sketch', [rectangle(30, 0, 5, 5)], 0, onDatum),
       { ...base('ring'), kind: 'revolve', sketchId: 'ring_sketch', angle: 180, axis: 'y', operation: 'new', targetId: null }]) },
+    { id: 'imported-stl-bore', document: document('imported_bore', [
+      { ...base('stock'), kind: 'imported', source: { format: 'stl', fileName: 'stock.stl', encoding: 'base64', units: 'mm', data: stlBox([40, 30, 10]) } },
+      sketch('bore_sketch', [circle(20, 15, 5)]), pad('bore', 'bore_sketch', 10, 'cut', 'stock'),
+      { ...base('placed'), kind: 'transform', sourceId: 'bore', translation: [5, 0, 0], rotation: [0, 0, 15] }]) },
     ...createCadKernelBenchmarkCases().flatMap(item => item.steps.map((step, index) => ({ id: `bench-${item.id}-${index}`, document: step.document })))
   ];
 }

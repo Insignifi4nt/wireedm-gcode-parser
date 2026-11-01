@@ -1,18 +1,25 @@
 # CAD feature kinds
 
 Every CAD feature kind is declared once, in `src/domain/cad/features/kinds/`, and registered in `cadFeatureRegistry.ts`. Consumers read
-features through the definition rather than switching on kinds. The definition owns:
+features through the definition rather than switching on kinds. What a kind shows people and agents is kept apart, in
+`cadFeaturePresentation.ts`, so the kernel worker never loads its text. The definition owns:
 
 | Declaration | Read by |
 | --- | --- |
 | `schema`, `fields` | The document schema (`cadFeatureSchemaUnion`), agent schemas and this page. |
 | Slots (`cadFeatureReference`, `cadFeatureOptionalReference`) | Reference checks while parsing, and dependencies (`cadFeatureInputs`, `cadFeatureDependencies`). |
 | Scalars (`cadFeatureScalarField`, `cadFeatureVectorField`) | Range checks while parsing, parameter traversals (`mapCadFeatureScalars`) and kernel limits (`cadFeatureScalar`). |
+| `quantities` of a field holding nested values | What each number inside it measures, by path (`cadFeatureQuantityAt`). |
 | `choices`, `condition` | Choice values in forms, and conditional fields such as a target that only exists for join and cut. |
 | `outputs`, `body`, `suppression` | Which features may feed a slot, which bodies a feature replaces (`cadConsumedBodyIds`) and what an inactive feature leaves. |
 | `evaluator` | Where the feature is evaluated and the version of that evaluation, for the rebuild cache. |
-| `diagnostics` | The codes the kind's own checks and evaluation raise. |
+| `diagnostics` | Every code the kind's own checks and evaluation raise, apart from the steps all kinds share (`CAD_FEATURE_SHARED_DIAGNOSTICS`). |
 | `check`, `instances` | Checks beyond the schema while parsing, and the solid count a feature makes. |
+
+Its presentation, one entry per kind in `CAD_FEATURE_PRESENTATION`, owns:
+
+| Declaration | Read by |
+| --- | --- |
 | `form` | The feature editor: a generic form from its controls, or the kind's own editor. |
 | `agent` | Whether agent tools may name the kind, its description and its authoring schema. |
 
@@ -21,15 +28,20 @@ features through the definition rather than switching on kinds. The definition o
 1. Add the stored type to the `CadFeature` union in `src/domain/cad/cadDocument.ts`.
 2. Declare it in its family's module under `src/domain/cad/features/kinds/`. Build the shape with `cadFeatureShape` and the field helpers in
    `cadFeatureFields.ts`, and end the object with `satisfies CadFeatureDefinition<'your-kind'>`. Give every id-holding field a slot and
-   every dimension a scalar; declare a field only when something reads it.
+   every dimension a scalar; declare a field only when something reads it. A field holding nested numbers declares what each measures in
+   `quantities`.
 3. Register it in `catalog()` in `cadFeatureRegistry.ts`. The type check fails until every kind is registered with a matching shape. Add
    its schema to the end of `cadFeatureSchemaUnion`: the union order fixes the published document and edit schema hashes.
 4. Evaluate it in the kernel (`src/features/cad/kernel/cadKernelModel.ts`), or in the domain for a reference kind.
-5. Give it a form. A list of `controls` is drawn by the shared editor; a kind that needs more declares `editor: 'bespoke'` and adds its
-   case to `CadFeatureEditor.tsx`.
-6. Decide its agent exposure. Initial agent discovery must stay within 51,200 UTF-8 bytes (`cadAgentJourney.test.tsx`), so keep the
+5. Give it a form in `CAD_FEATURE_PRESENTATION` (`cadFeaturePresentation.ts`); the type check fails until every kind has an entry. A
+   list of `controls` is drawn by the shared editor; a kind that needs more declares `editor: 'bespoke'` and adds its case to
+   `CadFeatureEditor.tsx`.
+6. Decide its agent exposure, in the same entry. Initial agent discovery must stay within 51,200 UTF-8 bytes (`cadAgentJourney.test.tsx`), so keep the
    description short. Update `docs/site/agents.md` if agents gain the kind.
-7. Regenerate the table below with `UPDATE_CAD_FEATURE_TABLE=1 npm test -- --run src/domain/cad/__tests__/cadFeatureTable.test.ts`.
+7. List its `diagnostics`. `cadFeatureDiagnostics.test.ts` reads the kind's definition and its kernel case, follows the calls they
+   make, and fails unless the list holds exactly the refusal codes found, less the shared ones. `cadFeatureQuantities.test.ts` fails
+   until every number its schema accepts has exactly one declared quantity.
+8. Regenerate the table below with `UPDATE_CAD_FEATURE_TABLE=1 npm test -- --run src/domain/cad/__tests__/cadFeatureTable.test.ts`.
    Without the variable the test fails while the table differs from the definitions.
 
 Raise `evaluator.version` whenever the same stored feature would evaluate differently.
@@ -41,8 +53,10 @@ fails if any of them does.
 ## Activity
 
 Read whether a feature takes part in a rebuild with `cadFeatureActive(feature, scope)`. `npm run lint` refuses any other read of the stored
-`suppressed` flag. Code that means the stored value itself, such as the suppression toggle or a check on an import result, reads it
-with `cadFeatureSuppressionFlag`.
+`suppressed` flag that names it: member and element access, destructuring by any literal key, including computed keys and destructuring
+assignment, `'suppressed' in` and reflective reads. Code that means the stored value itself, such as the suppression toggle or a check
+on an import result, reads it with `cadFeatureSuppressionFlag`. The check cannot see reads that never name the flag (key enumeration,
+spreads, serialization) or keys built at run time; `scripts/check-feature-activity.ts` lists what it covers.
 
 ## Not yet slots
 

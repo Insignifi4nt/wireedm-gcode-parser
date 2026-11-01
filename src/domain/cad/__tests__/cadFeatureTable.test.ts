@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { CadFeatureScalar, CadFeatureSlot } from '../features/cadFeatureDefinitionTypes';
+import { cadFeaturePresentation } from '../features/cadFeaturePresentation';
 import { cadFeatureDefinition, cadFeatureKinds } from '../features/cadFeatureRegistry';
 
 const page = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../docs/maintainers/cad-features.md');
@@ -20,7 +21,7 @@ const cell = (items: readonly string[]) => items.length ? items.join('; ') : 'â€
 /** The kinds table, generated from the definitions. */
 function cadFeatureTable(): string {
   const rows = cadFeatureKinds().map(kind => {
-    const { family, fields, outputs, body, suppression, evaluator, form, agent } = cadFeatureDefinition(kind);
+    const { family, fields, outputs, body, suppression, evaluator } = cadFeatureDefinition(kind), { form, agent } = cadFeaturePresentation(kind);
     const entries = Object.entries(fields);
     const slots = entries.flatMap(([name, field]) => field.slot ? [slot(name, field.slot)] : []);
     const scalars = entries.flatMap(([name, field]) => field.scalar ? [scalar(name, field.scalar)] : []);

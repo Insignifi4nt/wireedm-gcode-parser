@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { checkFeatureActivity, featureActivityReadsIn } from '../../../../scripts/check-feature-activity';
 
 const scan = (text: string) => featureActivityReadsIn('fixture.ts', text);
+/** Each line of `lines` read on its own, with the spellings found in it. */
+const each = (lines: readonly string[]) => lines.map(line => [line, scan(line).map(read => read.spelling)]);
 
 describe('feature activity scanner', () => {
   it('finds each spelling of a read of the stored suppression flag, on its line', () => {
@@ -29,17 +31,134 @@ describe('feature activity scanner', () => {
     ]);
   });
 
-  it('ignores writes of the flag, other names, comments and text', () => {
+  it('finds element access by any literal key, optional or wrapped', () => {
+    expect(each([
+      "const a = feature?.['suppressed'];",
+      'const b = feature?.[`suppressed`];',
+      "const c = feature[('suppressed')];",
+      "const d = feature['suppressed' as const];",
+      "const e = feature!['suppressed' satisfies string];",
+      "const KEY = 'suppressed'; const f = feature[KEY];",
+      "const KEY = 'suppressed' as const; const g = feature?.[KEY];"
+    ])).toEqual([
+      ["const a = feature?.['suppressed'];", ["['suppressed']"]],
+      ['const b = feature?.[`suppressed`];', ["['suppressed']"]],
+      ["const c = feature[('suppressed')];", ["['suppressed']"]],
+      ["const d = feature['suppressed' as const];", ["['suppressed']"]],
+      ["const e = feature!['suppressed' satisfies string];", ["['suppressed']"]],
+      ["const KEY = 'suppressed'; const f = feature[KEY];", ["['suppressed']"]],
+      ["const KEY = 'suppressed' as const; const g = feature?.[KEY];", ["['suppressed']"]]
+    ]);
+  });
+
+  it('finds destructuring by a computed key, at any depth and beside rest or defaults', () => {
+    expect(each([
+      "const { ['suppressed']: off } = feature;",
+      'const { [`suppressed`]: off } = feature;',
+      "const KEY = 'suppressed'; const { [KEY]: off } = feature;",
+      'const { geometry, suppressed: off = false, ...rest } = feature;',
+      'const { suppressed: _, ...rest } = feature;',
+      'const [{ suppressed }] = features;',
+      'const { first: { suppressed } } = pair;',
+      "function pick({ ['suppressed']: off }: CadFeature) { return off; }",
+      'try { run(); } catch ({ suppressed }) { void suppressed; }'
+    ])).toEqual([
+      ["const { ['suppressed']: off } = feature;", ['{ suppressed }']],
+      ['const { [`suppressed`]: off } = feature;', ['{ suppressed }']],
+      ["const KEY = 'suppressed'; const { [KEY]: off } = feature;", ['{ suppressed }']],
+      ['const { geometry, suppressed: off = false, ...rest } = feature;', ['{ suppressed }']],
+      ['const { suppressed: _, ...rest } = feature;', ['{ suppressed }']],
+      ['const [{ suppressed }] = features;', ['{ suppressed }']],
+      ['const { first: { suppressed } } = pair;', ['{ suppressed }']],
+      ["function pick({ ['suppressed']: off }: CadFeature) { return off; }", ['{ suppressed }']],
+      ['try { run(); } catch ({ suppressed }) { void suppressed; }', ['{ suppressed }']]
+    ]);
+  });
+
+  it('finds destructuring assignment, at any depth and in loops', () => {
+    expect(each([
+      '({ suppressed: off } = feature);',
+      '({ suppressed } = feature);',
+      "({ ['suppressed']: off } = feature);",
+      '({ [`suppressed`]: off } = feature);',
+      '({ suppressed: off = false, ...rest } = feature);',
+      '({ suppressed = false } = feature);',
+      '[{ suppressed }] = features;',
+      '[first, ...[{ suppressed: off }]] = features;',
+      '({ first: { suppressed: off } } = pair);',
+      '[{ suppressed: off } = fallback] = features;',
+      'for ({ suppressed: off } of features) count(off);',
+      'for ([{ suppressed: off }] of pairs) count(off);',
+      'next = ({ suppressed: off } = feature);'
+    ])).toEqual([
+      ['({ suppressed: off } = feature);', ['{ suppressed } =']],
+      ['({ suppressed } = feature);', ['{ suppressed } =']],
+      ["({ ['suppressed']: off } = feature);", ['{ suppressed } =']],
+      ['({ [`suppressed`]: off } = feature);', ['{ suppressed } =']],
+      ['({ suppressed: off = false, ...rest } = feature);', ['{ suppressed } =']],
+      ['({ suppressed = false } = feature);', ['{ suppressed } =']],
+      ['[{ suppressed }] = features;', ['{ suppressed } =']],
+      ['[first, ...[{ suppressed: off }]] = features;', ['{ suppressed } =']],
+      ['({ first: { suppressed: off } } = pair);', ['{ suppressed } =']],
+      ['[{ suppressed: off } = fallback] = features;', ['{ suppressed } =']],
+      ['for ({ suppressed: off } of features) count(off);', ['{ suppressed } =']],
+      ['for ([{ suppressed: off }] of pairs) count(off);', ['{ suppressed } =']],
+      ['next = ({ suppressed: off } = feature);', ['{ suppressed } =']]
+    ]);
+  });
+
+  it('finds membership tests and reflective reads by a literal key', () => {
+    expect(each([
+      "const a = 'suppressed' in feature;",
+      'const b = `suppressed` in feature;',
+      "const c = Reflect.get(feature, 'suppressed');",
+      "const d = Reflect.has(feature, 'suppressed');",
+      "const e = Reflect.getOwnPropertyDescriptor(feature, 'suppressed');",
+      "const f = Object.hasOwn(feature, 'suppressed');",
+      "const g = Object.getOwnPropertyDescriptor(feature, 'suppressed');",
+      "const h = feature.hasOwnProperty('suppressed');",
+      "const i = feature.propertyIsEnumerable?.('suppressed');",
+      "const j = Object.prototype.hasOwnProperty.call(feature, 'suppressed');",
+      "const k = Object.prototype.hasOwnProperty.apply(feature, ['suppressed']);"
+    ])).toEqual([
+      ["const a = 'suppressed' in feature;", ["'suppressed' in"]],
+      ['const b = `suppressed` in feature;', ["'suppressed' in"]],
+      ["const c = Reflect.get(feature, 'suppressed');", ["get('suppressed')"]],
+      ["const d = Reflect.has(feature, 'suppressed');", ["has('suppressed')"]],
+      ["const e = Reflect.getOwnPropertyDescriptor(feature, 'suppressed');", ["getOwnPropertyDescriptor('suppressed')"]],
+      ["const f = Object.hasOwn(feature, 'suppressed');", ["hasOwn('suppressed')"]],
+      ["const g = Object.getOwnPropertyDescriptor(feature, 'suppressed');", ["getOwnPropertyDescriptor('suppressed')"]],
+      ["const h = feature.hasOwnProperty('suppressed');", ["hasOwnProperty('suppressed')"]],
+      ["const i = feature.propertyIsEnumerable?.('suppressed');", ["propertyIsEnumerable('suppressed')"]],
+      ["const j = Object.prototype.hasOwnProperty.call(feature, 'suppressed');", ["hasOwnProperty('suppressed')"]],
+      ["const k = Object.prototype.hasOwnProperty.apply(feature, ['suppressed']);", ["hasOwnProperty('suppressed')"]]
+    ]);
+  });
+
+  it('ignores writes of the flag, other names, comments, text and types', () => {
     const source = [
       '// feature.suppressed is read through cadFeatureActive',
       "const message = 'feature.suppressed';",
       'const next = { ...feature, suppressed: true };',
+      "const computed = { ...feature, ['suppressed']: true };",
       'const suppressed = true; const kept = { suppressed };',
+      'target = { suppressed: flag };',
+      '[first] = [{ suppressed: true }];',
       'const off = cursor.snapSuppressed || state.suppressedCount;',
       "type Flag = CadFeature['suppressed'];",
-      'const [suppressedFirst] = list;'
+      'interface Toggle { suppressed: boolean; readonly ["suppressed"]?: boolean }',
+      'const [suppressedFirst] = list;',
+      'const byName = feature[suppressed];',
+      "let key = 'suppressed'; const byVariable = feature[key];",
+      'const inner = { suppressed: true }.suppressedCount;',
+      "const lookup = params.get('suppressed') ?? cache.has('suppressed');",
+      "if (issue === 'suppressed') report(issue);",
+      "switch (issue) { case 'suppressed': break; }",
+      'const keys = Object.keys(feature); const copy = { ...feature };',
+      'class Toggle { suppressed = false; #suppressed = true; read() { return this.#suppressed; } }',
+      "const element = <Row suppressed={true} />;"
     ].join('\n');
-    expect(scan(source)).toEqual([]);
+    expect(featureActivityReadsIn('fixture.tsx', source)).toEqual([]);
   });
 
   it('passes on the repository, where only the activity module reads the flag', async () => {

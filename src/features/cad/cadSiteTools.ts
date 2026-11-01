@@ -8,6 +8,7 @@ import { CadSectionRequestSchema } from '@/domain/cad/cadSection';
 import { CadViewportCommandSchema } from './cadViewportControls';
 import { cadViewportMetadataToken, cadViewportToolState } from './cadViewportToolReplies';
 import { cadFeatureDefinition, cadFeatureKinds } from '@/domain/cad/features/cadFeatureRegistry';
+import { cadFeaturePresentation } from '@/domain/cad/features/cadFeaturePresentation';
 import { CadTopologyPickSchema, CadTopologyResolvePicksRequestSchema } from '@/domain/cad/cadTopology';
 import { CadSolidImportSourceSchema } from '@/domain/cad/cadImports';
 import { CadDxfImportSourceSchema } from '@/domain/cad/cadDxfSource';
@@ -119,7 +120,7 @@ function parameterContext(document: CadDocument) {
     omittedParameterGroups: parameterGroups.length < allGroups.length, omittedParameterGroupCount: allGroups.length - parameterGroups.length };
 }
 // The kinds agents may name, in catalog order; each definition holds what they are told of it.
-const agentFeatureKinds = cadFeatureKinds().filter(kind => cadFeatureDefinition(kind).agent.exposed);
+const agentFeatureKinds = cadFeatureKinds().filter(kind => cadFeaturePresentation(kind).agent.exposed);
 
 /** No code execution or hidden controller shortcuts: agents use the visible CAD operations. */
 export function cadSiteTools(getController: () => CadController) {
@@ -273,10 +274,10 @@ export function cadSiteTools(getController: () => CadController) {
         areaMm2: Math.abs(metrics.signedArea), perimeterMm: metrics.length, boundsMm: metrics.bounds, persisted: false };
     }),
     tool('cad_describe_features', 'Discover exact CAD feature definitions and semantics without opening or changing a document. With no kind returns a compact catalog; provide kind for its JSON schema. Use complete feature definitions in add-feature/update-feature. Dimensions are mm, angles degrees.', object({ kind: Type.Optional(Type.Union(agentFeatureKinds.map(kind => Type.Literal(kind)))) }), (_cad, input) => {
-      if (!input.kind) return { items: agentFeatureKinds.map(kind => ({ kind, description: cadFeatureDefinition(kind).agent.description })) };
+      if (!input.kind) return { items: agentFeatureKinds.map(kind => ({ kind, description: cadFeaturePresentation(kind).agent.description })) };
       const kind = input.kind as CadFeature['kind'];
       if (!agentFeatureKinds.includes(kind)) throw new ToolError('NOT_FOUND', 'CAD feature kind was not found.');
-      const { schema, agent } = cadFeatureDefinition(kind), authoring = agent.authoringSchema ?? schema;
+      const { schema } = cadFeatureDefinition(kind), { agent } = cadFeaturePresentation(kind), authoring = agent.authoringSchema ?? schema;
       return { kind, description: agent.description, schema: agent.sharedDefinitions ? withSharedDefinitions(authoring, agent.sharedDefinitions) : authoring };
     }),
     tool('cad_open_workspace', 'Open the desktop CAD workspace, retaining its current draft. Refuses to leave an unsaved CAM draft or active CAM workflow.', object({}), cad => { cad.enter(); return context(cad); }, false),

@@ -1,17 +1,50 @@
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import fs, { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Static } from '@sinclair/typebox';
+// TypeScript 7 ships no compiler API yet; AST tooling uses the TypeScript 6 package.
+import ts from '@typescript/typescript6';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { CadFeature, CadSketchFeature } from '../cadDocument';
 import { cadConsumedBodyIds, cadFeatureInputs, cadVisibleBodyIds, type CadFeatureInputs } from '../cadFeatureInputs';
 import { mapCadFeatureScalars } from '../cadParameters';
 import type { CadFeatureKind, CadFeatureTrait, CadStoredFeatureOf } from '../features/cadFeatureDefinitionTypes';
+import { CAD_FEATURE_PRESENTATION, cadFeaturePresentation } from '../features/cadFeaturePresentation';
 import { cadFeatureDefinition, cadFeatureDefinitions, cadFeatureKinds, cadFeatureLayout, cadFeatureSchemaUnion, findCadFeatureDefinition } from '../features/cadFeatureRegistry';
 import { lineReferencePart } from './cadSketchExternalReferenceFixtures';
 
 type Definitions = ReturnType<typeof cadFeatureDefinitions>;
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+
+/** The source files `entry` loads at run time: its value imports, re-exports and dynamic imports within `src`, followed to the end. */
+function loadedModules(entry: string): ReadonlySet<string> {
+  const seen = new Set<string>(), queue = [entry];
+  const resolve = (from: string, specifier: string) => {
+    const bare = specifier.split('?')[0];
+    const base = bare.startsWith('@/') ? `src/${bare.slice(2)}` : bare.startsWith('.') ? path.posix.join(path.posix.dirname(from), bare) : undefined;
+    return base && ['.ts', '.tsx', '/index.ts', '/index.tsx', ''].map(ending => base + ending).find(candidate => /.tsx?$/.test(candidate) && fs.existsSync(path.join(root, candidate)));
+  };
+  while (queue.length) {
+    const file = queue.pop()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const source = ts.createSourceFile(file, readFileSync(path.join(root, file), 'utf8'), ts.ScriptTarget.Latest, true);
+    const visit = (node: ts.Node) => {
+      let specifier: ts.Expression | undefined;
+      if (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly) {
+        const named = node.importClause?.namedBindings;
+        const typesOnly = node.importClause && !node.importClause.name && named && ts.isNamedImports(named) && named.elements.length > 0 && named.elements.every(element => element.isTypeOnly);
+        if (!typesOnly) specifier = node.moduleSpecifier;
+      } else if (ts.isExportDeclaration(node) && !node.isTypeOnly) specifier = node.moduleSpecifier;
+      else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) specifier = node.arguments[0];
+      const resolved = specifier && ts.isStringLiteral(specifier) ? resolve(file, specifier.text) : undefined;
+      if (resolved) queue.push(resolved);
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return seen;
+}
 
 describe('feature definitions', () => {
   it('declare every kind once, and the stored shapes are features of their kind', () => {
@@ -51,9 +84,24 @@ describe('feature definitions', () => {
     }
   });
 
+  it('present every kind apart from its definition, and the kernel worker loads only definitions', () => {
+    // Checked when the suite is type-checked: a kind without a presentation, or a form control bound to a field its kind does not
+    // store, fails the build.
+    expectTypeOf<keyof typeof CAD_FEATURE_PRESENTATION>().toEqualTypeOf<CadFeatureKind>();
+    type Unbound = { [K in CadFeatureKind]: (typeof CAD_FEATURE_PRESENTATION)[K]['form'] extends { readonly controls: readonly (infer C)[] }
+      ? C extends { readonly field: infer F } ? F extends keyof CadStoredFeatureOf<K> ? never : K : never : never }[CadFeatureKind];
+    expectTypeOf<Unbound>().toBeNever();
+    expect(Object.keys(CAD_FEATURE_PRESENTATION)).toEqual(cadFeatureKinds());
+    expect(cadFeaturePresentation('sketch').agent.authoringSchema).toBeDefined();
+
+    const worker = loadedModules('src/features/cad/kernel/cadKernel.worker.ts');
+    expect(worker.has('src/domain/cad/features/cadFeatureRegistry.ts')).toBe(true);
+    expect(worker.has('src/domain/cad/features/cadFeaturePresentation.ts')).toBe(false);
+  });
+
   it('give forms that bind declared fields', () => {
     for (const kind of cadFeatureKinds()) {
-      const { form, fields } = cadFeatureDefinition(kind);
+      const { fields } = cadFeatureDefinition(kind), { form } = cadFeaturePresentation(kind);
       if (form.editor !== 'fields') continue;
       for (const control of form.controls) {
         if (control.control === 'part') continue;
@@ -65,19 +113,6 @@ describe('feature definitions', () => {
         if (control.control === 'body') expect(field.slot?.accepts, `${kind}.${control.field}`).toEqual(['body']);
         if (control.control === 'operation') expect(fields[control.target].condition?.field, `${kind}.${control.target}`).toBe(control.field);
       }
-    }
-  });
-
-  it('declare diagnostic codes the application raises', () => {
-    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
-    const files = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', 'src'], { cwd: root, encoding: 'utf8' })
-      .split('\n').filter(file => /\.tsx?$/.test(file) && !/(__tests__|\.test\.)/.test(file));
-    const raised = new Set<string>();
-    for (const file of files) for (const match of readFileSync(path.join(root, file), 'utf8').matchAll(/CadError\(\s*'([a-z-]+)'/g)) raised.add(match[1]);
-    for (const kind of cadFeatureKinds()) {
-      const declared = cadFeatureDefinition(kind).diagnostics;
-      expect(new Set(declared).size, kind).toBe(declared.length);
-      expect(declared.filter(code => !raised.has(code)), kind).toEqual([]);
     }
   });
 });

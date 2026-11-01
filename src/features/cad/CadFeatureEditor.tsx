@@ -19,6 +19,7 @@ import { cadSketchPlacedFrom, cadVisibleBodyIds } from '@/domain/cad/cadSchema';
 import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import type { CadFeatureChoice, CadFeatureFormControl, CadFeatureFormPart } from '@/domain/cad/features/cadFeatureDefinitionTypes';
 import { cadFeatureDefinition, cadFeatureKinds } from '@/domain/cad/features/cadFeatureRegistry';
+import { cadFeaturePresentation } from '@/domain/cad/features/cadFeaturePresentation';
 import { CadTopologyQuerySummary } from './CadTopologyQuerySummary';
 import { CadLoftSections } from './CadLoftSections';
 import { CadSweepSources } from './CadSweepSources';
@@ -39,7 +40,7 @@ import type { CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
 import { CadInspectorTitle } from './CadInspectorTitle';
 
 /** Each kind's name in the history and the inspector, as its definition titles its form. */
-export const featureLabels = Object.fromEntries(cadFeatureKinds().map(kind => [kind, cadFeatureDefinition(kind).form.title])) as Record<CadFeature['kind'], string>;
+export const featureLabels = Object.fromEntries(cadFeatureKinds().map(kind => [kind, cadFeaturePresentation(kind).form.title])) as Record<CadFeature['kind'], string>;
 
 /** A choice as a select names it: its key, or its value where that is already a string. */
 const choiceKey = (choice: CadFeatureChoice) => choice.key ?? String(choice.value);
@@ -278,7 +279,7 @@ function CadFeatureEditorForm({ feature, document, isNew, onApply, onCancel, onP
         }, onCancel: () => endPick(token) });
     }}><SelectIcon size={13} />{target.kind === 'shell' ? 'Choose opening' : 'Choose edges'}</Button></div> : null;
   // Kinds with a fields form are drawn from their definition's controls, in order; the parts below are drawn by their kind.
-  const definition = cadFeatureDefinition(draft.kind), form = definition.form;
+  const definition = cadFeatureDefinition(draft.kind), form = cadFeaturePresentation(draft.kind).form;
   const stored = (field: string) => (draft as unknown as Readonly<Record<string, unknown>>)[field];
   const store = (field: string, value: unknown) => update({ ...draft, [field]: value } as CadFeature);
   const edged = draft.kind === 'fillet' || draft.kind === 'chamfer' ? draft : null;

@@ -1,6 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import type { CadFeature } from '../cadDocument';
-import type { CadAnyFeatureDefinition, CadFeatureDefinition, CadFeatureDefinitions, CadFeatureField, CadFeatureKind, CadFeatureScalar, CadFeatureSlot } from './cadFeatureDefinitionTypes';
+import type { CadAnyFeatureDefinition, CadFeatureDefinition, CadFeatureDefinitions, CadFeatureField, CadFeatureKind, CadFeatureNestedQuantity, CadFeatureQuantityPath, CadFeatureScalar,
+  CadFeatureSlot } from './cadFeatureDefinitionTypes';
+import { cadQuantitiesUnder } from './cadFeatureScalarMaps';
 import { curve, datumPlane, sketch } from './kinds/references';
 import { extrude, imported, loft, pocket, revolve, sweep } from './kinds/solids';
 import { chamfer, fillet, shell } from './kinds/dressUps';
@@ -18,6 +20,20 @@ let definitions: ReturnType<typeof catalog> | undefined;
 export function cadFeatureDefinitions() {
   return definitions ??= catalog();
 }
+
+/**
+ * Codes any feature may be refused with by steps every kind goes through. A kind's `diagnostics` leave them out, even when its own
+ * checks raise one too.
+ * - `parse`: the document check of each feature: a repeated id, a reference to a feature that does not precede it or gives no such
+ *   output, a suppressed or consumed body, the instance limits, and a conditional field present or absent against its condition.
+ * - `expressions`: evaluating a scalar or its expression.
+ * - `rebuild`: checking and meshing each solid the kernel builds, an unexpected kernel failure, and the stop that follows a refusal.
+ */
+export const CAD_FEATURE_SHARED_DIAGNOSTICS = Object.freeze({
+  parse: Object.freeze(['duplicate-id', 'invalid-reference', 'unavailable-body', 'feature-limit', 'invalid-operation']),
+  expressions: Object.freeze(['invalid-scalar', 'invalid-expression', 'unknown-parameter', 'division-by-zero', 'expression-limit']),
+  rebuild: Object.freeze(['empty-solid', 'invalid-solid', 'invalid-mesh', 'topology-mapping', 'kernel-operation-failed', 'rebuild-stopped'])
+});
 
 /**
  * The stored shapes as the document schema lists them. The order fixes the published document and edit schemas, so it stays as it was
@@ -58,6 +74,8 @@ interface CadFeatureLayout {
   readonly checked: readonly CadFeatureNamedField<CadFeatureField>[];
   readonly conditioned: readonly CadFeatureNamedField<NonNullable<CadFeatureField['condition']>>[];
   readonly repeats: readonly string[];
+  /** What each number the kind stores measures, by its path in the feature; see `CadFeatureQuantityPath`. */
+  readonly quantities: readonly CadFeatureQuantityPath[];
 }
 interface CadFeatureLayouts {
   readonly kinds: readonly CadFeatureKind[];
@@ -78,7 +96,10 @@ function layout(): CadFeatureLayouts {
     fields.set(kind, Object.freeze({
       slots: named(field => field.slot), scalars: named(field => field.scalar), mapped: named(field => field.scalars ? field : undefined),
       checked: named(field => field.check ? field : undefined), conditioned: named(field => field.condition),
-      repeats: entries.flatMap(([name, field]) => field.scalar?.repeats ? [name] : [])
+      repeats: entries.flatMap(([name, field]) => field.scalar?.repeats ? [name] : []),
+      quantities: Object.freeze(entries.flatMap(([name, { scalar, quantities }]) => [
+        ...scalar ? [{ path: scalar.components ? `${name}.*` : name, quantity: scalar.quantity }] : [],
+        ...cadQuantitiesUnder(name, typeof quantities === 'function' ? quantities() : quantities ?? [])]))
     }));
   }
   return layouts = Object.freeze({ kinds: Object.freeze(kinds), byKind: new Map<string, CadAnyFeatureDefinition>(kinds.map(kind => [kind, all[kind]])), fields });
@@ -89,6 +110,36 @@ export function cadFeatureLayout(feature: Pick<CadFeature, 'kind'>): CadFeatureL
   const found = layout().fields.get(feature.kind);
   if (!found) throw new TypeError(`Unknown CAD feature kind "${String(feature.kind)}".`);
   return found;
+}
+
+type QuantitySegment = { readonly key: string; readonly kind?: string };
+const quantitySegments = new Map<string, readonly QuantitySegment[]>();
+function segmentsOf(pattern: string): readonly QuantitySegment[] {
+  let found = quantitySegments.get(pattern);
+  if (!found) quantitySegments.set(pattern, found = pattern.split('.').map(segment => {
+    const kind = /\{([^{}]+)\}$/.exec(segment);
+    return kind ? { key: segment.slice(0, kind.index), kind: kind[1] } : { key: segment };
+  }));
+  return found;
+}
+/**
+ * What the number at `path` in `feature` measures, with `path` as `mapCadFeatureScalars` names a scalar: keys and indexes joined by
+ * `.`. Undefined for a path the kind declares no quantity for.
+ */
+export function cadFeatureQuantityAt(feature: CadFeature, path: string): CadFeatureNestedQuantity | undefined {
+  const keys = path.split('.');
+  search: for (const { path: pattern, quantity } of cadFeatureLayout(feature).quantities) {
+    const segments = segmentsOf(pattern);
+    if (segments.length !== keys.length) continue;
+    let value: unknown = feature;
+    for (const [index, { key, kind }] of segments.entries()) {
+      if (key !== '*' && key !== keys[index]) continue search;
+      value = value !== null && typeof value === 'object' ? (value as Record<string, unknown>)[keys[index]] : undefined;
+      if (kind !== undefined && (value === null || typeof value !== 'object' || (value as { kind?: unknown }).kind !== kind)) continue search;
+    }
+    return quantity;
+  }
+  return undefined;
 }
 
 /** The declared dimension `field` of `kind`. */

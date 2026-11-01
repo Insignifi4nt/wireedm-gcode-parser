@@ -23,9 +23,23 @@ export const cadProfileSketchField = cadFeatureReference({ role: 'profile', acce
 /** The sketch areas a Pad or Pocket uses, absent for the whole sketch's automatic regions. */
 const optionalRegionSelection = Type.Optional(CadSketchRegionSelectionSchema);
 export const cadRegionSelectionField = cadFeatureField<typeof optionalRegionSelection, CadSketchRegionSelection>(optionalRegionSelection, {
+    // The places along their supports where a selected area's boundary and holes run.
+    quantities: ['outer.*{range}.from', 'outer.*{range}.to', 'holes.*.*{range}.from', 'holes.*.*{range}.to']
+      .map(path => ({ path: `{graph-cells}.cells.*.${path}`, quantity: 'index' })),
     check(selection, context) {
       validateCadSketchRegionSelection(selection);
       if (!Array.isArray(selection) && context.document.schemaVersion !== 2)
         throw new CadError('unsupported-sketch-format', 'Graph cell area selections require CAD schema 2. Preserve the schema 1 original when saving an upgrade.');
     }
   });
+
+// Refusals that several kinds share.
+
+/** Reading a solid's material regions from its sketch: an empty sketch or profile, or a region selection that no longer fits it. */
+export const cadSketchRegionDiagnostics = ['empty-sketch', 'empty-profile', 'invalid-profile', 'invalid-region-selection', 'stale-sketch-region',
+  'invalid-sketch-cells', 'invalid-sketch-cell-id', 'unsupported-sketch-cells'];
+/** Confirming the material a cut (`cut`) or a Pocket (`pocket`) removes, as the kernel's material evidence names its refusals. */
+export function cadMaterialDiagnostics(operation: 'cut' | 'pocket'): readonly string[] {
+  return [`${operation}-tool`, `${operation}-invalid`, `${operation}-open`, `${operation}-no-material`, `${operation}-erased`,
+    `unsupported-${operation}-target`, `unsupported-${operation}-removal`, `unsupported-${operation}-precision`];
+}

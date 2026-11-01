@@ -1,6 +1,7 @@
 import type { TObject, TSchema } from '@sinclair/typebox';
 import type { CadDocument, CadFeature, CadScalar, CadSketchFeature } from '../cadDocument';
 import type { CadDatumFrameLookup, CadResolvedFrame } from '../cadDatumPlanes';
+import type { CadSketchQuantity } from '../cadSketchQuantity';
 import type { CadSketchRegionSelection } from '../cadSketchRegionSelection';
 
 export type CadFeatureKind = CadFeature['kind'];
@@ -37,6 +38,17 @@ export interface CadFeatureSlot<V = unknown> {
 
 export type CadScalarMapper = (value: CadScalar, path: string) => CadScalar;
 export type CadFeatureQuantity = 'length' | 'angle' | 'count';
+/**
+ * What a number a field holds below it measures: a sketch quantity (millimetres, degrees, a whole count or a ratio without a unit, such
+ * as a direction's component), an area in square millimetres, a place in a list, an angle in radians, or what the pinned plugin
+ * package declares for its input.
+ */
+export type CadFeatureNestedQuantity = CadSketchQuantity | 'area' | 'index' | 'radians' | 'plugin';
+/**
+ * The quantity of the numbers at `path` below a field. A path is keys joined by `.`, where `*` stands for any index or key and
+ * `{kind}` after a key, or first, keeps only a value of that kind; '' is the field itself.
+ */
+export interface CadFeatureQuantityPath { readonly path: string; readonly quantity: CadFeatureNestedQuantity }
 /**
  * A dimension the feature stores: what it measures and the values it takes. A value, or with `magnitude` its size, at or below an
  * exclusive `min`, below an inclusive one, or above `max`, is refused with `refusal`; so is a vector whose every component is within
@@ -84,6 +96,11 @@ export interface CadFeatureField<S extends TSchema = TSchema, V = unknown> {
   readonly scalar?: CadFeatureScalar;
   /** The value with each expression-bearing scalar it holds replaced through `map`, which is given the scalar's path. */
   scalars?(value: V, path: string, map: CadScalarMapper): V;
+  /**
+   * What each number the field holds below it measures, for a field holding more than one dimension or count; `scalar` says it for a
+   * field that is one. A function when the paths are built from another registry, read on first use.
+   */
+  readonly quantities?: readonly CadFeatureQuantityPath[] | (() => readonly CadFeatureQuantityPath[]);
   readonly choices?: readonly CadFeatureChoice<V>[];
   readonly condition?: CadFeatureCondition;
   /** A check of a present value made before the feature's instances are counted, such as a region selection's shape. */
@@ -161,9 +178,9 @@ export interface CadFeatureAgentExposure {
 
 /**
  * Everything a feature kind declares once, so consumers read features through it instead of switching on kinds: the document parser
- * checks references, dimensions and conditions through it, dependency discovery reads its slots, parameter traversals its scalars,
- * agents its schema and description, and the feature editor its form. This is the view of any kind; `CadFeatureDefinition<K>` is one
- * kind's.
+ * checks references, dimensions and conditions through it, dependency discovery reads its slots, parameter traversals its scalars, and
+ * agents its schema. What the kind shows people and agents is its `CadFeaturePresentation`, kept apart so the kernel worker, which
+ * reads definitions, does not load that text. This is the view of any kind; `CadFeatureDefinition<K>` is one kind's.
  */
 // Its functions are methods, so each kind's definition is read as a definition of any kind.
 export interface CadAnyFeatureDefinition {
@@ -182,7 +199,11 @@ export interface CadAnyFeatureDefinition {
    * same stored feature would evaluate differently.
    */
   readonly evaluator: { readonly owner: 'domain' | 'kernel'; readonly version: number };
-  /** The codes its own checks and evaluation raise, beyond the shared reference, expression and limit codes. D1 maps them to issues. */
+  /**
+   * Every code its own checks and evaluation can refuse it with, apart from `CAD_FEATURE_SHARED_DIAGNOSTICS`, as far as reading the
+   * code can tell. Codes of evaluating an input feature on its own, such as solving a sketch, are the input's: it is refused first.
+   * `cadFeatureDiagnostics.test.ts` holds each list to the codes its checks and kernel evaluation can reach. D1 maps them to issues.
+   */
   readonly diagnostics: readonly string[];
   /**
    * The solid instances the feature makes from `operands`, the instances of its body inputs, before any repeating count multiplies
@@ -191,14 +212,22 @@ export interface CadAnyFeatureDefinition {
   instances?(feature: CadFeature, operands: number, context: CadFeatureCheckContext): number;
   /** Checks a parse makes beyond the schema, references, field checks and conditions, in the order their refusals are reported. */
   check?(feature: CadFeature, context: CadFeatureCheckContext): void;
-  readonly form: CadFeatureForm;
-  readonly agent: CadFeatureAgentExposure;
 }
-/** The definition of kind `K`, whose checks and form read features of that kind. */
+/** The definition of kind `K`, whose checks read features of that kind. */
 export interface CadFeatureDefinition<K extends CadFeatureKind> extends CadAnyFeatureDefinition {
   readonly kind: K;
   instances?(feature: CadFeatureOf<K>, operands: number, context: CadFeatureCheckContext): number;
   check?(feature: CadFeatureOf<K>, context: CadFeatureCheckContext): void;
-  readonly form: CadFeatureForm<Extract<keyof CadStoredFeatureOf<K>, string>>;
 }
 export type CadFeatureDefinitions = { readonly [K in CadFeatureKind]: CadFeatureDefinition<K> };
+
+/** What a kind shows people and agents: the feature editor's form and what agent tools say of it. This is the view of any kind. */
+export interface CadAnyFeaturePresentation {
+  readonly form: CadFeatureForm;
+  readonly agent: CadFeatureAgentExposure;
+}
+/** The presentation of kind `K`, whose form binds fields of that kind. */
+export interface CadFeaturePresentation<K extends CadFeatureKind> extends CadAnyFeaturePresentation {
+  readonly form: CadFeatureForm<Extract<keyof CadStoredFeatureOf<K>, string>>;
+}
+export type CadFeaturePresentations = { readonly [K in CadFeatureKind]: CadFeaturePresentation<K> };
