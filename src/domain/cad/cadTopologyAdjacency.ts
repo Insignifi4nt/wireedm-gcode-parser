@@ -1,21 +1,16 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { CadError } from './cadError';
-import { CAD_PRECISION } from '../precision/cadPrecision';
 
 /**
- * How one built body's edges and faces meet: the vertices at each edge's ends, its unit tangents there, the faces on either side and
- * whether they meet without a crease, and each face's boundary loops. Indices refer to `edges` and `faces`; keys are the build's own
- * topology keys. Flat arrays keep a body of thousands of edges small to send and quick to check.
+ * How one built body's edges and faces meet: the faces on either side of each edge and whether they meet without a crease, and each
+ * face's boundary loops. Indices refer to `edges` and `faces`; keys are the build's own topology keys. Flat arrays keep a body of
+ * thousands of edges small to send and quick to check.
  */
 export interface CadTopologyAdjacency {
   readonly bodyId: string;
   readonly buildId: string;
   readonly edges: readonly string[];
-  /** Two per edge: the vertex at its start and at its end. A closed edge names one vertex twice. */
-  readonly edgeVertices: readonly number[];
-  /** Six per edge: the unit tangent at its start and at its end, both along the edge; three zeros where none is defined. */
-  readonly edgeTangents: readonly number[];
   /** Two per edge: the faces either side, `-1` where there is none. A seam names its one face twice. */
   readonly edgeFaces: readonly number[];
   /** Per edge, whether its faces meet without a crease, so the edge is no corner of the solid. */
@@ -26,15 +21,36 @@ export interface CadTopologyAdjacency {
 }
 export interface CadTopologyAdjacencyRequest { readonly bodyId: string; readonly expectedBuildId: string }
 
+/**
+ * The tangent chain of one edge, read from the native fillet builder: the contour it makes from that edge alone, which is what Fillet
+ * and Chamfer treat when they follow tangent edges. Keys are the build's own topology keys.
+ */
+export interface CadTopologyTangentChain {
+  readonly bodyId: string;
+  readonly buildId: string;
+  readonly edgeKey: string;
+  /** The contour's edges in order along it, the seed among them; the seed alone when `native` is false. */
+  readonly edges: readonly string[];
+  readonly closed: boolean;
+  /** False where the builders make no contour from the edge: a free or degenerate edge, or one where faces meet without a crease. */
+  readonly native: boolean;
+}
+export interface CadTopologyTangentChainRequest { readonly bodyId: string; readonly expectedBuildId: string; readonly edgeKey: string }
+
 /** Bodies larger than this are refused rather than sent. */
 export const MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS = 200_000;
 const identifier = Type.String({ pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$' });
 const opaque = Type.String({ minLength: 1, maxLength: 128, pattern: '\\S' });
 const RequestSchema = Type.Object({ bodyId: identifier, expectedBuildId: opaque }, { additionalProperties: false });
+const ChainRequestSchema = Type.Object({ bodyId: identifier, expectedBuildId: opaque, edgeKey: opaque }, { additionalProperties: false });
 
 export function parseCadTopologyAdjacencyRequest(value: unknown): CadTopologyAdjacencyRequest {
   if (!Value.Check(RequestSchema, value)) throw new CadError('invalid-topology-request', 'Name the body and the build whose topology adjacency is wanted.');
   return Object.freeze({ bodyId: value.bodyId, expectedBuildId: value.expectedBuildId });
+}
+export function parseCadTopologyTangentChainRequest(value: unknown): CadTopologyTangentChainRequest {
+  if (!Value.Check(ChainRequestSchema, value)) throw new CadError('invalid-topology-request', 'Name the body, the build and the edge whose tangent chain is wanted.');
+  return Object.freeze({ bodyId: value.bodyId, expectedBuildId: value.expectedBuildId, edgeKey: value.edgeKey });
 }
 
 const plainArray = (value: unknown): value is unknown[] => Array.isArray(value) && Object.getPrototypeOf(value) === Array.prototype;
@@ -42,25 +58,19 @@ const keyed = (value: unknown, length?: number): value is string[] => plainArray
   && value.every(item => typeof item === 'string' && item.length > 0 && item.length <= 128);
 const integers = (value: unknown, length: number, low: number, high: number): value is number[] => plainArray(value) && value.length === length
   && value.every(item => Number.isInteger(item) && (item as number) >= low && (item as number) < high);
+const plainRecord = (value: unknown, names: readonly string[]): value is Record<string, unknown> => Boolean(value) && typeof value === 'object'
+  && Object.getPrototypeOf(value) === Object.prototype && Object.keys(value as object).length === names.length && names.every(name => Object.hasOwn(value as object, name));
+const owner = (data: Record<string, unknown>) => typeof data.bodyId === 'string' && Value.Check(identifier, data.bodyId) && typeof data.buildId === 'string' && Value.Check(opaque, data.buildId);
 
-/** Worker data checked field by field: own plain arrays of the stated lengths, indices in range, keys distinct and tangents unit or zero. */
+/** Worker data checked field by field: own plain arrays of the stated lengths, indices in range and keys distinct. */
 export function isCadTopologyAdjacency(value: unknown): value is CadTopologyAdjacency {
-  if (!value || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype) return false;
-  const data = value as Record<string, unknown>;
-  const names = ['bodyId', 'buildId', 'edges', 'edgeVertices', 'edgeTangents', 'edgeFaces', 'edgeSmooth', 'faces', 'faceLoops'];
-  if (Object.keys(data).length !== names.length || names.some(name => !Object.hasOwn(data, name))) return false;
-  if (typeof data.bodyId !== 'string' || !Value.Check(identifier, data.bodyId) || typeof data.buildId !== 'string' || !Value.Check(opaque, data.buildId)) return false;
+  if (!plainRecord(value, ['bodyId', 'buildId', 'edges', 'edgeFaces', 'edgeSmooth', 'faces', 'faceLoops']) || !owner(value)) return false;
+  const data = value;
   if (!keyed(data.edges) || !keyed(data.faces) || data.edges.length + data.faces.length > MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS) return false;
   const edgeCount = data.edges.length, faceCount = data.faces.length;
   if (new Set(data.edges).size !== edgeCount || new Set(data.faces).size !== faceCount) return false;
-  if (!integers(data.edgeVertices, edgeCount * 2, 0, Number.MAX_SAFE_INTEGER) || !integers(data.edgeFaces, edgeCount * 2, -1, faceCount)) return false;
+  if (!integers(data.edgeFaces, edgeCount * 2, -1, faceCount)) return false;
   if (!plainArray(data.edgeSmooth) || data.edgeSmooth.length !== edgeCount || data.edgeSmooth.some(item => typeof item !== 'boolean')) return false;
-  const tangents = data.edgeTangents;
-  if (!plainArray(tangents) || tangents.length !== edgeCount * 6 || tangents.some(item => typeof item !== 'number' || !Number.isFinite(item))) return false;
-  for (let at = 0; at < tangents.length; at += 3) {
-    const length = Math.hypot(tangents[at] as number, tangents[at + 1] as number, tangents[at + 2] as number);
-    if (length !== 0 && Math.abs(length - 1) > CAD_PRECISION.kernelDirection) return false;
-  }
   const loops = data.faceLoops;
   if (!plainArray(loops) || loops.length !== faceCount) return false;
   for (const face of loops) {
@@ -68,4 +78,14 @@ export function isCadTopologyAdjacency(value: unknown): value is CadTopologyAdja
     for (const loop of face) if (!plainArray(loop) || !integers(loop, loop.length, 0, edgeCount)) return false;
   }
   return true;
+}
+
+/** Worker data checked field by field: distinct keys holding the seed, and the seed alone, open, where the builders made no contour. */
+export function isCadTopologyTangentChain(value: unknown): value is CadTopologyTangentChain {
+  if (!plainRecord(value, ['bodyId', 'buildId', 'edgeKey', 'edges', 'closed', 'native']) || !owner(value)) return false;
+  const data = value;
+  if (typeof data.edgeKey !== 'string' || !Value.Check(opaque, data.edgeKey) || typeof data.closed !== 'boolean' || typeof data.native !== 'boolean') return false;
+  if (!keyed(data.edges) || !data.edges.length || data.edges.length > MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS || new Set(data.edges).size !== data.edges.length) return false;
+  if (!data.edges.includes(data.edgeKey)) return false;
+  return data.native || (data.edges.length === 1 && !data.closed);
 }

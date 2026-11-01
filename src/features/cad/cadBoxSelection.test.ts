@@ -105,4 +105,35 @@ describe('cad box selection', () => {
     // A window that holds only part of the kept half takes none of it.
     expect(select({ left: -5, top: 45, right: 105, bottom: 85 }, 'window')).toBeNull();
   });
+  it('takes a face the section cuts down to a point or a segment only where that point or segment is', () => {
+    // Faces of no edges, seen from above at 10 pixels a millimetre; the section keeps z up to 0.
+    const faces = (corners: readonly (readonly [number, number, number])[], indices: readonly number[]): CadMesh => ({ featureId: 'part', name: 'part',
+      positions: corners.flat(), normals: corners.flatMap(() => [0, 0, 1]), indices: [...indices], edges: [],
+      faceGroups: Array.from({ length: indices.length / 3 }, (_, index) => ({ start: index * 3, count: 3, key: `f${index}` })), edgeGroups: [], volume: 0,
+      bounds: { min: [-1, -1, -1], max: [1, 1, 1] } });
+    const below = { normal: { x: 0, y: 0, z: -1 }, constant: 0 }, kinds = { body: false, edge: false, face: true };
+    const above = (x: number, y: number) => ({ x: x * 10, y: y * 10 });
+    const select = (mesh: CadMesh, rect: { left: number; top: number; right: number; bottom: number }, mode: 'window' | 'crossing') => {
+      const target = cadBoxSelection({ rect, mode, bodies: [mesh], kinds, project: above, clip: below });
+      return target?.kind === 'topology' ? target.picks.map(pick => pick.key).sort() : target;
+    };
+    // Through a corner: only the corner at the origin is kept.
+    const corner = faces([[0, 0, 0], [1, 0, 1], [0, 1, 1]], [0, 1, 2]);
+    expect(select(corner, { left: 100, top: 100, right: 101, bottom: 101 }, 'crossing')).toBeNull();
+    expect(select(corner, { left: 4, top: 4, right: 6, bottom: 6 }, 'crossing')).toBeNull();
+    expect(select(corner, { left: -1, top: -1, right: 1, bottom: 1 }, 'crossing')).toEqual(['f0']);
+    expect(select(corner, { left: -1, top: -1, right: 1, bottom: 1 }, 'window')).toEqual(['f0']);
+    expect(select(corner, { left: 1, top: 1, right: 20, bottom: 20 }, 'window')).toBeNull();
+    // Through a side: only the side from the origin to x 1 is kept, not the rest of the triangle above it on screen.
+    const side = faces([[0, 0, 0], [1, 0, 0], [0, 1, 1]], [0, 1, 2]);
+    expect(select(side, { left: 4, top: -1, right: 6, bottom: 1 }, 'crossing')).toEqual(['f0']);
+    expect(select(side, { left: 2, top: 2, right: 4, bottom: 4 }, 'crossing')).toBeNull();
+    expect(select(side, { left: 100, top: 100, right: 101, bottom: 101 }, 'crossing')).toBeNull();
+    expect(select(side, { left: -1, top: -1, right: 11, bottom: 1 }, 'window')).toEqual(['f0']);
+    expect(select(side, { left: -1, top: -1, right: 6, bottom: 1 }, 'window')).toBeNull();
+    // A closed tetrahedron with that corner and a fourth below: material stays in view, yet a crossing far from it takes nothing.
+    const solid = faces([[0, 0, 0], [1, 0, 1], [0, 1, 1], [-1, -1, -1]], [0, 1, 2, 0, 3, 1, 0, 2, 3, 1, 3, 2]);
+    expect(select(solid, { left: 100, top: 100, right: 101, bottom: 101 }, 'crossing')).toBeNull();
+    expect(select(solid, { left: -11, top: -11, right: -9, bottom: -9 }, 'crossing')).toEqual(['f1', 'f2', 'f3']);
+  });
 });

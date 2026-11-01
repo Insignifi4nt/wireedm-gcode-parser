@@ -1,9 +1,9 @@
 import { Edge, Face, getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh } from 'replicad';
 import type { gp_Dir, gp_Pnt, TopoDS_Shape } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
-import { cadKernelDisposeShape, cadKernelScope } from './cadKernelShapes';
-import { cadKernelBounds, cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKernelCurveTangentAt, cadKernelFaceNormal } from './cadKernelQueries';
-import { MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS, type CadTopologyAdjacency } from '../../../domain/cad/cadTopologyAdjacency';
+import { cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelScope } from './cadKernelShapes';
+import { cadKernelBounds, cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKernelFaceNormal } from './cadKernelQueries';
+import { MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS, type CadTopologyAdjacency, type CadTopologyTangentChain } from '../../../domain/cad/cadTopologyAdjacency';
 import type { CadMeshTopologyGroup } from '../../../domain/cad/cadDocument';
 import {
   parseCadEdgeSelection, parseCadFaceQuery, resolveCadEdgeSelection, resolveCadFaceQuery,
@@ -17,6 +17,7 @@ type EdgeDescriptor = Extract<CadTopologyDescriptor, { kind: 'edge' }>;
 type FaceDescriptor = Extract<CadTopologyDescriptor, { kind: 'face' }>;
 type Entry = { kind: 'edge'; key: string; shape: Edge; descriptor?: EdgeDescriptor }
   | { kind: 'face'; key: string; shape: Face; descriptor?: FaceDescriptor };
+type Chain = Pick<CadTopologyTangentChain, 'edges' | 'closed' | 'native'>;
 const dot = (a: CadVector3, b: CadVector3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const subtract = (a: CadVector3, b: CadVector3): CadVector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const cross = (a: CadVector3, b: CadVector3): CadVector3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -120,22 +121,20 @@ function faceMatches(face: FaceDescriptor, predicate: ResolvedCadFacePredicate):
   }
 }
 /**
- * Vertices are shared native vertices, so edges meet exactly where the solid joins them. Each end of an edge takes the vertex nearest the
- * curve's point there. Tangents are the curve's first derivatives at its ends, made unit. Faces meet smoothly along an edge when the kernel
- * reads at least tangent continuity there within `kernelDirection`; a seam, inside one face, is smooth.
+ * Faces meet smoothly along an edge when the kernel reads at least tangent continuity there within `kernelDirection`; a seam, inside one
+ * face, is smooth.
  */
 function readAdjacency(entries: readonly Entry[]): Omit<CadTopologyAdjacency, 'bodyId' | 'buildId'> {
   const oc = getOC();
   const edges = entries.filter((entry): entry is Extract<Entry, { kind: 'edge' }> => entry.kind === 'edge');
   const faces = entries.filter((entry): entry is Extract<Entry, { kind: 'face' }> => entry.kind === 'face');
   if (edges.length + faces.length > MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS) throw new CadError('topology-too-large', 'This body has too many edges and faces to chain them.');
-  const edgeVertices: number[] = [], edgeTangents: number[] = [], edgeFaces: number[] = [], edgeSmooth: boolean[] = [];
+  const edgeFaces: number[] = [], edgeSmooth: boolean[] = [];
   const faceLoops: number[][][] = [];
   return cadKernelScope(own => {
     const edgeMap = own(new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher());
-    const vertexMap = own(new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher());
     for (const entry of edges) edgeMap.Add(entry.shape.wrapped);
-    const explore = (shape: TopoDS_Shape, kind: 'TopAbs_VERTEX' | 'TopAbs_WIRE' | 'TopAbs_EDGE', visit: (raw: TopoDS_Shape) => void) => {
+    const explore = (shape: TopoDS_Shape, kind: 'TopAbs_WIRE' | 'TopAbs_EDGE', visit: (raw: TopoDS_Shape) => void) => {
       const explorer = new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum[kind], oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       try {
         for (; explorer.More(); explorer.Next()) {
@@ -144,34 +143,6 @@ function readAdjacency(entries: readonly Entry[]): Omit<CadTopologyAdjacency, 'b
         }
       } finally { explorer.delete(); }
     };
-    const unit = (vector: CadVector3) => {
-      const length = norm(vector);
-      return length > 0 && Number.isFinite(length) ? vector.map(value => value / length) : [0, 0, 0];
-    };
-    for (const entry of edges) {
-      let ends: [CadVector3, CadVector3] | null = null, tangents = [0, 0, 0, 0, 0, 0];
-      try {
-        const curve = entry.shape.curve;
-        try {
-          ends = [cadKernelCurveStart(curve.wrapped), cadKernelCurveEnd(curve.wrapped)];
-          tangents = [...unit(cadKernelCurveTangentAt(curve.wrapped, 0)), ...unit(cadKernelCurveTangentAt(curve.wrapped, 1))];
-        } finally { curve.delete(); }
-      } catch { /* A degenerate edge has no curve: no tangents, and its vertices still join it. */ }
-      const found: { index: number; point: CadVector3 }[] = [];
-      explore(entry.shape.wrapped, 'TopAbs_VERTEX', raw => {
-        const index = vertexMap.Add(raw);
-        if (found.some(vertex => vertex.index === index)) return;
-        const vertex = oc.TopoDS.Vertex(raw), point = oc.BRep_Tool.Pnt(vertex);
-        try { found.push({ index, point: tuple(point) }); } finally { point.delete(); vertex.delete(); }
-      });
-      const nearest = (target: CadVector3 | undefined) => {
-        let best = found[0];
-        if (target) for (const vertex of found) if (norm(subtract(vertex.point, target)) < norm(subtract(best.point, target))) best = vertex;
-        return best?.index ?? 0;
-      };
-      edgeVertices.push(nearest(ends?.[0]), nearest(ends?.[1]));
-      edgeTangents.push(...tangents);
-    }
     const sides = edges.map((): number[] => []), seams = new Set<number>();
     faces.forEach((entry, face) => {
       const loops: number[][] = [];
@@ -200,7 +171,7 @@ function readAdjacency(entries: readonly Entry[]): Omit<CadTopologyAdjacency, 'b
         edgeSmooth.push(continuity !== oc.GeomAbs_Shape.GeomAbs_C0);
       } catch { edgeSmooth.push(false); }
     });
-    return { edges: edges.map(entry => entry.key), edgeVertices, edgeTangents, edgeFaces, edgeSmooth, faces: faces.map(entry => entry.key), faceLoops };
+    return { edges: edges.map(entry => entry.key), edgeFaces, edgeSmooth, faces: faces.map(entry => entry.key), faceLoops };
   });
 }
 function exactCount(actual: number, expected: number) {
@@ -327,5 +298,42 @@ export class CadKernelTopology {
     return { bodyId, buildId, ...(this.adjacencyData ??= readAdjacency([...this.entries.values()])) };
   }
   private adjacencyData?: Omit<CadTopologyAdjacency, 'bodyId' | 'buildId'>;
-  dispose() { if (this.disposed) return; this.disposed = true; for (const entry of this.entries.values()) cadKernelDisposeShape(entry.shape); this.entries.clear(); this.indices.clear(); }
+  /**
+   * The tangent chain of an edge as native fillet makes it: a builder on `shape`, this inventory's body, takes the edge alone, and the
+   * contour it builds is read back. Chamfer builds its contour the same way. Each edge's chain is kept for this build. Where the builder
+   * makes no contour, the chain is the edge alone and says so.
+   */
+  tangentChain(shape: Shape3D, bodyId: string, buildId: string, edgeKey: string): CadTopologyTangentChain {
+    if (this.disposed) throw new CadError('STALE_BUILD', 'The topology snapshot has been disposed. Rebuild the current document.');
+    const seed = this.entries.get(edgeKey);
+    if (seed?.kind !== 'edge') throw new CadError('selection-missing', 'The edge is not in this build. Rebuild and select again.');
+    let chain = this.chains.get(edgeKey);
+    if (!chain) { chain = this.readChain(shape, seed); this.chains.set(edgeKey, chain); }
+    return { bodyId, buildId, edgeKey, edges: [...chain.edges], closed: chain.closed, native: chain.native };
+  }
+  private readonly chains = new Map<string, Chain>();
+  private readChain(shape: Shape3D, seed: Extract<Entry, { kind: 'edge' }>): Chain {
+    const oc = getOC(), lone: Chain = { edges: [seed.key], closed: false, native: false };
+    return cadKernelScope(own => {
+      const builder = own(new oc.BRepFilletAPI_MakeFillet(shape.wrapped, oc.ChFi3d_FilletShape.ChFi3d_Rational));
+      // A free, degenerate or smooth edge makes no contour; an edge the builder refuses outright is treated the same way.
+      try { builder.Add(seed.shape.wrapped); } catch { return lone; }
+      const contour = builder.Contour(seed.shape.wrapped);
+      if (contour < 1) return lone;
+      // Edges by native index, numbered as this inventory numbered them, so each contour edge finds its key.
+      const indexed = own(new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher());
+      for (let index = 1, entry = this.indices.get('edge:1'); entry; entry = this.indices.get(`edge:${++index}`)) indexed.Add(entry.shape.wrapped);
+      const edges = new Set<string>();
+      for (let index = 1; index <= builder.NbEdges(contour); index++) {
+        const raw = builder.Edge(contour, index);
+        try {
+          const member = this.indices.get(`edge:${indexed.FindIndex(raw)}`);
+          if (member?.kind !== 'edge') throw new CadError('kernel-operation-failed', 'The native tangent chain left this body. Rebuild and select again.');
+          edges.add(member.key);
+        } finally { cadKernelDisposeOwned(raw); }
+      }
+      return { edges: [...edges], closed: builder.Closed(contour), native: true };
+    });
+  }
+  dispose() { if (this.disposed) return; this.disposed = true; for (const entry of this.entries.values()) cadKernelDisposeShape(entry.shape); this.entries.clear(); this.indices.clear(); this.chains.clear(); }
 }

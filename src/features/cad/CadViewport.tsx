@@ -960,6 +960,9 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         kinds: { body: auto && accepts('body'), edge: !auto || accepts('edge'), face: auto && accepts('face') } });
       if (target?.kind === 'topology') { if (data.current.onTopologySet) data.current.onTopologySet(target.bodyId, target.picks); }
       else if (auto) data.current.onSelect(target?.featureId ?? null);
+      // An empty box in edge or face picking clears the picks through the same operation as a click on empty space, so a chain still being
+      // read is dropped too.
+      else data.current.onTopologyPick?.(null, false);
     };
     const pointerMove = (event: PointerEvent) => {
       lastPointer = { clientX: event.clientX, clientY: event.clientY };

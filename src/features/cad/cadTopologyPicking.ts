@@ -29,6 +29,19 @@ export function orthographicPixelSize(camera: THREE.OrthographicCamera, viewport
 export const CAD_TOPOLOGY_SELECTION_LIMIT = 64;
 
 /**
+ * One read per key, shared by every later caller until the map is dropped. A failed read is forgotten, so the next caller asks again;
+ * the rejection still reaches whoever awaits it.
+ */
+export function sharedCadTopologyRead<T>(reads: Map<string, Promise<T>>, key: string, start: () => Promise<T>): Promise<T> {
+  const kept = reads.get(key);
+  if (kept) return kept;
+  const started = start();
+  reads.set(key, started);
+  started.catch(() => { if (reads.get(key) === started) reads.delete(key); });
+  return started;
+}
+
+/**
  * The exact same bounded transition serves pointer picks and declarative viewport commands. A selection holds edges or faces of one body.
  * Additive toggles each incoming pick, as Ctrl + click does; `union` adds the picks a chain or box selects without removing any.
  */

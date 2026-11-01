@@ -12,8 +12,8 @@ import { CadKernelTopology } from './cadKernelTopology';
 import { createCadKernelRuntime } from './cadKernelRuntime';
 import { isCadKernelReply } from './cadKernelProtocol';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
-import { isCadTopologyAdjacency, type CadTopologyAdjacency } from '../../../domain/cad/cadTopologyAdjacency';
-import { cadTopologyEdgeChain, cadTopologyFaceLoop, cadTopologyTangentFaces } from '../../../domain/cad/selection/cadTopologySelection';
+import { isCadTopologyAdjacency, isCadTopologyTangentChain, type CadTopologyAdjacency, type CadTopologyTangentChain } from '../../../domain/cad/cadTopologyAdjacency';
+import { cadTopologyFaceLoop, cadTopologyTangentFaces } from '../../../domain/cad/selection/cadTopologySelection';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -338,17 +338,24 @@ describe('exact topology and selected mechanical features', () => {
   }, 60_000);
 });
 
+type Outline = readonly (readonly [number, number])[];
+/** A polygon sketched on a principal plane and extruded `depth` along its normal into a new body named `id`. */
+const extruded = (id: string, plane: CadPlane, offset: number, points: Outline, depth: number) => [
+  { ...base(`${id}_profile`), kind: 'sketch', plane, offset, profiles: [{ id: 'outline', name: 'Outline', construction: false, geometry: { kind: 'polygon', points } }] },
+  { ...base(id), kind: 'extrude', sketchId: `${id}_profile`, distance: depth, symmetric: false, operation: 'new', targetId: null }];
 /** A prism 5 mm tall on a polygon in the XY plane. */
-function prism(points: readonly (readonly [number, number])[]): CadDocument {
-  return parseCadDocument({ ...boxDocument(), parameters: {}, features: [
-    { ...base('profile'), kind: 'sketch', plane: 'XY', offset: 0, profiles: [{ id: 'outline', name: 'Outline', construction: false, geometry: { kind: 'polygon', points } }] },
-    { ...base('box'), kind: 'extrude', sketchId: 'profile', distance: 5, symmetric: false, operation: 'new', targetId: null }] });
-}
+const prism = (points: Outline) => parseCadDocument({ ...boxDocument(), parameters: {}, features: extruded('box', 'XY', 0, points, 5) });
+/** The body `box` that a union or intersection of two extruded polygons makes. */
+const joined = (operation: 'union' | 'intersect', stock: readonly unknown[], tool: readonly unknown[]) => parseCadDocument({ ...boxDocument(), parameters: {},
+  features: [...stock, ...tool, { ...base('box'), kind: 'boolean', operation, targetId: 'stock', toolId: 'tool' }] });
 /**
  * The bodies the edge-treatment tests use: a box, a box with rounded corners, a rounded plate with a bore, a prism whose outline turns
- * 0.001 rad at one corner, and a prism whose outline turns just within and then just beyond the native tangent angle.
+ * 0.001 rad at one corner, a prism whose outline turns 0.0995 rad and then 0.2 rad, a prism whose outline turns 0.05 rad under a top
+ * that rises 5 mm per mm from its front, so the top edges either side of the turn meet at 0.25 rad, and a block with a wedge fused to
+ * it, whose straight front top edges meet where the flat top gives way to the wedge's 0.2 slope. The last two are treated with the
+ * 0.1 mm the review measured them with.
  */
-function chainFixtures(): readonly { readonly name: string; readonly document: CadDocument }[] {
+function chainFixtures(): readonly { readonly name: string; readonly document: CadDocument; readonly radius?: number }[] {
   const original = boxDocument(), sketch = original.features[0];
   if (sketch.kind !== 'sketch') throw new Error('Expected sketch');
   const rounded = parseCadDocument({ ...original, features: [{ ...sketch, profiles: sketch.profiles.map(profile => ({ ...profile,
@@ -361,11 +368,26 @@ function chainFixtures(): readonly { readonly name: string; readonly document: C
   const within = 10 * Math.tan(0.0995), beyond = within + 10 * Math.tan(0.0995 + 0.1005);
   return [{ name: 'box', document: parseCadDocument(original) }, { name: 'rounded box', document: rounded }, { name: 'plate with a bore', document: plate },
     { name: 'near-tangent polygon', document: prism([[0, 0], [10, 0], [20, 0.01], [20, 10], [0, 10]]) },
-    { name: 'polygon turning either side of the native angle', document: prism([[0, 0], [10, 0], [20, within], [30, beyond], [30, 20], [0, 20]]) }];
+    { name: 'polygon turning 0.0995 then 0.2 rad', document: prism([[0, 0], [10, 0], [20, within], [30, beyond], [30, 20], [0, 20]]) },
+    // In the YZ plane u is Y and v is Z.
+    { name: 'near-tangent prism under a slope', document: joined('intersect', extruded('stock', 'XY', 0, [[0, 0], [10, 0], [20, 0.5], [20, 10], [0, 10]], 200),
+      extruded('tool', 'YZ', 0, [[0, 0], [10, 0], [10, 55], [0, 5]], 25)), radius: 0.1 },
+    { name: 'block and wedge', document: joined('union', extruded('stock', 'XY', 0, [[0, 0], [10, 0], [10, 10], [0, 10]], 5),
+      extruded('tool', 'YZ', 10, [[0, 0], [10, 0], [10, 7], [0, 5]], 10)), radius: 0.1 }];
 }
 const adjacencyOf = (model: CadKernelModel): CadTopologyAdjacency => model.topologyAdjacency({ bodyId: 'box', expectedBuildId: model.result.buildId });
+const chainOf = (model: CadKernelModel, edgeKey: string): CadTopologyTangentChain => model.topologyTangentChain({ bodyId: 'box', expectedBuildId: model.result.buildId, edgeKey });
+/** The key of the edge running between two points, read from where its bounds lie. */
+function edgeBetween(model: CadKernelModel) {
+  const edges = page(model, 'edge');
+  return (from: readonly number[], to: readonly number[]) => {
+    const min = from.map((value, axis) => Math.min(value, to[axis])), max = from.map((value, axis) => Math.max(value, to[axis]));
+    const found = edges.filter(({ bounds }) => min.every((value, axis) => Math.abs(bounds.min[axis] - value) < 1e-6 && Math.abs(bounds.max[axis] - max[axis]) < 1e-6));
+    if (found.length !== 1) throw new Error(`Expected one edge from ${from} to ${to}, found ${found.length}`); return found[0].key;
+  };
+}
 
-describe('topology adjacency for selection chains', () => {
+describe('topology adjacency and native tangent chains for selection chains', () => {
   it('reads how the edges and faces of each fixture meet', () => {
     const [box, rounded, plate] = chainFixtures();
     built(box.document, model => {
@@ -374,10 +396,8 @@ describe('topology adjacency for selection chains', () => {
       expect(adjacency).toMatchObject({ bodyId: 'box', buildId: model.result.buildId });
       expect(new Set(adjacency.edges)).toEqual(new Set(edges.map(edge => edge.key)));
       expect(new Set(adjacency.faces)).toEqual(new Set(faces.map(face => face.key)));
-      expect(new Set(adjacency.edgeVertices).size).toBe(8);
       expect(adjacency.edgeSmooth.every(smooth => !smooth)).toBe(true);
       expect(adjacency.faceLoops.map(loops => loops.map(loop => loop.length))).toEqual(Array(6).fill([4]));
-      for (const edge of adjacency.edges) expect(cadTopologyEdgeChain(adjacency, edge)).toMatchObject({ ids: [edge], closed: false, branches: [] });
       for (const face of adjacency.faces) expect(cadTopologyTangentFaces(adjacency, face)).toEqual([face]);
       // The same build answers from its cache with the same data.
       expect(adjacencyOf(model)).toEqual(adjacency);
@@ -385,10 +405,6 @@ describe('topology adjacency for selection chains', () => {
     });
     built(rounded.document, model => {
       const adjacency = adjacencyOf(model), edges = page(model, 'edge');
-      const top = edges.filter(edge => edge.bounds.min[2] === 5 && edge.bounds.max[2] === 5).map(edge => edge.key);
-      expect(top).toHaveLength(8);
-      const chain = cadTopologyEdgeChain(adjacency, top[0]);
-      expect(chain.closed).toBe(true); expect(new Set(chain.ids)).toEqual(new Set(top));
       // The vertical edges where the corner cylinders meet the side planes are smooth, so the side wall is one tangent run of eight faces.
       const vertical = edges.filter(edge => edge.bounds.min[2] === 0 && edge.bounds.max[2] === 5).map(edge => adjacency.edges.indexOf(edge.key));
       expect(vertical).toHaveLength(8); expect(vertical.every(index => adjacency.edgeSmooth[index])).toBe(true);
@@ -400,17 +416,77 @@ describe('topology adjacency for selection chains', () => {
       const adjacency = adjacencyOf(model), edges = page(model, 'edge');
       const boreTop = edges.filter(edge => edge.kind === 'edge' && edge.curveType === 'circle' && Math.abs(edge.radius - 5) < 1e-7 && edge.bounds.min[2] === 10);
       expect(boreTop).toHaveLength(2);
-      const chain = cadTopologyEdgeChain(adjacency, boreTop[0].key);
-      expect(chain.closed).toBe(true); expect(new Set(chain.ids)).toEqual(new Set(boreTop.map(edge => edge.key)));
       const topFace = page(model, 'face').find(face => face.kind === 'face' && face.surfaceType === 'plane' && face.normal[2] === 1);
       if (!topFace) throw new Error('Missing top face');
       expect(adjacency.faceLoops[adjacency.faces.indexOf(topFace.key)]).toHaveLength(2);
       expect(new Set(cadTopologyFaceLoop(adjacency, topFace.key, boreTop[0].key))).toEqual(new Set(boreTop.map(edge => edge.key)));
     });
   });
+  it('reads each edge\'s tangent chain from a native fillet builder once per build, and the edge alone where the builder makes none', () => {
+    const [box, rounded, plate, near, turning, sloped, wedge] = chainFixtures();
+    built(box.document, model => {
+      for (const edge of page(model, 'edge')) {
+        const chain = chainOf(model, edge.key);
+        expect(isCadTopologyTangentChain(chain)).toBe(true);
+        expect(chain).toEqual({ bodyId: 'box', buildId: model.result.buildId, edgeKey: edge.key, edges: [edge.key], closed: false, native: true });
+      }
+      const edge = page(model, 'edge')[0].key;
+      expect(() => model.topologyTangentChain({ bodyId: 'box', expectedBuildId: 'another-build', edgeKey: edge })).toThrow('snapshot is stale');
+      expect(() => chainOf(model, 'edge:missing')).toThrow('The edge is not in this build');
+      expect(() => chainOf(model, page(model, 'face')[0].key)).toThrow('The edge is not in this build');
+    });
+    built(rounded.document, model => {
+      const edges = page(model, 'edge'), top = edges.filter(edge => edge.bounds.min[2] === 5 && edge.bounds.max[2] === 5).map(edge => edge.key);
+      expect(top).toHaveLength(8);
+      const oc = getOC(), Builder = oc.BRepFilletAPI_MakeFillet, made = vi.fn();
+      oc.BRepFilletAPI_MakeFillet = function (...args: ConstructorParameters<typeof Builder>) { made(); return new Builder(...args); } as unknown as typeof Builder;
+      try {
+        const chain = chainOf(model, top[0]);
+        expect(chain).toMatchObject({ edgeKey: top[0], closed: true, native: true }); expect(new Set(chain.edges)).toEqual(new Set(top));
+        // The build keeps each edge's chain: asked again, it answers without another builder. Another edge of the chain reads its own.
+        expect(chainOf(model, top[0])).toEqual(chain); expect(made).toHaveBeenCalledOnce();
+        expect(new Set(chainOf(model, top[1]).edges)).toEqual(new Set(top)); expect(made).toHaveBeenCalledTimes(2);
+      } finally { oc.BRepFilletAPI_MakeFillet = Builder; }
+      // A smooth edge between a corner cylinder and a side plane gives the builder no contour.
+      const smooth = edges.find(edge => edge.bounds.min[2] === 0 && edge.bounds.max[2] === 5);
+      if (!smooth) throw new Error('Missing vertical edge');
+      expect(chainOf(model, smooth.key)).toMatchObject({ edges: [smooth.key], closed: false, native: false });
+    });
+    built(plate.document, model => {
+      const boreTop = page(model, 'edge').filter(edge => edge.kind === 'edge' && edge.curveType === 'circle' && Math.abs(edge.radius - 5) < 1e-7 && edge.bounds.min[2] === 10);
+      const chain = chainOf(model, boreTop[0].key);
+      expect(chain).toMatchObject({ closed: true, native: true }); expect(new Set(chain.edges)).toEqual(new Set(boreTop.map(edge => edge.key)));
+    });
+    built(near.document, model => {
+      const edge = edgeBetween(model);
+      expect(new Set(chainOf(model, edge([0, 0, 5], [10, 0, 5])).edges)).toEqual(new Set([edge([0, 0, 5], [10, 0, 5]), edge([10, 0, 5], [20, 0.01, 5])]));
+    });
+    built(turning.document, model => {
+      const edge = edgeBetween(model), within = 10 * Math.tan(0.0995), beyond = within + 10 * Math.tan(0.2);
+      expect(new Set(chainOf(model, edge([0, 0, 5], [10, 0, 5])).edges)).toEqual(new Set([edge([0, 0, 5], [10, 0, 5]), edge([10, 0, 5], [20, within, 5])]));
+      expect(chainOf(model, edge([20, within, 5], [30, beyond, 5]))).toMatchObject({ edges: [edge([20, within, 5], [30, beyond, 5])], native: true });
+    });
+    // The front faces turn 0.05 rad, so native follows the top edges round that corner although they meet at 0.25 rad.
+    built(sloped.document, model => {
+      const edge = edgeBetween(model), seed = edge([0, 0, 5], [10, 0, 5]);
+      expect(new Set(chainOf(model, seed).edges)).toEqual(new Set([seed, edge([10, 0, 5], [20, 0.5, 7.5])]));
+      // Strict treatment of the seed alone fails its tangent check, as native would add the edge round the turn.
+      const selection = model.resolveTopologyPicks({ bodyId: 'box', expectedBuildId: model.result.buildId, purpose: 'fillet', picks: [{ kind: 'edge', key: seed }] });
+      if (selection.purpose === 'shell') throw new Error('Unexpected shell selector');
+      built(withFeatures(sloped.document, { ...base('strict'), kind: 'fillet', targetId: 'box', radius: 0.1, selection: selection.selection }), strict => {
+        expect(strict.result.diagnostics[0]?.code).toBe('selection-tangent-chain');
+      });
+    });
+    // The two front faces are one plane, but the flat top and the wedge's slope meet at 0.2 rad, so native stops at the join.
+    built(wedge.document, model => {
+      const edge = edgeBetween(model), seed = edge([0, 0, 5], [10, 0, 5]);
+      expect(chainOf(model, seed)).toMatchObject({ edges: [seed], closed: false, native: true });
+      expect(chainOf(model, edge([10, 0, 5], [20, 0, 5]))).toMatchObject({ edges: [edge([10, 0, 5], [20, 0, 5])], native: true });
+    });
+  });
   it.each(['fillet', 'chamfer'] as const)('chains every seed to exactly the edges native %s tangent propagation treats', kind => {
     const untreatable: Record<string, string[]> = {};
-    for (const { name, document } of chainFixtures()) {
+    for (const { name, document, radius = 0.5 } of chainFixtures()) {
       const original = buildCadKernelModel(document);
       try {
         const adjacency = adjacencyOf(original), done = new Set<string>();
@@ -420,11 +496,10 @@ describe('topology adjacency for selection chains', () => {
         const seeds = adjacency.edges.filter((_, index) => !adjacency.edgeSmooth[index]);
         expect(seeds.length, name).toBeGreaterThan(0);
         for (const seed of seeds) {
-          const chain = cadTopologyEdgeChain(adjacency, seed);
-          expect(chain.branches, name).toEqual([]);
+          const chain = chainOf(original, seed);
           // Every member of a chain chains back to the same edges.
-          for (const member of chain.ids) expect(new Set(cadTopologyEdgeChain(adjacency, member).ids), name).toEqual(new Set(chain.ids));
-          const key = [...chain.ids].sort().join(' ');
+          for (const member of chain.edges) expect(new Set(chainOf(original, member).edges), name).toEqual(new Set(chain.edges));
+          const key = [...chain.edges].sort().join(' ');
           if (done.has(key)) continue;
           done.add(key);
           const resolve = (keys: readonly string[]) => {
@@ -432,51 +507,37 @@ describe('topology adjacency for selection chains', () => {
             if (result.purpose === 'shell') throw new Error('Unexpected shell selector'); return result.selection;
           };
           let followed: number | string = 0, explicit: number | string = 0;
-          built(withFeatures(document, { ...base('followed'), kind, targetId: 'box', radius: .5, selection: resolve([seed]), tangentPropagation: true }), model => {
+          built(withFeatures(document, { ...base('followed'), kind, targetId: 'box', radius, selection: resolve([seed]), tangentPropagation: true }), model => {
             followed = model.result.diagnostics[0]?.code ?? model.result.meshes[0].volume;
           });
           // Strict treatment of the chain passes its tangent check only when it holds every edge native propagation would add, and matches
           // its volume only when it holds no others.
-          built(withFeatures(document, { ...base('chained'), kind, targetId: 'box', radius: .5, selection: resolve(chain.ids) }), model => {
+          built(withFeatures(document, { ...base('chained'), kind, targetId: 'box', radius, selection: resolve(chain.edges) }), model => {
             explicit = model.result.diagnostics[0]?.code ?? model.result.meshes[0].volume;
           });
           if (typeof followed === 'string') {
             // Native cannot treat this edge at all. Strict treatment of the chain then fails the same way, past its tangent check.
-            expect(explicit, `${name}: ${chain.ids.length} edges`).toBe(followed);
-            (untreatable[name] ??= []).push(`${followed} ${chain.ids.map(where).join(' ')}`);
+            expect(explicit, `${name}: ${chain.edges.length} edges`).toBe(followed);
+            (untreatable[name] ??= []).push(`${followed}${chain.native ? '' : ' without a contour'} ${chain.edges.map(where).join(' ')}`);
             continue;
           }
-          expect(explicit, `${name}: ${chain.ids.length} edges`).toBeCloseTo(followed, 7);
-          expect(followed).toBeLessThan(original.result.meshes[0].volume);
+          // An edge the builder makes no contour from is one native cannot treat either.
+          expect(chain.native, `${name}: ${where(seed)}`).toBe(true);
+          expect(explicit, `${name}: ${chain.edges.length} edges`).toBeCloseTo(followed, 7);
+          // A treatment of a concave edge adds material, so the check is only that the body changed.
+          expect(Math.abs(followed - original.result.meshes[0].volume)).toBeGreaterThan(1e-9);
         }
         expect(done.size, name).toBeGreaterThan(0);
       } finally { original.dispose(); }
     }
-    // Only the side edges where an outline turns within the native angle are too flat a crease for a 0.5 mm treatment.
-    const crease = ['kernel-operation-failed 10,0,0,10,0,5'];
-    expect(untreatable).toEqual({ 'near-tangent polygon': crease, 'polygon turning either side of the native angle': crease });
-  }, 60_000);
-  it('chains a near-tangent outline as native propagation does and stops at a join just beyond its angle', () => {
-    const [, , , near, either] = chainFixtures();
-    const front = (model: CadKernelModel) => {
-      const edges = page(model, 'edge');
-      // The top edge of the outline's front run from x0 to x1.
-      return (x0: number, x1: number) => {
-        const edge = edges.find(({ bounds }) => bounds.min[2] === 5 && bounds.max[2] === 5 && bounds.max[1] < 5
-          && Math.abs(bounds.min[0] - x0) < 1e-9 && Math.abs(bounds.max[0] - x1) < 1e-9);
-        if (!edge) throw new Error(`Missing top edge from ${x0} to ${x1}`); return edge.key;
-      };
-    };
-    built(near.document, model => {
-      const top = front(model), chain = cadTopologyEdgeChain(adjacencyOf(model), top(0, 10));
-      expect(new Set(chain.ids)).toEqual(new Set([top(0, 10), top(10, 20)])); expect(chain.branches).toEqual([]);
-    });
-    built(either.document, model => {
-      const top = front(model), adjacency = adjacencyOf(model);
-      expect(new Set(cadTopologyEdgeChain(adjacency, top(0, 10)).ids)).toEqual(new Set([top(0, 10), top(10, 20)]));
-      expect(cadTopologyEdgeChain(adjacency, top(20, 30)).ids).toEqual([top(20, 30)]);
-    });
-  });
+    // The side edges where an outline turns 0.001 or 0.0995 rad are too flat a crease for the builder to make a contour from. Native
+    // follows the sloped prism's top edges round its turn, and the block's front top edge onto the wedge's, but leaves no valid solid
+    // there; strict treatment of the chain fails the same way, past its tangent check.
+    const crease = 'kernel-operation-failed without a contour 10,0,0,10,0,5';
+    expect(untreatable).toEqual({ 'near-tangent polygon': [crease], 'polygon turning 0.0995 then 0.2 rad': [crease],
+      'near-tangent prism under a slope': [crease, 'invalid-solid 0,0,5,10,0,5 10,0,5,20,0.5,7.5', ...kind === 'fillet' ? ['invalid-solid 20,0.5,7.5,20,10,55'] : []],
+      'block and wedge': ['invalid-solid 10,0,5,20,0,5'] });
+  }, 120_000);
 });
 
 describe('native worker cache and snapshot lifetime', () => {
@@ -499,6 +560,11 @@ describe('native worker cache and snapshot lifetime', () => {
       const adjacency = await runtime.evaluate({ id: 70, kind: 'inspect-adjacency', document, adjacency: { bodyId: 'box', expectedBuildId: first.result.buildId } });
       expect(adjacency).toMatchObject({ kind: 'adjacency-inspected', result: { bodyId: 'box', buildId: first.result.buildId } }); expect(isCadKernelReply(adjacency)).toBe(true);
       expect(await runtime.evaluate({ id: 71, kind: 'inspect-adjacency', document, adjacency: { bodyId: 'box', expectedBuildId: 'missing' } })).toMatchObject({ kind: 'error', code: 'STALE_BUILD' });
+      const edgeKey = adjacency.kind === 'adjacency-inspected' ? adjacency.result.edges[0] : 'missing';
+      const chain = await runtime.evaluate({ id: 72, kind: 'inspect-tangent-chain', document, chain: { bodyId: 'box', expectedBuildId: first.result.buildId, edgeKey } });
+      expect(chain).toMatchObject({ kind: 'tangent-chain-inspected', result: { bodyId: 'box', buildId: first.result.buildId, edgeKey, edges: [edgeKey], native: true } }); expect(isCadKernelReply(chain)).toBe(true);
+      expect(await runtime.evaluate({ id: 73, kind: 'inspect-tangent-chain', document, chain: { bodyId: 'box', expectedBuildId: 'missing', edgeKey } })).toMatchObject({ kind: 'error', code: 'STALE_BUILD' });
+      expect(await runtime.evaluate({ id: 74, kind: 'inspect-tangent-chain', document, chain: { bodyId: 'box', expectedBuildId: first.result.buildId, edgeKey: '' } })).toMatchObject({ kind: 'error', code: 'invalid-topology-request' });
       runtime.dispose();
       expect(await runtime.evaluate({ id: 8, kind: 'inspect-topology', document, inspection: valid })).toMatchObject({ kind: 'error', code: 'STALE_BUILD' });
       const rebuilt = await runtime.evaluate({ id: 9, kind: 'build', document }); if (rebuilt.kind !== 'built') throw new Error('Expected build');

@@ -1,10 +1,6 @@
-import type { CadTopologyAdjacency } from '../cadTopologyAdjacency';
-import { CAD_PRECISION } from '../../precision/cadPrecision';
-import { cadChainGraph, cadSelectionChain, type CadChainCurve, type CadChainGraph, type CadChainJoin, type CadChainResult } from './cadSelectionChain';
+import type { CadTopologyAdjacency, CadTopologyTangentChain } from '../cadTopologyAdjacency';
 
-interface SolidEdge extends CadChainCurve { readonly index: number; readonly smooth: boolean }
 interface Index {
-  readonly chain: CadChainGraph<SolidEdge>;
   readonly edgeIndex: ReadonlyMap<string, number>;
   readonly faceIndex: ReadonlyMap<string, number>;
   /** Per face, the edges on its boundary. */
@@ -12,38 +8,14 @@ interface Index {
 }
 const indexes = new WeakMap<CadTopologyAdjacency, Index>();
 
-/** The chain graph and lookups of one body's adjacency, built on first use and kept with it. */
+/** The lookups of one body's adjacency, built on first use and kept with it. */
 function indexOf(adjacency: CadTopologyAdjacency): Index {
   const kept = indexes.get(adjacency);
   if (kept) return kept;
-  const tangent = (edge: number, end: 0 | 1) => {
-    const at = edge * 6 + end * 3, value = adjacency.edgeTangents.slice(at, at + 3);
-    return value[0] === 0 && value[1] === 0 && value[2] === 0 ? null : value;
-  };
-  const curves: SolidEdge[] = adjacency.edges.map((id, index) => ({ id, index, smooth: adjacency.edgeSmooth[index],
-    vertices: [`v${adjacency.edgeVertices[index * 2]}`, `v${adjacency.edgeVertices[index * 2 + 1]}`], tangents: [tangent(index, 0), tangent(index, 1)] }));
-  const index: Index = { chain: cadChainGraph(curves), edgeIndex: new Map(adjacency.edges.map((key, at) => [key, at])),
-    faceIndex: new Map(adjacency.faces.map((key, at) => [key, at])), faceEdges: adjacency.faceLoops.map(loops => [...new Set(loops.flat())]) };
+  const index: Index = { edgeIndex: new Map(adjacency.edges.map((key, at) => [key, at])), faceIndex: new Map(adjacency.faces.map((key, at) => [key, at])),
+    faceEdges: adjacency.faceLoops.map(loops => [...new Set(loops.flat())]) };
   indexes.set(adjacency, index);
   return index;
-}
-
-/**
- * A join turning less than `kernelTangentChainRad`, the angle below which native fillet and chamfer carry a treated edge on to the next.
- * Using the builders' own rule keeps a tangent chain equal to what Follow tangent edges treats.
- */
-function smoothJoin({ arriving, leaving }: CadChainJoin<SolidEdge>): boolean {
-  const [ax, ay, az] = arriving, [bx, by, bz] = leaving;
-  return Math.atan2(Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx), ax * bx + ay * by + az * bz) < CAD_PRECISION.kernelTangentChainRad;
-}
-
-/**
- * The tangent chain of a solid edge: the edges continuing it without a turn, vertex by vertex, as native fillet and chamfer propagate.
- * Edges where faces meet smoothly join only a chain seeded by one, so a corner's chain never runs into a blend's boundary. Where more than
- * one edge continues it tangentially, the chain stops and reports the vertex; an edge leaving at a corner does not stop it.
- */
-export function cadTopologyEdgeChain(adjacency: CadTopologyAdjacency, edgeKey: string): CadChainResult {
-  return cadSelectionChain(indexOf(adjacency).chain, edgeKey, { mode: 'tangent', smooth: smoothJoin, eligible: (curve, seed) => curve.smooth === seed.smooth });
 }
 
 /** The faces either side of an edge, without repeats. */
@@ -79,30 +51,49 @@ export function cadTopologyTangentFaces(adjacency: CadTopologyAdjacency, faceKey
 
 /** What a chain gesture on a solid asks for: the boundary loop through an edge, or the tangent run of an edge or a face. */
 export type CadTopologyChainGesture = 'loop' | 'tangent';
+type Seed = { readonly kind: 'edge' | 'face'; readonly key: string };
 export interface CadTopologyChainPicks {
   readonly kind: 'edge' | 'face';
   readonly keys: readonly string[];
   readonly name: 'Loop' | 'Tangent chain' | 'Tangent faces';
   readonly closed: boolean;
-  /** Vertices where a tangent chain could have continued two ways and stopped instead. */
-  readonly branches: number;
+  /** What to tell the user with the picks, when they are not what the gesture usually selects. */
+  readonly note: string | null;
 }
+/** Said when the native builders make no tangent chain from an edge, so the chain is the edge alone. */
+export const CAD_TOPOLOGY_LONE_EDGE_NOTE = 'Fillet and Chamfer make no tangent chain from this edge, so only the edge is selected.';
 
 /**
- * The picks a chain gesture selects from one seed. A loop is the boundary loop holding the edge on `faceKey`, the face under the pointer,
- * or on the edge's first face when the edge does not bound that one. A face always takes its tangent faces. Unknown seeds give `null`.
+ * The picks a loop gesture, or any gesture on a face, selects from one body's adjacency. A loop is the boundary loop holding the edge on
+ * `faceKey`, the face under the pointer, or on the edge's first face when the edge does not bound that one. A face always takes its tangent
+ * faces. Unknown seeds give `null`.
  */
-export function cadTopologyChainPicks(adjacency: CadTopologyAdjacency, seed: { readonly kind: 'edge' | 'face'; readonly key: string }, gesture: CadTopologyChainGesture, faceKey: string | null = null): CadTopologyChainPicks | null {
+export function cadTopologyAdjacencyChainPicks(adjacency: CadTopologyAdjacency, seed: Seed, faceKey: string | null = null): CadTopologyChainPicks | null {
   if (seed.kind === 'face') {
     const keys = cadTopologyTangentFaces(adjacency, seed.key);
-    return keys.length ? { kind: 'face', keys, name: 'Tangent faces', closed: false, branches: 0 } : null;
+    return keys.length ? { kind: 'face', keys, name: 'Tangent faces', closed: false, note: null } : null;
   }
   if (!indexOf(adjacency).edgeIndex.has(seed.key)) return null;
-  if (gesture === 'tangent') {
-    const chain = cadTopologyEdgeChain(adjacency, seed.key);
-    return { kind: 'edge', keys: chain.ids, name: 'Tangent chain', closed: chain.closed, branches: chain.branches.length };
-  }
   const faces = cadTopologyEdgeFaces(adjacency, seed.key), face = faceKey && faces.includes(faceKey) ? faceKey : faces[0];
   const keys = face ? cadTopologyFaceLoop(adjacency, face, seed.key) : null;
-  return keys ? { kind: 'edge', keys, name: 'Loop', closed: true, branches: 0 } : { kind: 'edge', keys: [seed.key], name: 'Loop', closed: false, branches: 0 };
+  return keys ? { kind: 'edge', keys, name: 'Loop', closed: true, note: null } : { kind: 'edge', keys: [seed.key], name: 'Loop', closed: false, note: null };
+}
+
+/** The picks of an edge's native tangent chain; where the builders make none, the edge alone, with a note saying so. */
+export function cadTopologyTangentChainPicks(chain: CadTopologyTangentChain): CadTopologyChainPicks {
+  return { kind: 'edge', keys: chain.edges, name: 'Tangent chain', closed: chain.closed, note: chain.native ? null : CAD_TOPOLOGY_LONE_EDGE_NOTE };
+}
+
+/** How a chain gesture reads the body it runs on. Callers keep each answer for the build it belongs to. */
+export interface CadTopologyChainReaders {
+  adjacency(): Promise<CadTopologyAdjacency>;
+  tangentChain(edgeKey: string): Promise<CadTopologyTangentChain>;
+}
+/**
+ * The picks a chain gesture selects from one seed. An edge's tangent chain is the contour native fillet makes from it, the edges Fillet
+ * and Chamfer treat when they follow tangents, so the two never differ. Loops and tangent faces come from the body's adjacency.
+ */
+export async function cadTopologyChainPicks(readers: CadTopologyChainReaders, seed: Seed, gesture: CadTopologyChainGesture, faceKey: string | null = null): Promise<CadTopologyChainPicks | null> {
+  if (seed.kind === 'edge' && gesture === 'tangent') return cadTopologyTangentChainPicks(await readers.tangentChain(seed.key));
+  return cadTopologyAdjacencyChainPicks(await readers.adjacency(), seed, faceKey);
 }

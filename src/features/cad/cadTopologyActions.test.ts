@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CadBuildResult } from '@/domain/cad/cadDocument';
 import type { CadTopologyDescriptor, CadTopologyInspectRequest, CadTopologyInspectResult, CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
-import type { CadTopologyAdjacency } from '@/domain/cad/cadTopologyAdjacency';
+import type { CadTopologyAdjacency, CadTopologyTangentChain } from '@/domain/cad/cadTopologyAdjacency';
 import { CadSession } from './cadSession';
 import { createCadTopologyActions } from './cadTopologyActions';
 
@@ -10,8 +10,8 @@ const request: CadTopologyInspectRequest = { bodyId: 'pad', expectedBuildId: 'bu
 const face: CadTopologyDescriptor = { key: 'f1', kind: 'face', surfaceType: 'plane', area: 200, normal: [0, 0, 1], offset: 5,
   centroid: [10, 5, 5], bounds: { min: [0, 0, 5], max: [20, 10, 5] } };
 // One straight edge bounding one face: the smallest adjacency the validator accepts.
-const adjacency: CadTopologyAdjacency = { bodyId: 'pad', buildId: 'build-1', edges: ['e1'], edgeVertices: [0, 1], edgeTangents: [1, 0, 0, 1, 0, 0],
-  edgeFaces: [0, -1], edgeSmooth: [false], faces: ['f1'], faceLoops: [[[0]]] };
+const adjacency: CadTopologyAdjacency = { bodyId: 'pad', buildId: 'build-1', edges: ['e1'], edgeFaces: [0, -1], edgeSmooth: [false], faces: ['f1'], faceLoops: [[[0]]] };
+const chain: CadTopologyTangentChain = { bodyId: 'pad', buildId: 'build-1', edgeKey: 'e1', edges: ['e0', 'e1'], closed: false, native: true };
 function deferred<T>() {
   let finish: (value: T) => void = () => { throw new Error('Not initialized'); };
   const promise = new Promise<T>(resolve => { finish = resolve; });
@@ -21,7 +21,7 @@ function fixture() {
   const session = new CadSession(); const version = session.getSnapshot().version;
   const kernel = { inspectTopology: vi.fn(async () => result), resolveTopologyPicks: vi.fn(async (): Promise<CadTopologyResolvePicksResult> => ({ bodyId: 'pad', buildId: 'build-1', purpose: 'shell',
     opening: { kind: 'faces', expectedCount: 1, predicates: [{ kind: 'plane', normal: [0, 0, 1], offset: 5 }] } })),
-    topologyAdjacency: vi.fn(async (): Promise<CadTopologyAdjacency> => adjacency) };
+    topologyAdjacency: vi.fn(async (): Promise<CadTopologyAdjacency> => adjacency), topologyTangentChain: vi.fn(async (): Promise<CadTopologyTangentChain> => chain) };
   const build: { result: CadBuildResult | null; version: string | null; state: 'ready' | 'building' | 'error' | 'idle' } = {
     result: { buildId: 'build-1', meshes: [{ featureId: 'pad', name: 'Pad', positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 1000,
       bounds: { min: [0, 0, 0], max: [20, 10, 5] } }], diagnostics: [], durationMs: 1 }, version, state: 'ready'
@@ -123,5 +123,18 @@ describe('CAD topology application guards', () => {
     await expect(h.actions.adjacency(wanted, h.version)).rejects.toMatchObject({ code: 'STALE_BUILD' });
     h.kernel.topologyAdjacency.mockResolvedValueOnce({ ...adjacency, edgeFaces: [3, -1] });
     await expect(h.actions.adjacency(wanted, h.version)).rejects.toMatchObject({ code: 'INVALID_TOPOLOGY_RESULT' });
+  });
+  it('reads a native tangent chain for the displayed build only, and refuses one for another edge, body or build or that is malformed', async () => {
+    const h = fixture(), wanted = { bodyId: 'pad', expectedBuildId: 'build-1', edgeKey: 'e1' };
+    expect(await h.actions.tangentChain(wanted, h.version)).toEqual(chain);
+    expect(h.kernel.topologyTangentChain).toHaveBeenCalledWith(expect.anything(), wanted, undefined);
+    await expect(h.actions.tangentChain({ ...wanted, expectedBuildId: 'build-0' }, h.version)).rejects.toMatchObject({ code: 'STALE_BUILD' });
+    h.kernel.topologyTangentChain.mockResolvedValueOnce({ ...chain, buildId: 'build-2' });
+    await expect(h.actions.tangentChain(wanted, h.version)).rejects.toMatchObject({ code: 'STALE_BUILD' });
+    h.kernel.topologyTangentChain.mockResolvedValueOnce({ ...chain, edgeKey: 'e0' });
+    await expect(h.actions.tangentChain(wanted, h.version)).rejects.toMatchObject({ code: 'INVALID_TOPOLOGY_RESULT' });
+    h.kernel.topologyTangentChain.mockResolvedValueOnce({ ...chain, native: false });
+    await expect(h.actions.tangentChain(wanted, h.version)).rejects.toMatchObject({ code: 'INVALID_TOPOLOGY_RESULT' });
+    await expect(h.actions.tangentChain({ ...wanted, edgeKey: '' }, h.version)).rejects.toMatchObject({ code: 'invalid-topology-request' });
   });
 });

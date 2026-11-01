@@ -90,18 +90,21 @@ export function cadBoxSelection({ rect, mode, bodies, kinds, project, clip = nul
     if (!distances || corners.every(corner => distances[corner] >= 0)) polygon = corners.map(corner => points[corner] ?? null);
     else if (corners.every(corner => distances[corner] < 0)) return null;
     else {
-      // One plane cuts a triangle into a triangle or a quadrilateral: its kept corners and the two crossings, in order.
+      // One plane cuts a triangle into a triangle or a quadrilateral: its kept corners and the crossings, in order. A side crosses only
+      // between corners strictly either side; a corner on the plane is kept as it is, and is not added again as a crossing. A section
+      // exactly through a corner or a side keeps only that point or segment, which the box then tests as a point or a segment.
       const kept: (CadScreenPoint | null)[] = [];
       for (let index = 0; index < 3; index++) {
         const from = corners[index], to = corners[(index + 1) % 3];
         if (distances[from] >= 0) kept.push(points[from] ?? null);
-        if (distances[from] >= 0 !== distances[to] >= 0) kept.push(cut(values, distances, from, to));
+        if (distances[from] > 0 && distances[to] < 0 || distances[from] < 0 && distances[to] > 0) kept.push(cut(values, distances, from, to));
       }
       polygon = kept;
     }
     if (polygon.some(point => !point)) return { inside: false, touches: false };
     const shown = polygon as readonly CadScreenPoint[];
     let touches = false;
+    if (wantTouch && shown.length < 3) touches = cadBoxPolyline(rect, shown).touches;
     for (let index = 1; wantTouch && !touches && index + 1 < shown.length; index++) touches = cadBoxTriangleTouches(rect, shown[0], shown[index], shown[index + 1]);
     return { inside: cadBoxPolyline(rect, shown, true).inside, touches };
   };

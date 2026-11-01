@@ -56,9 +56,12 @@ function inTriangle(a: CadScreenPoint, b: CadScreenPoint, c: CadScreenPoint, poi
   return (ab >= 0 && bc >= 0 && ca >= 0) || (ab <= 0 && bc <= 0 && ca <= 0);
 }
 
-/** Whether the triangle meets the rectangle: a corner of either inside the other, or an edge of the triangle crossing the rectangle. */
+/**
+ * Whether the triangle meets the rectangle: a corner of either inside the other, or an edge of the triangle crossing the rectangle. A
+ * triangle of no area on screen, a point or a segment, meets it only where that point or segment does: it holds no rectangle corner.
+ */
 export function cadBoxTriangleTouches(rect: CadScreenRect, a: CadScreenPoint, b: CadScreenPoint, c: CadScreenPoint): boolean {
   if (inRect(rect, a) || inRect(rect, b) || inRect(rect, c)) return true;
   if (cadBoxSegmentTouches(rect, a, b) || cadBoxSegmentTouches(rect, b, c) || cadBoxSegmentTouches(rect, c, a)) return true;
-  return inTriangle(a, b, c, { x: rect.left, y: rect.top });
+  return side(a, b, c) !== 0 && inTriangle(a, b, c, { x: rect.left, y: rect.top });
 }

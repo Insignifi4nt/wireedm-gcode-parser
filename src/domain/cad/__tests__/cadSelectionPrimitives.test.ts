@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { cadPathClosureTolerance } from '../cadAnalyticSegments';
 import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
-import { isCadTopologyAdjacency, type CadTopologyAdjacency } from '../cadTopologyAdjacency';
+import { isCadTopologyAdjacency, isCadTopologyTangentChain, type CadTopologyAdjacency, type CadTopologyTangentChain } from '../cadTopologyAdjacency';
 import { CAD_PRECISION } from '../../precision/cadPrecision';
 import { cadChainGraph, cadSelectionChain, type CadChainCurve } from '../selection/cadSelectionChain';
 import { cadSketchSelectionChain } from '../selection/cadSketchSelectionChain';
 import { cadBoxModeFor, cadBoxPolyline, cadBoxTakes, cadBoxTriangleTouches, cadScreenRect } from '../selection/cadSelectionBox';
 import { cadSelectOtherApply, cadSelectOtherStep } from '../selection/cadSelectionCycle';
 import { CAD_DEFAULT_SELECTION_FILTER, CAD_SELECTION_KINDS, cadSelectionAccepts, parseCadSelectionFilter, setCadSelectionKind } from '../selection/cadSelectionFilter';
-import { cadTopologyEdgeChain, cadTopologyEdgeFaces, cadTopologyFaceLoop, cadTopologyTangentFaces } from '../selection/cadTopologySelection';
+import { CAD_TOPOLOGY_LONE_EDGE_NOTE, cadTopologyAdjacencyChainPicks, cadTopologyChainPicks, cadTopologyEdgeFaces, cadTopologyFaceLoop,
+  cadTopologyTangentFaces } from '../selection/cadTopologySelection';
 
 type Point = readonly [number, number];
 const sketch = (points: Record<string, Point>, entities: readonly object[], relations: readonly object[] = []): CadSketchGraph =>
@@ -132,73 +133,75 @@ describe('the chain walker', () => {
 });
 
 /**
- * The top of a 4 by 2 plate whose corners are rounded: four straight rim edges and four quarter-circle rim edges, all tangent, with a
- * smooth vertical edge down from each rim vertex where a flat side meets a rounded one, and the top face bounded by the rim.
+ * The top of a 4 by 2 plate whose corners are rounded: eight rim edges, with a smooth vertical edge down from each rim vertex where a flat
+ * side meets a rounded one, and the top face bounded by the rim.
  */
-function plateTop(options: { extraTangent?: boolean; spur?: boolean; turn?: number } = {}): CadTopologyAdjacency {
-  const edges: string[] = [], edgeVertices: number[] = [], edgeTangents: number[] = [], edgeFaces: number[] = [], edgeSmooth: boolean[] = [];
-  // Rim directions at each of the eight rim vertices, running counter-clockwise; each rim edge is tangent to the next at their shared vertex.
-  const directions = [[1, 0], [1, 0], [0, 1], [0, 1], [-1, 0], [-1, 0], [0, -1], [0, -1]];
+function plateTop(): CadTopologyAdjacency {
+  const edges: string[] = [], edgeFaces: number[] = [], edgeSmooth: boolean[] = [];
   const faces = ['top', ...Array.from({ length: 8 }, (_, index) => `side-${index}`)];
   const faceLoops: number[][][] = faces.map(() => [[]]);
-  const add = (key: string, start: number, end: number, a: readonly number[], b: readonly number[], sides: [number, number], smooth: boolean) => {
-    const index = edges.length; edges.push(key); edgeVertices.push(start, end); edgeTangents.push(...a, ...b); edgeFaces.push(...sides); edgeSmooth.push(smooth);
+  const add = (key: string, sides: [number, number], smooth: boolean) => {
+    const index = edges.length; edges.push(key); edgeFaces.push(...sides); edgeSmooth.push(smooth);
     for (const face of new Set(sides)) if (face >= 0) faceLoops[face][0].push(index);
-    return index;
   };
-  for (let index = 0; index < 8; index++) {
-    const start = directions[index], end = directions[(index + 1) % 8];
-    // Straight edges keep one direction; the rounded edges turn a quarter between their ends.
-    const startTangent = index % 2 === 0 ? [start[0], start[1], 0] : [directions[index][0], directions[index][1], 0];
-    const endTangent = index % 2 === 0 ? [start[0], start[1], 0] : [end[0], end[1], 0];
-    add(`rim-${index}`, index, (index + 1) % 8, startTangent, endTangent, [0, 1 + index], false);
-  }
-  for (let index = 0; index < 8; index++) add(`down-${index}`, index, 8 + index, [0, 0, -1], [0, 0, -1], [1 + (index + 7) % 8, 1 + index], true);
-  if (options.extraTangent) add('fork', 1, 16, [1, 0, 0], [1, 0, 0], [-1, -1], false);
-  // A sharp edge leaving rim vertex 1 at a right angle, upwards.
-  if (options.spur) add('spur', 1, 16, [0, 0, 1], [0, 0, 1], [-1, -1], false);
-  if (options.turn) {
-    // Turn the start of rim 2, which follows rim 1, by `turn` radians about the vertical.
-    const at = edges.indexOf('rim-2') * 6, [x, y] = [edgeTangents[at], edgeTangents[at + 1]], turn = options.turn;
-    edgeTangents[at] = x * Math.cos(turn) - y * Math.sin(turn); edgeTangents[at + 1] = x * Math.sin(turn) + y * Math.cos(turn);
-  }
-  return { bodyId: 'plate', buildId: 'build-1', edges, edgeVertices, edgeTangents, edgeFaces, edgeSmooth, faces, faceLoops };
+  for (let index = 0; index < 8; index++) add(`rim-${index}`, [0, 1 + index], false);
+  for (let index = 0; index < 8; index++) add(`down-${index}`, [1 + (index + 7) % 8, 1 + index], true);
+  return { bodyId: 'plate', buildId: 'build-1', edges, edgeFaces, edgeSmooth, faces, faceLoops };
 }
+const rims = Array.from({ length: 8 }, (_, index) => `rim-${index}`);
+const nativeChain = (edgeKey: string, edges: readonly string[], native = true, closed = false): CadTopologyTangentChain =>
+  ({ bodyId: 'plate', buildId: 'build-1', edgeKey, edges: [...edges], closed, native });
 
 describe('solid chains', () => {
-  it('follows a rounded rim all the way round and keeps smooth edges out of a corner chain', () => {
-    const adjacency = plateTop();
-    expect(isCadTopologyAdjacency(adjacency)).toBe(true);
-    expect(cadTopologyEdgeChain(adjacency, 'rim-3')).toEqual({ seedId: 'rim-3', ids: ['rim-3', 'rim-4', 'rim-5', 'rim-6', 'rim-7', 'rim-0', 'rim-1', 'rim-2'], closed: true, branches: [] });
-    expect(cadTopologyEdgeChain(adjacency, 'down-2')).toEqual({ seedId: 'down-2', ids: ['down-2'], closed: false, branches: [] });
-  });
-  it('stops where two tangent edges continue and at a join turned beyond the native angle, but passes a sharp spur', () => {
-    expect(cadTopologyEdgeChain(plateTop({ extraTangent: true }), 'rim-4')).toMatchObject({ closed: false, branches: ['v1'] });
-    // A sharp edge leaving at a corner is not a second continuation: the rim stays one closed chain and nothing is reported.
-    expect(cadTopologyEdgeChain(plateTop({ spur: true }), 'rim-4')).toMatchObject({ closed: true, branches: [] });
-    expect(cadTopologyEdgeChain(plateTop({ spur: true }), 'spur')).toEqual({ seedId: 'spur', ids: ['spur'], closed: false, branches: [] });
-    expect(cadTopologyEdgeChain(plateTop({ turn: CAD_PRECISION.kernelTangentChainRad * 0.995 }), 'rim-4')).toMatchObject({ closed: true });
-    const turned = cadTopologyEdgeChain(plateTop({ turn: CAD_PRECISION.kernelTangentChainRad * 1.005 }), 'rim-4');
-    expect(turned).toMatchObject({ closed: false, branches: [] });
-    expect(turned.ids[0]).toBe('rim-2'); expect(turned.ids.at(-1)).toBe('rim-1');
+  it('takes an edge tangent chain from the native contour alone, and loops and tangent faces from adjacency alone', async () => {
+    const adjacency = plateTop(), reads: string[] = [];
+    const readers = (chain: CadTopologyTangentChain) => ({
+      adjacency: async () => { reads.push('adjacency'); return adjacency; },
+      tangentChain: async (edgeKey: string) => { reads.push(`chain ${edgeKey}`); return chain; },
+    });
+    await expect(cadTopologyChainPicks(readers(nativeChain('rim-3', rims, true, true)), { kind: 'edge', key: 'rim-3' }, 'tangent'))
+      .resolves.toEqual({ kind: 'edge', keys: rims, name: 'Tangent chain', closed: true, note: null });
+    expect(reads).toEqual(['chain rim-3']);
+    // The builders make no contour from an edge where faces meet without a crease: the chain is the edge alone, and says so.
+    await expect(cadTopologyChainPicks(readers(nativeChain('down-2', ['down-2'], false)), { kind: 'edge', key: 'down-2' }, 'tangent'))
+      .resolves.toEqual({ kind: 'edge', keys: ['down-2'], name: 'Tangent chain', closed: false, note: CAD_TOPOLOGY_LONE_EDGE_NOTE });
+    reads.length = 0;
+    const unused = readers(nativeChain('rim-0', ['rim-0']));
+    await expect(cadTopologyChainPicks(unused, { kind: 'edge', key: 'rim-5' }, 'loop', 'top')).resolves.toEqual({ kind: 'edge', keys: rims, name: 'Loop', closed: true, note: null });
+    // A face under the pointer that the edge does not bound gives the loop on the edge's first face.
+    await expect(cadTopologyChainPicks(unused, { kind: 'edge', key: 'rim-5' }, 'loop', 'side-0')).resolves.toMatchObject({ keys: rims });
+    // A face takes its tangent faces whichever gesture asked.
+    await expect(cadTopologyChainPicks(unused, { kind: 'face', key: 'side-3' }, 'tangent')).resolves.toMatchObject({ kind: 'face', name: 'Tangent faces', keys: expect.arrayContaining(adjacency.faces.slice(1)) });
+    await expect(cadTopologyChainPicks(unused, { kind: 'edge', key: 'missing' }, 'loop')).resolves.toBeNull();
+    expect(reads).toEqual(['adjacency', 'adjacency', 'adjacency', 'adjacency']);
+    expect(cadTopologyAdjacencyChainPicks(adjacency, { kind: 'face', key: 'missing' })).toBeNull();
   });
   it('reads face loops, the faces of an edge and the faces joined without a crease', () => {
     const adjacency = plateTop();
-    expect(cadTopologyFaceLoop(adjacency, 'top', 'rim-5')).toEqual(Array.from({ length: 8 }, (_, index) => `rim-${index}`));
+    expect(cadTopologyFaceLoop(adjacency, 'top', 'rim-5')).toEqual(rims);
     expect(cadTopologyFaceLoop(adjacency, 'side-0', 'rim-5')).toBeNull();
     expect(cadTopologyEdgeFaces(adjacency, 'down-0')).toEqual(['side-7', 'side-0']);
     expect(sorted(cadTopologyTangentFaces(adjacency, 'side-3'))).toEqual(sorted(adjacency.faces.slice(1)));
     expect(cadTopologyTangentFaces(adjacency, 'top')).toEqual(['top']);
     expect(cadTopologyTangentFaces(adjacency, 'missing')).toEqual([]);
   });
-  it('accepts only adjacency whose arrays, indices and tangents are well formed', () => {
+  it('accepts only adjacency whose arrays and indices are well formed', () => {
     const valid = plateTop();
     expect(isCadTopologyAdjacency(valid)).toBe(true);
     for (const broken of [
-      { ...valid, edgeVertices: valid.edgeVertices.slice(1) }, { ...valid, edgeFaces: valid.edgeFaces.map(face => face === 3 ? 99 : face) },
-      { ...valid, edgeTangents: valid.edgeTangents.map((value, index) => index === 0 ? 2 : value) }, { ...valid, edges: [...valid.edges.slice(1), valid.edges[1]] },
-      { ...valid, faceLoops: [[[0, 999]], ...valid.faceLoops.slice(1)] }, { ...valid, extra: true }, { ...valid, edgeSmooth: valid.edgeSmooth.map(() => 1) },
+      { ...valid, edgeFaces: valid.edgeFaces.slice(1) }, { ...valid, edgeFaces: valid.edgeFaces.map(face => face === 3 ? 99 : face) },
+      { ...valid, edges: [...valid.edges.slice(1), valid.edges[1]] }, { ...valid, faceLoops: [[[0, 999]], ...valid.faceLoops.slice(1)] },
+      { ...valid, extra: true }, { ...valid, edgeSmooth: valid.edgeSmooth.map(() => 1) }, { ...valid, bodyId: '' },
     ]) expect(isCadTopologyAdjacency(broken)).toBe(false);
+  });
+  it('accepts only a tangent chain holding its seed once, and the seed alone, open, where the builders made none', () => {
+    const valid = nativeChain('rim-1', ['rim-0', 'rim-1', 'rim-2']), lone = nativeChain('down-0', ['down-0'], false);
+    expect(isCadTopologyTangentChain(valid)).toBe(true); expect(isCadTopologyTangentChain(lone)).toBe(true);
+    expect(isCadTopologyTangentChain(nativeChain('rim-0', rims, true, true))).toBe(true);
+    for (const broken of [
+      { ...valid, edges: ['rim-0', 'rim-2'] }, { ...valid, edges: ['rim-0', 'rim-1', 'rim-1'] }, { ...valid, edges: [] }, { ...valid, native: 'yes' },
+      { ...lone, edges: ['down-0', 'rim-0'] }, { ...lone, closed: true }, { ...valid, extra: true }, { ...valid, edgeKey: '' }, { ...valid, buildId: 7 },
+    ]) expect(isCadTopologyTangentChain(broken)).toBe(false);
   });
 });
 
@@ -221,6 +224,16 @@ describe('window and crossing boxes', () => {
     expect(cadBoxTriangleTouches(rect, { x: -100, y: -100 }, { x: 200, y: -100 }, { x: 0, y: 200 })).toBe(true);
     expect(cadBoxTriangleTouches(rect, { x: 60, y: 0 }, { x: 90, y: 0 }, { x: 60, y: 30 })).toBe(false);
     expect(cadBoxTriangleTouches(rect, { x: 0, y: 25 }, { x: 60, y: 25 }, { x: 30, y: 100 })).toBe(true);
+  });
+  it('meets a triangle of no area on screen only where its point or segment is', () => {
+    // Collinear corners: the box's top-left corner lies on their line, beyond them, and every side test there is zero.
+    const flat = [{ x: -40, y: 10 }, { x: -20, y: 10 }, { x: -30, y: 10 }] as const;
+    expect(cadBoxTriangleTouches(rect, ...flat)).toBe(false);
+    expect(cadBoxTriangleTouches(rect, { x: 0, y: 20 }, { x: 60, y: 20 }, { x: 30, y: 20 })).toBe(true);
+    // Three copies of one point, away from the box and inside it.
+    const point = { x: 100, y: 100 }, held = { x: 20, y: 20 };
+    expect(cadBoxTriangleTouches(rect, point, point, point)).toBe(false);
+    expect(cadBoxTriangleTouches(rect, held, held, held)).toBe(true);
   });
 });
 

@@ -5,7 +5,8 @@ import { isCadKernelEnvelope, isCadKernelReply, type CadKernelReply, type CadKer
 import { CadError } from '../../../domain/cad/cadError';
 import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
-import { parseCadTopologyAdjacencyRequest, type CadTopologyAdjacency, type CadTopologyAdjacencyRequest } from '../../../domain/cad/cadTopologyAdjacency';
+import { parseCadTopologyAdjacencyRequest, parseCadTopologyTangentChainRequest, type CadTopologyAdjacency, type CadTopologyAdjacencyRequest,
+  type CadTopologyTangentChain, type CadTopologyTangentChainRequest } from '../../../domain/cad/cadTopologyAdjacency';
 import { parseCadSolidImportSource, cadSolidImportByteLength, type CadSolidImportSource, type CadSolidImportResult } from '../../../domain/cad/cadImports';
 import { parseCadDxfImportInput, type CadDxfImportInput, type CadDxfImportResult } from '../../../domain/cad/cadDxfImport';
 import { parseCadDxfCurveImportInput, type CadDxfCurveImportInput, type CadDxfCurveImportResult } from '../../../domain/cad/cadCurveDxf';
@@ -17,6 +18,7 @@ export interface CadKernelClient {
   inspectTopology(document: CadDocument, request: CadTopologyInspectRequest, signal?: AbortSignal): Promise<CadTopologyInspectResult>;
   resolveTopologyPicks(document: CadDocument, request: CadTopologyResolvePicksRequest, signal?: AbortSignal): Promise<CadTopologyResolvePicksResult>;
   topologyAdjacency(document: CadDocument, request: CadTopologyAdjacencyRequest, signal?: AbortSignal): Promise<CadTopologyAdjacency>;
+  topologyTangentChain(document: CadDocument, request: CadTopologyTangentChainRequest, signal?: AbortSignal): Promise<CadTopologyTangentChain>;
   importSolid(source: CadSolidImportSource, signal?: AbortSignal): Promise<CadSolidImportResult>;
   importDxf(input: CadDxfImportInput, signal?: AbortSignal): Promise<CadDxfImportResult>;
   importDxfCurve(input: CadDxfCurveImportInput, signal?: AbortSignal): Promise<CadDxfCurveImportResult>;
@@ -67,6 +69,8 @@ function matchesTopologyRequest(request: CadKernelRequest, reply: CadKernelReply
   }
   if (reply.kind === 'adjacency-inspected') return request.kind === 'inspect-adjacency'
     && reply.result.buildId === request.adjacency.expectedBuildId && reply.result.bodyId === request.adjacency.bodyId;
+  if (reply.kind === 'tangent-chain-inspected') return request.kind === 'inspect-tangent-chain' && reply.result.buildId === request.chain.expectedBuildId
+    && reply.result.bodyId === request.chain.bodyId && reply.result.edgeKey === request.chain.edgeKey;
   if (reply.kind === 'topology-resolved') return request.kind === 'resolve-topology-picks'
     && reply.result.buildId === request.selection.expectedBuildId && reply.result.bodyId === request.selection.bodyId && reply.result.purpose === request.selection.purpose
     && (reply.result.purpose === 'shell' ? request.selection.picks.length === 1 : reply.result.selection.expectedCount === request.selection.picks.length);
@@ -162,6 +166,11 @@ export function createCadKernelClient(makeWorker: () => CadWorkerTransport = () 
     async topologyAdjacency(document, adjacency, signal) {
       const reply = await request({ kind: 'inspect-adjacency', document, adjacency: parseCadTopologyAdjacencyRequest(adjacency) }, signal);
       if (reply.kind !== 'adjacency-inspected') throw new Error('Unexpected CAD topology adjacency response.');
+      return reply.result;
+    },
+    async topologyTangentChain(document, chain, signal) {
+      const reply = await request({ kind: 'inspect-tangent-chain', document, chain: parseCadTopologyTangentChainRequest(chain) }, signal);
+      if (reply.kind !== 'tangent-chain-inspected') throw new Error('Unexpected CAD tangent chain response.');
       return reply.result;
     },
     async importSolid(source, signal) {

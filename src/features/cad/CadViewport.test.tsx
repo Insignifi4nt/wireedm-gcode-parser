@@ -212,7 +212,7 @@ describe('hidden under a sketch surface', () => {
 describe('viewport pointer ownership and hover', () => {
   const meshes: readonly CadMesh[] = [{ ...mesh, faceGroups: [{ key: 'face', start: 0, count: 3 }], edgeGroups: [{ key: 'edge', start: 0, count: 2 }] }];
   type ViewportExtra = Partial<Pick<ComponentProps<typeof CadViewport>, 'onTopologyChain' | 'onTopologySet' | 'selectionFilter' | 'topologySelection' | 'references' | 'referenceVersion' | 'onSelectPlane'>>;
-  async function harness(mode: 'body' | 'face' | 'auto' = 'body', extra: ViewportExtra = {}) {
+  async function harness(mode: 'body' | 'face' | 'edge' | 'auto' = 'body', extra: ViewportExtra = {}) {
     const select = vi.fn(), topology = vi.fn(), contextMenu = vi.fn();
     let more = extra;
     const show = async (locked = false, navigationLocked = locked, selectedId: string | null = null, navigationMode: 'mouse' | 'trackpad' = 'mouse') => { await act(async () => root.render(<CadViewport meshes={meshes} selectedId={selectedId} onSelect={select}
@@ -306,6 +306,20 @@ describe('viewport pointer ownership and hover', () => {
     await h.update({ selectionFilter: { excluded: ['body'] } });
     expect(await drag(h.at(-2, 12), h.at(12, -2))).toBe(false); expect(set).toHaveBeenLastCalledWith('body', [{ kind: 'edge', key: 'edge' }]);
     expect(h.topology).not.toHaveBeenCalled();
+  });
+  it('clears edge picks through the click operation when an edge box takes no edge, for a window and a crossing', async () => {
+    const set = vi.fn(), h = await harness('edge', { onTopologySet: set });
+    const drag = async (from: { dx: number; dy: number }, to: { dx: number; dy: number }) => {
+      await h.mouse('pointerdown', from, { shiftKey: true, buttons: 1 }); await h.mouse('pointermove', to, { shiftKey: true, buttons: 1 });
+      await h.mouse('pointerup', to, { shiftKey: true });
+    };
+    // A window and a crossing away from the triangle each clear, as a click on empty space does, so a chain still being read is dropped.
+    await drag(h.at(20, 20), h.at(30, 10)); expect(h.topology).toHaveBeenCalledExactlyOnceWith(null, false);
+    await drag(h.at(30, 20), h.at(20, 10)); expect(h.topology).toHaveBeenCalledTimes(2); expect(h.topology).toHaveBeenLastCalledWith(null, false);
+    expect(set).not.toHaveBeenCalled();
+    // A box round the triangle sets its edge instead, and an edge box never selects a body.
+    await drag(h.at(-2, 12), h.at(12, -2)); expect(set).toHaveBeenCalledExactlyOnceWith('body', [{ kind: 'edge', key: 'edge' }]);
+    expect(h.topology).toHaveBeenCalledTimes(2); expect(h.select).not.toHaveBeenCalled();
   });
   it('requires the initiating pointer to complete a pick without unrelated pointer-up cancelling its owner', async () => {
     const h = await harness();
