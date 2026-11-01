@@ -1,0 +1,24 @@
+{
+  "version": "0.0.800",
+  "previousVersion": "0.0.799",
+  "postCompatibility": "preserved-posts-with-faster-review-checks",
+  "summary": "CI: the pull request checks finish sooner and stop spending runners on superseded pushes. A new push to a pull request now cancels that pull request's run still in progress (a concurrency group per pull request, or per ref for merge queue runs), so fix commits pushed to a draft in review no longer queue behind results nobody reads. The unit tests run in three shards instead of two, because the slower of two was the longest job in a run at about 5.5 minutes against about 3.7 for the other; the browser journeys run in eleven shards instead of twelve, so the run still has 19 jobs and stays under the free hosted-runner limit of 20 concurrent jobs. Every check that ran before still runs, on the same commands and runners; only the split changes.",
+  "warning": "Not breaking. CI configuration only: no app code, schema, output, storage or agent tool change. Check names change from Unit tests (n/2) to (n/3) and from browser journeys (n/12) to (n/11); main has no required-check list naming them.",
+  "checklist": {
+    "schema": "No schema change. UPID, post schema, engine API, CAD document and save envelope are unchanged.",
+    "events": "No execution event, input-version or cancellation change in the app.",
+    "capabilities": "No post or machine capability change. WebMCP tools, their arguments, results and discovery are unchanged.",
+    "auditAndOutput": "No generation, audit, numbering, encoding, line ending, feed or controller-file change. The post conformance and machine package validation steps still run in the contracts job.",
+    "installationAndStorage": "No installed package, revision, browser-cache or folder storage change. Nothing is migrated or rewritten.",
+    "verification": "The workflow parses and every job still runs; the pull request's own run shows the new shard names, all passing, with the critical path compared against the previous runs (unit 2/2 at 336 s and browser 11/12 at 238 s in run 41319698135)."
+  },
+  "testedPosts": [],
+  "publicNotes": {
+    "summary": "Review checks finish sooner.",
+    "changes": [
+      "Automated review checks on proposed changes finish sooner and stop early when a newer change replaces them."
+    ],
+    "compatibility": "Installed machine packages, posts, saved revisions, controller output, CAD files and agent tools are unchanged.",
+    "action": "No action needed."
+  }
+}
