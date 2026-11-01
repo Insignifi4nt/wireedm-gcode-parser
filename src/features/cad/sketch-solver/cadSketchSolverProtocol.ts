@@ -21,11 +21,13 @@ const diagnosticsFields = {
   issues: Type.Array(CadSketchGraphIssueSchema)
 };
 const diagnosticsSchema = Type.Object(diagnosticsFields, { additionalProperties: false });
-// Only a solved result says which geometry is defined.
+// Only a solved result says which geometry is defined, or warns.
 const solvedDiagnosticsSchema = Type.Object({ ...diagnosticsFields, definition: Type.Optional(Type.Object({
   definedPointIds: Type.Array(CadIdentifierSchema), underDefinedPointIds: Type.Array(CadIdentifierSchema),
   definedEntityIds: Type.Array(CadIdentifierSchema), underDefinedEntityIds: Type.Array(CadIdentifierSchema)
-}, { additionalProperties: false })) }, { additionalProperties: false });
+}, { additionalProperties: false })), warnings: Type.Optional(Type.Array(Type.Object({ code: Type.Literal('mirror-shrank'), relationId: CadIdentifierSchema,
+  curves: Type.Array(Type.Object({ entityId: CadIdentifierSchema, beforeMm: CadNumberSchema, afterMm: CadNumberSchema }, { additionalProperties: false }), { minItems: 1 }),
+  message: Type.String({ maxLength: 8192 }) }, { additionalProperties: false }), { minItems: 1 })) }, { additionalProperties: false });
 const resultSchema = Type.Union([
   Type.Object({ kind: Type.Literal('solved'), layout: Type.Literal(CAD_SKETCH_SOLVED_LAYOUT_VERSION), values: Type.Array(Type.Number()), diagnostics: solvedDiagnosticsSchema },
     { additionalProperties: false }),
@@ -104,7 +106,9 @@ export function parseCadSketchSolverReply(value: unknown, input: CadSketchSolveI
   const diagnostics: CadSketchSolveDiagnostics = result.diagnostics;
   const knownIds = new Set([...input.graph.points, ...input.graph.entities, ...input.graph.relations].map(item => item.id));
   if ([...diagnostics.conflictingIds, ...diagnostics.redundantIds, ...diagnostics.partiallyRedundantIds].some(id => !knownIds.has(id))
-    || diagnostics.issues.some(issue => !knownIds.has(issue.source.id))) throw new Error('Sketch worker diagnostics do not match the request.');
+    || diagnostics.issues.some(issue => !knownIds.has(issue.source.id))
+    || diagnostics.warnings?.some(warning => !input.graph.relations.some(relation => relation.id === warning.relationId)
+      || warning.curves.some(curve => !input.graph.entities.some(entity => entity.id === curve.entityId)))) throw new Error('Sketch worker diagnostics do not match the request.');
   if (result.kind === 'rejected') return { id: value.id, kind: 'result', result: { ...result, diagnostics } };
   let graph: CadSketchGraph | undefined;
   try { graph = cadSketchGraphWithSolvedValues(input.graph, result.values); } catch { graph = undefined; }

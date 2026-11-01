@@ -1,12 +1,13 @@
 import { checkCadSketchGraph, type CadSketchGraph, type CadSketchGraphIssue } from '../../../../domain/cad/cadSketchGraph';
-import { CAD_SKETCH_MIRROR_COLLAPSE, cadSketchMirrorCollapses, cadSketchMirrorShrinks } from '../../../../domain/cad/cadSketchSymmetryRelations';
+import { CAD_SKETCH_MIRROR_COLLAPSE, cadSketchDrivenSizes, cadSketchMirrorCollapses, cadSketchMirrorShrinkage, cadSketchMirrorShrinks, type CadSketchMirrorShrink } from '../../../../domain/cad/cadSketchSymmetryRelations';
 import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from '../cadSketchSolverStages';
-import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
+import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult, CadSketchSolveWarning } from '../cadSketchSolverTypes';
+import { createCadSketchRelationLabels } from '../../cadSketchRelationNames';
 import { compileCadSketchEquations, type CadSketchCompiledSketch } from '../../../../domain/cad/sketch-solver/compileCadSketchEquations';
 import { applyCadSketchEquationSolution, cadSketchEquationResidual, type CadSketchEquationModel } from '../../../../domain/cad/sketch-solver/cadSketchEquationModel';
 import { cadSketchEquationDefinition, cadSketchEquationDiagnostics, type CadSketchNativeOptions } from './cadSketchNativeProtocol';
 import type { CadSketchNativeDiagnosis, CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketchNativeSolver';
-import { CAD_SKETCH_START_COMBINATIONS, cadSketchFailingComponents, cadSketchStartCombinations, cadSketchStartComponents } from './cadSketchNativeStartSearch';
+import { CAD_SKETCH_START_COMBINATIONS, cadSketchComponentsOf, cadSketchFailingComponents, cadSketchStartCombinations, cadSketchStartComponents } from './cadSketchNativeStartSearch';
 import { CAD_PRECISION, cadRoundoff } from '../../../../domain/precision/cadPrecision';
 
 /**
@@ -73,8 +74,10 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     clock.next('mapping');
     const first = settle(input, model, solution, check);
     // A solution that keeps a mirror of curves only by shrinking one to a small fraction of its size passes every check, but ranks below
-    // one that does not (see `cadSketchMirrorShrinks`): the starts below are tried for a better one, and the first such solution, in the
-    // order they are tried, is kept only where none is found. A drag tries no other start, and other sketches never shrink one.
+    // one that does not (see `cadSketchMirrorShrinks`): the starts below are tried for a better one. The search keeps, for each group of
+    // starts, the first that shrinks nothing there, or else the first that only shrinks, and its answer is kept where no retry does
+    // better; failing that, the first such solution tried. It warns of each shrunk curve whose size the sketch does not set (see
+    // `warned`). A drag tries no other start, and other sketches never shrink one.
     const shrinks = (attempt: CadSketchNativeAttempt) => attempt.result.kind === 'solved' && cadSketchMirrorShrinks(input.graph, attempt.result.graph, input.parameters).length > 0;
     if (input.drag || first.result.kind === 'solved' && !shrinks(first)) return first;
     let shrunk = first.result.kind === 'solved' ? first : undefined;
@@ -87,6 +90,8 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     // Relations that offer several starts, as mirrors do their other directions and pairings, try others (see `searchStarts`).
     const searched = searchStarts(input, { model, solution, attempt: first }, solver, options, check, clock, certain);
     if (certain(searched.attempt)) return searched.attempt;
+    // Where it solved, the search's answer shrinks only what no start of the same group avoids.
+    if (searched.attempt.result.kind === 'solved' && !searched.attempt.reason) shrunk = searched.attempt;
     const { model: best, attempt } = searched;
     // A point held on a curve that starts on its center has no radial direction to move along, and an arc centre that starts along the
     // line it is held square to has no side to turn to, so a failed solve tries again from starts one radius out, then from starts
@@ -95,7 +100,7 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
       const seeded = { ...best, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded, options)), check);
       if (certain(retried)) return retried;
     }
-    if (shrunk) return shrunk;
+    if (shrunk) return warned(input, shrunk);
     // A relation the lowering found no solve can meet, such as a mirror that held points and directions leave no line, conflicts with
     // what keeps them, where the solve itself named nothing: a solve can still meet such relations by collapsing the curves.
     const { result } = attempt;
@@ -107,20 +112,47 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
   } finally { clock.stop(); }
 }
 
+/**
+ * A solved answer kept though it shrinks mirrored curves (see `cadSketchMirrorShrinkage`), with a warning for each curve Symmetric
+ * that shrinks a curve whose size no dimension or expression sets (see `cadSketchDrivenSizes`), naming those curves. A shrink the
+ * sketch asks for is not warned of; one that relations only set together still is.
+ */
+function warned(input: CadSketchSolveInput, attempt: CadSketchNativeAttempt): CadSketchNativeAttempt {
+  const { result } = attempt;
+  if (result.kind !== 'solved') return attempt;
+  const driven = cadSketchDrivenSizes(input.graph), labels = createCadSketchRelationLabels(input.graph);
+  const kinds = new Map(input.graph.entities.map(entity => [entity.id, entity.kind]));
+  const warnings = cadSketchMirrorShrinkage(input.graph, result.graph, input.parameters).flatMap((shrink): CadSketchSolveWarning[] => {
+    const curves = shrink.curves.filter(curve => !driven.has(curve.entityId));
+    if (!curves.length) return [];
+    const named = curves.map(curve => `${kinds.get(curve.entityId) === 'line' ? '' : 'the radius of '}${labels.entity(curve.entityId)} from ${millimetres(curve.beforeMm)} mm to ${millimetres(curve.afterMm)} mm`);
+    const list = named.length > 1 ? `${named.slice(0, -1).join(', ')} and ${named.at(-1)}` : named[0];
+    return [{ code: 'mirror-shrank', relationId: shrink.relationId, curves, message: `Symmetric shrank ${list}. Check the mirror and its relations.` }];
+  });
+  return warnings.length ? { ...attempt, result: { ...result, diagnostics: { ...result.diagnostics, warnings } } } : attempt;
+}
+/** A size for reading: three decimals, or for one below 0.001 mm its first significant digit, at most 12 decimals. */
+function millimetres(size: CadSketchMirrorShrink['curves'][number]['afterMm']): string {
+  return size >= 0.001 || size <= 0 ? size.toFixed(3) : size.toFixed(Math.min(12, -Math.floor(Math.log10(size))));
+}
+
 /** A compiled sketch, native's solution of it and the attempt it settled to. */
 interface Tried { readonly model: CadSketchCompiledSketch; readonly solution: CadSketchNativeSolution; readonly attempt: CadSketchNativeAttempt }
 
 /**
  * After a failed solve that is not a drag, the starts its relations offer, searched one connected component at a time (see
- * `cadSketchStartComponents`), in the order of their first relation id; a solve too large for the solver tries none. Only a component
- * that the failure names (see `cadSketchFailingComponents`) is searched, through its combinations least moved first, up to
- * `CAD_SKETCH_START_COMBINATIONS`, with every component already searched kept at the combination it settled on and the others at their
- * first. A combination after which the component no longer fails is kept, and the search moves to the next component. So disjoint
- * mirrors cost the sum of their starts, not the product: at most one compile and solve for each combination after the first. Where the
- * failure names no component, every component is searched alike but none is kept, and so is a solution that moved fixed values or
- * left the coordinate range, whose graph cannot be checked. A solution that shrinks a mirrored curve leaves its mirror's component
- * failing. The first answer `certain` accepts is returned; otherwise the last kept combination's model and attempt, or the first ones
- * where none was kept.
+ * `cadSketchStartComponents`), in the order of their first relation id; a solve too large for the solver tries none. A component fails
+ * hard where a solution leaves it conflicting, redundant or failing the graph checks (see `cadSketchFailingComponents`), and shrinks
+ * where it keeps one of its curve Symmetrics only by shrinking a mirrored curve (see `cadSketchMirrorShrinks` and
+ * `cadSketchComponentsOf`). Only a component that the failure names either way is searched, through its combinations least moved first,
+ * up to `CAD_SKETCH_START_COMBINATIONS`, with every component already searched kept at the combination it settled on and the others at
+ * their first. A combination after which the component neither fails hard nor shrinks is kept, and the search moves to the next
+ * component. Where none is, the first combination after which it only shrinks is kept instead, its first if it only shrank there: a
+ * shrink no start avoids, as one a dimension asks for, never costs a start that met everything else, and the component is not
+ * searched again. So disjoint mirrors cost the sum of their starts, not the product: at most one compile and solve for each
+ * combination after the first. Where the failure names no component, every component is searched alike but none is kept, and so is a
+ * solution that moved fixed values or left the coordinate range, whose graph cannot be checked. The first answer `certain` accepts is
+ * returned; otherwise the last kept combination's model and attempt, or the first ones where none was kept.
  */
 function searchStarts(input: CadSketchSolveInput, first: Tried, solver: CadSketchNativeSolver, options: CadSketchNativeOptions, check: Check,
   clock: ReturnType<typeof cadSketchSolverStageClock>, certain: (attempt: CadSketchNativeAttempt) => boolean): Pick<Tried, 'model' | 'attempt'> {
@@ -130,12 +162,15 @@ function searchStarts(input: CadSketchSolveInput, first: Tried, solver: CadSketc
     let graph: CadSketchGraph | undefined;
     try { graph = applyCadSketchEquationSolution(input.graph, tried.model, tried.solution.values); } catch { return undefined; }
     if (!graph) return undefined;
-    return cadSketchFailingComponents(input.graph, tried.model, tried.solution, check(graph, input.parameters), components, cadSketchMirrorShrinks(input.graph, graph, input.parameters));
+    return { hard: cadSketchFailingComponents(input.graph, tried.model, tried.solution, check(graph, input.parameters), components),
+      shrunk: cadSketchComponentsOf(tried.model, components, cadSketchMirrorShrinks(input.graph, graph, input.parameters)) };
   };
-  const named = failing(first), every = !named?.size;
+  const named = failing(first), every = !named || !named.hard.size && !named.shrunk.size;
   let chosen: Readonly<Record<string, number>> = {}, best: Pick<Tried, 'model' | 'attempt'> = first;
   for (const [at, component] of components.entries()) {
-    if (named?.size && !named.has(at)) continue;
+    if (!every && !named.hard.has(at) && !named.shrunk.has(at)) continue;
+    // The component as it stands, at its first combination, is its first candidate: kept if it only shrinks there and no later one does better.
+    let kept = every || named.hard.has(at) ? undefined : { chosen, best };
     for (const combination of cadSketchStartCombinations(component, CAD_SKETCH_START_COMBINATIONS).slice(1)) {
       const startChoices = { ...chosen, ...combination };
       let model: CadSketchCompiledSketch;
@@ -146,8 +181,11 @@ function searchStarts(input: CadSketchSolveInput, first: Tried, solver: CadSketc
       if (certain(attempt)) return { model, attempt };
       if (every) continue;
       const still = failing({ model, solution });
-      if (still && !still.has(at)) { chosen = startChoices; best = { model, attempt }; break; }
+      if (!still || still.hard.has(at)) continue;
+      if (!still.shrunk.has(at)) { kept = { chosen: startChoices, best: { model, attempt } }; break; }
+      kept ??= { chosen: startChoices, best: { model, attempt } };
     }
+    if (kept) ({ chosen, best } = kept);
   }
   return best;
 }

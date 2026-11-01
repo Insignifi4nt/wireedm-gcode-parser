@@ -79,16 +79,22 @@ export function cadSketchStartCombinations(component: CadSketchStartComponent, c
   return found.map(combination => Object.fromEntries(choices.map((choice, at) => [choice.relationId, combination[at]])));
 }
 
+/** Each component's place in `components`, by the root of its parameters, and the reach of `model`. */
+function owners(model: CadSketchCompiledSketch, components: readonly CadSketchStartComponent[]) {
+  const found = reach(model), owner = new Map<number, number>();
+  components.forEach((component, at) => { for (const { relationId } of component.choices) { const root = found.of(relationId); if (root !== undefined) owner.set(root, at); } });
+  return { ...found, owner };
+}
+
 /**
- * The components, by their place in `components`, that a solution of `model` leaves failing: those holding a relation or edge the
- * diagnosis labels conflicting or redundant, a point, edge or relation the graph checks of the solved graph (`issues`) report, or a
- * relation in `shrunkIds`, the curve Symmetrics the solution keeps only by shrinking a mirrored curve (see `cadSketchMirrorShrinks`),
- * which a start search ranks below one that does not. Failures outside every component name none.
+ * The components, by their place in `components`, that a solution of `model` leaves failing hard: those holding a relation or edge the
+ * diagnosis labels conflicting or redundant, or a point, edge or relation the graph checks of the solved graph (`issues`) report.
+ * Failures outside every component name none. A curve Symmetric kept only by shrinking a mirrored curve is not a failure here (see
+ * `cadSketchComponentsOf`).
  */
 export function cadSketchFailingComponents(graph: CadSketchGraph, model: CadSketchCompiledSketch, solution: CadSketchNativeSolution,
-  issues: readonly CadSketchGraphIssue[], components: readonly CadSketchStartComponent[], shrunkIds: readonly string[] = []): ReadonlySet<number> {
-  const { root, of } = reach(model), owner = new Map<number, number>(), failing = new Set<number>();
-  components.forEach((component, at) => { for (const { relationId } of component.choices) { const found = of(relationId); if (found !== undefined) owner.set(found, at); } });
+  issues: readonly CadSketchGraphIssue[], components: readonly CadSketchStartComponent[]): ReadonlySet<number> {
+  const { root, of, owner } = owners(model, components), failing = new Set<number>();
   const blame = (found: number | undefined) => { const at = found === undefined ? undefined : owner.get(found); if (at !== undefined) failing.add(at); };
   const parameter = (index: number | undefined) => { if (index !== undefined && !model.fixed[index]) blame(root(index)); };
   const point = (pointId: string) => { const x = model.pointParameters.get(pointId); if (x !== undefined) { parameter(x); parameter(x + 1); } };
@@ -97,7 +103,6 @@ export function cadSketchFailingComponents(graph: CadSketchGraph, model: CadSket
     const ids = cadSketchEquationDiagnostics(model, diagnosis.labels);
     for (const id of [...ids.conflictingIds, ...ids.redundantIds, ...ids.partiallyRedundantIds]) blame(of(id));
   }
-  for (const id of shrunkIds) blame(of(id));
   for (const { source } of issues) {
     if (source.kind === 'point') { point(source.id); continue; }
     blame(of(source.id));
@@ -105,4 +110,16 @@ export function cadSketchFailingComponents(graph: CadSketchGraph, model: CadSket
     if (entity) { for (const pointId of cadSketchEntityPointIds(entity)) point(pointId); parameter(model.radiusParameters.get(entity.id)); }
   }
   return failing;
+}
+
+/**
+ * The components, by their place in `components`, holding a relation of `relationIds`, as the curve Symmetrics a solution keeps only by
+ * shrinking a mirrored curve (see `cadSketchMirrorShrinks`), which a start search ranks below one that does not. Relations outside
+ * every component name none.
+ */
+export function cadSketchComponentsOf(model: CadSketchCompiledSketch, components: readonly CadSketchStartComponent[], relationIds: readonly string[]): ReadonlySet<number> {
+  if (!relationIds.length) return new Set();
+  const { of, owner } = owners(model, components), found = new Set<number>();
+  for (const id of relationIds) { const root = of(id), at = root === undefined ? undefined : owner.get(root); if (at !== undefined) found.add(at); }
+  return found;
 }

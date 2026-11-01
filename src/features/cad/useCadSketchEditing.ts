@@ -5,6 +5,7 @@ import { cadFeatureDependencies } from '@/domain/cad/cadSchema';
 import { CadSession, CadSessionError } from './cadSession';
 import { CadSketchEditDraft, type CadSketchAreaRepairs, type CadSketchDraftPreparation } from './cadSketchEditDraft';
 import type { CadEditCompletion } from './useCadEditSubmission';
+import type { CadSketchEditWarning } from './cadEditPreparation';
 
 interface Owner {
   readonly draft: CadSketchEditDraft;
@@ -18,7 +19,12 @@ interface Host<Inspection> {
   readonly storage: object | null;
   readonly open: boolean;
   readonly locked: boolean;
+  /** Prepares a previewed batch. */
   prepare: CadSketchDraftPreparation;
+  /** Prepares a batch the draft commits, with the warnings its solves gave; `prepare` stands in, with none, where it is absent. */
+  prepareCommit?(document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal): Promise<{ readonly document: CadDocument; readonly sketchWarnings: readonly CadSketchEditWarning[] }>;
+  /** Told the warnings of a batch the draft accepted. */
+  warn?(warnings: readonly CadSketchEditWarning[]): void;
   inspect(document: CadDocument, sketchId: string, signal?: AbortSignal): Promise<Inspection>;
   commit(edits: readonly CadEdit[], expectedVersion: string, signal?: AbortSignal): CadEditCompletion;
 }
@@ -89,9 +95,16 @@ export function useCadSketchEditing<Inspection>(host: Host<Inspection>) {
   const editPrepared = async (owned: Owner, edits: readonly CadEdit[], signal?: AbortSignal) => {
     owned.pending = true; setWorking(true);
     const combined = signal ? AbortSignal.any([signal, owned.abort.signal]) : owned.abort.signal;
+    let warnings: readonly CadSketchEditWarning[] = [];
     try {
-      return await owned.draft.editPrepared(edits, (document, captured, signal) => latest.current.prepare(document, captured, signal),
-        undefined, combined, () => assertOwner(owned));
+      const accepted = await owned.draft.editPrepared(edits, async (document, captured, signal) => {
+        const now = latest.current;
+        if (!now.prepareCommit) return now.prepare(document, captured, signal);
+        const prepared = await now.prepareCommit(document, captured, signal);
+        warnings = prepared.sketchWarnings; return prepared.document;
+      }, undefined, combined, () => assertOwner(owned));
+      if (warnings.length) latest.current.warn?.(warnings);
+      return accepted;
     } finally { if (current.current === owned) { owned.pending = false; setWorking(false); } }
   };
   const prepare = async (edits: readonly CadEdit[], signal: AbortSignal) => {

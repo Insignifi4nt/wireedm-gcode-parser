@@ -73,6 +73,14 @@ const ORDERING: readonly Order[] = [
   { name: 'angular roundoff cap < boolean simplify angle < tessellation angle',
     // Booleans merge faces that are tangent up to roundoff, and never merge across a kink the display mesh would show.
     holds: () => P.angularRoundoffCapRad < P.kernelBooleanSimplifyRad && P.kernelBooleanSimplifyRad < P.tessellationAngleRad },
+  { name: 'angular accuracy < mirror pairing tie, and angular roundoff cap <= mirror pairing tie',
+    // A free mirror's quarter turns either way differ in summed squared movement by a fraction no larger than the error of the
+    // directions they turn from, so a tie must cover the angular error a check allows, or noise would pick the turn.
+    holds: () => P.angularAccuracyRad < P.mirrorPairingTieRelative && P.angularRoundoffCapRad <= P.mirrorPairingTieRelative },
+  { name: 'solver residual < mirror collapse fraction of the smallest pointer-drawn size',
+    // A shrink the fraction ranks down is larger than the solver's residual even for the smallest curve a pointer draws, so ranking
+    // reads geometry rather than convergence noise.
+    holds: () => P.solverResidualMm < P.mirrorCollapseRelative * P.pointerMinimumSizeMm },
   { name: 'closure across the model extent stays within the CAD handoff endpoint and kernel confusion',
     holds: () => cadClosureTolerance(P.modelExtentMm) <= P.camHandoffEndpointMm && cadClosureTolerance(P.modelExtentMm) <= P.kernelConfusionMm },
   { name: 'output fitting never narrows the plan tolerance and grows point <= length <= arc sweep',

@@ -77,7 +77,7 @@ function largeGroupedParameterDocument() {
   });
   return { document, names, groups };
 }
-async function harness(withGeometry = false, allowHandoff = false) {
+async function harness(withGeometry = false, allowHandoff = false, showStatusToast?: (message: string, type?: 'success' | 'error' | 'warning' | 'info') => void) {
   let workbench: ConnectedWorkbenchCatalog | null = await openWorkbench('cad-controller-a');
   const session = new CadSession(withGeometry ? parseCadDocument({ ...createCadDocument('Part', 'cad_part'), features: [{
     id: 'sketch', kind: 'sketch', name: 'Profile', plane: 'XY', offset: 0, suppressed: false,
@@ -91,7 +91,7 @@ async function harness(withGeometry = false, allowHandoff = false) {
         if (!allowHandoff) throw new Error('Unexpected CAM handoff');
         if (!workbench) throw new Error('Workbench disconnected');
         const result = await action(workbench); workbench = result.workbench; return result.value;
-      }
+      }, ...showStatusToast ? { showStatusToast } : {}
     }, session, open, setOpen, () => null);
     return null;
   }
@@ -137,6 +137,28 @@ function inspectedSolve(input: CadSketchSolveInput): CadSketchSolveResult {
     conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [], ...input.analyseDefinition ? { definition: {
       definedPointIds: input.graph.points.map(point => point.id), underDefinedPointIds: [], definedEntityIds: input.graph.entities.map(entity => entity.id), underDefinedEntityIds: [] } } : {} } };
 }
+
+describe('sketch solve warnings', () => {
+  it('shows an accepted edit\'s solve warnings as warning toasts naming the sketch, gives them to the edit tool, and shows none for a refused edit', async () => {
+    const toast = vi.fn(), h = await harness(false, false, toast); await act(async () => h.session.replace(inspectedSketchDocument()));
+    const warning = { code: 'mirror-shrank', relationId: 'length', curves: [{ entityId: 'edge', beforeMm: 20, afterMm: 1e-5 }],
+      message: 'Symmetric shrank Line 1 from 20.000 mm to 0.00001 mm. Check the mirror and its relations.' } as const;
+    sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => {
+      const solved = inspectedSolve(input);
+      return solved.kind === 'solved' ? { ...solved, diagnostics: { ...solved.diagnostics, warnings: [warning] } } : solved;
+    });
+    const tool = cadSiteTools(h.cad).find(entry => entry.name === 'cad_edit_document');
+    if (!tool) throw new Error('Missing document edit tool');
+    const length = (value: unknown) => [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value } }];
+    expect(await tool.execute({ expectedVersion: h.session.getSnapshot().version, edits: length(20) })).toMatchObject({ ok: true,
+      data: { sketchWarnings: { items: [{ ...warning, sketchId: 'sketch', sketchName: 'Line' }], count: 1, omittedCount: 0 } } });
+    expect(toast).toHaveBeenCalledExactlyOnceWith(`Line: ${warning.message}`, 'warning');
+    sketchSolver.solve.mockImplementation(async () => ({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.',
+      diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'], redundantIds: [], partiallyRedundantIds: [], issues: [] } }));
+    expect(await tool.execute({ expectedVersion: h.session.getSnapshot().version, edits: length(' span ') })).toMatchObject({ ok: false });
+    expect(toast).toHaveBeenCalledOnce();
+  });
+});
 
 describe('accepted sketch constraint inspection guards', () => {
   it('shares immutable accepted source across pages without editing, saving or adding history', async () => {

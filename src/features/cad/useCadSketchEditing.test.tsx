@@ -25,14 +25,14 @@ function rectangle(document: CadDocument, width: number): CadEdit {
   if (profile.geometry.kind !== 'rectangle') throw new Error('Expected fixture rectangle.');
   return { kind: 'update-feature', feature: { ...sketch, profiles: [{ ...profile, geometry: { ...profile.geometry, width } }] } };
 }
-async function mount(document = part()) {
+async function mount(document = part(), extra: Pick<Parameters<typeof useCadSketchEditing>[0], 'prepareCommit' | 'warn'> = {}) {
   const session = new CadSession(document);
   let current: ReturnType<typeof useCadSketchEditing> | undefined, storage: object | null = {}, open = true, locked = false;
   const preparing = vi.fn(prepare), inspect = vi.fn(async (_document: CadDocument, _sketchId: string, signal?: AbortSignal) => { signal?.throwIfAborted(); return { proof: 'inspection' }; });
   const commit = vi.fn((edits: readonly CadEdit[], version: string, signal?: AbortSignal) => session.editPrepared(version, document => prepare(document, edits, signal), signal));
   function Harness() {
     useSyncExternalStore(session.subscribe, session.getSnapshot);
-    current = useCadSketchEditing({ session, storage, open, locked, prepare: preparing, inspect, commit });
+    current = useCadSketchEditing({ session, storage, open, locked, prepare: preparing, inspect, commit, ...extra });
     return null;
   }
   const rerender = async () => { await act(async () => root.render(<Harness />)); };
@@ -75,6 +75,22 @@ it('inspects stale area choices before submission and finishes geometry plus exp
   expect(accepted.document.features[1]).toMatchObject({ regionSelection: selections[0].selection });
   expect(h.commit).toHaveBeenCalledOnce(); h.session.undo(); expect(h.session.getSnapshot().document).toBe(base.document);
   expect(h.session.getSnapshot().canUndo).toBe(false); h.session.redo(); expect(h.session.getSnapshot().document).toBe(accepted.document);
+});
+
+it('prepares a committed draft edit with its solve warnings and tells them once accepted, and a preview without them', async () => {
+  const warning = { code: 'mirror-shrank', relationId: 'mirror', curves: [{ entityId: 'copy', beforeMm: 20, afterMm: 1e-5 }],
+    message: 'Symmetric shrank Line 2 from 20.000 mm to 0.00001 mm. Check the mirror and its relations.', sketchId: 'sketch', sketchName: 'Outline' } as const;
+  const prepareCommit = vi.fn(async (document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) => ({ document: await prepare(document, edits, signal), sketchWarnings: [warning] }));
+  const warn = vi.fn(), h = await mount(part(), { prepareCommit, warn }), base = h.session.getSnapshot();
+  await act(async () => h.editing().begin('sketch'));
+  await act(async () => { await h.editing().prepare([rectangle(base.document, 25)], new AbortController().signal); });
+  expect(warn).not.toHaveBeenCalled(); expect(prepareCommit).not.toHaveBeenCalled(); expect(h.preparing).toHaveBeenCalledOnce();
+  await act(async () => h.editing().edit([rectangle(base.document, 30)]));
+  expect(prepareCommit).toHaveBeenCalledOnce(); expect(warn).toHaveBeenCalledExactlyOnceWith([warning]); expect(h.preparing).toHaveBeenCalledOnce();
+  // A refused edit tells nothing.
+  prepareCommit.mockRejectedValueOnce(new Error('Refused.'));
+  await act(async () => { await expect(h.editing().edit([rectangle(base.document, 35)])).rejects.toThrow('Refused.'); });
+  expect(warn).toHaveBeenCalledOnce();
 });
 
 it('refuses stale local repair revisions and invalid, empty, duplicate or unrelated choices without committing', async () => {

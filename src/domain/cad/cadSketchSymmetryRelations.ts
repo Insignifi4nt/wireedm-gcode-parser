@@ -168,22 +168,62 @@ export function cadSketchMirrorCollapses(graph: CadSketchGraph, issues: readonly
   const collapsed = new Set(issues.filter(issue => issue.source.kind === 'entity' && (issue.code === 'degenerate-entity' || issue.code === 'invalid-radius')).map(issue => issue.source.id));
   return mirrors.filter(relation => [...relation.curveIds, relation.lineId].some(id => collapsed.has(id))).map(relation => relation.id);
 }
+/** A curve Symmetric a solution keeps by shrinking mirrored curves, each with its size before and after the solve, in millimetres. */
+export interface CadSketchMirrorShrink {
+  readonly relationId: string;
+  readonly curves: readonly { readonly entityId: string; readonly beforeMm: number; readonly afterMm: number }[];
+}
 /**
- * The curve Symmetrics, in graph order, that a solution keeps by shrinking a mirrored curve: one whose size, a line's length or an
- * arc's or circle's radius, in the solved graph `after` falls below `mirrorCollapseRelative` of its size in `before`, the graph the
- * solve set out from. Such a solution passes every check, so it is not refused; a solve ranks it below one that shrinks no mirrored
- * curve, and keeps it only where no start it tries finds one. A size that cannot be read is not compared. Empty for a sketch with no
- * curve Symmetric, which reads nothing else.
+ * The curve Symmetrics, in graph order, that a solution keeps by shrinking a mirrored curve, with the curves it shrinks: those whose
+ * size, a line's length or an arc's or circle's radius, in the solved graph `after` falls below `mirrorCollapseRelative` of its size in
+ * `before`, the graph the solve set out from. Such a solution passes every check, so it is not refused; a solve ranks it below one that
+ * shrinks no mirrored curve, and keeps it only where no start it tries finds one. A size that cannot be read is not compared. Empty for
+ * a sketch with no curve Symmetric, which reads nothing else.
  */
-export function cadSketchMirrorShrinks(before: CadSketchGraph, after: CadSketchGraph, parameters: Readonly<Record<string, number>>): readonly string[] {
+export function cadSketchMirrorShrinkage(before: CadSketchGraph, after: CadSketchGraph, parameters: Readonly<Record<string, number>>): readonly CadSketchMirrorShrink[] {
   const mirrors = curveMirrors(after);
   if (!mirrors.length) return [];
   const [was, now] = [curveSizes(before, parameters), curveSizes(after, parameters)];
-  const shrunk = (id: string) => {
-    const [from, to] = [was(id), now(id)];
-    return from !== undefined && to !== undefined && to < CAD_PRECISION.mirrorCollapseRelative * from;
-  };
-  return mirrors.filter(relation => relation.curveIds.some(shrunk)).map(relation => relation.id);
+  return mirrors.flatMap(relation => {
+    const curves = relation.curveIds.flatMap(entityId => {
+      const [beforeMm, afterMm] = [was(entityId), now(entityId)];
+      return beforeMm !== undefined && afterMm !== undefined && afterMm < CAD_PRECISION.mirrorCollapseRelative * beforeMm ? [{ entityId, beforeMm, afterMm }] : [];
+    });
+    return curves.length ? [{ relationId: relation.id, curves }] : [];
+  });
+}
+/** The ids of the curve Symmetrics `cadSketchMirrorShrinkage` names. */
+export function cadSketchMirrorShrinks(before: CadSketchGraph, after: CadSketchGraph, parameters: Readonly<Record<string, number>>): readonly string[] {
+  return cadSketchMirrorShrinkage(before, after, parameters).map(shrink => shrink.relationId);
+}
+/**
+ * The edges of `graph` whose size a dimension or expression sets: a line whose own ends a distance or axis distance dimensions, an arc
+ * whose centre a distance dimensions from one of its ends, an arc or circle with a radius or diameter dimension, a fillet's arc, a
+ * chamfer's line, or a circle whose radius is an expression; and every edge Equal or a curve Symmetric gives the same size as one of
+ * those. A size that other relations set together, as a triangle of dimensions does, is not found.
+ */
+export function cadSketchDrivenSizes(graph: CadSketchGraph): ReadonlySet<string> {
+  const parent = new Map<string, string>();
+  const root = (id: string): string => { let at = id; while (parent.has(at) && parent.get(at) !== at) at = parent.get(at)!; return at; };
+  const join = (ids: readonly string[]) => { for (const id of ids.slice(1)) parent.set(root(id), root(ids[0])); };
+  const driven = new Set<string>(), ends = new Map<string, string>();
+  const pair = (first: string, second: string) => first < second ? `${first}\u0000${second}` : `${second}\u0000${first}`;
+  for (const entity of graph.entities) {
+    if (entity.kind === 'line') ends.set(pair(entity.startPointId, entity.endPointId), entity.id);
+    else if (entity.kind === 'arc') for (const end of [entity.startPointId, entity.endPointId]) ends.set(pair(entity.centerPointId, end), entity.id);
+    else if (typeof entity.radius === 'string') driven.add(entity.id);
+  }
+  for (const relation of graph.relations) {
+    if (relation.kind === 'distance' || relation.kind === 'axis-distance') { const id = ends.get(pair(...relation.pointIds)); if (id) driven.add(id); }
+    else if (relation.kind === 'radial-size') driven.add(relation.entityId);
+    else if (relation.kind === 'fillet-corner') driven.add(relation.arcId);
+    else if (relation.kind === 'chamfer-corner') driven.add(relation.chamferId);
+    else if (relation.kind === 'equal-length') join(relation.lineIds);
+    else if (relation.kind === 'equal-radius') join(relation.curveIds);
+    else if (relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation)) join(relation.curveIds);
+  }
+  const drivenRoots = new Set([...driven].map(root));
+  return new Set(graph.entities.map(entity => entity.id).filter(id => drivenRoots.has(root(id))));
 }
 const curveMirrors = (graph: CadSketchGraph) =>
   graph.relations.filter((relation): relation is CadSketchSymmetricCurvesRelation => relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation));

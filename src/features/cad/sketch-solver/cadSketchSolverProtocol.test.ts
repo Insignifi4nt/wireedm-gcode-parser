@@ -99,6 +99,21 @@ describe('values-only solved replies', () => {
     const rejected = { id: 1, kind: 'result', result: { kind: 'rejected', reason: 'failed', message: 'No.', diagnostics: { ...replyWith(graph).result.diagnostics, status: 'failed', definition } } };
     expect(() => parseCadSketchSolverReply(rejected, defining)).toThrow('Invalid sketch worker response.');
   });
+  it('carries warnings only on a solved reply, each naming a relation and edges of the request', () => {
+    const shrinking = parseCadSketchGraph({ ...graph, points: [...graph.points, { id: 'c', position: [0, 0] }, { id: 'd', position: [-10, 0] }],
+      entities: [...graph.entities, { id: 'copy', kind: 'line', construction: false, startPointId: 'c', endPointId: 'd' }],
+      relations: [...graph.relations, { id: 'mirror', kind: 'symmetric', curveIds: ['line', 'copy'], lineId: '@v' }] });
+    const request = parseCadSketchSolveInput({ graph: shrinking, parameters: { span: 10 } });
+    const warning = { code: 'mirror-shrank', relationId: 'mirror', curves: [{ entityId: 'copy', beforeMm: 10, afterMm: 1e-6 }], message: 'Symmetric shrank Line 1.' };
+    const solved = (warnings: unknown) => { const reply = replyWith(shrinking); return { ...reply, result: { ...reply.result, diagnostics: { ...reply.result.diagnostics, warnings } } }; };
+    expect(parseCadSketchSolverReply(solved([warning]), request)).toMatchObject({ result: { kind: 'solved', diagnostics: { warnings: [warning] } } });
+    for (const wrong of [{ ...warning, relationId: 'missing' }, { ...warning, curves: [{ ...warning.curves[0], entityId: 'missing' }] }])
+      expect(() => parseCadSketchSolverReply(solved([wrong]), request)).toThrow('request');
+    for (const malformed of [[], [{ ...warning, code: 'other' }], [{ ...warning, curves: [] }], [{ ...warning, extra: 1 }], [{ ...warning, curves: [{ ...warning.curves[0], afterMm: '0' }] }]])
+      expect(() => parseCadSketchSolverReply(solved(malformed), request)).toThrow('Invalid sketch worker response.');
+    const rejected = { id: 1, kind: 'result', result: { kind: 'rejected', reason: 'failed', message: 'No.', diagnostics: { ...replyWith(shrinking).result.diagnostics, status: 'failed', warnings: [warning] } } };
+    expect(() => parseCadSketchSolverReply(rejected, request)).toThrow('Invalid sketch worker response.');
+  });
   it('keeps negative zero and survives a structured clone with expressions, references, radii and no slots', () => {
     expect(Object.is(solvedGraph(parseCadSketchSolverReply(replyWith(graph, [10, -0]), input)).points[1].position[1], -0)).toBe(true);
     const document = circleReferencePart(true), target = document.features[1]; if (target.kind !== 'sketch' || !target.graph) throw new Error('Reference target missing.');
