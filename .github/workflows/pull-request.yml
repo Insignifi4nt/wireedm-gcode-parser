@@ -86,6 +86,8 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
+      # Keep simultaneous jsdom/native-kernel suites within the hosted runner's CPU budget. The shards split the files
+      # by the measured times in scripts/unit-test-shard-weights.json; the JSON report refreshes them.
       - run: npm test -- --run --maxWorkers=2 --shard=${{ matrix.shard }}/4 --reporter=default --reporter=json --outputFile.json=test-results/unit-shard-${{ matrix.shard }}.json
       - name: Keep the shard's file timings
         if: ${{ !cancelled() }}
@@ -96,13 +98,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  browser-host:
-    name: Browser journeys, cached browser (${{ matrix.shard }}/11)
+  browser:
+    name: Browser journeys (${{ matrix.shard }}/11)
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        shard: [6, 7, 8, 9, 10, 11]
+        # With the other jobs, eleven shards stay under the free hosted-runner limit of 20 concurrent jobs.
+        # Keep /11 in the name and command, and one weight per shard, in step.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -122,50 +126,22 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-headless-shell
-      - run: npx playwright install --with-deps --only-shell chromium
-      - run: npm run build:bundle
+      # The Production build job type-checks; here the browser and its system fonts install while the app bundles.
+      - name: Install Chromium's headless shell while bundling the app
+        run: |
+          npx playwright install --with-deps --only-shell chromium > "$RUNNER_TEMP/playwright-install.log" 2>&1 &
+          install=$!
+          npm run build:bundle
+          status=0
+          wait "$install" || status=$?
+          cat "$RUNNER_TEMP/playwright-install.log"
+          exit "$status"
+      # A broken change stops each shard after a few failures instead of retrying every journey to its timeout.
+      # Each weight is that shard's share of the journeys in Playwright's order, fitted to measured run times.
       - run: npm run test:e2e -- --workers=2 --max-failures=5 --shard=${{ matrix.shard }}/11
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
-          PWTEST_SHARD_WEIGHTS: '15:12:19:19:21:14:16:27:30:24:39'
-      - name: Preserve browser failure reports
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: browser-test-report-${{ matrix.shard }}
-          path: |
-            playwright-report/
-            test-results/
-          if-no-files-found: ignore
-          retention-days: 7
-
-  browser-container:
-    name: Browser journeys, Playwright image (${{ matrix.shard }}/11)
-    runs-on: ubuntu-24.04
-    container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
-      options: --ipc=host
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - run: npm ci
-      - name: Cache pinned third-party source archives
-        uses: actions/cache@v4
-        with:
-          path: .cache/third-party-sources
-          key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json') }}
-      - run: npm run build:bundle
-      - run: npm run test:e2e -- --workers=2 --max-failures=5 --shard=${{ matrix.shard }}/11
-        env:
-          PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
-          PWTEST_SHARD_WEIGHTS: '15:12:19:19:21:14:16:27:30:24:39'
+          PWTEST_SHARD_WEIGHTS: '16:15:17:15:22:15:16:25:30:31:34'
       - name: Preserve browser failure reports
         if: failure()
         uses: actions/upload-artifact@v7
@@ -199,8 +175,15 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-firefox
-      - run: npx playwright install --with-deps firefox
-      - run: npm run build:bundle
+      - name: Install Firefox while bundling the app
+        run: |
+          npx playwright install --with-deps firefox > "$RUNNER_TEMP/playwright-install.log" 2>&1 &
+          install=$!
+          npm run build:bundle
+          status=0
+          wait "$install" || status=$?
+          cat "$RUNNER_TEMP/playwright-install.log"
+          exit "$status"
       - run: npx playwright test --config=playwright.storage.config.ts --workers=1 --max-failures=3
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
@@ -231,7 +214,7 @@ jobs:
       - run: npm run solver:check
 
   verify:
-    needs: [naming, contracts, build, unit, native-solver, browser-host, browser-container, storage-firefox]
+    needs: [naming, contracts, build, unit, native-solver, browser, storage-firefox]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -242,8 +225,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           NATIVE_SOLVER_RESULT: ${{ needs.native-solver.result }}
-          BROWSER_HOST_RESULT: ${{ needs.browser-host.result }}
-          BROWSER_CONTAINER_RESULT: ${{ needs.browser-container.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
           FIREFOX_RESULT: ${{ needs.storage-firefox.result }}
         run: |
           test "$NAMING_RESULT" = success
@@ -251,6 +233,5 @@ jobs:
           test "$BUILD_RESULT" = success
           test "$UNIT_RESULT" = success
           test "$NATIVE_SOLVER_RESULT" = success
-          test "$BROWSER_HOST_RESULT" = success
-          test "$BROWSER_CONTAINER_RESULT" = success
+          test "$BROWSER_RESULT" = success
           test "$FIREFOX_RESULT" = success

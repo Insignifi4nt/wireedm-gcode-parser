@@ -4,7 +4,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TestSpecification, Vitest } from 'vitest/node';
 import {
-  assignShards, parseUnitShardWeights, unitShardWeight, unitShardWeightsFromReports, unitShardWeightsPath, WeightedShardSequencer, type ShardItem
+  assignShards, parseUnitShardWeights, reportCheckoutRoot, unitShardWeight, unitShardWeightsFromReports, unitShardWeightsPath, WeightedShardSequencer,
+  type ShardItem
 } from '../../scripts/unit-test-shards';
 
 const roots: string[] = [];
@@ -91,14 +92,25 @@ describe('weighted unit shards', () => {
   });
 
   it('builds the table from shard reports, averaging repeated files and listing only the slow ones', () => {
-    const root = path.join(os.tmpdir(), 'wire-edm-root');
-    const report = (name: string, seconds: number) => ({ name: path.join(root, name), startTime: 1_000, endTime: 1_000 + seconds * 1000 });
+    const root = '/home/runner/work/wire-edm/wire-edm';
+    const report = (name: string, seconds: number) => ({ name: `${root}/${name}`, startTime: 1_000, endTime: 1_000 + seconds * 1000 });
     const weights = unitShardWeightsFromReports([
       { testResults: [report('src/b.test.ts', 4), report('src/fast-1.test.ts', 0.1)] },
       { testResults: [report('src/b.test.ts', 6), report('src/a.test.ts', 0.5), report('src/fast-2.test.ts', 0.3)] },
     ], root, 0.6);
     expect(weights).toEqual({ overheadSeconds: 0.6, unlistedSeconds: 0.2, seconds: { 'src/a.test.ts': 0.5, 'src/b.test.ts': 5 } });
     expect(Object.keys(weights.seconds)).toEqual(['src/a.test.ts', 'src/b.test.ts']);
+    expect(() => unitShardWeightsFromReports([{ testResults: [{ name: '/elsewhere/src/a.test.ts', startTime: 0, endTime: 1 }] }], root, 0.6))
+      .toThrow(/not under/);
+  });
+
+  it('finds the runner checkout a report was written in, whatever the local checkout and separators', () => {
+    const here = new Set(['src/a.test.ts', 'packages/icons-react/src/b.test.ts']);
+    const isFile = (relativePath: string) => here.has(relativePath);
+    expect(reportCheckoutRoot(['/home/runner/work/repo/repo/src/gone.test.ts', '/home/runner/work/repo/repo/src/a.test.ts'], isFile))
+      .toBe('/home/runner/work/repo/repo');
+    expect(reportCheckoutRoot(['D:\\a\\repo\\packages\\icons-react\\src\\b.test.ts'], isFile)).toBe('D:/a/repo');
+    expect(() => reportCheckoutRoot(['/home/runner/work/repo/repo/src/gone.test.ts'], isFile)).toThrow(/checkout/);
   });
 
   it('gives Vitest disjoint shards covering every file, heaviest first within each', async () => {

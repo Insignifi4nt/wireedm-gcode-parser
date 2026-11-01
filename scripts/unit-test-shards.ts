@@ -63,13 +63,28 @@ export interface VitestJsonReport {
 }
 
 /**
- * Builds the weight table from JSON reports of every shard of one run. A file reported more than once is averaged.
- * The per-file overhead is not in the reports, so it is kept from the current table.
+ * Finds the checkout directory a run's reports were written in: the absolute name of the first reported file whose
+ * tail is a file in this checkout, without that tail. Reports name files absolutely, on the runner's file system.
+ */
+export function reportCheckoutRoot(names: readonly string[], isFile: (relativePath: string) => boolean): string {
+  for (const name of names) {
+    const parts = toPosix(name).split('/');
+    for (let index = 1; index < parts.length; index++) if (isFile(parts.slice(index).join('/'))) return parts.slice(0, index).join('/');
+  }
+  throw new Error('None of the reported test files is in this checkout.');
+}
+
+/**
+ * Builds the weight table from JSON reports of every shard of one run, whose files are named under `root`. A file
+ * reported more than once is averaged. The per-file overhead is not in the reports, so it is kept from the current table.
  */
 export function unitShardWeightsFromReports(reports: readonly VitestJsonReport[], root: string, overheadSeconds: number): UnitShardWeights {
+  const prefix = `${toPosix(root).replace(/\/$/, '')}/`;
   const runs = new Map<string, number[]>();
   for (const report of reports) for (const result of report.testResults) {
-    const file = relativePosix(root, result.name);
+    const name = toPosix(result.name);
+    if (!name.startsWith(prefix)) throw new Error(`${result.name} is not under ${root}.`);
+    const file = name.slice(prefix.length);
     runs.set(file, [...runs.get(file) ?? [], Math.max(0, result.endTime - result.startTime) / 1000]);
   }
   const means = [...runs].map(([file, seconds]) => [file, seconds.reduce((sum, value) => sum + value, 0) / seconds.length] as const)
@@ -112,6 +127,10 @@ export class WeightedShardSequencer extends BaseSequencer {
 
 function relativePosix(root: string, file: string) {
   return path.relative(root, file).split(path.sep).join('/');
+}
+
+function toPosix(file: string) {
+  return file.replaceAll('\\', '/');
 }
 
 function round(value: number, digits: number) {
