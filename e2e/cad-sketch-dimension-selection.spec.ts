@@ -210,3 +210,39 @@ test('leaves a construction edge its picks in the gaps of its dashes, where a di
   await page.mouse.click(owners.tip.x, owners.tip.y);
   await expect(edge).toHaveAttribute('aria-pressed', 'true'); await expect(label).toHaveAttribute('aria-pressed', 'false');
 });
+
+test('opens the value editor with its value focused from a double-click or Enter, so typing edits it, and keeps it between the bar and the dock as the window shrinks', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await prepareCadTools(page); await call(page, 'cad_open_workspace');
+  const sketch = { id: 'strip', kind: 'sketch', name: 'Strip', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
+    points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }],
+    entities: [{ id: 'base', kind: 'line', startPointId: 'a', endPointId: 'b', construction: false }],
+    relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 40 }] } };
+  await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
+  await (await historyRow(page, 'Strip')).dblclick();
+  await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeVisible();
+  const label = page.locator('[data-cad-sketch-dimension="length"] [role="button"]'), value = page.getByRole('textbox', { name: 'Length mm', exact: true });
+  /** Types over the selected value without clicking it first, and applies it with Enter. */
+  const typeValue = async (text: string) => { await expect(value).toBeFocused(); await page.keyboard.type(text); await page.keyboard.press('Enter'); await expect(value).toHaveCount(0); };
+  // A double-click opens the editor with the value focused and selected.
+  await label.dblclick(); await expect(value).toHaveValue('40'); await typeValue('45');
+  // Enter on the dimension opens it the same way.
+  await label.focus(); await page.keyboard.press('Enter'); await expect(value).toHaveValue('45'); await typeValue('50');
+
+  // Opened at 1440 by 900 px, the editor moves as the window shrinks to 440 px high: where it shares the columns of the bar or the dock it
+  // stays between them, it stays in the window, and its value keeps focus.
+  await label.dblclick(); await expect(value).toBeFocused();
+  await page.setViewportSize({ width: 1440, height: 440 });
+  const editor = page.locator('form[data-cad-sketch-value-editor="length"]'), dock = page.locator('[data-cad-command-dock]'), bar = page.locator('[data-cad-sketch-header]');
+  const box = async (locator: Locator) => { const found = await locator.boundingBox(); if (!found) throw new Error('Box unavailable.'); return found; };
+  const across = (one: { x: number; width: number }, other: { x: number; width: number }) => one.x < other.x + other.width && other.x < one.x + one.width;
+  await expect.poll(async () => {
+    const [form, under, over] = [await box(editor), await box(dock), await box(bar)];
+    return { belowBar: !across(form, over) || form.y >= over.y + over.height, aboveDock: !across(form, under) || form.y + form.height <= under.y, inWindow: form.y + form.height <= 440 };
+  }).toEqual({ belowBar: true, aboveDock: true, inWindow: true });
+  await typeValue('55');
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  const finished = (await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: 'strip' })).feature;
+  expect(finished.graph.relations).toEqual([{ ...sketch.graph.relations[0], value: 55 }]);
+});

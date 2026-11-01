@@ -65,29 +65,45 @@ export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, g
   const accepted = draft.source.graph.relations.find(item => item.id === relationId);
   useLayoutEffect(() => {
     const element = form.current; if (!element) return;
-    const anchor = findAnchor()?.getBoundingClientRect(), width = element.offsetWidth, height = element.offsetHeight;
-    const host = element.offsetParent?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-    const clamp = (value: number, size: number, limit: number) => Math.max(8, Math.min(limit - size - 8, value));
-    // Below the label when it fits, else above it, so the value stays readable while it is typed; with no label, near the top of the view.
-    // The tool dock and the sketch bar float over the view, so where the editor shares their columns it stays between the bar and the dock
-    // whichever side it opens on, and when it is taller than the room between them it starts under the bar and scrolls, keeping Apply reachable.
-    const left = clamp(anchor ? anchor.left - host.left + anchor.width / 2 - width / 2 : (host.width - width) / 2, width, host.width);
-    const across = (selector: string) => {
-      const rect = element.closest('.cad-workbench')?.querySelector(selector)?.getBoundingClientRect();
-      return rect && rect.width > 0 && rect.height > 0 && rect.left - host.left < left + width && rect.right - host.left > left ? rect : null;
+    const place = () => {
+      // The height its content takes, also while a smaller room caps it and it scrolls.
+      const anchor = findAnchor()?.getBoundingClientRect(), width = element.offsetWidth, height = element.scrollHeight + element.offsetHeight - element.clientHeight;
+      const host = element.offsetParent?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+      const clamp = (value: number, size: number, limit: number) => Math.max(8, Math.min(limit - size - 8, value));
+      // Below the label when it fits, else above it, so the value stays readable while it is typed; with no label, near the top of the view.
+      // The tool dock and the sketch bar float over the view, so where the editor shares their columns it stays between the bar and the dock
+      // whichever side it opens on, and when it is taller than the room between them it starts under the bar and scrolls, keeping Apply reachable.
+      const left = clamp(anchor ? anchor.left - host.left + anchor.width / 2 - width / 2 : (host.width - width) / 2, width, host.width);
+      const across = (selector: string) => {
+        const rect = element.closest('.cad-workbench')?.querySelector(selector)?.getBoundingClientRect();
+        return rect && rect.width > 0 && rect.height > 0 && rect.left - host.left < left + width && rect.right - host.left > left ? rect : null;
+      };
+      const dock = across('[data-cad-command-dock]'), bar = across('[data-cad-sketch-header]');
+      const floor = (dock ? Math.min(host.height, dock.top - host.top) : host.height) - 8, ceiling = bar ? Math.max(8, bar.bottom - host.top + 6) : 8;
+      const below = anchor ? anchor.bottom - host.top + 6 : 48, above = anchor ? anchor.top - host.top - height - 6 : 48;
+      // Never shorter than one field row, even where the bar and the dock leave less.
+      const next = height > floor - ceiling ? { left, top: ceiling, maxHeight: Math.max(48, floor - ceiling) }
+        : { left, top: Math.min(floor - height, Math.max(ceiling, below + height <= floor ? below : above)) };
+      setPosition(current => current?.left === next.left && current.top === next.top && current.maxHeight === next.maxHeight ? current : next);
     };
-    const dock = across('[data-cad-command-dock]'), bar = across('[data-cad-sketch-header]');
-    const floor = (dock ? Math.min(host.height, dock.top - host.top) : host.height) - 8, ceiling = bar ? Math.max(8, bar.bottom - host.top + 6) : 8;
-    // Never shorter than one field row, even where the bar and the dock leave less.
-    if (height > floor - ceiling) { setPosition({ left, top: ceiling, maxHeight: Math.max(48, floor - ceiling) }); return; }
-    const below = anchor ? anchor.bottom - host.top + 6 : 48, above = anchor ? anchor.top - host.top - height - 6 : 48;
-    setPosition({ left, top: Math.min(floor - height, Math.max(ceiling, below + height <= floor ? below : above)) });
+    place();
+    // The view resizing, the bar or the dock changing size, or the editor's own content growing or shrinking places it again, once a frame
+    // at most, so it keeps between the bar and the dock while it is open.
+    let frame = 0;
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; place(); }); };
+    const workbench = element.closest('.cad-workbench'), observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
+    for (const target of [element, element.offsetParent, workbench?.querySelector('[data-cad-command-dock]'), workbench?.querySelector('[data-cad-sketch-header]')]) if (target) observer?.observe(target);
+    window.addEventListener('resize', schedule);
+    return () => { cancelAnimationFrame(frame); observer?.disconnect(); window.removeEventListener('resize', schedule); };
   }, [relationId, findAnchor]);
-  // The first editable value takes focus, ready for typing.
+  // The first editable value takes focus, ready for typing, once the placed editor shows: until then it is hidden, and a hidden field cannot
+  // take focus, so focus would stay on the dimension that opened it.
+  const shown = position !== null;
   useLayoutEffect(() => {
+    if (!shown) return;
     const field = [...form.current?.querySelectorAll<HTMLInputElement>('input[data-cad-field-key]') ?? []].find(input => !input.readOnly && !input.disabled);
     field?.focus({ preventScroll: true }); field?.select();
-  }, []);
+  }, [shown]);
   if (!relation || !accepted) return null;
   const parameters = draft.parameters, change = draft.changeRelation;
   // A distance from an axis shows its size; a number on the negative side keeps its side as it is edited, and a negative entry crosses the axis.

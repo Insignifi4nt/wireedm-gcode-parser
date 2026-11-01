@@ -93,7 +93,7 @@ describe('value editor at a dimension', () => {
       anchor = new DOMRect(40, 600, 40, 12); await open(); expect(top()).toBe('618px');
       // Under the dock with too little room above the label, it stops under the bar rather than over it.
       anchor = new DOMRect(400, 150, 40, 12); vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(560); await open(); expect(top()).toBe('56px');
-    } finally { document.body.append(container); workbench.remove(); }
+    } finally { document.body.append(container); workbench.remove(); vi.restoreAllMocks(); }
   });
 
   it('stays between the sketch bar and the tool dock on either side of its dimension, and scrolls where they leave too little room', async () => {
@@ -117,7 +117,68 @@ describe('value editor at a dimension', () => {
       anchor = new DOMRect(400, 760, 40, 12); await open(); expect([style().top, style().maxHeight]).toEqual(['572px', '']);
       // Taller than the 650 px between the bar and the dock, it starts under the bar and scrolls within them.
       height = 700; await open(); expect([style().top, style().maxHeight, style().overflowY]).toEqual(['42px', '650px', 'auto']);
-    } finally { document.body.append(container); workbench.remove(); }
+    } finally { document.body.append(container); workbench.remove(); vi.restoreAllMocks(); }
+  });
+
+  it('places itself again, once a frame, as the view resizes or its content grows, staying between the bar and the dock', async () => {
+    // A 1440 by 900 px view that shrinks to 440 and then 200 px high, with the dock 20 px off its bottom and the bar along its top.
+    const workbench = document.createElement('div'); workbench.className = 'cad-workbench'; document.body.append(workbench); workbench.append(container);
+    const dock = document.createElement('div'), bar = document.createElement('div'), label = document.createElement('div');
+    dock.setAttribute('data-cad-command-dock', ''); bar.setAttribute('data-cad-sketch-header', ''); workbench.append(dock, bar, label);
+    let view = new DOMRect(0, 0, 1440, 900), height = 120;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this === workbench ? view : this === dock ? new DOMRect(500, view.height - 70, 440, 50) : this === bar ? new DOMRect(560, 8, 320, 28)
+        : this === label ? new DOMRect(700, 600, 40, 12) : new DOMRect(0, 0, 0, 0);
+    });
+    vi.spyOn(HTMLElement.prototype, 'offsetParent', 'get').mockReturnValue(workbench);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(228); vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => height);
+    // The page's resize observers, so a change of size can be reported to the editor.
+    const observers: { readonly report: ResizeObserverCallback; readonly targets: Element[] }[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      readonly targets: Element[] = [];
+      constructor(report: ResizeObserverCallback) { observers.push({ report, targets: this.targets }); }
+      observe(target: Element) { this.targets.push(target); }
+      unobserve() {}
+      disconnect() { this.targets.length = 0; }
+    });
+    const source = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }], entities: [line('base', 'a', 'b')],
+      relations: [{ id: 'size', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] });
+    const form = () => container.querySelector<HTMLFormElement>('form[data-cad-sketch-value-editor]')!;
+    const placed = () => [form().style.top, form().style.maxHeight];
+    const nextFrame = (change: () => void) => act(async () => { change(); await new Promise(resolve => requestAnimationFrame(() => resolve(undefined))); });
+    const resize = (next: number) => nextFrame(() => { view = new DOMRect(0, 0, 1440, next); window.dispatchEvent(new Event('resize')); });
+    try {
+      await mount(source, props => <CadSketchDimensionValueEditor {...props} relationId="size" findAnchor={() => label} onClose={vi.fn()} onAccepted={vi.fn()} />);
+      // Below its label, ending at 738 px with the dock at 830 px.
+      expect(placed()).toEqual(['618px', '']);
+      // At 440 px high the dock is at 370 px, so the editor ends 8 px above it.
+      await resize(440); expect(placed()).toEqual(['242px', '']);
+      // At 200 px high only 80 px are left between the bar and the dock, so it starts under the bar and scrolls in them.
+      await resize(200); expect(placed()).toEqual(['42px', '80px']);
+      // The view grown back has room again: its content takes its full height below the label, unscrolled.
+      await resize(900); expect(placed()).toEqual(['618px', '']);
+      // The editor, the view, the dock and the bar are watched; content grown past the room below the label, such as a refusal shown
+      // under the value, moves the editor above the label.
+      const watching = observers.find(observer => observer.targets.includes(form()));
+      expect(watching?.targets).toEqual(expect.arrayContaining([form(), workbench, dock, bar]));
+      height = 300; await nextFrame(() => watching?.report([], {} as ResizeObserver)); expect(placed()).toEqual(['294px', '']);
+    } finally { document.body.append(container); workbench.remove(); vi.restoreAllMocks(); }
+  });
+
+  it('takes focus once it shows, because a field hidden while the editor is placed cannot take focus', async () => {
+    const source = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }], entities: [line('base', 'a', 'b')],
+      relations: [{ id: 'size', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] });
+    // jsdom lets a hidden field take focus, so each focus records whether the editor was showing at the time.
+    const showing: boolean[] = [], focus = HTMLElement.prototype.focus;
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      if (this instanceof HTMLInputElement) showing.push(this.closest('form')?.style.visibility !== 'hidden');
+      focus.call(this, options);
+    });
+    try {
+      await mount(source, editor('size'));
+      expect(document.activeElement).toBe(field('Length mm'));
+      expect(showing).toEqual([true]);
+    } finally { vi.restoreAllMocks(); }
   });
 
   it('keeps a distance from an axis on its side of the axis and edits an angle in degrees', async () => {
