@@ -121,20 +121,21 @@ const roles = {
 
   // Output. The audit compares emitted coordinates, parsed back from the post's decimal text, with the
   // planned doubles. Each arithmetic step may round by half an ulp of the values it handles, so the
-  // audit allows a count of ulps of the largest magnitude a comparison reads (`cadOutputPointRoundoff`,
-  // `cadOutputDerivedRoundoff`). A fixed guard cannot replace it: half an ulp of a coordinate exceeds
-  // `Number.EPSILON` from 8 mm upwards.
+  // audit allows a count of ulps of the magnitudes a comparison reads (`cadOutputPointRoundoff`,
+  // `cadOutputDerivedRoundoff`), per axis wherever the comparison separates the axes. A fixed guard
+  // cannot replace it: half an ulp of a coordinate exceeds `Number.EPSILON` from 8 mm upwards.
   /**
-   * Ulps the output audit allows when it compares an emitted endpoint or arc centre with the plan, of the largest coordinate it
-   * reads. Parsing the emitted decimal, the quantum's own double and the difference cost 1/2 ulp each; an incremental centre adds
-   * the post's centre minus start, its parse and the runtime's start plus offset, at most 3/2 ulps. At most 3; 4 keeps a margin.
+   * Ulps the output audit allows on each axis when it compares an emitted endpoint or arc centre with the plan, of the largest
+   * coordinate it reads on that axis. Parsing the emitted decimal, the quantum's own double and the difference cost 1/2 ulp each;
+   * an incremental centre adds the post's centre minus start, its parse and the runtime's start plus offset, at most 3/2 ulps.
+   * At most 3; 4 keeps a margin.
    */
   outputPointRoundoffUlps: 4,
   /**
    * Ulps per summed term the output audit allows for a distance from a planned line, a radial distance from a planned arc, a path
    * length or an arc sweep. Parsing, subtraction, direction normalisation (a hypot and a division), products and sums give at most
-   * 13 for a line distance, 17 for a radial distance, 12 per length term and 35 per sweep term, whose magnitude includes a full
-   * turn's arc length. 32 covers each with a margin.
+   * 13 for a line distance and 17 for a radial distance, each per axis and weighted by that axis's share of the distance, 12 per
+   * length term and 35 per sweep term, whose magnitude includes a full turn's arc length. 32 covers each with a margin.
    */
   outputDerivedRoundoffUlps: 32,
 
@@ -188,9 +189,9 @@ export function cadSupportedLength(value: number): boolean {
 }
 
 /**
- * Output audit roundoff of an emitted endpoint or arc centre compared with the plan: `outputPointRoundoffUlps` ulps of
- * `magnitudeMm`, the largest coordinate the comparison reads. Magnitudes below 1 mm count as 1 mm, so the allowance never falls
- * below the fixed guard of one ulp of 1 mm that the audit used before.
+ * Output audit roundoff of one axis of an emitted endpoint or arc centre compared with the plan: `outputPointRoundoffUlps` ulps
+ * of `magnitudeMm`, the largest coordinate the comparison reads on that axis. Magnitudes below 1 mm count as 1 mm, so the
+ * allowance never falls below the fixed guard of one ulp of 1 mm that the audit used before.
  */
 export function cadOutputPointRoundoff(magnitudeMm: number): number {
   return cadRoundoff(CAD_PRECISION.outputPointRoundoffUlps, Math.max(1, magnitudeMm));
@@ -198,7 +199,8 @@ export function cadOutputPointRoundoff(magnitudeMm: number): number {
 
 /**
  * Output audit roundoff of a distance, length or sweep derived from emitted coordinates: `outputDerivedRoundoffUlps` ulps of
- * `magnitudeMm` for each of `terms` summed values (a path length or sweep sums the planned value and each emitted motion).
+ * `magnitudeMm` for each of `terms` summed values (a path length or sweep sums the planned value and each emitted motion). A line
+ * or radial distance asks once per axis, with that axis's largest coordinate, and weights the result by that axis's share.
  * Magnitudes below 1 mm count as 1 mm.
  */
 export function cadOutputDerivedRoundoff(magnitudeMm: number, terms = 1): number {

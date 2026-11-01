@@ -7,10 +7,14 @@ import { setManualCompensationIntent } from '@/domain/compensation/intent';
 import { dxfEntitiesToUpidDocument } from '@/domain/dxf/dxfToUpid';
 import type { DxfEntity, DxfPoint } from '@/domain/dxf/types';
 import { compileWireEdmExecutionPlan } from '@/domain/execution-plan/executionPlan';
+import { createUpidFromDxfEntities } from '@/domain/upid/upidDocument';
 
+import { runCustomPost } from '../custom-runtime/customPostRuntime';
 import { runPost } from '../postEngine';
 import { createEmptyPostLibrary, installPostPackage, type PostInstallation } from '../postLibrary';
 import { parseWireEdmPostPackage } from '../postPackage';
+
+import { minimalPostPackage } from './postPackageFixture';
 
 const ROBOFIL_POST = 'tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json';
 type Installation = PostInstallation;
@@ -120,6 +124,99 @@ describe('post audit of output that is wrong beyond rounding', () => {
     });
   });
 });
+
+/**
+ * A post that writes X to 3 decimals and Y to 12. Each axis may differ from the plan only by its own rounding and
+ * roundoff: X's allowance at 1000 mm, about 1e-12 mm of roundoff, must not excuse a Y error of 1e-12 mm.
+ */
+describe('post audit of mixed-precision axes', () => {
+  const correct = "api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y });";
+  const split = (y: string) =>
+    `api.emitMotion('motion.linear', { x: (event.start.x + event.end.x) / 2, y: ${y} }); ${correct}`;
+
+  it.each([
+    { name: 'a correctly rounded move', start: { x: 999, y: 0 }, end: { x: 1000, y: 0 }, motion: correct,
+      line: 'G1 X1000.000 Y0.000000000000' },
+    { name: 'a correctly rounded move along Y', start: { x: 1000, y: 0 }, end: { x: 1000, y: 1 }, motion: correct,
+      line: 'G1 X1000.000 Y1.000000000000' },
+    { name: 'a correctly split move', start: { x: 999, y: 0 }, end: { x: 1000, y: 0 }, motion: split('event.end.y'),
+      line: 'G1 X999.500 Y0.000000000000' }
+  ])('accepts $name', async ({ start, end, motion, line }) => {
+    const result = await postMixedPrecision(start, end, motion);
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.program.lines).toContain(line);
+  });
+
+  it.each([
+    // Across the move, where the endpoint and the distance from the line both see it.
+    { name: 'an endpoint one Y unit off a move at X = 1000', start: { x: 999, y: 0 }, end: { x: 1000, y: 0 },
+      motion: "api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y + 1e-12 });" },
+    // Along the move, short of its end, where only the endpoint comparison sees it.
+    { name: 'an endpoint one Y unit short of a move along Y at X = 1000', start: { x: 1000, y: 0 }, end: { x: 1000, y: 1 },
+      motion: "api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y - 1e-12 });" },
+    // A split point, which only the distance from the line sees.
+    { name: 'a split point one Y unit off a move at X = 1000', start: { x: 999, y: 0 }, end: { x: 1000, y: 0 },
+      motion: split('event.end.y + 1e-12') }
+  ])('rejects $name', async ({ start, end, motion }) => {
+    const result = await postMixedPrecision(start, end, motion);
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({
+        code: 'POST_CUSTOM_AUDIT_FAILED',
+        message: expect.stringContaining('These audit rules changed in app 0.0.792.')
+      })]
+    });
+  });
+});
+
+/** Runs one straight cut through a minimal post with mixed axis precision, under a plan endpoint tolerance of zero. */
+async function postMixedPrecision(start: DxfPoint, end: DxfPoint, motion: string) {
+  let document = createUpidFromDxfEntities([line(start, end)]);
+  for (const operation of document.plan.operations) {
+    document = setManualCompensationIntent(document, operation.id, 'centerline') ?? document;
+  }
+  document.setup = {
+    initialWirePosition: { kind: 'manual', point: { x: start.x - 1, y: start.y }, review: 'reviewed' }
+  };
+  const compiled = compileWireEdmExecutionPlan(document);
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+  const packageValue = minimalPostPackage();
+  packageValue.manifest.capabilities.circularInterpolation = 'none';
+  packageValue.manifest.capabilities.controllerCompensation = 'none';
+  packageValue.manifest.capabilities.threading = 'none';
+  packageValue.manifest.execution.compensationLifecycle = 'none';
+  packageValue.manifest.execution.compensationRequiredForEveryOperation = false;
+  const digits = (value: number) => ({
+    style: 'fixed' as const, fractionDigits: { kind: 'fixed' as const, value },
+    decimalSeparator: '.' as const, trimTrailingZeros: false, negativeZero: 'zero' as const
+  });
+  packageValue.dialect.commands['motion.linear'] = {
+    template: 'G1 X{x} Y{y}',
+    parameters: {
+      x: { type: 'number', role: 'motion.end-x', description: 'X endpoint.', format: digits(3) },
+      y: { type: 'number', role: 'motion.end-y', description: 'Y endpoint.', format: digits(12) }
+    },
+    effects: ['position.changed'],
+    requires: ['distance.absolute'],
+    evidenceRefs: ['robofil-program']
+  };
+  packageValue.source.code = `
+    export function createPost(api) {
+      return { onEvent(event) {
+        if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});
+        if (event.kind === 'position') return api.emitMotion('motion.linear', { x: event.to.x, y: event.to.y });
+        if (event.kind === 'motion') { ${motion} return; }
+        if (event.kind === 'program-end') return api.emitCommand('program.end', {});
+        api.consume('No controller block required.');
+      } };
+    }
+  `;
+  return runCustomPost({
+    package: packageValue,
+    plan: { ...compiled.plan, tolerance: { ...compiled.plan.tolerance, endpointMm: 0 } },
+    properties: { coordinatePrecision: 3 }
+  });
+}
 
 interface HalfWayValue {
   /** The coordinate in units of a tenth of the emitted quantum; always an odd multiple of five. */

@@ -6,21 +6,53 @@ import { auditControllerProgram, type ControllerProgram } from '../controllerPro
 import { CANONICAL_POST_PLAN_FIXTURES } from '../custom-runtime/canonicalPostConformanceFixtures';
 
 /**
- * Audits one planned straight move from the origin to `plannedEnd` that a post emitted through `emitted`, with the given
- * coordinate quantum on every axis, under a plan endpoint tolerance of zero (as DXF imports plan). Only half the quantum and
- * the floating-point roundoff then separate a correctly rounded coordinate from the plan.
+ * Audits one planned straight move from `plannedStart` to `plannedEnd` that a post emitted through `emitted`, with the
+ * given coordinate quantum on every axis, under a plan endpoint tolerance of zero (as DXF imports plan). Only half the
+ * quantum and the floating-point roundoff then separate a correctly rounded coordinate from the plan.
  */
-function auditRoundedMove(plannedEnd: Point2, emitted: readonly Point2[], quantum: number) {
-  const base = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'];
-  const source = base.events.find(event => event.kind === 'motion');
-  if (!source || source.kind !== 'motion') throw new Error('Canonical contour must contain a motion event.');
-  const event = { ...source, motion: 'linear' as const, start: { x: 0, y: 0 }, end: plannedEnd };
+function auditRoundedMove(
+  plannedEnd: Point2, emitted: readonly Point2[], quantum: number, plannedStart: Point2 = { x: 0, y: 0 }
+) {
+  const event = { ...canonicalMotion(), motion: 'linear' as const, start: plannedStart, end: plannedEnd };
   const rounding = { startX: quantum, startY: quantum, endX: quantum, endY: quantum, centerX: quantum, centerY: quantum };
-  const points = [{ x: 0, y: 0 }, ...emitted];
-  const blocks = emitted.map((end, index) => ({
-    id: `block-${String(index + 1).padStart(6, '0')}`, lineIndex: index, text: `G1 X${end.x} Y${end.y}`,
-    eventId: event.id, commandIds: ['motion.linear'],
-    motion: { motion: 'linear' as const, role: event.role, start: points[index], end, rounding }
+  const points = [plannedStart, ...emitted];
+  return auditMotions(event, 'motion.linear', emitted.map((end, index) => ({
+    motion: 'linear' as const, role: event.role, start: points[index], end, rounding
+  })));
+}
+
+/**
+ * Audits one planned counterclockwise full circle about `center` from `plannedStart` that a post emitted as two halves
+ * meeting at `split`, with a zero quantum on every axis, so only the floating-point roundoff separates the split point
+ * from the circle.
+ */
+function auditSplitCircle(center: Point2, plannedStart: Point2, split: Point2) {
+  const event = {
+    ...canonicalMotion(), motion: 'circular' as const, start: plannedStart, end: plannedStart, center,
+    clockwise: false, fullCircle: true
+  };
+  const rounding = { startX: 0, startY: 0, endX: 0, endY: 0, centerX: 0, centerY: 0 };
+  const halves = [[plannedStart, split], [split, plannedStart]] as const;
+  return auditMotions(event, 'motion.arc-counterclockwise', halves.map(([start, end]) => ({
+    motion: 'circular' as const, role: event.role, start, end, center, clockwise: false, fullCircle: false, rounding
+  })));
+}
+
+function canonicalMotion() {
+  const source = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'].events.find(event => event.kind === 'motion');
+  if (!source || source.kind !== 'motion') throw new Error('Canonical contour must contain a motion event.');
+  return source;
+}
+
+function auditMotions(
+  event: ReturnType<typeof canonicalMotion>,
+  command: string,
+  motions: readonly NonNullable<ControllerProgram['blocks'][number]['motion']>[]
+) {
+  const base = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'];
+  const blocks = motions.map((motion, index) => ({
+    id: `block-${String(index + 1).padStart(6, '0')}`, lineIndex: index, text: `X${motion.end.x} Y${motion.end.y}`,
+    eventId: event.id, commandIds: [command], motion
   }));
   const lines = blocks.map(({ text }) => text);
   const program: ControllerProgram = {
@@ -30,7 +62,7 @@ function auditRoundedMove(plannedEnd: Point2, emitted: readonly Point2[], quantu
   return auditControllerProgram(
     { ...base, events: [event], tolerance: { endpointMm: 0, coincidenceMm: 0 } },
     program,
-    new Set(['motion.linear'])
+    new Set([command])
   );
 }
 
@@ -42,8 +74,8 @@ const REJECTED = [expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' }
 const QUANTUM = 2 ** -10;
 
 describe('outputPointRoundoffUlps', () => {
-  // A point comparison allows 4 ulps of the largest coordinate it reads on each axis. At 1000 mm that is
-  // 4 * 1000 * 2^-52 = 7.8125 * 2^-43 on X; Y reads only the quantum, so its 1 mm floor adds 4 * 2^-52.
+  // A point comparison allows each axis 4 ulps of the largest coordinate it reads on that axis. At 1000 mm that is
+  // 4 * 1000 * 2^-52 = 7.8125 * 2^-43 on X.
   const ulp1000 = 2 ** -43;
 
   it.each([
@@ -53,14 +85,26 @@ describe('outputPointRoundoffUlps', () => {
     expect(auditRoundedMove({ x: 1000, y: 0 }, [{ x: 1000 + QUANTUM / 2 + ulps * ulp1000, y: 0 }], QUANTUM)).toEqual(expected);
   });
 
-  // Below 1 mm both axes count as 1 mm, so the endpoint allows hypot(4, 4) = 5.66 ulps of 1 mm, more than
-  // the 2.8 ulps that 4 ulps of the 0.5 mm coordinate itself would give.
+  // Below 1 mm an axis counts as 1 mm, so X at 0.5 mm allows 4 ulps of 1 mm, which are 8 ulps of 0.5 mm, rather than
+  // 4 ulps of the coordinate itself.
+  const ulpHalf = 2 ** -53;
   it.each([
-    { name: 'inside', ulps: 5, expected: ACCEPTED },
-    { name: 'outside', ulps: 6, expected: REJECTED }
-  ])('$name: an endpoint at 0.5 mm $ulps ulps of 1 mm beyond half a quantum, through the 1 mm floor', ({ ulps, expected }) => {
-    expect(auditRoundedMove({ x: 0.5, y: 0 }, [{ x: 0.5 + QUANTUM / 2 + ulps * Number.EPSILON, y: 0 }], QUANTUM))
+    { name: 'inside', ulps: 8, expected: ACCEPTED },
+    { name: 'outside', ulps: 9, expected: REJECTED }
+  ])('$name: an endpoint at 0.5 mm $ulps ulps of 0.5 mm beyond half a quantum, through the 1 mm floor', ({ ulps, expected }) => {
+    expect(auditRoundedMove({ x: 0.5, y: 0 }, [{ x: 0.5 + QUANTUM / 2 + ulps * ulpHalf, y: 0 }], QUANTUM))
       .toEqual(expected);
+  });
+
+  // X's allowance at 1000 mm, 7.8 ulps of 1000 mm, would excuse this Y error if the axes shared their allowances.
+  // Y reads only coordinates below 1 mm, so it allows 4 ulps of 1 mm.
+  it.each([
+    { name: 'inside', ulps: 4, expected: ACCEPTED },
+    { name: 'outside', ulps: 5, expected: REJECTED }
+  ])('$name: an endpoint whose Y is $ulps ulps of 1 mm beyond half a quantum while X is at 1000 mm', ({ ulps, expected }) => {
+    expect(auditRoundedMove(
+      { x: 1000, y: 0 }, [{ x: 1000, y: QUANTUM / 2 + ulps * Number.EPSILON }], QUANTUM, { x: 999, y: 0 }
+    )).toEqual(expected);
   });
 
   it('accepts 2.002 for a planned 2.0025, whose binary values sit 0.75 epsilon beyond half a quantum apart', () => {
@@ -70,13 +114,36 @@ describe('outputPointRoundoffUlps', () => {
 });
 
 describe('outputDerivedRoundoffUlps', () => {
-  // The distance from a planned line allows 32 ulps of the largest coordinate the move reads, here 1000 mm,
-  // above half the quantum across the line.
+  // The distance from a planned line allows each axis 32 ulps of its largest coordinate, weighted by how far that axis
+  // reaches across the line. Across a line along X at Y = 1000 that is 32 * 1000 * 2^-52 = 62.5 * 2^-43 of Y.
+  const ulp1000 = 2 ** -43;
   it.each([
-    { name: 'inside', ulps: 31, expected: ACCEPTED },
-    { name: 'outside', ulps: 33, expected: REJECTED }
+    { name: 'inside', ulps: 62, expected: ACCEPTED },
+    { name: 'outside', ulps: 63, expected: REJECTED }
   ])('$name: a split point $ulps ulps of 1000 mm off the planned line beyond half a quantum', ({ ulps, expected }) => {
-    const split = { x: 500, y: QUANTUM / 2 + ulps * Number.EPSILON * 1000 };
-    expect(auditRoundedMove({ x: 1000, y: 0 }, [split, { x: 1000, y: 0 }], QUANTUM)).toEqual(expected);
+    const split = { x: 500, y: 1000 + QUANTUM / 2 + ulps * ulp1000 };
+    expect(auditRoundedMove({ x: 1000, y: 1000 }, [split, { x: 1000, y: 1000 }], QUANTUM, { x: 0, y: 1000 }))
+      .toEqual(expected);
+  });
+
+  // Across a line along X at Y = 0 only Y's roundoff counts: 32 ulps of 1 mm, however far X reaches.
+  it.each([
+    { name: 'inside', ulps: 32, expected: ACCEPTED },
+    { name: 'outside', ulps: 33, expected: REJECTED }
+  ])('$name: a split point $ulps ulps of 1 mm off a line at X = 1000 mm beyond half a quantum', ({ ulps, expected }) => {
+    const split = { x: 999.5, y: QUANTUM / 2 + ulps * Number.EPSILON };
+    expect(auditRoundedMove({ x: 1000, y: 0 }, [split, { x: 1000, y: 0 }], QUANTUM, { x: 999, y: 0 })).toEqual(expected);
+  });
+
+  // A radial distance weights each axis's roundoff by that axis's share of the distance. The split point and the start
+  // lie straight above and below the centre at X = 1000, so X has no share and the split point may leave the circle by
+  // 32 ulps of 1 mm, not 32 ulps of 1000 mm. The computed distance carries about an ulp of 1 mm of its own, so the pair
+  // sits 8 ulps either side.
+  it.each([
+    { name: 'inside', ulps: 24, expected: ACCEPTED },
+    { name: 'outside', ulps: 40, expected: REJECTED }
+  ])('$name: a full-circle split point $ulps ulps of 1 mm off the circle at X = 1000 mm', ({ ulps, expected }) => {
+    expect(auditSplitCircle({ x: 1000, y: 0 }, { x: 1000, y: -1 }, { x: 1000, y: 1 + ulps * Number.EPSILON }))
+      .toEqual(expected);
   });
 });

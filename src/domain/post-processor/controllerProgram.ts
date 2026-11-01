@@ -166,7 +166,7 @@ export function auditControllerProgram(
     if (!sameMotionSequence(event, motions, plan.tolerance.endpointMm, coordinateQuantumMm)) {
       diagnostics.push({
         code: 'POST_AUDIT_MOTION_MISMATCH',
-        message: `Controller motion blocks do not preserve motion event ${event.id}: emitted coordinates may differ from the plan only by rounding to their last digit and the plan's endpoint tolerance.`,
+        message: `Controller motion blocks do not preserve motion event ${event.id}: each emitted coordinate may differ from the plan only by rounding to its last digit, a floating-point allowance that grows with its magnitude, and the plan's endpoint tolerance. These audit rules changed in app 0.0.792.`,
         eventId: event.id
       });
     }
@@ -174,15 +174,29 @@ export function auditControllerProgram(
   return diagnostics;
 }
 
-// Each comparison allows the post's rounding (half a quantum per axis), the plan's endpoint tolerance,
-// and floating-point roundoff that grows with the largest magnitude it reads. The roundoff counts live
-// in the precision policy: `outputPointRoundoffUlps` for endpoints and centres, and
-// `outputDerivedRoundoffUlps` per summed term for line distances, radial distances, lengths and sweeps.
+// Each axis may differ by the post's rounding on that axis (half its quantum) and by floating-point
+// roundoff that grows with that axis's magnitude; what remains may not exceed the plan's endpoint
+// tolerance. One axis's allowance never excuses another axis's error: a point comparison clamps each
+// axis's residual by that axis's allowance before the Euclidean comparison, and a distance from a planned
+// line, or the roundoff of a radial distance, weights each axis's allowance by that axis's share of the
+// distance. Path lengths and arc sweeps compare scalar totals with one roundoff term per summed value;
+// they only reject, and every point they read is held to its own axes by the point, line and radial
+// comparisons. The roundoff counts live in the precision policy: `outputPointRoundoffUlps` for endpoints
+// and centres, and `outputDerivedRoundoffUlps` per term for line distances, radial distances, lengths
+// and sweeps.
+
+/** Largest coordinate magnitude on each axis. */
+interface AxisMagnitudes {
+  readonly x: number;
+  readonly y: number;
+}
 
 interface LinearAllowance {
   readonly sourceToleranceMm: number;
-  /** Largest coordinate magnitude of the planned endpoints and every emitted motion point. */
+  /** Largest coordinate magnitude of the planned endpoints and every emitted motion point, over both axes and the quanta. */
   readonly pointMagnitude: number;
+  /** The same points' largest magnitude on each axis. */
+  readonly axisMagnitude: AxisMagnitudes;
   /** Euclidean point tolerance used when a motion carries no rounding metadata. */
   readonly fallbackPointMm: number;
   /** Largest coordinate quantum of the event, used when a motion carries no rounding metadata. */
@@ -204,13 +218,14 @@ function sameMotionSequence(
   const expectedEnd = event.kind === 'position' ? event.to : event.end;
   // Arc centres are measured apart from the path's points: only centre and sweep comparisons read
   // them, so a distant centre widens neither the radial distance nor any linear comparison.
-  const pointMagnitude = largestMagnitude(
-    [expectedStart, expectedEnd, ...motions.flatMap((motion) => [motion.start, motion.end])],
-    eventQuantum
+  const axisMagnitude = axisMagnitudes(
+    [expectedStart, expectedEnd, ...motions.flatMap((motion) => [motion.start, motion.end])]
   );
-  const centerMagnitude = event.kind === 'motion' && event.motion === 'circular' && event.center
-    ? largestMagnitude([event.center, ...motions.flatMap((motion) => motion.center ? [motion.center] : [])], 0)
-    : 0;
+  const pointMagnitude = Math.max(eventQuantum, axisMagnitude.x, axisMagnitude.y);
+  const centerAxes = event.kind === 'motion' && event.motion === 'circular' && event.center
+    ? axisMagnitudes([event.center, ...motions.flatMap((motion) => motion.center ? [motion.center] : [])])
+    : { x: 0, y: 0 };
+  const centerMagnitude = Math.max(centerAxes.x, centerAxes.y);
   // Non-finite input fails closed instead of widening every allowance to infinity.
   if (!Number.isFinite(pointMagnitude) || !Number.isFinite(centerMagnitude)) return false;
   // Output fitting widens point, length and arc sweep allowances to the post's rounding when a motion
@@ -226,7 +241,7 @@ function sameMotionSequence(
     ))
   ) return false;
   const linearAllowance: LinearAllowance = {
-    sourceToleranceMm, pointMagnitude, fallbackPointMm, fallbackQuantumMm: eventQuantum
+    sourceToleranceMm, pointMagnitude, axisMagnitude, fallbackPointMm, fallbackQuantumMm: eventQuantum
   };
   if (event.kind === 'position') {
     return sameLinearPath(motions, 'position', expectedStart, expectedEnd, linearAllowance);
@@ -234,36 +249,43 @@ function sameMotionSequence(
   if (event.motion === 'linear') {
     return sameLinearPath(motions, event.role, expectedStart, expectedEnd, linearAllowance);
   }
-  if (!event.center || event.clockwise === undefined) return false;
-  const radius = distance(event.center, event.start);
+  const center = event.center;
+  if (!center || event.clockwise === undefined) return false;
+  const radius = distance(center, event.start);
   if (!Number.isFinite(radius) || radius <= 0) return false;
   // The radial distance is formed from the point and the planned start directly, so its roundoff
-  // scales with their coordinates and not with a distant centre.
-  const radialRoundoffMm = cadOutputDerivedRoundoff(pointMagnitude);
-  const radialFallbackMm = cadOutputFitting(sourceToleranceMm, eventQuantum, radialRoundoffMm).lengthMm;
-  const radialAllowance = (quantumX: number | undefined, quantumY: number | undefined) => (
-    quantumX === undefined || quantumY === undefined
-      ? radialFallbackMm
-      : sourceToleranceMm + Math.hypot(quantumX, quantumY) / 2 + radialRoundoffMm
-  );
+  // scales with their coordinates and not with a distant centre. Each axis's roundoff is weighted by
+  // that axis's share of the distance. The post's rounding keeps the bound it had before 0.0.792: half
+  // the rounding box's diagonal, which holds in any radial direction.
+  const radialRoundoffX = cadOutputDerivedRoundoff(axisMagnitude.x);
+  const radialRoundoffY = cadOutputDerivedRoundoff(axisMagnitude.y);
+  const radialFallbackMm = cadOutputFitting(
+    sourceToleranceMm, eventQuantum, cadOutputDerivedRoundoff(pointMagnitude)
+  ).lengthMm;
+  const radialAllowance = (point: Point2, quantumX: number | undefined, quantumY: number | undefined) => {
+    if (quantumX === undefined || quantumY === undefined) return radialFallbackMm;
+    const share = radialAxisShares(point, event.start, center);
+    return sourceToleranceMm + Math.hypot(quantumX, quantumY) / 2 +
+      share.x * radialRoundoffX + share.y * radialRoundoffY;
+  };
   if (motions.some((motion) => (
     motion.motion !== 'circular' ||
     motion.role !== event.role ||
     !motion.center ||
     !sameRoundedPoint(
-      motion.center, event.center!, sourceToleranceMm, motion.rounding?.centerX, motion.rounding?.centerY,
+      motion.center, center, sourceToleranceMm, motion.rounding?.centerX, motion.rounding?.centerY,
       fallbackPointMm, motion.start
     ) ||
     motion.clockwise !== event.clockwise ||
-    circularRadialDistance(motion.start, event.start, event.center!, radius) >
-      radialAllowance(motion.rounding?.startX, motion.rounding?.startY) ||
-    circularRadialDistance(motion.end, event.start, event.center!, radius) >
-      radialAllowance(motion.rounding?.endX, motion.rounding?.endY) ||
+    circularRadialDistance(motion.start, event.start, center, radius) >
+      radialAllowance(motion.start, motion.rounding?.startX, motion.rounding?.startY) ||
+    circularRadialDistance(motion.end, event.start, center, radius) >
+      radialAllowance(motion.end, motion.rounding?.endX, motion.rounding?.endY) ||
     motion.fullCircle !== (motion.start.x === motion.end.x && motion.start.y === motion.end.y)
   ))) return false;
   const expectedSweep = event.fullCircle
     ? Math.PI * 2
-    : circularSweep(event.start, event.end, event.center, event.clockwise);
+    : circularSweep(event.start, event.end, center, event.clockwise);
   const emittedSweep = motions.reduce((total, motion) => total + (
     motion.fullCircle
       ? Math.PI * 2
@@ -294,7 +316,7 @@ function sameLinearPath(
   end: Point2,
   allowance: LinearAllowance
 ) {
-  const { sourceToleranceMm, pointMagnitude, fallbackPointMm, fallbackQuantumMm } = allowance;
+  const { sourceToleranceMm, pointMagnitude, axisMagnitude, fallbackPointMm, fallbackQuantumMm } = allowance;
   if (motions.some((motion) => motion.motion !== 'linear' || motion.role !== role)) return false;
   const expectedLength = distance(start, end);
   const emittedLength = motions.reduce((total, motion) => total + distance(motion.start, motion.end), 0);
@@ -322,8 +344,11 @@ function sameLinearPath(
         motion.rounding?.endX, motion.rounding?.endY, fallbackPointMm)
     ));
   }
-  const lineRoundoffMm = cadOutputDerivedRoundoff(pointMagnitude);
-  const fallbackLineMm = cadOutputFitting(sourceToleranceMm, fallbackQuantumMm, lineRoundoffMm).pointMm;
+  const lineRoundoffX = cadOutputDerivedRoundoff(axisMagnitude.x);
+  const lineRoundoffY = cadOutputDerivedRoundoff(axisMagnitude.y);
+  const fallbackLineMm = cadOutputFitting(
+    sourceToleranceMm, fallbackQuantumMm, cadOutputDerivedRoundoff(pointMagnitude)
+  ).pointMm;
   // Positional tolerance permits rounding, but must not authorize backwards travel.
   const roundoff = cadRoundoff(8, Math.max(
     1, expectedLength, Math.abs(start.x), Math.abs(start.y), Math.abs(end.x), Math.abs(end.y)
@@ -338,12 +363,16 @@ function sameLinearPath(
       const y = point.y - start.y;
       const progress = x * directionX + y * directionY;
       const deviation = Math.abs(x * directionY - y * directionX);
-      const deviationTolerance = quantumX === undefined || quantumY === undefined
+      // Each axis's rounding and roundoff, projected across and along the line: the farthest the
+      // per-axis allowance box reaches in each direction.
+      const allowanceX = quantumX === undefined ? undefined : quantumX / 2 + lineRoundoffX;
+      const allowanceY = quantumY === undefined ? undefined : quantumY / 2 + lineRoundoffY;
+      const deviationTolerance = allowanceX === undefined || allowanceY === undefined
         ? fallbackLineMm
-        : sourceToleranceMm + (Math.abs(directionY) * quantumX + Math.abs(directionX) * quantumY) / 2 + lineRoundoffMm;
-      const progressTolerance = quantumX === undefined || quantumY === undefined
+        : sourceToleranceMm + Math.abs(directionY) * allowanceX + Math.abs(directionX) * allowanceY;
+      const progressTolerance = allowanceX === undefined || allowanceY === undefined
         ? fallbackLineMm
-        : sourceToleranceMm + (Math.abs(directionX) * quantumX + Math.abs(directionY) * quantumY) / 2 + lineRoundoffMm;
+        : sourceToleranceMm + Math.abs(directionX) * allowanceX + Math.abs(directionY) * allowanceY;
       if (
         !Number.isFinite(progress) || !Number.isFinite(deviation) ||
         deviation > deviationTolerance ||
@@ -408,9 +437,9 @@ function samePoint(first: Point2, second: Point2, toleranceMm: number) {
 
 /**
  * Whether an emitted point is the planned point rounded to the post's quanta, within the plan's
- * endpoint tolerance. Each axis may differ by half its quantum; what remains may not exceed the plan's
- * endpoint tolerance plus the roundoff of both axes' values. `reference` is the motion's start, whose
- * magnitude an incremental arc centre also carries.
+ * endpoint tolerance. Each axis may differ by half its quantum plus the roundoff of that axis's values;
+ * what remains on both axes may not exceed the plan's endpoint tolerance. `reference` is the motion's
+ * start, whose magnitude an incremental arc centre also carries.
  */
 function sameRoundedPoint(
   first: Point2, second: Point2, sourceToleranceMm: number,
@@ -419,17 +448,39 @@ function sameRoundedPoint(
 ) {
   if (quantumX === undefined || quantumY === undefined) return samePoint(first, second, fallbackToleranceMm);
   if (![first.x, first.y, second.x, second.y, quantumX, quantumY].every(Number.isFinite)) return false;
-  const residualX = Math.max(0, Math.abs(first.x - second.x) - quantumX / 2);
-  const residualY = Math.max(0, Math.abs(first.y - second.y) - quantumY / 2);
-  const roundoffMm = Math.hypot(
-    cadOutputPointRoundoff(Math.max(Math.abs(first.x), Math.abs(second.x), quantumX, Math.abs(reference?.x ?? 0))),
-    cadOutputPointRoundoff(Math.max(Math.abs(first.y), Math.abs(second.y), quantumY, Math.abs(reference?.y ?? 0)))
-  );
-  return Math.hypot(residualX, residualY) <= sourceToleranceMm + roundoffMm;
+  const residualX = roundedAxisResidual(first.x, second.x, quantumX, reference?.x ?? 0);
+  const residualY = roundedAxisResidual(first.y, second.y, quantumY, reference?.y ?? 0);
+  return Math.hypot(residualX, residualY) <= sourceToleranceMm;
 }
 
-function largestMagnitude(points: readonly Point2[], floor: number) {
-  return points.reduce((largest, point) => Math.max(largest, Math.abs(point.x), Math.abs(point.y)), floor);
+/** How far one emitted coordinate lies beyond half its quantum and the roundoff of its own axis's values. */
+function roundedAxisResidual(emitted: number, planned: number, quantum: number, reference: number) {
+  const roundoffMm = cadOutputPointRoundoff(
+    Math.max(Math.abs(emitted), Math.abs(planned), quantum, Math.abs(reference))
+  );
+  return Math.max(0, Math.abs(emitted - planned) - quantum / 2 - roundoffMm);
+}
+
+function axisMagnitudes(points: readonly Point2[]): AxisMagnitudes {
+  return points.reduce(
+    (largest, point) => ({ x: Math.max(largest.x, Math.abs(point.x)), y: Math.max(largest.y, Math.abs(point.y)) }),
+    { x: 0, y: 0 }
+  );
+}
+
+/**
+ * Each axis's share of the radial distance `circularRadialDistance` forms for `point` against the circle
+ * through `start` about `center`: that axis's offsets of the point and the start from the centre, over
+ * the sum of their radii. Each axis's roundoff moves the distance by at most its share times that
+ * roundoff, and the shares sum to at least 1.
+ */
+function radialAxisShares(point: Point2, start: Point2, center: Point2): AxisMagnitudes {
+  const pointX = Math.abs(point.x - center.x);
+  const pointY = Math.abs(point.y - center.y);
+  const startX = Math.abs(start.x - center.x);
+  const startY = Math.abs(start.y - center.y);
+  const radii = Math.hypot(pointX, pointY) + Math.hypot(startX, startY);
+  return { x: (pointX + startX) / radii, y: (pointY + startY) / radii };
 }
 
 function distance(first: Point2, second: Point2) {

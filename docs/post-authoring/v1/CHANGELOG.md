@@ -2,8 +2,8 @@
 
 ## App 0.0.792
 
-- The motion audit accepts every correctly rounded coordinate. Its floating-point allowance is now a few units in the last place of the values compared, so it grows with their magnitude, instead of a fixed guard that half a unit in the last place of any coordinate from 8 mm upwards exceeded. A straight move's emitted length is bounded by the exact extremes its rounding allows, not a first-order estimate. Before, 8.0015 mm written as 8.002 at three decimals failed, and so did many correctly rounded lengths of 2 mm or more.
-- The audit accepts everything it accepted before. Installation conformance and controller generation can now accept posts and programs they refused before. Package formats, hashes, engine API 1 and controller bytes are unchanged; no installed package or saved revision is rewritten.
+- The motion audit accepts every correctly rounded coordinate. Its floating-point allowance is now a few units in the last place of each axis's values, so it grows with their magnitude, instead of a fixed guard that half a unit in the last place of any coordinate from 8 mm upwards exceeded. Each axis keeps its own allowance: a post that writes X and Y to different decimals cannot pass a wrong Y digit on X's allowance. A straight move's emitted length is bounded by the exact extremes its rounding allows, not a first-order estimate. Before, 8.0015 mm written as 8.002 at three decimals failed, and so did many correctly rounded lengths of 2 mm or more.
+- The audit accepts everything it accepted before. Installation conformance and controller generation can now accept posts and programs they refused before. The motion mismatch message names the floating-point allowance and says that the audit rules changed in app 0.0.792. Package formats, hashes, engine API 1 and controller bytes are unchanged; no installed package or saved revision is rewritten.
 
 ## App 0.0.686
 
