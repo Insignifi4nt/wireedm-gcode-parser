@@ -18,8 +18,9 @@ async function openCascade() {
 }
 beforeAll(async () => { setOC(await openCascade()); }, 60_000);
 
-// Every native object the module hands out is counted: whatever any class constructs, and whatever any instance method
-// or static function returns, including handle results. Garbage collection does not run before a count.
+// Every native object the module hands out is counted: whatever any class constructs, and whatever any instance method,
+// static function or property getter of a class, of embind's shared base or of the module itself returns, including
+// clones and handle results. Garbage collection does not run before a count.
 const watch = watchEveryCadKernelNativeObject;
 const parts = new Map(cadKernelParityModels().map(item => [item.id, item.document]));
 function part(id: string): CadDocument {
@@ -191,4 +192,68 @@ it('sees each construction and query result that is not deleted', () => {
       expect(objects.outstanding()).toEqual({});
     } finally { for (const value of leaked) value.delete(); objects.restore(); }
   } finally { [...edges, ...faces].forEach(cadKernelDisposeOwned); cadKernelDisposeShape(shape); }
+});
+
+/** The members embind's shared base gives every object, which the generated types leave out. */
+interface EmbindHandle { clone(): EmbindHandle; deleteLater(): EmbindHandle; delete(): void; isDeleted(): boolean }
+const embind = (value: object) => value as EmbindHandle;
+
+// Negative control: embind's clone, defined once on the shared base of every class, makes a new handle to the same
+// object, which stays alive until every handle is deleted.
+it('sees a clone that keeps its object alive after the original is deleted', () => {
+  const oc = getOC(), shape = makeCylinder(2, 5), objects = watch(), leaked: EmbindHandle[] = [];
+  try {
+    const point = embind(new oc.gp_Pnt(1, 2, 3)), clone = point.clone();
+    leaked.push(clone);
+    point.delete();
+    expect((clone as unknown as InstanceType<typeof oc.gp_Pnt>).X()).toBe(1);
+    // A shape made before the watch, and a clone of its clone.
+    const copy = embind(shape.wrapped).clone(); leaked.push(copy, copy.clone());
+    expect(objects.outstanding()).toEqual({ 'ClassHandle.clone': 3 });
+    for (const value of leaked.splice(0)) value.delete();
+    expect(objects.outstanding()).toEqual({});
+    // deleteLater returns the object it schedules, which is not a new one. This build exports no way to run the
+    // deletions it schedules, so the point stays outstanding.
+    const later = embind(new oc.gp_Pnt(4, 5, 6));
+    expect(later.deleteLater()).toBe(later);
+    expect(objects.outstanding()).toEqual({ gp_Pnt: 1 });
+  } finally { for (const value of leaked) if (!value.isDeleted()) value.delete(); objects.restore(); cadKernelDisposeShape(shape); }
+});
+
+// A module shaped like OpenCascade's: the shared base defines clone and deleteLater, a base class has no name in the
+// module, and the class has a property getter and a static function. Objects the module makes natively, without its
+// constructors, are made with `native`.
+function shapedModule() {
+  class ClassHandle {
+    gone = false;
+    isDeleted() { return this.gone; }
+    delete() { this.gone = true; }
+    clone() { return native(); }
+    deleteLater() { return this; }
+  }
+  class Base extends ClassHandle { Twin() { return native(); } }
+  class Thing extends Base {
+    get Part() { return native(); }
+    Copy() { return native(); }
+    static Make() { return native(); }
+  }
+  const native = (): Thing => Object.assign(Object.create(Thing.prototype) as Thing, { gone: false });
+  return { Thing, make: native, print: () => undefined };
+}
+
+it('watches every function a module shaped like OpenCascade\'s exposes, and restores each one', () => {
+  const module = shapedModule(), { Thing } = module, base = Object.getPrototypeOf(Thing.prototype) as object;
+  const descriptors = (owner: object) => Object.getOwnPropertyDescriptors(owner);
+  const before = [module, Thing, Thing.prototype, base, Object.getPrototypeOf(base) as object].map(descriptors);
+  const objects = watchEveryCadKernelNativeObject(module);
+  try {
+    const thing = new module.Thing();
+    const values = [thing.Part, thing.Copy(), module.Thing.Make(), thing.Twin(), thing.clone(), module.make()];
+    expect(thing.deleteLater()).toBe(thing);
+    module.print();
+    expect(objects.outstanding()).toEqual({ Thing: 1, 'Thing.Part': 1, 'Thing.Copy': 1, 'Thing.Make': 1, 'Base.Twin': 1, 'ClassHandle.clone': 1, make: 1 });
+    for (const value of [thing, ...values]) value.delete();
+    expect(objects.outstanding()).toEqual({});
+  } finally { objects.restore(); }
+  expect([module, Thing, Thing.prototype, base, Object.getPrototypeOf(base) as object].map(descriptors)).toEqual(before);
 });
