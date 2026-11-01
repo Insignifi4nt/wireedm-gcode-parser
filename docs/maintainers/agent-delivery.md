@@ -53,9 +53,13 @@ If a default model is unavailable, pause and ask the owner. Never substitute ano
    - A non-blocking finding that would need a large change becomes a listed follow-up, not another round.
    - When the implementer commits fixes, it reports the SHA at once. The coordinator starts the next review round in parallel with the implementer's remaining checks.
    - Later rounds re-check only the fixes and anything they touch.
-7. **Ready and merge.** When a round comes back with nothing blocking and CI is green on the latest push:
-   - mark the pull request ready and merge it;
-   - check the branch is deleted, remove the worktree, and record the result.
+7. **Ready and merge.** Merge only a commit that the review covered and CI passed.
+   - The last review round must have reviewed the pull request's current head. Any commit pushed after that review must be reassessed before merging:
+     - a merge with main that conflicted only on version lines, checked by the coordinator with `git diff <reviewed-sha> HEAD`;
+     - a wording fix the coordinator made itself;
+     - anything else gets another, narrow review round.
+   - When nothing blocks and CI is green on that head, mark the pull request ready and merge it, pinned to that commit (see [Pull requests and versions](#pull-requests-and-versions)).
+   - Check the branch is deleted, remove the worktree, and record the result.
 8. **Next in queue.** Tell the implementer of the next queued change to merge main. Then that change is renumbered if needed.
 
 At most two implementers run heavy local work at once, because the owner's machine is shared. While one implementer waits on review, the other may run its heavy checks.
@@ -93,8 +97,8 @@ It always says the review is read-only: no commits, pushes, installs or tracked-
 | Where | What |
 |---|---|
 | Implementer, while working | Focused Vitest files; the affected specs one at a time |
-| Implementer, before reporting | Build, lint, `ui:check`, `icons:check` when icons change, `npm run release:check -- origin/main`, focused tests and affected specs; full Vitest once |
-| CI on the draft pull request | Naming, contracts and release record, both unit shards, all browser journey shards, Firefox storage and the native solver |
+| Implementer, before reporting | Checks in proportion to the change. For code: the build, lint, `ui:check`, `icons:check` when icons change, the release check, focused tests and the affected specs. Full Vitest when the change crosses systems or shared infrastructure; otherwise CI runs it. For docs only: the release check and the link check. The report marks any check it skipped as not applicable, and says why. |
+| CI on the draft pull request | Naming, contracts and release record, all unit shards, all browser journey shards, Firefox storage and the native solver |
 | Reviewer | Whatever reproduces its findings: focused tests, scratch tests and single specs |
 
 - A behaviour claim needs evidence: a test that fails without the change, or a measurement.
@@ -136,15 +140,15 @@ The same kinds of finding kept recurring in reviews. Before reporting, the imple
 - **Mutations.** Each risky change is applied alone, with the failing tests recorded. A surviving mutation means a test is missing or a claim is wrong.
 - **Paperwork:**
   - `docs/site/cad.md` and `docs/site/agents.md` match the change;
-  - WebMCP discovery stays within its byte budget (measure it);
+  - WebMCP discovery stays within its byte budget (measure it when tools, their descriptions or schemas change);
   - the release record lists every behaviour change.
 
 ## Pull requests and versions
 
 - Each pull request advances the app version once. Changes waiting in the queue hold the next numbers in merge order. When an earlier one merges, the next merges main and renumbers if needed.
-- The PR body follows [`.github/pull_request_template.md`](../../.github/pull_request_template.md), names no agent or tool, and stays under 40,000 characters. GitHub refuses bodies over 65,536.
+- The PR body follows [`.github/pull_request_template.md`](../../.github/pull_request_template.md), isn't branded with the agent or tool that wrote it, and stays under 40,000 characters. Technical names needed to explain or validate the change are fine. GitHub refuses bodies over 65,536.
 - **Merging:** auto-merge is off and main has no branch protection, so `gh pr merge --auto` merges at once.
-  1. Merge with `gh pr merge <n> --merge --delete-branch`, and only once every check has passed.
+  1. Merge with `gh pr merge <n> --merge --delete-branch --match-head-commit <sha>`, where `<sha>` is the head that was reviewed (or reassessed) and is green. A push after the check then makes the merge fail instead of slipping in.
   2. Confirm the branch is gone with `git ls-remote --heads origin <branch>`.
 - **Stacked pull requests:** merge the bottom one, retarget the next to main, then delete the merged branch.
 
@@ -152,6 +156,9 @@ The same kinds of finding kept recurring in reviews. Before reporting, the imple
 
 - **Dev server:** only on port 3777 (see `AGENTS.md`).
 - **Playwright:** single specs only, never the full suite, because it disrupts the owner's machine. Run with `--workers=2` and `PLAYWRIGHT_USE_EXISTING_BUILD=true`, and only when port 3107 is free. Check first, and wait rather than stopping another session's server.
-- **Installs:** never run `npm install` in a worktree, and never change the shared `node_modules`. Worktrees use a link farm, a `node_modules` folder of junctions, so `@wire-edm/icons-react` resolves to the worktree's own package. Unlink the junctions before deleting a worktree, or the deletion follows them into the shared install.
+- **Installs:** never run `npm install` in a worktree, and never change the shared `node_modules`. Each worktree uses a link farm instead: a `node_modules` of links into the main checkout's install, with `@wire-edm/*` linked to the worktree's own `packages/`. The implementer sets it up when it starts and removes it before the worktree is deleted:
+  - `node scripts/worktree-modules.mjs link` inside the worktree, then `npm run icons:build`;
+  - `node scripts/worktree-modules.mjs status` lists the links;
+  - `node scripts/worktree-modules.mjs unlink` before deleting the worktree. It must report 0 links left, or the deletion could follow a link into the shared install.
 - **Windows with Git Bash:** call tools through `node node_modules/...`, because `npx` fails in worktrees. Python isn't available.
 - **Third-party code:** never copy LGPL or FreeCAD code.
