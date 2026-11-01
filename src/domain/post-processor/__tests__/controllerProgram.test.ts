@@ -55,6 +55,48 @@ describe('controller linear motion audit', () => {
   });
 });
 
+describe('controller rounding allowance', () => {
+  // Exact binary quanta and coordinates make every difference below exact, so each case sits a known
+  // number of ulps from its boundary. One ulp of a value in [512, 1024) mm is 2^-43 mm.
+  const quantum = 2 ** -10;
+  const ulp1000 = 2 ** -43;
+
+  it.each([
+    { name: 'within', ulps: 7, accepted: true },
+    { name: 'beyond', ulps: 9, accepted: false }
+  ])('scales the endpoint roundoff with the coordinate: $name 4 ulps of 1000 mm', ({ ulps, accepted }) => {
+    // Four ulps of 1000 mm are 7.8 ulps of the value 1000 itself.
+    const end = { x: 1000 + quantum / 2 + ulps * ulp1000, y: 0 };
+    expect(auditRoundedLinearPath({ x: 0, y: 0 }, { x: 1000, y: 0 }, [{ x: 0, y: 0 }, end], quantum))
+      .toEqual(accepted ? [] : [expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })]);
+  });
+
+  it.each([
+    { name: 'within', ulps: 24, accepted: true },
+    { name: 'beyond', ulps: 40, accepted: false }
+  ])('scales the line-deviation roundoff with the coordinates: $name 32 ulps of 1000 mm', ({ ulps, accepted }) => {
+    const split = { x: 500, y: quantum / 2 + ulps * Number.EPSILON * 1000 };
+    expect(auditRoundedLinearPath(
+      { x: 0, y: 0 }, { x: 1000, y: 0 }, [{ x: 0, y: 0 }, split, { x: 1000, y: 0 }], quantum
+    )).toEqual(accepted ? [] : [expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })]);
+  });
+
+  it.each([
+    { planned: 8.0015, emitted: 8.002, accepted: true },
+    { planned: 8.0015, emitted: 8.001, accepted: true },
+    { planned: -8.0015, emitted: -8.002, accepted: true },
+    { planned: 8.0014, emitted: 8.001, accepted: true },
+    { planned: 8.0014, emitted: 8.002, accepted: false },
+    { planned: 8.0016, emitted: 8.001, accepted: false },
+    { planned: 8.0015, emitted: 8.003, accepted: false },
+    { planned: 8.0015, emitted: 8.0, accepted: false }
+  ])('treats $planned emitted as $emitted at three decimals as accepted=$accepted', ({ planned, emitted, accepted }) => {
+    expect(auditRoundedLinearPath(
+      { x: 0, y: 0 }, { x: planned, y: 0 }, [{ x: 0, y: 0 }, { x: emitted, y: 0 }], 0.001
+    )).toEqual(accepted ? [] : [expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })]);
+  });
+});
+
 describe('controller circular motion audit', () => {
   it.each([false, true])('accepts ordered sub-ulp arc fragments and rejects reverse travel, clockwise=%s', (clockwise) => {
     const base = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'];
@@ -141,6 +183,37 @@ describe('controller circular motion audit', () => {
     }
   );
 });
+
+/** Audits a planned straight move with a zero endpoint tolerance, as DXF imports plan it. */
+function auditRoundedLinearPath(start: Point2, end: Point2, points: readonly Point2[], quantum: number) {
+  const base = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'];
+  const motion = base.events.find((event) => event.kind === 'motion');
+  if (!motion) throw new Error('Canonical contour must contain a motion event.');
+  const event = { ...motion, motion: 'linear' as const, start, end };
+  const rounding = {
+    startX: quantum, startY: quantum, endX: quantum, endY: quantum, centerX: quantum, centerY: quantum
+  };
+  const blocks = points.slice(1).map((blockEnd, index) => ({
+    id: `block-${String(index + 1).padStart(6, '0')}`,
+    lineIndex: index,
+    text: `G1 X${blockEnd.x} Y${blockEnd.y}`,
+    eventId: event.id,
+    commandIds: ['motion.linear'],
+    motion: { motion: 'linear' as const, role: event.role, start: points[index], end: blockEnd, rounding }
+  }));
+  const lines = blocks.map(({ text }) => text);
+  const program: ControllerProgram = {
+    text: lines.join('\n'),
+    lines,
+    blocks,
+    eventDispositions: [{ kind: 'emitted', eventId: event.id, blockIds: blocks.map(({ id }) => id) }]
+  };
+  return auditControllerProgram(
+    { ...base, events: [event], tolerance: { endpointMm: 0, coincidenceMm: 0.000002 } },
+    program,
+    new Set(['motion.linear'])
+  );
+}
 
 function auditLinearPath(points: readonly Point2[]) {
   const base = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'];
