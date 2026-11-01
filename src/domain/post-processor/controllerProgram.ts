@@ -172,7 +172,7 @@ export function auditControllerProgram(
     if (!sameMotionSequence(event, motions, plan.tolerance.endpointMm, coordinateQuantumMm)) {
       diagnostics.push({
         code: 'POST_AUDIT_MOTION_MISMATCH',
-        message: `Controller motion blocks do not preserve motion event ${event.id}: each emitted coordinate may differ from the plan only by rounding to its last digit, a floating-point allowance that grows with its magnitude, and the plan's endpoint tolerance, except that a point splitting an arc may lie off the arc by up to half the diagonal of its rounding. These audit rules changed in app 0.0.792.`,
+        message: `Controller motion blocks do not preserve motion event ${event.id}: each emitted coordinate may differ from the plan only by rounding to its last digit, a floating-point allowance that grows with its magnitude, and the plan's endpoint tolerance, except that a point splitting an arc is checked only by its distance from the arc, whose rounding term is half the diagonal of the point's rounding, in addition to the endpoint tolerance and the floating-point allowance. These audit rules changed in app 0.0.792.`,
         eventId: event.id
       });
     }
@@ -185,9 +185,9 @@ export function auditControllerProgram(
 // tolerance. A point comparison clamps each axis's residual by that axis's allowance before the Euclidean
 // comparison, and a distance from a planned line, or the roundoff of a radial distance, weights each
 // axis's allowance by that axis's share of the distance, so there one axis's allowance never excuses
-// another axis's error. The exception is the radial check's rounding term, kept from before 0.0.792: a
-// point that splits an arc may leave it by half its rounding box's diagonal, so the coarser axis's half
-// quantum can cover the finer axis there. Path lengths and arc sweeps compare scalar totals with one
+// another axis's error. The exception is the radial check's rounding term, kept from before 0.0.792: for a
+// point that splits an arc it is half the point's rounding box diagonal, added to the endpoint tolerance
+// and the radial roundoff, so the coarser axis's half quantum can cover the finer axis there. Path lengths and arc sweeps compare scalar totals with one
 // roundoff term per summed value; they only reject, and every point they read is also held by a point,
 // line or radial comparison. The roundoff counts live in the precision policy: `outputPointRoundoffUlps`
 // for endpoints and centres, and `outputDerivedRoundoffUlps` per term for line distances, radial

@@ -191,9 +191,10 @@ describe('outputDerivedRoundoffUlps', () => {
 
 describe('radial rounding term, a recorded known limit', () => {
   // A point that splits an arc is checked only by its distance from the arc, whose rounding term is half the diagonal
-  // of the point's rounding box, as before 0.0.792. With X written to 0 decimals and Y to 12, X's half unit covers Y:
-  // a split point of a radius 10 circle may be almost 0.5 mm off on Y. Holding this term per axis would reject output
-  // accepted before, so it is left for a separate audit compatibility release; this test then changes.
+  // of the point's rounding box, as before 0.0.792, in addition to the endpoint tolerance and the radial roundoff. With
+  // X written to 0 decimals and Y to 12, X's half unit covers Y: at endpoint tolerance 0, a split point of a radius 10
+  // circle may be almost 0.5 mm off on Y. Holding this term per axis would reject output accepted before, so it is
+  // left for a separate audit compatibility release; this test then changes.
   function auditSplitPoint(split: Point2) {
     const start = { x: 0, y: -10 };
     const event = {
