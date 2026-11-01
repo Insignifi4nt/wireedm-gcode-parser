@@ -96,7 +96,11 @@ export interface CadBodyState {
   readonly untracked?: true;
 }
 
-/** The most part keys a body tracks: pieces, or ambiguous keys in all. Past it the body's parts are untracked, never a rejected build. */
+/**
+ * The most part keys a body tracks: its pieces and the keys its groups keep, together. Past it the body's parts are untracked from then on,
+ * never a rejected build. A group keeps every former member's key while a solid descends from it, so each feature that splits or removes an
+ * ambiguous piece adds keys, however few solids are left.
+ */
 export const MAX_CAD_BODY_LIST = 4096;
 
 function isFeatureId(value: unknown): value is string { return typeof value === 'string' && FEATURE_ID.test(value); }
@@ -722,45 +726,55 @@ export type CadBodyRefResolution =
 /**
  * Resolves `ref` against `lineage` as it stands before the referring feature. A whole body's key resolves to it, and a piece's to that
  * part. An ambiguous key resolves as ambiguous, with the pieces of its group as candidates, or as missing once none is left. So does a
- * key no body lists whose nearest listed ancestor is ambiguous, when another member of that ancestor's group has a descendant by the same
- * steps: another kernel order would have given that descendant the key. Anything else is missing: a lost piece, a split piece's old key,
- * a part of an untracked body, or a consumed body or one of its parts.
+ * key no body lists that another kernel order would have given a solid, among the groups of its twins (`twinGroups`). Anything else is
+ * missing: a lost piece, a split piece's old key, a part of an untracked body, or a consumed body or one of its parts.
  */
 export function resolveCadBodyRef(ref: CadBodyRef, lineage: Pick<CadBodyLineage, 'get' | 'bodies' | 'consumed'>): CadBodyRefResolution {
   const whole = lineage.get(ref.key);
   if (whole) return { status: 'resolved', body: whole };
-  const bodies = lineage.bodies(), among = (body: CadBodyState, group: readonly CadBodyKey[]): CadBodyRefResolution | undefined => {
-    const pieces = new Set(body.pieces), candidates = group.filter(part => pieces.has(part));
+  const bodies = lineage.bodies(), among = (body: CadBodyState, groups: readonly (readonly CadBodyKey[])[]): CadBodyRefResolution | undefined => {
+    const pieces = new Set(body.pieces), candidates = groups.flat().filter(part => pieces.has(part));
     return candidates.length ? { status: 'ambiguous', body, candidates } : undefined;
   };
   for (const body of bodies) {
-    const group = body.ambiguous?.find(keys => keys.includes(ref.key)), ambiguous = group && among(body, group);
+    const group = body.ambiguous?.find(keys => keys.includes(ref.key)), ambiguous = group && among(body, [group]);
     if (ambiguous) return ambiguous;
     if (body.pieces?.includes(ref.key)) return { status: 'resolved', body, part: ref.key };
   }
   for (const body of bodies) {
-    const group = twinGroup(body, ref.key), ambiguous = group && among(body, group);
+    const groups = twinGroups(body, ref.key), ambiguous = groups && among(body, groups);
     if (ambiguous) return ambiguous;
   }
   const gone = lineage.consumed().find(body => body.key === ref.key || body.pieces?.includes(ref.key) || body.ambiguous?.some(group => group.includes(ref.key))
-    || twinGroup(body, ref.key));
+    || twinGroups(body, ref.key));
   return gone?.consumedBy !== undefined ? { status: 'missing', consumedBy: gone.consumedBy } : { status: 'missing' };
 }
 
 /**
- * The group of the key `body` lists in the place of `key`, which it does not list: when the nearest ancestor of `key` that it lists is
- * ambiguous, the first other member of the ancestor's group with a descendant by the steps that lead from the ancestor to `key`.
+ * The groups of the keys `body` lists in the place of `key`, which it does not list, in the order `body` lists its groups. A kernel order
+ * decides only which of the keys one split gave at once names which solid, and every later step of a key follows its solid: a pattern's
+ * copies are told apart by the copy they keep faces of, never by the order. So another order would have given `key` to what a twin names,
+ * a twin being `key` with one `split` step changed to a sibling's, a key that the same split gave beside it, that is in its group. The
+ * nearest such step with any twin `body` lists decides; a certain piece or the body's own key ends the search, since nothing above it is
+ * ambiguous.
  */
-function twinGroup(body: CadBodyState, key: CadBodyKey): readonly CadBodyKey[] | undefined {
+function twinGroups(body: CadBodyState, key: CadBodyKey): readonly (readonly CadBodyKey[])[] | undefined {
   if (!body.ambiguous) return undefined;
   const groups = new Map<string, readonly CadBodyKey[]>();
   for (const group of body.ambiguous) for (const part of group) groups.set(part, group);
   for (let end = key.lastIndexOf('/'); end > 0; end = key.lastIndexOf('/', end - 1)) {
     const ancestor = key.slice(0, end), group = groups.get(ancestor);
     if (!group) { if (ancestor === body.key || body.pieces?.includes(ancestor as CadBodyKey)) return undefined; continue; }
-    const steps = key.slice(end);
-    for (const member of group) { const twin = member === ancestor ? undefined : groups.get(member + steps); if (twin) return twin; }
-    return undefined;
+    // Only a split step's siblings can trade solids with it; a copy's, or an image's, never do.
+    const at = ancestor.lastIndexOf('/'), sibling = `${ancestor.slice(0, at)}/split(`;
+    if (at < 0 || !ancestor.startsWith(sibling)) continue;
+    const steps = key.slice(end), twins = new Set<readonly CadBodyKey[]>();
+    for (const member of group) {
+      if (member === ancestor || member.lastIndexOf('/') !== at || !member.startsWith(sibling)) continue;
+      const twin = groups.get(member + steps);
+      if (twin) twins.add(twin);
+    }
+    if (twins.size) return body.ambiguous.filter(each => twins.has(each));
   }
   return undefined;
 }

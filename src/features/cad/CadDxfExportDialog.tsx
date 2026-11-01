@@ -38,9 +38,11 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
   const sketches = cadDocument.features.filter(feature => feature.kind === 'sketch' && cadFeatureActive(feature, cadDocument));
   const curves = cadDocument.features.filter(feature => feature.kind === 'curve' && cadFeatureActive(feature, cadDocument));
   const initialFeature = cadDocument.features.find(feature => feature.id === initialFeatureId);
-  // The body the initial feature leads to by key, wherever that feature is in the body's history; with none, the first body.
+  // The body the initial feature leads to by key, wherever that feature is in the body's history; a mesh without a key by the feature that
+  // made the body what it is now; with neither, the first body.
   const initialState = useMemo(() => initialFeatureId === undefined ? undefined : cadBodyLineage(cadDocument.features, cadDocument).of(initialFeatureId), [cadDocument, initialFeatureId]);
-  const initialOf = (list: readonly CadMesh[]) => (initialState && list.find(body => body.bodyKey === initialState.key || body.featureId === cadBodyFeatureId(initialState))) ?? list[0];
+  const initialOf = (list: readonly CadMesh[]) => (initialState && (list.find(body => body.bodyKey === initialState.key)
+    ?? list.find(body => body.featureId === cadBodyFeatureId(initialState)))) ?? list[0];
   const initialBody = initialOf(bodies);
   const [kind, setKind] = useState<SourceKind>(initialFeature?.kind === 'curve' && cadFeatureActive(initialFeature, cadDocument) ? 'curve'
     : initialFeature?.kind === 'sketch' && cadFeatureActive(initialFeature, cadDocument) ? 'sketch'

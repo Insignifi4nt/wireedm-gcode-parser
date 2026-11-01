@@ -352,6 +352,35 @@ describe('body parts', () => {
     expect(body.ambiguous?.flat().every(part => listed.has(part))).toBe(true);
   });
 
+  it('stops tracking a body for good once its pieces and the keys its groups keep pass the list limit', () => {
+    // A comb cut leaves 100 teeth keeping no face. Each later cut splits the first tooth and removes the second, so the body keeps 100 solids
+    // while its group keeps both old keys: two more at each cut, until the 1,999th cut passes the limit.
+    const solids = 100, overflowing = (MAX_CAD_BODY_LIST - solids) / 2 + 1;
+    const cuts = Array.from({ length: overflowing + 1 }, (_, index) => pad(`c${index}`, 'slot_sketch', 'cut', index ? `c${index - 1}` : 'slot'));
+    const parsed = document([...box, sketch('slot_sketch', 18, 4), pad('slot', 'slot_sketch', 'cut', 'box'), ...cuts]), lineage = createCadBodyLineage();
+    // The teeth after the first two keep their order, and the first splits into the last two solids.
+    const cut = facts(solids, Array.from({ length: solids }, (_, solid) => solid < solids - 2 ? [[0, solid + 2, 1]] : [[0, 0, solid - solids + 3]]));
+    const states = new Map<string, CadBodyState>();
+    for (const feature of parsed.features) {
+      const change = lineage.apply(feature, parsed, feature.id === 'slot' ? facts(solids, Array.from({ length: solids }, () => [])) : feature.id.startsWith('c') ? cut : facts(1, []));
+      if (change && feature.id.startsWith('c')) states.set(feature.id, change.state);
+    }
+    expect(overflowing).toBe(1999);
+    // The last cut tracked leaves 100 pieces in a group of exactly the limit, every old key kept; the next stops tracking.
+    const tracked = states.get(`c${overflowing - 2}`)!;
+    expect([tracked.pieces?.length, tracked.ambiguous?.map(group => group.length), tracked.untracked]).toEqual([solids, [MAX_CAD_BODY_LIST], undefined]);
+    expect(tracked.ambiguous?.[0]).toEqual(expect.arrayContaining(['box/split(1)', 'box/split(3)']));
+    expect(states.get(`c${overflowing - 1}`)).toMatchObject({ untracked: true });
+    const issues = lineage.issues();
+    expect(issues.map(issue => [issue.code, issue.featureId, issue.pieces.length]))
+      .toEqual([['ambiguous-body-parts', 'slot', MAX_CAD_BODY_LIST], ['untracked-body-parts', `c${overflowing - 1}`, 0]]);
+    // Every part, even a piece the last tracked state had, resolves as missing from then on.
+    const body = lineage.get(key('box'))!;
+    expect(body).toMatchObject({ modifiedBy: expect.arrayContaining([`c${overflowing}`]), untracked: true });
+    expect([body.pieces, body.ambiguous]).toEqual([undefined, undefined]);
+    expect(resolveCadBodyRef({ kind: 'body', key: key('box/split(99)') }, lineage)).toEqual({ status: 'missing' });
+  });
+
   it('lists at most the issue limit, ending with a summary of the rest', () => {
     const cuts = Array.from({ length: MAX_CAD_BODY_ISSUES + 20 }, (_, index) => pad(`c${index}`, 'slot_sketch', 'cut', index ? `c${index - 1}` : 'box'));
     const parsed = document([...box, sketch('slot_sketch', 18, 4), ...cuts]), lineage = createCadBodyLineage();
@@ -412,6 +441,47 @@ describe('body references, metadata and selection', () => {
     expect(resolved(`${c}/split(0)`)).toEqual({ status: 'missing' });
     expect(resolveCadBodyRef({ kind: 'body', key: key(`${a}/split(1)`) }, { ...lineage, consumed: () => [{ ...halves, consumedBy: 'merge' }] } as typeof lineage))
       .toEqual({ status: 'missing', consumedBy: 'merge' });
+    // A twin may come from a split further up: a's halves never split again, but b's second half did, and another order would have given a
+    // b's solid.
+    const deeper: CadBodyState = { key: key('box'), kind: 'solid', createdBy: 'box', modifiedBy: ['slot', 'cut', 'more'],
+      pieces: [`${a}/split(0)`, `${a}/split(1)`, `${b}/split(0)`, `${b}/split(1)/split(0)`, `${b}/split(1)/split(1)`].map(key),
+      ambiguous: [[`${a}/split(0)`, `${a}/split(1)`, `${b}/split(0)`, `${b}/split(1)/split(0)`, `${b}/split(1)/split(1)`, a, b, `${b}/split(1)`].map(key)] };
+    expect(resolveCadBodyRef({ kind: 'body', key: key(`${a}/split(1)/split(0)`) }, holding(deeper)))
+      .toMatchObject({ status: 'ambiguous', candidates: deeper.pieces });
+    // Every sibling with a twin counts, whichever group keeps the twin.
+    const apart: CadBodyState = { key: key('box'), kind: 'solid', createdBy: 'box', modifiedBy: ['slot', 'cut'],
+      pieces: [a, `${b}/split(0)`, `${c}/split(0)`, `${c}/split(1)`].map(key), ambiguous: [[a, `${b}/split(0)`, b, c], [`${c}/split(0)`, `${c}/split(1)`]].map(group => group.map(key)) };
+    expect(resolveCadBodyRef({ kind: 'body', key: key(`${a}/split(0)`) }, holding(apart))).toMatchObject({ status: 'ambiguous', candidates: apart.pieces });
+  });
+
+  it('takes a twin only from the split that gave the key\'s own step, never from a later key with the same steps', () => {
+    // A fillet keyed two halves a and b in the kernel's order, and a cut split a. A pattern copied the pieces, a join merged the originals
+    // into bridge/split(0), and a second pattern copied everything. The bridge's copy has the steps a's first copy would have had, but only
+    // b, which the fillet keyed beside a, could have been a in another order.
+    const [a, b, bridge] = ['round/split(0)', 'round/split(1)', 'bridge/split(0)'], copy = (part: string, ...i: number[]) => part + i.map(each => `/inst(${each},0)`).join('');
+    const halves = [`${a}/split(0)`, `${a}/split(1)`, b];
+    const copied: CadBodyState = { key: key('box'), kind: 'solid', createdBy: 'box', modifiedBy: ['split', 'round', 'more', 'across', 'bridge', 'down'],
+      pieces: [copy(bridge, 0), ...halves.map(part => copy(part, 1, 0)), copy(bridge, 1), ...halves.map(part => copy(part, 1, 1))].map(key),
+      ambiguous: [[copy(bridge, 0), bridge, ...halves.map(part => copy(part, 0)), ...halves, a, 'box/split(0)', 'box/split(1)'],
+        [...halves.map(part => copy(part, 1, 0)), ...halves.map(part => copy(part, 1))], [copy(bridge, 1)], halves.map(part => copy(part, 1, 1))].map(group => group.map(key)) };
+    const resolved = (part: string, state = copied) => resolveCadBodyRef({ kind: 'body', key: key(part) }, holding(state));
+    expect(resolved(copy(a, 1))).toMatchObject({ status: 'ambiguous', candidates: halves.map(part => copy(part, 1, 0)) });
+    expect(resolved(copy(a, 1, 1))).toMatchObject({ status: 'ambiguous', candidates: halves.map(part => copy(part, 1, 1)) });
+    // Had b been split, its halves would have been copied as a's were.
+    expect(resolved(copy(`${b}/split(1)`, 1, 1))).toMatchObject({ status: 'ambiguous', candidates: halves.map(part => copy(part, 1, 1)) });
+    // Nothing the bridge made was ever split, in any order.
+    expect(resolved(`${copy(bridge, 1)}/split(0)`)).toEqual({ status: 'missing' });
+    // A copy is never another copy in another order, but the split above it may be: a's copy split as b's copy did.
+    const [p, q] = ['box/split(0)', 'box/split(1)'];
+    const split: CadBodyState = { key: key('box'), kind: 'solid', createdBy: 'box', modifiedBy: ['slot', 'row', 'cut'],
+      pieces: [copy(p, 0), copy(q, 0), copy(p, 1), `${copy(q, 1)}/split(0)`, `${copy(q, 1)}/split(1)`].map(key),
+      ambiguous: [[copy(p, 0), copy(q, 0), p, q], [copy(p, 1), `${copy(q, 1)}/split(0)`, `${copy(q, 1)}/split(1)`, copy(q, 1)]].map(group => group.map(key)) };
+    expect(resolved(`${copy(p, 1)}/split(1)`, split)).toMatchObject({ status: 'ambiguous', candidates: [copy(p, 1), `${copy(q, 1)}/split(0)`, `${copy(q, 1)}/split(1)`] });
+    expect(resolved(`${copy(p, 0)}/split(0)`, split)).toEqual({ status: 'missing' });
+    // Nor once both copies share a group: only the first copy was split.
+    const joined: CadBodyState = { key: key('box'), kind: 'solid', createdBy: 'box', modifiedBy: ['row', 'cut', 'bridge'],
+      pieces: [`${copy(p, 0)}/split(0)`, `${copy(p, 0)}/split(1)`, copy(p, 1)].map(key), ambiguous: [[`${copy(p, 0)}/split(0)`, `${copy(p, 0)}/split(1)`, copy(p, 1), copy(p, 0)].map(key)] };
+    expect(resolved(`${copy(p, 1)}/split(0)`, joined)).toEqual({ status: 'missing' });
   });
 
   it('resolves an ambiguous key only among the keys it can\'t be told apart from, never another pattern occurrence\'s', () => {

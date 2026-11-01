@@ -65,23 +65,34 @@ function pieceAt(model: CadKernelModel, x: number): string | undefined {
 }
 
 /**
- * Builds with every Boolean result of two or more solids listing them in reverse, as another kernel version might list them: keys must
- * name the same solids in both orders, or be reported ambiguous.
+ * Builds with the solids of each Boolean result of two or more listed in the order `order` gives for it, as another kernel version might
+ * list them: keys must name the same solids in every order, or be reported ambiguous. `order` is asked for each such result in turn, with
+ * its number in the build and its solid count, so that each operation's order can change on its own.
  */
-function reversingSolids<T>(build: () => T): T {
+function reorderingSolids<T>(order: (result: number, solids: number) => readonly number[], build: () => T): T {
   const { fuse, cut, common } = cadKernelBuilders;
-  const reversed = (make: (left: Shape3D, right: Shape3D) => Shape3D) => (left: Shape3D, right: Shape3D): Shape3D => {
+  let results = 0;
+  const reordered = (make: (left: Shape3D, right: Shape3D) => Shape3D) => (left: Shape3D, right: Shape3D): Shape3D => {
     const result = make(left, right), solids = cadKernelSolids(result);
     try {
       if (solids.length < 2) return result;
       const oc = getOC(), compound = new oc.TopoDS_Compound(), builder = new oc.TopoDS_Builder();
-      try { builder.MakeCompound(compound); for (const solid of [...solids].reverse()) builder.Add(compound, solid.wrapped); } finally { builder.delete(); }
+      try { builder.MakeCompound(compound); for (const at of order(results++, solids.length)) builder.Add(compound, solids[at].wrapped); } finally { builder.delete(); }
       cadKernelDisposeShape(result);
       return new Compound(compound);
     } finally { for (const solid of solids) cadKernelDisposeShape(solid); }
   };
-  Object.assign(cadKernelBuilders, { fuse: reversed(fuse), cut: reversed(cut), common: reversed(common) });
+  Object.assign(cadKernelBuilders, { fuse: reordered(fuse), cut: reordered(cut), common: reordered(common) });
   try { return build(); } finally { Object.assign(cadKernelBuilders, { fuse, cut, common }); }
+}
+const inOrder = (solids: number) => Array.from({ length: solids }, (_, at) => at), reversed = (solids: number) => inOrder(solids).reverse();
+/** Builds with every Boolean result of two or more solids listing them in reverse. */
+const reversingSolids = <T>(build: () => T): T => reorderingSolids((_, solids) => reversed(solids), build);
+/** How many Boolean results of two or more solids building `features` makes, whose orders `reorderingSolids` can change. */
+function multiSolidResults(features: readonly CadFeature[]): number {
+  let count = 0;
+  reorderingSolids((result, solids) => { count = result + 1; return inOrder(solids); }, () => built(features, () => undefined));
+  return count;
 }
 
 /** Each solid's extent along X, Y and Z and its surface area, by the solid numbers `faceSolids` uses: what tells solids apart across builds. */
@@ -384,6 +395,31 @@ describe('kernel body parts are inherited only when continuity is certain', () =
     }
   });
 
+  it('resolves a key another order would have given only among what its own operations made, whichever order each operation lists', () => {
+    // As above, then a pattern copies the three pieces 100 along X, a join bridges the originals into one solid, and a second pattern copies
+    // everything 50 along Y. Both patterns give inst(1,0) steps, so the bridge's copy has the steps a split half's first copy would have had.
+    const pattern = (id: string, sourceId: string, spacing: readonly [number, number, number]): CadFeature => ({ ...base(id), kind: 'linear-pattern', sourceId, count: 2, spacing });
+    const features = [...box, ...slot('split', 18, 'box'), { ...base('round'), kind: 'fillet', targetId: 'split', radius: 1 } as CadFeature, ...slot('more', 30, 'round'),
+      pattern('across', 'more', [100, 0, 0]), sketch('bridge_sketch', rect(5, 5, 30, 10)), pad('bridge', 'bridge_sketch', 10, 'join', 'across'), pattern('down', 'bridge', [0, 50, 0])];
+    const results = multiSolidResults(features), normal = built(features, bodiesOf);
+    expect(results).toBeGreaterThanOrEqual(3);
+    const keyings = new Set<string>(), all = 2 ** results - 1, alone = Array.from({ length: results }, (_, result) => 1 << result);
+    // Each result's solids reversed alone, every result's but one, and all of them.
+    for (const reversals of [0, ...alone, ...alone.map(result => all ^ result), all]) {
+      const label = `results reversed ${reversals.toString(2).padStart(results, '0')}`;
+      const reordered = reversals ? reorderingSolids((result, solids) => reversals & 1 << result ? reversed(solids) : inOrder(solids), () => built(features, bodiesOf)) : normal;
+      if (reversals) agreeInEitherOrder(normal, reordered, label);
+      keyings.add([...reordered.bodies[0].pieces!].sort().join(' '));
+      // Either half's first copy is one of the three pieces of the first pattern's copy, 100 to 140 along X, never the bridge's copy.
+      for (const key of ['round/split(0)/inst(1,0)', 'round/split(1)/inst(1,0)']) {
+        const boxes = shapesFor(reordered, resolveIn(reordered, key)).map(shape => shape.slice(0, 4).map(value => Math.round(value) + 0).join(' '));
+        expect(boxes.sort(), `${label}: ${key}`).toEqual(['100 118 0 20', '120 130 0 20', '132 140 0 20']);
+      }
+    }
+    // The orders key the pieces differently, which is what the twins stand in for.
+    expect(keyings.size).toBeGreaterThan(1);
+  }, 120_000);
+
   it('reports a pattern copy a later cut removes as lost, so references to it resolve as missing', () => {
     built([...box, row('box', 2, 50), sketch('trim_sketch', rect(45, -5, 50, 30)), pad('trim', 'trim_sketch', 30, 'cut', 'row')], model => {
       expect(model.result.meshes[0].solidCount).toBe(1);
@@ -413,6 +449,12 @@ describe('kernel body parts over random histories', () => {
   function random(seed: number) {
     return () => { seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   }
+  /** Each Boolean result's solids in an order of its own drawn by `rand`, so that one operation's order changes and another's need not. */
+  const shuffled = (rand: () => number) => (_: number, solids: number) => {
+    const order = inOrder(solids);
+    for (let at = solids - 1; at > 0; at--) { const other = Math.floor(rand() * (at + 1)); [order[at], order[other]] = [order[other], order[at]]; }
+    return order;
+  };
   /** Each solid's box in X and Y, by the solid numbers `faceSolids` uses. */
   function solidBoxes(mesh: CadMesh): Map<number, Box> {
     const boxes = new Map<number, [number, number, number, number]>();
@@ -553,8 +595,11 @@ describe('kernel body parts over random histories', () => {
           before = check(model, step, before, lost, seen, label);
           normal = bodiesOf(model);
         } finally { model.dispose(); }
-        // The same history built with every Boolean listing its solids in reverse keys the same solids, or reports them ambiguous.
-        if (agreeInEitherOrder(normal, reversingSolids(() => built(candidate, bodiesOf)), label)) seen.add('reordered');
+        // The same history built twice more, each Boolean listing its solids in an order of its own, keys the same solids or reports them ambiguous.
+        for (const draw of [1, 2]) {
+          const reordered = reorderingSolids(shuffled(random(seed * 4096 + n * 4 + draw)), () => built(candidate, bodiesOf));
+          if (agreeInEitherOrder(normal, reordered, `${label}, order ${draw}`)) seen.add('reordered');
+        }
         features.push(...step.features); target = step.id; last = candidate; n++; steps++;
         if (step.spacing) patterns++;
       }
