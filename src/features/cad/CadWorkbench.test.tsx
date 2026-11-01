@@ -1386,15 +1386,19 @@ describe('CAD sketch interaction', () => {
     expect(failed()).toBe(0);
     await act(async () => failures[5](new Error('The adjacency read failed.')));
     expect(failed()).toBe(1);
+    // A failed read is not kept: the next chain on that body reads again, and its answer applies.
+    await menu('pad-b', 'edge-b', 'Select loop'); expect(read).toHaveBeenCalledTimes(7);
+    await act(async () => reads[6](adjacencyOf('pad-b', 'edge-b', 'face-b', 'build-3')));
+    expect(picks()).toBe('pad-b: edge-b'); expect(failed()).toBe(1);
     // The reads go as soon as the shown build changes, not at the next chain: shown again after another build, a build reads afresh.
     await act(async () => replaceBuild({ ...build, buildId: 'build-4' }));
-    await menu('pad', 'edge-1', 'Select loop'); await act(async () => reads[6](adjacencyOf('pad', 'edge-1', 'face-1', 'build-4')));
+    await menu('pad', 'edge-1', 'Select loop'); await act(async () => reads[7](adjacencyOf('pad', 'edge-1', 'face-1', 'build-4')));
     await menu('pad', 'edge-1', 'Select tangent chain'); await act(async () => chains[1](chainOf('pad', 'edge-1', true, 'build-4')));
-    expect(read).toHaveBeenCalledTimes(7); expect(readChain).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenCalledTimes(8); expect(readChain).toHaveBeenCalledTimes(2);
     await act(async () => replaceBuild({ ...build, buildId: 'build-5' }));
     await act(async () => replaceBuild({ ...build, buildId: 'build-4' }));
     await menu('pad', 'edge-1', 'Select loop'); await menu('pad', 'edge-1', 'Select tangent chain');
-    expect(read).toHaveBeenCalledTimes(8); expect(readChain).toHaveBeenCalledTimes(3);
+    expect(read).toHaveBeenCalledTimes(9); expect(readChain).toHaveBeenCalledTimes(3);
   });
   it('offers Select other over planes, with or without a body under the pointer', async () => {
     await mount(solidDocument(), { build: topologyBuild, buildState: 'ready' });
