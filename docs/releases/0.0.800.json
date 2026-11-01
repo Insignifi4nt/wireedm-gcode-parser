@@ -16,7 +16,7 @@
   "publicNotes": {
     "summary": "Internal change to the automated review checks; the app is unchanged.",
     "changes": [
-      "The automated checks on proposed changes finish sooner, use fewer machines and stop early when a newer change replaces them, with no visible change in the app."
+      "The automated checks on proposed changes finish sooner, use less total runner time and stop early when a newer change replaces them, with no visible change in the app."
     ],
     "compatibility": "Installed machine packages, posts, saved revisions, controller output, CAD files and agent tools are unchanged.",
     "action": "No action needed."
