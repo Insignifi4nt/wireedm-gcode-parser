@@ -1,7 +1,8 @@
-import { Edge, Face, getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh, type Vector } from 'replicad';
+import { Edge, Face, getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh } from 'replicad';
 import type { gp_Dir, gp_Pnt } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadKernelDisposeShape } from './cadKernelShapes';
+import { cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKernelFaceNormal } from './cadKernelQueries';
 import type { CadMeshTopologyGroup } from '../../../domain/cad/cadDocument';
 import {
   parseCadEdgeSelection, parseCadFaceQuery, resolveCadEdgeSelection, resolveCadFaceQuery,
@@ -24,7 +25,6 @@ const tolerance = (...values: number[]) => Math.max(CAD_PRECISION.kernelConfusio
 const sameNumber = (a: number, b: number) => Math.abs(a - b) <= tolerance(a, b);
 const samePoint = (a: CadVector3, b: CadVector3) => norm(subtract(a, b)) <= tolerance(...a, ...b);
 const tuple = (point: gp_Pnt | gp_Dir): CadVector3 => [point.X(), point.Y(), point.Z()];
-function vectorTuple(vector: Vector): CadVector3 { try { return vector.toTuple(); } finally { vector.delete(); } }
 
 function boundsOf(shape: Edge | Face): CadTopologyDescriptor['bounds'] {
   const box = shape.boundingBox;
@@ -47,13 +47,13 @@ function describeEdge(entry: Extract<Entry, { kind: 'edge' }>): EdgeDescriptor {
   try {
     const nativeType = curve.curveType;
     if (nativeType !== 'LINE' && nativeType !== 'CIRCLE') return { ...base, curveType: 'other', nativeType };
-    const start = vectorTuple(curve.startPoint); const end = vectorTuple(curve.endPoint);
+    const start = cadKernelCurveStart(curve.wrapped); const end = cadKernelCurveEnd(curve.wrapped);
     if (nativeType === 'LINE') return { ...base, curveType: 'line', start, end };
     const adaptor = new (getOC()).BRepAdaptor_Curve(entry.shape.wrapped);
     try {
       const circle = adaptor.Circle(); const center = circle.Location(); const axis = circle.Axis(); const direction = axis.Direction();
       try {
-        return { ...base, curveType: 'circle', start, end, midpoint: vectorTuple(curve.pointAt(.5)),
+        return { ...base, curveType: 'circle', start, end, midpoint: cadKernelCurvePointAt(curve.wrapped, .5),
           center: tuple(center), axis: tuple(direction), radius: circle.Radius(), closed: curve.isClosed };
       } finally { direction.delete(); axis.delete(); center.delete(); circle.delete(); }
     } finally { adaptor.delete(); }
@@ -74,7 +74,7 @@ function describeFace(entry: Extract<Entry, { kind: 'face' }>): FaceDescriptor {
           // A reflected surface may reverse its parameter-frame handedness.
           // The plane axis plus TopAbs orientation alone then points inward.
           // BRepGProp evaluates the oriented surface normal in world coordinates.
-          const rawNormal = vectorTuple(entry.shape.normalAt());
+          const rawNormal = cadKernelFaceNormal(entry.shape);
           const magnitude = norm(rawNormal);
           if (!Number.isFinite(magnitude) || magnitude <= cadRoundoff(1)) throw new CadError('unsupported-selection', 'The planar face has no reliable oriented normal.');
           const normal: CadVector3 = [rawNormal[0] / magnitude, rawNormal[1] / magnitude, rawNormal[2] / magnitude];

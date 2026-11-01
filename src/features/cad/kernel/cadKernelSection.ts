@@ -1,9 +1,10 @@
-import { cast, getOC, makePln, type Shape3D, type SimplePoint, type Vector } from 'replicad';
+import { cast, getOC, type Shape3D, type SimplePoint } from 'replicad';
 import type { DxfEntity, DxfPoint } from '../../../domain/dxf/types';
 import type { CadSectionResult } from '../../../domain/cad/cadSection';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadEntitiesToCam } from '../../../domain/cad/cadCam';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
+import { cadKernelCurveEnd, cadKernelCurveStart, cadKernelCurveTangentAt, cadKernelPlaneThrough } from './cadKernelQueries';
 import { cadKernelDisposeOwned, cadKernelEdges, cadKernelSolids } from './cadKernelShapes';
 import { assertCadSectionClosedEndpoints } from './cadKernelSectionEndpoints';
 import { CAD_PRECISION, cadRoundoff } from '../../../domain/precision/cadPrecision';
@@ -16,7 +17,6 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
   const origin: SimplePoint = [basis.normal[0] * section.offset, basis.normal[1] * section.offset, basis.normal[2] * section.offset];
   const project = (coordinates: SimplePoint): DxfPoint => ({ x: coordinates[0] * basis.u[0] + coordinates[1] * basis.u[1] + coordinates[2] * basis.u[2],
     y: coordinates[0] * basis.v[0] + coordinates[1] * basis.v[1] + coordinates[2] * basis.v[2] });
-  const projectVector = (vector: Vector) => { try { return project(vector.toTuple()); } finally { vector.delete(); } };
   // Refuse a tangent/outside plane: cap-face intersections do not prove a cutting section.
   const normalAxis = section.plane === 'XY' ? 2 : section.plane === 'XZ' ? 1 : 0;
   const coordinate = origin[normalAxis];
@@ -39,7 +39,7 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
       } finally { componentBox.delete(); }
     }
   } finally { for (const component of components) cadKernelDisposeOwned(component); }
-  const plane = makePln(origin, basis.normal);
+  const plane = cadKernelPlaneThrough(origin, basis.normal);
   try {
     const builder = new (getOC()).BRepAlgoAPI_Section(shape.wrapped, plane, false);
     try {
@@ -58,7 +58,7 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
             try {
               const adaptor = new (getOC()).BRepAdaptor_Curve(edge.wrapped);
               try {
-                const start = projectVector(curve.startPoint); const end = projectVector(curve.endPoint);
+                const start = project(cadKernelCurveStart(curve.wrapped)); const end = project(cadKernelCurveEnd(curve.wrapped));
                 switch (curve.curveType) {
                   case 'LINE':
                     if (Math.hypot(end.x - start.x, end.y - start.y) <= tolerance) throw new CadError('degenerate-section', 'The section has a degenerate edge. Choose a different offset.');
@@ -76,7 +76,7 @@ export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionRe
                         // missing angle can be a material opening on a large circle.
                         if (curve.isClosed && Math.abs(sweep - tau) <= angularRoundoff) entities.push({ type: 'circle', layer: 'CAD_SECTION', center, radius });
                         else {
-                          const tangent = projectVector(curve.tangentAt(0));
+                          const tangent = project(cadKernelCurveTangentAt(curve.wrapped, 0));
                           const clockwise = (start.x - center.x) * tangent.y - (start.y - center.y) * tangent.x < 0;
                           const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
                           const sweepRadians = clockwise ? -sweep : sweep;

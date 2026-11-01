@@ -1,4 +1,5 @@
-import { draw, drawCircle, drawRoundedRectangle, Edge, Face, getOC, Sketch, Wire, type Drawing } from 'replicad';
+import { Blueprint, Curve2D, DEG2RAD, draw, drawCircle, drawRoundedRectangle, Drawing, Edge, Face, getOC, Sketch, Wire } from 'replicad';
+import type { gp_Trsf2d } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadProfileToEntities, type ResolvedCadProfile } from '../../../domain/cad/cadSketchGeometry';
 import type { CadKernelPlane } from './cadKernelPlane';
@@ -73,13 +74,48 @@ export function cadKernelSketchFace(sketches: readonly Sketch[]): Face {
   } finally { for (const value of owned) cadKernelDisposeOwned(value); }
 }
 
+/**
+ * Replicad's Drawing.translate and rotate for a one-blueprint drawing: the same gp_Trsf2d, gp_GTrsf2d and
+ * GeomLib.GTransform of each curve, so the curves are the same. Replicad never deletes its gp_Trsf2d and
+ * leaves the gp_Trsf2d's general form to garbage collection; both are deleted here. The caller owns the
+ * new drawing, and the given one stays the caller's.
+ */
+function transformedDrawing(drawing: Drawing, configure: (transformation: gp_Trsf2d) => void): Drawing {
+  const oc = getOC(); const { curves } = drawing.blueprint;
+  const transformation = new oc.gp_Trsf2d();
+  try {
+    configure(transformation);
+    const general = new oc.gp_GTrsf2d(transformation);
+    const transformed: Curve2D[] = [];
+    try {
+      for (const curve of curves) transformed.push(new Curve2D(oc.GeomLib.GTransform(curve.wrapped, general)));
+      return new Drawing(new Blueprint(transformed));
+    } catch (error) { for (const curve of transformed) curve.delete(); throw error; }
+    finally { general.delete(); }
+  } finally { transformation.delete(); }
+}
+/** Replicad's Drawing.translate(x, y). */
+export function cadKernelTranslateDrawing(drawing: Drawing, x: number, y: number): Drawing {
+  return transformedDrawing(drawing, transformation => {
+    const vector = new (getOC()).gp_Vec2d(x, y);
+    try { transformation.SetTranslation(vector); } finally { vector.delete(); }
+  });
+}
+/** Replicad's Drawing.rotate(angle, [0, 0]): degrees about the origin. */
+export function cadKernelRotateDrawing(drawing: Drawing, angle: number): Drawing {
+  return transformedDrawing(drawing, transformation => {
+    const center = new (getOC()).gp_Pnt2d(0, 0);
+    try { transformation.SetRotation(center, angle * DEG2RAD); } finally { center.delete(); }
+  });
+}
+
 export function cadKernelProfileDrawing(profile: ResolvedCadProfile, drawings: Drawing[]): Drawing {
   const own = (drawing: Drawing) => { drawings.push(drawing); return drawing; };
   function analyticBoundary(): Drawing {
     const entities = cadProfileToEntities(profile); const first = entities[0];
-    if (entities.length === 1 && first?.type === 'circle') return own(own(drawCircle(first.radius)).translate(first.center.x, first.center.y));
+    if (entities.length === 1 && first?.type === 'circle') return own(cadKernelTranslateDrawing(own(drawCircle(first.radius)), first.center.x, first.center.y));
     if (entities.length === 1 && first?.type === 'arc' && Math.abs(first.endAngle - first.startAngle) === 2 * Math.PI) {
-      return own(own(drawCircle(first.radius)).translate(first.center.x, first.center.y));
+      return own(cadKernelTranslateDrawing(own(drawCircle(first.radius)), first.center.x, first.center.y));
     }
     if (!first || first.type !== 'line' && first.type !== 'arc') throw new CadError('invalid-profile', 'A profile needs a closed analytic boundary of lines and circular arcs.');
     const pen = draw([first.start.x, first.start.y]);
@@ -95,22 +131,22 @@ export function cadKernelProfileDrawing(profile: ResolvedCadProfile, drawings: D
   }
   switch (profile.kind) {
     case 'rectangle': {
-      if (profile.cornerRadius === 0) return own(own(drawRoundedRectangle(profile.width, profile.height)).translate(profile.x + profile.width / 2, profile.y + profile.height / 2));
+      if (profile.cornerRadius === 0) return own(cadKernelTranslateDrawing(own(drawRoundedRectangle(profile.width, profile.height)), profile.x + profile.width / 2, profile.y + profile.height / 2));
       // Explicit analytic arcs also handle radius exactly half the shorter side.
       // Replicad's tangent-arc primitive fails on the zero-length straight edges.
       return analyticBoundary();
     }
-    case 'circle': return own(own(drawCircle(profile.radius)).translate(profile.x, profile.y));
+    case 'circle': return own(cadKernelTranslateDrawing(own(drawCircle(profile.radius)), profile.x, profile.y));
     case 'path': return analyticBoundary();
     case 'slot': {
       // The rectangle primitive cannot accept radius equal to half its shorter side.
       const halfStraight = (profile.length - profile.width) / 2;
       const radius = profile.width / 2;
-      if (halfStraight === 0) return own(own(drawCircle(radius)).translate(profile.x, profile.y));
+      if (halfStraight === 0) return own(cadKernelTranslateDrawing(own(drawCircle(radius)), profile.x, profile.y));
       const drawing = own(draw([-halfStraight, -radius]).lineTo([halfStraight, -radius])
         .threePointsArcTo([halfStraight, radius], [halfStraight + radius, 0])
         .lineTo([-halfStraight, radius]).threePointsArcTo([-halfStraight, -radius], [-halfStraight - radius, 0]).close());
-      return own(own(drawing.rotate(profile.angle, [0, 0])).translate(profile.x, profile.y));
+      return own(cadKernelTranslateDrawing(own(cadKernelRotateDrawing(drawing, profile.angle)), profile.x, profile.y));
     }
     case 'polygon': {
       const first = profile.points[0];

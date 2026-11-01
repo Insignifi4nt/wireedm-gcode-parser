@@ -80,7 +80,7 @@ function boolean(kind: CadKernelBooleanKind, left: Shape3D, right: Shape3D): Sha
     // Replicad builds a second time after the constructor. The second build is part of today's
     // geometry (a near-full circular pattern differs without it), so it stays.
     builder.Build();
-    builder.SimplifyResult(true, true, CAD_PRECISION.kernelBooleanSimplifyMm);
+    builder.SimplifyResult(true, true, CAD_PRECISION.kernelBooleanSimplifyRad);
     return owned3D(builder.Shape(), () => true, `Could not ${verbs[kind]} as a 3d shape`);
   } finally { builder.delete(); }
 }

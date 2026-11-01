@@ -2,11 +2,14 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { CompoundSketch, drawCircle, drawRoundedRectangle, makeAx1, makeBox, makeCylinder, makeSphere, Plane, setOC, Vector, type Shape3D, type Sketch } from 'replicad';
+import { CompoundSketch, draw, drawCircle, drawRoundedRectangle, makeAx1, makeBox, makeCylinder, makePln, makeSphere, Plane, setOC, Vector,
+  type Drawing, type Shape3D, type Sketch } from 'replicad';
+import type { gp_Pln } from 'replicad-opencascadejs';
 import { cadKernelAx1, cadKernelBuilders, cadKernelScaledUnitVector } from './cadKernelBuilders';
 import { CadKernelPlane } from './cadKernelPlane';
-import { cadKernelSketchFace, cadKernelSketchOnPlane } from './cadKernelSketch';
-import { cadKernelDisposeShape, cadKernelIsValid } from './cadKernelShapes';
+import { cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKernelCurveTangentAt, cadKernelFaceNormal, cadKernelPlaneThrough } from './cadKernelQueries';
+import { cadKernelRotateDrawing, cadKernelSketchFace, cadKernelSketchOnPlane, cadKernelTranslateDrawing } from './cadKernelSketch';
+import { cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelEdges, cadKernelFaces, cadKernelIsValid } from './cadKernelShapes';
 import { watchCadKernelBuilders, type CadKernelBuilderKind } from './__tests__/cadKernelBuilderWatch';
 import { watchCadKernelNativeObjects } from './__tests__/cadKernelNativeObjects';
 
@@ -85,9 +88,11 @@ describe('owned builder adapters', () => {
 describe('owned native values', () => {
   const directions = [[0.3, -0.4, 0.866], [0, 0, -1], [1e-3, 1, 1e3]] as const;
   it.each(directions)('extrudes along (%s, %s, %s) with Replicad\'s normalized vector and deletes its temporaries', (...direction) => {
-    const objects = watchCadKernelNativeObjects(temporaries);
+    // Normalized and Multiplied each return a new vector; only the last is the caller's.
+    const objects = watchCadKernelNativeObjects(temporaries, ['gp_Vec.Normalized', 'gp_Vec.Multiplied']);
     const owned = cadKernelScaledUnitVector(direction, 12.5);
-    try { expect(objects.made()).toBe(1); expect(objects.outstanding()).toEqual({}); } finally { objects.restore(); }
+    try { expect(objects.made()).toBe(3); expect(objects.outstanding(owned)).toEqual({}); expect(objects.outstanding()).toEqual({ 'gp_Vec.Multiplied': 1 }); }
+    finally { objects.restore(); }
     const reference = new Vector([...direction]).normalized().multiply(12.5);
     try { expect([owned.X(), owned.Y(), owned.Z()]).toEqual(reference.toTuple()); }
     finally { owned.delete(); reference.delete(); }
@@ -145,5 +150,115 @@ describe('owned native values', () => {
     const reference = consumed.length === 1 ? consumed[0].face() : new CompoundSketch(consumed).face();
     try { expect(face.serialize()).toBe(reference.serialize()); for (const sketch of owned) expect(sketch.wire.isNull).toBe(false); }
     finally { cadKernelDisposeShape(face); cadKernelDisposeShape(reference); [...owned, ...consumed].forEach(sketch => sketch.delete()); }
+  });
+});
+
+// Replicad's curve, face and plane queries leak the gp_Pnt that Value returns and the gp_XYZ each Vector copies.
+const queryObjects = ['gp_Pnt', 'gp_Dir', 'gp_Vec', 'gp_Pln', 'BRepGProp_Face'] as const;
+const queryReturns = ['BRepAdaptor_Curve.Value', 'gp_Pnt.XYZ', 'gp_Vec.XYZ', 'gp_Dir.XYZ'] as const;
+const tuple = (vector: Vector) => { try { return vector.toTuple(); } finally { vector.delete(); } };
+const cutBox = (): Shape3D => { const box = target(), cylinder = tool(); try { return cadKernelBuilders.cut(box, cylinder); } finally { cadKernelDisposeShape(box); cadKernelDisposeShape(cylinder); } };
+
+describe('owned queries', () => {
+  // Lines and full circles of a box cut by a cylinder, and the half-circle arcs of a drawn circle.
+  const edgeSources = [
+    { name: 'a box cut by a cylinder', shape: cutBox },
+    { name: 'a drawn circle', shape: () => { const sketch = drawCircle(4).translate(2, -3).sketchOnPlane() as Sketch; return sketch.wire; } }
+  ];
+  it.each(edgeSources)('reads the edges of $name like Replicad\'s curve queries and leaves nothing', source => {
+    const shape = source.shape(), edges = cadKernelEdges(shape);
+    try {
+      expect(edges.length).toBeGreaterThan(1);
+      for (const edge of edges) {
+        const curve = edge.curve;
+        try {
+          const objects = watchCadKernelNativeObjects(queryObjects, queryReturns);
+          let owned: number[][];
+          try {
+            owned = [cadKernelCurveStart(curve.wrapped), cadKernelCurveEnd(curve.wrapped),
+              ...[0, .25, .5, 1].flatMap(position => [cadKernelCurvePointAt(curve.wrapped, position), cadKernelCurveTangentAt(curve.wrapped, position)])];
+            expect(objects.made()).toBeGreaterThan(0); expect(objects.outstanding()).toEqual({});
+          } finally { objects.restore(); }
+          const reference = [tuple(curve.startPoint), tuple(curve.endPoint), ...[0, .25, .5, 1].flatMap(position => [tuple(curve.pointAt(position)), tuple(curve.tangentAt(position))])];
+          expect(owned).toEqual(reference);
+        } finally { curve.delete(); }
+      }
+    } finally { edges.forEach(cadKernelDisposeOwned); cadKernelDisposeShape(shape); }
+  });
+  it('reads each face normal of a cut box, a mirrored box and a sphere like Replicad\'s Face.normalAt and leaves nothing', () => {
+    const box = cutBox(), mirrored = cadKernelBuilders.mirror(box, 'YZ'), sphere = ball();
+    try {
+      for (const shape of [box, mirrored, sphere]) {
+        const faces = cadKernelFaces(shape);
+        try {
+          for (const face of faces) {
+            const objects = watchCadKernelNativeObjects(queryObjects, queryReturns);
+            let owned: number[];
+            try { owned = cadKernelFaceNormal(face); expect(objects.made()).toBe(3); expect(objects.outstanding()).toEqual({}); } finally { objects.restore(); }
+            expect(owned).toEqual(tuple(face.normalAt()));
+          }
+        } finally { faces.forEach(cadKernelDisposeOwned); }
+      }
+    } finally { [box, mirrored, sphere].forEach(cadKernelDisposeShape); }
+  });
+  it.each([[[0, 0, 2.5], [0, 0, 1]], [[0, -5, 0], [0, 1, 0]], [[1e4, -3, 0.25], [0.36, -0.48, 0.8]]] as const)(
+    'makes the plane through %j along %j like Replicad\'s makePln', (origin, normal) => {
+      const read = (plane: gp_Pln) => {
+        const frame = plane.Position(), location = frame.Location(), x = frame.XDirection(), y = frame.YDirection(), z = frame.Direction();
+        try { return [location, x, y, z].flatMap(value => [value.X(), value.Y(), value.Z()]); }
+        finally { [location, x, y, z, frame].forEach(value => value.delete()); }
+      };
+      const objects = watchCadKernelNativeObjects(queryObjects, queryReturns);
+      let owned: gp_Pln;
+      try { owned = cadKernelPlaneThrough(origin, normal); expect(objects.made()).toBe(3); expect(objects.outstanding(owned)).toEqual({}); } finally { objects.restore(); }
+      const reference = makePln([...origin], [...normal]);
+      try { expect(read(owned)).toEqual(read(reference)); } finally { owned.delete(); reference.delete(); }
+    });
+  it('sees the points and copies Replicad\'s own queries leave', () => {
+    const shape = cutBox(), edges = cadKernelEdges(shape), faces = cadKernelFaces(shape);
+    try {
+      const curve = edges[0].curve, face = faces[0];
+      const objects = watchCadKernelNativeObjects(queryObjects, queryReturns);
+      try {
+        tuple(curve.startPoint); tuple(face.normalAt());
+        expect(objects.outstanding()).toMatchObject({ 'BRepAdaptor_Curve.Value': 1, 'gp_Pnt.XYZ': 1, 'gp_Vec.XYZ': 1 });
+      } finally { objects.restore(); curve.delete(); }
+    } finally { [...edges, ...faces].forEach(cadKernelDisposeOwned); cadKernelDisposeShape(shape); }
+  });
+});
+
+describe('owned drawing transforms', () => {
+  const transforms2d = ['gp_Trsf2d', 'gp_GTrsf2d', 'gp_Vec2d', 'gp_Pnt2d'] as const;
+  const slot = () => draw([-6, -2]).lineTo([6, -2]).threePointsArcTo([6, 2], [8, 0]).lineTo([-6, 2]).threePointsArcTo([-6, -2], [-8, 0]).close();
+  const shapes: readonly { name: string; drawing: () => Drawing }[] = [
+    { name: 'a circle', drawing: () => drawCircle(4) }, { name: 'a rectangle', drawing: () => drawRoundedRectangle(20, 12) }, { name: 'a slot', drawing: slot }
+  ];
+  function compare(owned: Drawing, reference: Drawing) {
+    const sketches: Sketch[] = [];
+    try {
+      expect(owned.serialize()).toBe(reference.serialize());
+      sketches.push(owned.sketchOnPlane() as Sketch, reference.sketchOnPlane() as Sketch);
+      expect(sketches[0].wire.serialize()).toBe(sketches[1].wire.serialize());
+    } finally { sketches.forEach(sketch => sketch.delete()); }
+  }
+  it.each(shapes)('translates $name like Replicad\'s Drawing.translate and deletes its transforms', shape => {
+    const source = shape.drawing(), objects = watchCadKernelNativeObjects(transforms2d);
+    let owned: Drawing;
+    try { owned = cadKernelTranslateDrawing(source, 3.5, -7.25); expect(objects.made()).toBe(3); expect(objects.outstanding()).toEqual({}); } finally { objects.restore(); }
+    const reference = source.translate(3.5, -7.25);
+    try { compare(owned, reference); } finally { [owned, reference, source].forEach(drawing => drawing.blueprint.delete()); }
+  });
+  it.each(shapes)('rotates $name like Replicad\'s Drawing.rotate about the origin and deletes its transforms', shape => {
+    const source = shape.drawing(), objects = watchCadKernelNativeObjects(transforms2d);
+    let owned: Drawing;
+    try { owned = cadKernelRotateDrawing(source, 37.5); expect(objects.made()).toBe(3); expect(objects.outstanding()).toEqual({}); } finally { objects.restore(); }
+    const reference = source.rotate(37.5, [0, 0]);
+    try { compare(owned, reference); } finally { [owned, reference, source].forEach(drawing => drawing.blueprint.delete()); }
+  });
+  it('sees the gp_Trsf2d Replicad\'s Drawing.translate never deletes', () => {
+    const source = drawCircle(4), objects = watchCadKernelNativeObjects(transforms2d);
+    let moved: Drawing | undefined;
+    try { moved = source.translate(1, 2); expect(objects.outstanding()).toMatchObject({ gp_Trsf2d: 1 }); }
+    finally { objects.restore(); moved?.blueprint.delete(); source.blueprint.delete(); }
   });
 });
