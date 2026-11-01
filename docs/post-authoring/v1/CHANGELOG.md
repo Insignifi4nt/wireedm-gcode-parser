@@ -1,5 +1,10 @@
 # Post authoring contract changelog
 
+## App 0.0.792
+
+- The motion audit accepts every correctly rounded coordinate. Its floating-point allowance is now a few units in the last place of the values compared, so it grows with their magnitude, instead of a fixed guard that half a unit in the last place of any coordinate from 8 mm upwards exceeded. A straight move's emitted length is bounded by the exact extremes its rounding allows, not a first-order estimate. Before, 8.0015 mm written as 8.002 at three decimals failed, and so did many correctly rounded lengths of 2 mm or more.
+- The audit accepts everything it accepted before. Installation conformance and controller generation can now accept posts and programs they refused before. Package formats, hashes, engine API 1 and controller bytes are unchanged; no installed package or saved revision is rewritten.
+
 ## App 0.0.686
 
 - Publishes one current `/documentation/` entry point, static Markdown/HTML, generated contracts and scoped `llms.txt` discovery.
