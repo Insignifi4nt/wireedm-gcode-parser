@@ -55,6 +55,8 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
     if (!owns() || !source || !operations) throw new Error('The feature input changed. Choose its geometry again.');
     return operations.inspect(source.inputToken, request, expectedVersion, signal);
   };
+  // Each pick, clear, box and chain request takes the next number; a chain answered after a later one is dropped.
+  const request = useRef(0);
   const fail = (cause: unknown) => setState(previous => previous?.command === command ? { ...previous, error: userFacingMessage(cause, 'Unable to select this geometry.') } : previous);
   /** Puts picks on the input body into the selection; a Shell opening is one face, so it always replaces. */
   const take = (bodyId: string, picks: readonly CadTopologyPick[], merge: boolean | 'union') => {
@@ -67,12 +69,14 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
   };
   const pick = (hit: CadTopologyHit | null, additive: boolean) => {
     if (!owns() || !source || current?.busy) return;
+    request.current++;
     if (!hit) { setState(previous => previous?.command === command ? { ...previous, selection: null, error: null } : previous); return; }
     try { take(hit.bodyId, [hit.pick], additive); } catch (cause) { fail(cause); }
   };
   /** Replaces the picks with these, as a box or Select other chooses them. */
   const set = (bodyId: string, picks: readonly CadTopologyPick[]) => {
     if (!owns() || !source || current?.busy) return;
+    request.current++;
     try { take(bodyId, picks, false); } catch (cause) { fail(cause); }
   };
   // The input body's adjacency, read once per input build when a chain first asks for it.
@@ -84,16 +88,17 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
     if (!owns() || !source || !operations || !owner || current?.busy) return;
     if (mode === 'face' || !operations.adjacency) { pick(hit, additive); return; }
     if (hit.bodyId !== source.bodyId || hit.pick.kind !== mode) { fail(new Error('Choose edges on the input body.')); return; }
+    const ticket = ++request.current, stale = () => !owns() || latestSource.current !== source || job.current !== owner || request.current !== ticket;
     const kept = adjacencyRead.current?.source === source ? adjacencyRead.current.promise : null;
     const promise = kept ?? operations.adjacency(source.inputToken, { bodyId: source.bodyId, expectedBuildId: source.result.buildId }, version, owner.abort.signal);
     if (!kept) adjacencyRead.current = { source, promise };
     void promise.then(adjacency => {
-      if (!owns() || latestSource.current !== source || job.current !== owner) return;
+      if (stale()) return;
       const found = cadTopologyChainPicks(adjacency, hit.pick, gesture, faceKey);
       if (found) take(source.bodyId, found.keys.map(key => ({ kind: found.kind, key })), additive ? 'union' : false);
     }).catch((cause: unknown) => {
       if (adjacencyRead.current?.promise === promise) adjacencyRead.current = null;
-      if (owns() && latestSource.current === source) fail(cause);
+      if (!stale()) fail(cause);
     });
   };
   const finish = async () => {

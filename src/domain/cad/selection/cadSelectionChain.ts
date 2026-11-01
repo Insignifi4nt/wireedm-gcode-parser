@@ -2,6 +2,10 @@
  * Chain selection over curves that meet at shared vertices, for sketch edges and solid edges alike. A curve's ends name vertices; two ends
  * naming the same vertex meet there, so a coincident identity is one vertex. The walk runs both ways from a seed and continues through a
  * vertex only while exactly one curve may follow; where two or more may, it stops and reports the vertex rather than choose one.
+ *
+ * Which curves may follow depends on the mode. A contour counts every eligible curve at the vertex, so a T junction stops it. A tangent
+ * chain counts only the curves continuing smoothly, as SOLIDWORKS Select Tangency and native fillet propagation do: a curve leaving at a
+ * corner neither stops it nor is reported, and two smooth continuations stop it and are reported.
  */
 export type CadChainVector = readonly number[];
 export type CadChainEnd = 'start' | 'end';
@@ -26,7 +30,7 @@ export interface CadChainResult {
   /** Members in order along the chain, from one end to the other, or round the loop from the seed when closed. */
   readonly ids: readonly string[];
   readonly closed: boolean;
-  /** Vertices where the walk stopped because more than one curve could follow. */
+  /** Vertices where the walk stopped because more than one curve could follow; in a tangent chain, only smooth continuations count. */
   readonly branches: readonly string[];
 }
 /** A join the walk may pass: it arrives along `arriving` through `from`'s `fromEnd` and would leave along `leaving` through `to`'s `toEnd`. */

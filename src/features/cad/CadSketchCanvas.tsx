@@ -48,7 +48,7 @@ import { useCadSketchBoxSelection } from './useCadSketchBoxSelection';
 import { cadSketchDimensionPick, cadSketchDimensionPickOf, cadSketchDimensionSelectionStatus, cadSketchRelationHighlight, isCadSketchGlyphRelation, type CadSketchDimensionPick } from './cadSketchDimensionSelection';
 import { cadSketchDrawnDimensions } from './cadSketchGraphDimensionLayout';
 import { CAD_SKETCH_AXIS_PIXELS, CAD_SKETCH_FIXED_SELECTIONS, cadSelectionFilterForSketchPick, cadSketchFixedEligible, cadSketchGeometryPickAllows, cadSketchGraphSelectionSet, cadSketchGraphSelectionsEqual,
-  cadSketchPickScope, cadSketchPickScopeHasEdges, cadSketchPickScopeHasPoints, pickCadSketchFixedElement, type CadSketchGraphPickFilter, type CadSketchGraphPickScope } from './cadSketchGraphSelection';
+  cadSketchPickScope, cadSketchPickScopeHasEdges, cadSketchPickScopeHasPoints, pickCadSketchFixedElement, cadSketchFixedElementsAt, type CadSketchGraphPickFilter, type CadSketchGraphPickScope } from './cadSketchGraphSelection';
 import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_ORIGIN_ID, CAD_SKETCH_V_AXIS_ID, cadSketchVirtualSubject, isCadSketchVirtualId, type CadSketchVirtualId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
 import { CadSketchDimensionPreview, CadSketchPointerReadout } from './CadSketchDimensionPreview';
@@ -773,6 +773,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
    * A chain stops where the path forks and says so.
    */
   const selectChain = (seed: string, mode: CadChainMode, additive: boolean) => {
+    // A menu command runs after its menu closes, so it reads the lock of the render that closed it, not the one that opened it.
     if (!sourceGraph || !graphControls?.onSelectSet || tool !== 'select' || sketch.kind !== 'sketch' || geometryPick || positionPick || isPreview || interactionLocked || !cadSketchPickScopeHasEdges(pickFilter)) return false;
     const chain = cadSketchSelectionChain(sourceGraph.graph, sourceGraph.parameters, seed, mode);
     if (!chain.ids.length) return false;
@@ -789,6 +790,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     } catch (cause) { onError(userFacingMessage(cause, 'Unable to select this chain.')); }
     return true;
   };
+  const currentSelectChain = useRef(selectChain);
+  currentSelectChain.current = selectChain;
   /** The sketch position Select other works at: the pointer over the canvas, else the focused point or edge. */
   const otherPoint = (target: EventTarget | null): SketchPoint | null => {
     if (lastPointer.current) return getRawPoint(lastPointer.current);
@@ -806,12 +809,17 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (!sourceGraph || !graphControls?.onSelectSet || tool !== 'select' || sketch.kind !== 'sketch' || geometryPick || positionPick || isPreview || interactionLocked) return false;
     const rect = svg.current?.getBoundingClientRect(), point = otherPoint(target);
     if (!rect?.height || !point) return false;
-    const hits = graphPicks(point, span / rect.height), fixed = fixedAt(point, span / rect.height);
-    const candidates = [...hits.filter(hit => hit.kind === 'point'), ...fixed?.kind === 'point' ? [fixed] : [], ...hits.filter(hit => hit.kind === 'entity'), ...fixed?.kind === 'entity' ? [fixed] : []];
+    const hits = graphPicks(point, span / rect.height), fixed = fixedEligible ? cadSketchFixedElementsAt(point, span / rect.height, fixedEligible) : [];
+    const candidates = [...hits.filter(hit => hit.kind === 'point'), ...fixed.filter(item => item.kind === 'point'), ...hits.filter(hit => hit.kind === 'entity'), ...fixed.filter(item => item.kind === 'entity')];
     const step = cadSelectOtherStep(candidates, graphControls.selection, sameAtom, direction);
     if (!step) return false;
     try { graphControls.onSelectSet(cadSketchGraphSelectionSet(sourceGraph.graph, cadSelectOtherApply(graphControls.selection, step, sameAtom)), false); }
-    catch (cause) { onError(userFacingMessage(cause, 'Unable to select this geometry.')); }
+    catch (cause) { onError(userFacingMessage(cause, 'Unable to select this geometry.')); return true; }
+    // Keys then act on the new selection: focus moves to its element, or to the canvas, never staying on the one it replaced.
+    const { candidate } = step;
+    const element = svg.current?.querySelector<SVGElement>(isCadSketchVirtualId(candidate.id) ? `[data-cad-sketch-fixed="${candidate.id}"]`
+      : `[data-cad-sketch-${candidate.kind === 'point' ? 'point' : 'entity'}="${CSS.escape(candidate.id)}"]`);
+    (element?.getAttribute('tabindex') === '0' ? element : svg.current)?.focus({ preventScroll: true });
     return true;
   };
   const overlapTarget = currentOverlap?.target;
@@ -891,9 +899,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     { label: overlapTarget.kind === 'point' ? 'Select point' : 'Select edge', onHighlight: () => { highlightEdgeAction(); setPickHighlight(overlapTarget); }, onSelect: () => selectOverlap(overlapTarget) },
     ...(overlapTarget.kind === 'entity' && !isCadSketchVirtualId(overlapTarget.id) && cadSketchPickScopeHasEdges(pickFilter) ? [
       { label: 'Select contour', help: 'Every edge joined end to end with this one. Double-click an edge for the same.', onHighlight: () => { highlightEdgeAction(); setPickHighlight(overlapTarget); },
-        onSelect: () => actOnPattern(() => selectChain(overlapTarget.id, 'contour', currentOverlap.toggle)) },
+        onSelect: () => actOnPattern(() => currentSelectChain.current(overlapTarget.id, 'contour', currentOverlap.toggle)) },
       { label: 'Select tangent chain', help: 'The edges meeting this one without a turn. Alt + double-click an edge for the same.', onHighlight: () => { highlightEdgeAction(); setPickHighlight(overlapTarget); },
-        onSelect: () => actOnPattern(() => selectChain(overlapTarget.id, 'tangent', currentOverlap.toggle)) }] : []),
+        onSelect: () => actOnPattern(() => currentSelectChain.current(overlapTarget.id, 'tangent', currentOverlap.toggle)) }] : []),
     ...(currentOverlap.candidates.length > 1 ? [{ label: 'Select other', help: 'N picks the next candidate under the pointer, and Shift + N the one before.', onSelect: () => setOverlap({ ...currentOverlap, target: undefined, split: undefined, trim: undefined, extend: undefined, extendEnds: undefined, extendEnd: undefined, action: undefined }) }] : [])
   ] : currentOverlap?.candidates.map(atom => {
     const point = atom.kind === 'point' ? sourceGraph?.points.find(point => point.id === atom.id) : null;

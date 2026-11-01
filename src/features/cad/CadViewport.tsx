@@ -952,10 +952,11 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         point.set(x, y, z).project(camera);
         return point.z < -1 || point.z > 1 ? null : { x: (point.x + 1) / 2 * width, y: (1 - point.y) / 2 * height };
       };
-      // A body the section removes entirely is not drawn, so the box cannot choose it. A command's edge pick takes edges whatever the filter.
+      // A body the section removes entirely is not drawn, so the box cannot choose it, and of the rest only the kept side counts, for a
+      // window as for a crossing. A command's edge pick takes edges whatever the filter.
       const clip = pickClip(), auto = data.current.pickMode === 'auto';
       const bodies = pickableBodies.flatMap(body => { const mesh = meshByObject.get(body); return body.visible && mesh && !cadBoundsClipped(mesh.bounds, clip) ? [mesh] : []; });
-      const target = cadBoxSelection({ rect: cadScreenBox(start, end), mode: cadBoxModeFor(start, end), bodies, project,
+      const target = cadBoxSelection({ rect: cadScreenBox(start, end), mode: cadBoxModeFor(start, end), bodies, project, clip,
         kinds: { body: auto && accepts('body'), edge: !auto || accepts('edge'), face: auto && accepts('face') } });
       if (target?.kind === 'topology') { if (data.current.onTopologySet) data.current.onTopologySet(target.bodyId, target.picks); }
       else if (auto) data.current.onSelect(target?.featureId ?? null);
@@ -1010,7 +1011,8 @@ export function CadViewport({ meshes, references = NO_REFERENCES, referenceVersi
         const auto = data.current.pickMode === 'auto', feature = auto ? hitFeature(false) : null;
         const hit = data.current.pickingEnabled && !feature ? hitTopology() : null;
         const id = feature ?? (data.current.pickMode === 'body' || auto && !hit ? hitFeature() : null);
-        const face = hit?.pick.kind === 'edge' ? faceUnder() : null, others = feature ? [] : otherCandidates();
+        // Select other is offered over a plane or outline as well, whenever more than one candidate lies under the pointer.
+        const face = hit?.pick.kind === 'edge' ? faceUnder() : null, others = otherCandidates();
         data.current.onContextMenu?.({ clientX: event.clientX, clientY: event.clientY, trigger: 'pointer',
           target: hit ? { kind: 'topology', hit, ...face ? { faceKey: face.bodyId === hit.bodyId ? face.pick.key : null } : {} } : id ? { kind: 'feature', featureId: id } : null,
           ...(others.length > 1 ? { selectOther: () => { stepOther(others, 1); } } : {}) });

@@ -28,17 +28,19 @@ function indexOf(adjacency: CadTopologyAdjacency): Index {
   return index;
 }
 
-/** Unit directions that agree within the kernel's direction tolerance, `kernelDirection`; a reversal is never smooth. */
+/**
+ * A join turning less than `kernelTangentChainRad`, the angle below which native fillet and chamfer carry a treated edge on to the next.
+ * Using the builders' own rule keeps a tangent chain equal to what Follow tangent edges treats.
+ */
 function smoothJoin({ arriving, leaving }: CadChainJoin<SolidEdge>): boolean {
   const [ax, ay, az] = arriving, [bx, by, bz] = leaving;
-  const dot = ax * bx + ay * by + az * bz;
-  return dot > 0 && Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx) <= CAD_PRECISION.kernelDirection;
+  return Math.atan2(Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx), ax * bx + ay * by + az * bz) < CAD_PRECISION.kernelTangentChainRad;
 }
 
 /**
- * The tangent chain of a solid edge: the edges continuing it without a turn, vertex by vertex, as a fillet follows tangent edges. Edges
- * where faces meet smoothly join only a chain seeded by one, so a corner's chain never runs into a blend's boundary. Where two edges could
- * continue it, the chain stops and reports the vertex.
+ * The tangent chain of a solid edge: the edges continuing it without a turn, vertex by vertex, as native fillet and chamfer propagate.
+ * Edges where faces meet smoothly join only a chain seeded by one, so a corner's chain never runs into a blend's boundary. Where more than
+ * one edge continues it tangentially, the chain stops and reports the vertex; an edge leaving at a corner does not stop it.
  */
 export function cadTopologyEdgeChain(adjacency: CadTopologyAdjacency, edgeKey: string): CadChainResult {
   return cadSelectionChain(indexOf(adjacency).chain, edgeKey, { mode: 'tangent', smooth: smoothJoin, eligible: (curve, seed) => curve.smooth === seed.smooth });

@@ -103,6 +103,12 @@ const roles = {
    */
   kernelBooleanSimplifyRad: 0.001,
   /**
+   * Angle, in radians, below which OpenCascade's fillet and chamfer builders carry a treated edge on through a vertex to the next edge
+   * (their tangent propagation). Measured on both builders: joins turning 0.0995 rad propagate and 0.1005 rad do not, at 0.1 and 10
+   * times the size, convex and concave. Solid tangent chains read it so they select what Follow tangent edges treats.
+   */
+  kernelTangentChainRad: 0.1,
+  /**
    * Two profile points within this distance on each axis are the same when a profile's lines and arcs are oriented and its
    * outline is closed. Replicad 1.1's samePoint, kept so profile curves stay the same.
    */

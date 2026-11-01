@@ -63,6 +63,32 @@ it('selects tangent chains and loops from the input adjacency, read once, adding
   expect(picker.selection).toBeNull(); expect(h.operations.adjacency).toHaveBeenCalledOnce();
 });
 
+it('drops a chain answered after a later pick, clear or chain, and its failure too', async () => {
+  const h = await mount(), keys = () => picker.selection?.picks.map(pick => pick.key).sort();
+  const reads: ReturnType<typeof deferred<CadTopologyAdjacency>>[] = [];
+  h.operations.adjacency.mockImplementation(() => { const read = deferred<CadTopologyAdjacency>(); reads.push(read); return read.promise; });
+  const adjacency: CadTopologyAdjacency = { bodyId: 'pad', buildId: 'input-build', edges: ['a', 'b'], edgeVertices: [0, 1, 1, 2], edgeTangents: [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0],
+    edgeFaces: [0, -1, 0, -1], edgeSmooth: [false, false], faces: ['top'], faceLoops: [[[0, 1]]] };
+  // A chain waits for the adjacency; meanwhile edge b is picked alone. The late chain leaves that pick as it is.
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+  await act(async () => picker.pick({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, false));
+  await act(async () => reads[0].resolve(adjacency));
+  expect(keys()).toEqual(['b']);
+  // The read is kept for the input; a chain after a clear applies, and one overtaken by a second chain does not.
+  await act(async () => picker.pick(null, false));
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+  expect(keys()).toEqual(['a', 'b']); expect(h.operations.adjacency).toHaveBeenCalledOnce();
+  await act(async () => { picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null); picker.pick(null, false); });
+  expect(picker.selection).toBeNull();
+  // A failed read that a later pick has overtaken shows no error.
+  const failing = await mount(), failed = deferred<CadTopologyAdjacency>();
+  failing.operations.adjacency.mockImplementation(() => failed.promise.then(() => { throw new Error('The adjacency read failed.'); }));
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+  await act(async () => picker.pick({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, false));
+  await act(async () => failed.resolve(adjacency));
+  expect(picker.error).toBeNull(); expect(keys()).toEqual(['b']);
+});
+
 it('cancels an in-flight conversion and releases only its input without changing the feature', async () => {
   const h = await mount(); await act(async () => picker.pick({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, false));
   let pending!: Promise<void>; await act(async () => { pending = picker.finish(); });

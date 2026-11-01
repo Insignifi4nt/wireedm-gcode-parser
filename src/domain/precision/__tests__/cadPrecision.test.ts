@@ -28,8 +28,8 @@ const VERSION_2: Readonly<Record<CadPrecisionRole, number>> = {
   annotationReadingTie: 1e-12, annotationParallelRelative: 1e-12, annotationFullTurnSlackRad: 1e-9, annotationMinimumRadiusMm: 1e-6,
   kernelConfusionMm: 1e-7, minimumLengthMm: 1e-7, minimumAngleDeg: 1e-7, modelExtentMm: 1e6, sweepTopologyMm: 2e-7,
   kernelMinimumVolumeMm3: 1e-9, kernelBoundsSlackMm: 1e-6, pocketCapMarginFloorMm: 1e-6, kernelDirection: 1e-10,
-  frameOrthonormalResidual: 64 * Number.EPSILON, tessellationMm: 0.05, tessellationAngleRad: 0.15, kernelBooleanSimplifyRad: 0.001, kernelProfilePointMm: 1e-6,
-  gearAngleMarginRad: 1e-6, gearParameterSlackRad: 1e-10, gearJoinPerModule: 1e-8, gearUndercutShiftSlack: 1e-12, gearBoundReserveRelative: 1e-12,
+  frameOrthonormalResidual: 64 * Number.EPSILON, tessellationMm: 0.05, tessellationAngleRad: 0.15, kernelBooleanSimplifyRad: 0.001, kernelTangentChainRad: 0.1,
+  kernelProfilePointMm: 1e-6, gearAngleMarginRad: 1e-6, gearParameterSlackRad: 1e-10, gearJoinPerModule: 1e-8, gearUndercutShiftSlack: 1e-12, gearBoundReserveRelative: 1e-12,
   camHandoffEndpointMm: 1e-7, camHandoffCoincidenceMm: 1e-9, camDefaultEndpointMm: 0.001, camDefaultCoincidenceMm: 1e-5,
   dxfCamCoincidenceMm: 0.000002, camDegenerateAreaMm2: 1e-9, camClosingDuplicateMm: 1e-9, camTieMm: 1e-12,
   camRankRelative: 1e-9, camRankAbsoluteMm: 1e-12, zeroLengthMm: 1e-12, pathInsideSlackMm: 1e-9,
@@ -73,6 +73,9 @@ const ORDERING: readonly Order[] = [
   { name: 'angular roundoff cap < boolean simplify angle < tessellation angle',
     // Booleans merge faces that are tangent up to roundoff, and never merge across a kink the display mesh would show.
     holds: () => P.angularRoundoffCapRad < P.kernelBooleanSimplifyRad && P.kernelBooleanSimplifyRad < P.tessellationAngleRad },
+  { name: 'angular roundoff cap < tangent chain angle',
+    // Edges tangent up to roundoff always continue a solid tangent chain.
+    holds: () => P.angularRoundoffCapRad < P.kernelTangentChainRad },
   { name: 'angular accuracy < mirror pairing tie, and angular roundoff cap <= mirror pairing tie',
     // A free mirror's quarter turns either way differ in summed squared movement by a fraction no larger than the error of the
     // directions they turn from, so a tie must cover the angular error a check allows, or noise would pick the turn.

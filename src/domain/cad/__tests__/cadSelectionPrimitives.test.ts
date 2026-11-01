@@ -135,7 +135,7 @@ describe('the chain walker', () => {
  * The top of a 4 by 2 plate whose corners are rounded: four straight rim edges and four quarter-circle rim edges, all tangent, with a
  * smooth vertical edge down from each rim vertex where a flat side meets a rounded one, and the top face bounded by the rim.
  */
-function plateTop(options: { extraTangent?: boolean; turn?: number } = {}): CadTopologyAdjacency {
+function plateTop(options: { extraTangent?: boolean; spur?: boolean; turn?: number } = {}): CadTopologyAdjacency {
   const edges: string[] = [], edgeVertices: number[] = [], edgeTangents: number[] = [], edgeFaces: number[] = [], edgeSmooth: boolean[] = [];
   // Rim directions at each of the eight rim vertices, running counter-clockwise; each rim edge is tangent to the next at their shared vertex.
   const directions = [[1, 0], [1, 0], [0, 1], [0, 1], [-1, 0], [-1, 0], [0, -1], [0, -1]];
@@ -155,6 +155,8 @@ function plateTop(options: { extraTangent?: boolean; turn?: number } = {}): CadT
   }
   for (let index = 0; index < 8; index++) add(`down-${index}`, index, 8 + index, [0, 0, -1], [0, 0, -1], [1 + (index + 7) % 8, 1 + index], true);
   if (options.extraTangent) add('fork', 1, 16, [1, 0, 0], [1, 0, 0], [-1, -1], false);
+  // A sharp edge leaving rim vertex 1 at a right angle, upwards.
+  if (options.spur) add('spur', 1, 16, [0, 0, 1], [0, 0, 1], [-1, -1], false);
   if (options.turn) {
     // Turn the start of rim 2, which follows rim 1, by `turn` radians about the vertical.
     const at = edges.indexOf('rim-2') * 6, [x, y] = [edgeTangents[at], edgeTangents[at + 1]], turn = options.turn;
@@ -170,10 +172,13 @@ describe('solid chains', () => {
     expect(cadTopologyEdgeChain(adjacency, 'rim-3')).toEqual({ seedId: 'rim-3', ids: ['rim-3', 'rim-4', 'rim-5', 'rim-6', 'rim-7', 'rim-0', 'rim-1', 'rim-2'], closed: true, branches: [] });
     expect(cadTopologyEdgeChain(adjacency, 'down-2')).toEqual({ seedId: 'down-2', ids: ['down-2'], closed: false, branches: [] });
   });
-  it('stops at a vertex where two tangent edges could continue, and at a join turned beyond the direction tolerance', () => {
+  it('stops where two tangent edges continue and at a join turned beyond the native angle, but passes a sharp spur', () => {
     expect(cadTopologyEdgeChain(plateTop({ extraTangent: true }), 'rim-4')).toMatchObject({ closed: false, branches: ['v1'] });
-    expect(cadTopologyEdgeChain(plateTop({ turn: CAD_PRECISION.kernelDirection / 2 }), 'rim-4')).toMatchObject({ closed: true });
-    const turned = cadTopologyEdgeChain(plateTop({ turn: CAD_PRECISION.kernelDirection * 4 }), 'rim-4');
+    // A sharp edge leaving at a corner is not a second continuation: the rim stays one closed chain and nothing is reported.
+    expect(cadTopologyEdgeChain(plateTop({ spur: true }), 'rim-4')).toMatchObject({ closed: true, branches: [] });
+    expect(cadTopologyEdgeChain(plateTop({ spur: true }), 'spur')).toEqual({ seedId: 'spur', ids: ['spur'], closed: false, branches: [] });
+    expect(cadTopologyEdgeChain(plateTop({ turn: CAD_PRECISION.kernelTangentChainRad * 0.995 }), 'rim-4')).toMatchObject({ closed: true });
+    const turned = cadTopologyEdgeChain(plateTop({ turn: CAD_PRECISION.kernelTangentChainRad * 1.005 }), 'rim-4');
     expect(turned).toMatchObject({ closed: false, branches: [] });
     expect(turned.ids[0]).toBe('rim-2'); expect(turned.ids.at(-1)).toBe('rim-1');
   });

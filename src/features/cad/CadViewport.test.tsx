@@ -211,7 +211,7 @@ describe('hidden under a sketch surface', () => {
 
 describe('viewport pointer ownership and hover', () => {
   const meshes: readonly CadMesh[] = [{ ...mesh, faceGroups: [{ key: 'face', start: 0, count: 3 }], edgeGroups: [{ key: 'edge', start: 0, count: 2 }] }];
-  type ViewportExtra = Partial<Pick<ComponentProps<typeof CadViewport>, 'onTopologyChain' | 'onTopologySet' | 'selectionFilter' | 'topologySelection'>>;
+  type ViewportExtra = Partial<Pick<ComponentProps<typeof CadViewport>, 'onTopologyChain' | 'onTopologySet' | 'selectionFilter' | 'topologySelection' | 'references' | 'referenceVersion' | 'onSelectPlane'>>;
   async function harness(mode: 'body' | 'face' | 'auto' = 'body', extra: ViewportExtra = {}) {
     const select = vi.fn(), topology = vi.fn(), contextMenu = vi.fn();
     let more = extra;
@@ -280,6 +280,17 @@ describe('viewport pointer ownership and hover', () => {
     expect(request).toMatchObject({ target: { kind: 'topology', hit: { pick: { kind: 'edge' } } } });
     act(() => request.selectOther()); expect(set).toHaveBeenLastCalledWith('body', [{ kind: 'edge', key: 'edge' }]);
     expect(h.select).not.toHaveBeenCalled(); expect(h.topology).not.toHaveBeenCalled();
+  });
+  it('offers Select other on right-click over a datum plane that crosses a face', async () => {
+    // A plane standing on the line y = 2, seen edge on from the top, runs through the face under the pointer.
+    const references = prepareCadViewportReferences([{ id: 'mount', name: 'Mount', kind: 'datum-plane', suppressed: false, definition: { kind: 'world', basePlane: 'XZ', origin: [0, 2, 0], rotation: [0, 0, 0] } }], {});
+    const set = vi.fn(), plane = vi.fn(), h = await harness('auto', { onTopologySet: set, onSelectPlane: plane, references, referenceVersion: 'v1' });
+    const { dx, dy } = h.at(2, 2);
+    await h.pointer('pointerdown', 1, dx, dy, 'mouse', 2); await h.pointer('pointerup', 1, dx, dy, 'mouse', 2);
+    const request = h.contextMenu.mock.lastCall?.[0];
+    expect(request).toMatchObject({ target: { kind: 'feature', featureId: 'mount' } }); expect(request.selectOther).toBeTypeOf('function');
+    act(() => request.selectOther());
+    expect(set).toHaveBeenLastCalledWith('body', [{ kind: 'face', key: 'face' }]); expect(plane).not.toHaveBeenCalled();
   });
   it('draws a window solid and a crossing dashed, and takes edges when the filter leaves bodies out', async () => {
     const set = vi.fn(), h = await harness('auto', { onTopologySet: set }); const overlay = () => container.querySelector<HTMLElement>('.cad-box-select');

@@ -747,6 +747,28 @@ describe('graph spatial selection', () => {
     await dblclick(5, 0); expect(h.selectedSet).toHaveBeenCalledTimes(3);
     expect(h.error).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
   });
+  it('selects the contour and the tangent chain from the right-click menu once it closes', async () => {
+    const h = await spatialFixture();
+    const ids = (call: number) => (h.selectedSet.mock.calls[call][0] as readonly CadSketchGraphSelection[]).map(atom => `${atom.kind}:${atom.id}`).sort();
+    const choose = async (label: string) => {
+      await h.pointer('pointerdown', 5, 0, false, 7, 2); await h.pointer('pointerup', 5, 0, false, 7, 2);
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(row => row.textContent === label);
+      if (!item) throw new Error(`${label} missing.`); await act(async () => item.click());
+    };
+    // The open menu holds the canvas; its commands still act once it has closed.
+    await choose('Select contour');
+    expect(ids(0)).toEqual(['entity:ab', 'entity:bc']); expect(h.selectedSet.mock.calls[0][1]).toBe(false);
+    expect(document.querySelector('[role="menuitem"]')).toBeNull();
+    await choose('Select tangent chain');
+    expect(ids(1)).toEqual(['entity:ab']);
+    // An operation elsewhere that starts while the menu is open still stops the command.
+    await h.pointer('pointerdown', 5, 0, false, 7, 2); await h.pointer('pointerup', 5, 0, false, 7, 2);
+    const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(row => row.textContent === 'Select contour');
+    await h.show({ interactionLocked: true });
+    if (item?.isConnected) await act(async () => item.click());
+    expect(h.selectedSet).toHaveBeenCalledTimes(2);
+    expect(h.error).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+  });
   it('steps Select other through every candidate under the pointer with N and back with Shift + N', async () => {
     const h = await spatialFixture();
     const key = async (shiftKey = false) => act(async () => { h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: shiftKey ? 'N' : 'n', shiftKey, bubbles: true, cancelable: true })); });
@@ -773,6 +795,31 @@ describe('graph spatial selection', () => {
     const calls = h.selectedSet.mock.calls.length;
     await act(async () => { h.canvas.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body })); });
     await key(); expect(h.selectedSet).toHaveBeenCalledTimes(calls);
+    expect(h.error).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
+  });
+  it('steps Select other through the origin and both axes where they overlap geometry, moving focus to each choice', async () => {
+    const h = await spatialFixture();
+    // At the origin lie point a, the origin, line ab and both axes: points first with the origin among them, then the edge, then the axes.
+    await h.pointer('pointermove', 0, 0);
+    const seen: string[] = [], focused: (string | null)[] = [];
+    for (let step = 0; step < 6; step++) {
+      await act(async () => { h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true })); });
+      const next = h.selectedSet.mock.lastCall?.[0] as readonly CadSketchGraphSelection[];
+      seen.push(`${next[0].kind}:${next[0].id}`);
+      const active = document.activeElement;
+      focused.push(active?.getAttribute('data-cad-sketch-point') ?? active?.getAttribute('data-cad-sketch-entity') ?? active?.getAttribute('data-cad-sketch-fixed') ?? null);
+      await h.show({ graphControls: { ...h.props().graphControls!, selection: next } });
+    }
+    expect(seen).toEqual(['point:a', 'point:@origin', 'entity:ab', 'entity:@h', 'entity:@v', 'point:a']);
+    expect(focused).toEqual(['a', '@origin', 'ab', '@h', '@v', 'a']);
+    // N pressed on a focused point leaves that point: arrow keys then cannot move the point the selection left.
+    await act(async () => { h.canvas.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body })); });
+    await h.show({ graphControls: { ...h.props().graphControls!, selection: [{ kind: 'point', id: 'b' }] } });
+    const point = container.querySelector<SVGGElement>('[data-cad-sketch-point="b"]'); if (!point) throw new Error('Point missing.');
+    await act(async () => { point.focus(); point.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true, cancelable: true })); });
+    const [chosen] = h.selectedSet.mock.lastCall![0] as readonly CadSketchGraphSelection[];
+    expect(chosen.kind).toBe('entity'); expect(document.activeElement).not.toBe(point);
+    expect(document.activeElement?.getAttribute('data-cad-sketch-entity')).toBe(chosen.id);
     expect(h.error).not.toHaveBeenCalled(); expect(h.edited).not.toHaveBeenCalled();
   });
   it('previews an exact off-grid split at the owned cursor and submits the same named joint once', async () => {

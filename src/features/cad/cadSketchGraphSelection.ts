@@ -81,6 +81,18 @@ export function pickCadSketchFixedElement(point: readonly [number, number], mill
   const across = Math.abs(point[1]), along = Math.abs(point[0]), h = across <= reach ? find(CAD_SKETCH_H_AXIS_ID) : undefined, v = along <= reach ? find(CAD_SKETCH_V_AXIS_ID) : undefined;
   return h && v ? across <= along ? h : v : h ?? v ?? null;
 }
+/**
+ * Every eligible fixed element within reach of `point`, for Select other: the origin first, then the axes nearest first. The first is the
+ * one `pickCadSketchFixedElement` prefers.
+ */
+export function cadSketchFixedElementsAt(point: readonly [number, number], millimetersPerPixel: number, eligible: readonly CadSketchGraphSelection[]): CadSketchGraphSelection[] {
+  if (!eligible.length || !Number.isFinite(millimetersPerPixel) || millimetersPerPixel <= 0) return [];
+  const reach = CAD_SKETCH_FIXED_PICK_PIXELS * millimetersPerPixel, find = (id: string) => eligible.find(item => item.id === id);
+  const origin = Math.hypot(point[0], point[1]) <= reach * 1.5 ? find(CAD_SKETCH_ORIGIN_ID) : undefined;
+  const axes = [{ axis: find(CAD_SKETCH_H_AXIS_ID), distance: Math.abs(point[1]) }, { axis: find(CAD_SKETCH_V_AXIS_ID), distance: Math.abs(point[0]) }]
+    .filter(({ axis, distance }) => axis && distance <= reach).sort((a, b) => a.distance - b.distance).map(({ axis }) => axis!);
+  return [...origin ? [origin] : [], ...axes];
+}
 /** The origin and the axes a pick or plain selection may take: those the pick lists as eligible, or all three. */
 export const cadSketchFixedEligible = (pick: Pick<CadSketchGeometryPick, 'eligiblePointIds' | 'eligibleEntityIds'> | null): readonly CadSketchGraphSelection[] =>
   pick ? CAD_SKETCH_FIXED_SELECTIONS.filter(selection => cadSketchGeometryPickAllows(pick, selection)) : CAD_SKETCH_FIXED_SELECTIONS;

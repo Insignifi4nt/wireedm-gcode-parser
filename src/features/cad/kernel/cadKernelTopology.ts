@@ -176,13 +176,14 @@ function readAdjacency(entries: readonly Entry[]): Omit<CadTopologyAdjacency, 'b
     faces.forEach((entry, face) => {
       const loops: number[][] = [];
       explore(entry.shape.wrapped, 'TopAbs_WIRE', wire => {
-        const loop: number[] = [];
+        // The loop in order, and its members for constant-time seam detection on long loops.
+        const loop: number[] = [], members = new Set<number>();
         explore(wire, 'TopAbs_EDGE', raw => {
           const edge = edgeMap.Add(raw) - 1;
           if (edge >= edges.length) return;
           // A seam runs through one face and appears in its loop once each way.
-          if (loop.includes(edge)) { seams.add(edge); return; }
-          loop.push(edge);
+          if (members.has(edge)) { seams.add(edge); return; }
+          loop.push(edge); members.add(edge);
           if (sides[edge].length < 2) sides[edge].push(face);
         });
         loops.push(loop);

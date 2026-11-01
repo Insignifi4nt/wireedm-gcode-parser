@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadBuildResult, CadDocument, CadSketchPlane } from '@/domain/cad/cadDocument';
 import type { CadTopologyDescriptor, CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
+import type { CadTopologyAdjacency, CadTopologyAdjacencyRequest } from '@/domain/cad/cadTopologyAdjacency';
 import { applyCadEdits, type CadEdit } from '@/domain/cad/cadOperations';
 import { createCadDocument, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchGraphRelation } from '@/domain/cad/cadSketchGraph';
@@ -112,7 +113,7 @@ function PreviousEditorHeader() {
   return <div>Previous editor content</div>;
 }
 
-async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'onBeginSketchEdit' | 'sketchEdit' | 'onInspectSketchConstraints'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
+async function mount(initial: CadDocument = createCadDocument(), buildProps: Pick<CadWorkbenchProps, 'build' | 'buildState'> & Partial<Pick<CadWorkbenchProps, 'onSectionForCam' | 'onInspectTopology' | 'onResolveSelection' | 'onTopologyAdjacency' | 'onRebuild' | 'featurePreview' | 'onFeaturePreview' | 'onEdit' | 'onEditMany' | 'onWorkflowChange' | 'onBeginSketchEdit' | 'sketchEdit' | 'onInspectSketchConstraints'>> = { build: null, buildState: 'idle' }, inShell: boolean | 'previous-header' = false) {
   const session = new CadSession(initial);
   currentSession = session;
   function Harness() {
@@ -1331,6 +1332,61 @@ describe('CAD sketch interaction', () => {
     expect(currentDocument).toEqual(initial);
   });
 
+  it('runs solid menu chains once the menu closes, keeps each body\'s adjacency for the build and drops a chain a later pick overtook', async () => {
+    const initial = applyCadEdits(solidDocument(), [{ kind: 'add-feature', feature: { id: 'pad-b', name: 'Pad B', kind: 'extrude', suppressed: false, sketchId: 'sketch', distance: 5, symmetric: false, operation: 'new', targetId: null } }]);
+    const build: CadBuildResult = { ...topologyBuild, meshes: [...topologyBuild.meshes, { ...topologyBuild.meshes[0], featureId: 'pad-b', name: 'Pad B', volume: 10_000,
+      faceGroups: [{ start: 0, count: 3, key: 'face-b' }], edgeGroups: [{ start: 0, count: 2, key: 'edge-b' }] }] };
+    // Each body is one edge bounding one face, so its loop and its tangent chain are that edge.
+    const adjacencyOf = (bodyId: string, edge: string, face: string, buildId = build.buildId): CadTopologyAdjacency => ({ bodyId, buildId, edges: [edge], edgeVertices: [0, 1],
+      edgeTangents: [1, 0, 0, 1, 0, 0], edgeFaces: [0, -1], edgeSmooth: [false], faces: [face], faceLoops: [[[0]]] });
+    const reads: ((value: CadTopologyAdjacency) => void)[] = [];
+    const read = vi.fn((_request: CadTopologyAdjacencyRequest) => new Promise<CadTopologyAdjacency>(resolve => { reads.push(resolve); }));
+    await mount(initial, { build, buildState: 'ready', onInspectTopology: inspectTopology, onTopologyAdjacency: read });
+    const menu = async (bodyId: string, key: string, label: string) => {
+      await act(async () => requestViewportMenu?.({ clientX: 100, clientY: 100, trigger: 'pointer', target: { kind: 'topology', hit: { bodyId, pick: { kind: 'edge', key } } } }));
+      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(row => row.textContent === label);
+      if (!item) throw new Error(`${label} missing.`); await act(async () => item.click());
+    };
+    const picks = () => { const selection = viewport().getState().topologySelection; return selection ? `${selection.bodyId}: ${selection.picks.map(pick => pick.key).join(' ')}` : null; };
+    // The command acts although the open menu held the workbench when it was drawn. While its read is pending a face is picked, and the
+    // late chain leaves that pick alone.
+    await menu('pad', 'edge-1', 'Select loop');
+    expect(read).toHaveBeenCalledExactlyOnceWith({ bodyId: 'pad', expectedBuildId: 'build-1' }, expect.any(String), expect.any(AbortSignal));
+    await selectTopology('face');
+    await act(async () => reads[0](adjacencyOf('pad', 'edge-1', 'face-1')));
+    expect(picks()).toBe('pad: face-1');
+    // The read is kept for the build, body by body: back on the first body after the second, nothing is read again.
+    await menu('pad', 'edge-1', 'Select tangent chain');
+    expect(picks()).toBe('pad: edge-1');
+    await menu('pad-b', 'edge-b', 'Select loop');
+    await act(async () => reads[1](adjacencyOf('pad-b', 'edge-b', 'face-b')));
+    expect(picks()).toBe('pad-b: edge-b');
+    await menu('pad', 'edge-1', 'Select loop');
+    expect(picks()).toBe('pad: edge-1'); expect(read).toHaveBeenCalledTimes(2);
+    // A new build reads again, and a second chain started before the first answers is the one that applies.
+    await act(async () => replaceBuild({ ...build, buildId: 'build-2' }));
+    await menu('pad-b', 'edge-b', 'Select loop'); await menu('pad', 'edge-1', 'Select loop');
+    expect(read).toHaveBeenCalledTimes(4);
+    await act(async () => { reads[3](adjacencyOf('pad', 'edge-1', 'face-1', 'build-2')); reads[2](adjacencyOf('pad-b', 'edge-b', 'face-b', 'build-2')); });
+    expect(picks()).toBe('pad: edge-1');
+    expect(container.querySelector('[role="alert"]')?.textContent ?? '').toBe('');
+  });
+  it('offers Select other over planes, with or without a body under the pointer', async () => {
+    await mount(solidDocument(), { build: topologyBuild, buildState: 'ready' });
+    const selectOther = vi.fn(), labels = () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].map(row => row.textContent);
+    // Only planes under the pointer: no target, and Select other is the command.
+    await act(async () => requestViewportMenu?.({ clientX: 100, clientY: 100, trigger: 'pointer', target: null, selectOther }));
+    expect(labels()).toEqual(['Select other']);
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')][0].click());
+    expect(selectOther).toHaveBeenCalledOnce(); expect(document.querySelector('[role="menu"]')).toBeNull();
+    // A sketch outline over a plane is a feature but not a body; its menu offers Select other as well.
+    await act(async () => requestViewportMenu?.({ clientX: 100, clientY: 100, trigger: 'pointer', target: { kind: 'feature', featureId: 'sketch' }, selectOther }));
+    expect(labels()).toContain('Select other');
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    // Nothing under the pointer and nothing to step through opens no menu.
+    await act(async () => requestViewportMenu?.({ clientX: 100, clientY: 100, trigger: 'pointer', target: null }));
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
   it('converts the pointed topology hit and dismisses context actions when the accepted build changes', async () => {
     const resolve = vi.fn(resolveTopology);
     const initial = solidDocument();

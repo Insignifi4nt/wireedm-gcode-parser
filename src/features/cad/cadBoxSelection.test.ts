@@ -15,6 +15,17 @@ function plate(featureId: string, dx = 0): CadMesh {
 }
 const project = (x: number, y: number) => ({ x, y });
 
+/** A box 10 by 10 by 8 high with a face group per side and an edge group per edge, seen from the front: z rises up the screen, 10 pixels a millimetre. */
+function block(): CadMesh {
+  const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(index => [index & 1 ? 10 : 0, index & 2 ? 10 : 0, index & 4 ? 8 : 0]);
+  const sides: [string, number[]][] = [['bottom', [0, 1, 3, 2]], ['top', [4, 5, 7, 6]], ['front', [0, 1, 5, 4]], ['back', [2, 3, 7, 6]], ['left', [0, 2, 6, 4]], ['right', [1, 3, 7, 5]]];
+  const segments = [[0, 1], [2, 3], [0, 2], [1, 3], [4, 5], [6, 7], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+  return { featureId: 'block', name: 'block', positions: corners.flat(), normals: corners.flatMap(() => [0, 0, 1]), indices: sides.flatMap(([, [a, b, c, d]]) => [a, b, c, a, c, d]),
+    edges: segments.flatMap(([a, b]) => [...corners[a], ...corners[b]]), faceGroups: sides.map(([key], index) => ({ start: index * 6, count: 6, key })),
+    edgeGroups: segments.map(([a, b], index) => ({ start: index * 2, count: 2, key: `${a}${b}` })), volume: 800, bounds: { min: [0, 0, 0], max: [10, 10, 8] } };
+}
+const front = (x: number, _y: number, z: number) => ({ x: x * 10, y: (8 - z) * 10 });
+
 describe('cad box selection', () => {
   it('normalizes drags in any direction', () => {
     expect(cadScreenBox({ x: 80, y: 10 }, { x: 20, y: 60 })).toEqual({ left: 20, top: 10, right: 80, bottom: 60 });
@@ -63,5 +74,35 @@ describe('cad box selection', () => {
     // A point the view cannot project keeps what holds it from lying wholly inside.
     expect(cadBoxSelection({ rect: { left: -1, top: -1, right: 21, bottom: 11 }, mode: 'window', bodies: [plate('a')], kinds: { body: false, edge: true, face: false },
       project: (x, y) => x === 20 && y === 10 ? null : { x, y } })).toMatchObject({ picks: [{ key: 'e0' }, { key: 'e1' }, { key: 'e4' }, { key: 'e5' }, { key: 'e6' }] });
+  });
+
+  it('counts only what a section keeps, for a crossing and a window alike', () => {
+    // The section keeps z up to 4: the lower half of the block, the lower half of the screen.
+    const below = { normal: { x: 0, y: 0, z: -1 }, constant: 4 }, all = { body: true, edge: true, face: true };
+    const edges = { body: false, edge: true, face: false }, faces = { body: false, edge: false, face: true };
+    const select = (rect: { left: number; top: number; right: number; bottom: number }, mode: 'window' | 'crossing', kinds = all, clip: typeof below | null = below) =>
+      cadBoxSelection({ rect, mode, bodies: [block()], kinds, project: front, clip });
+    const keys = (target: ReturnType<typeof select>) => target?.kind === 'topology' ? target.picks.map(pick => pick.key).sort() : target;
+    // A crossing wholly in the removed part, z 6 to 7, touches nothing that is drawn; uncut it takes the body, the sides and the upright edges.
+    const removed = { left: -5, top: 10, right: 105, bottom: 20 };
+    expect(select(removed, 'crossing', all, null)).toEqual({ kind: 'body', featureId: 'block' });
+    expect(select(removed, 'crossing')).toBeNull();
+    expect(keys(select(removed, 'crossing', edges, null))).toEqual(['04', '15', '26', '37']);
+    expect(select(removed, 'crossing', edges)).toBeNull();
+    expect(keys(select(removed, 'crossing', faces, null))).toEqual(['back', 'front', 'left', 'right']);
+    expect(select(removed, 'crossing', faces)).toBeNull();
+    // The same crossing over the kept part, and one inside a cut side's face, still take them.
+    expect(select({ left: -5, top: 50, right: 105, bottom: 60 }, 'crossing')).toEqual({ kind: 'body', featureId: 'block' });
+    expect(keys(select({ left: 40, top: 50, right: 60, bottom: 60 }, 'crossing', faces))).toEqual(['back', 'front']);
+    // A window around the kept half holds the body, the bottom and the cut sides with their upright edges; the top, all removed, is not taken.
+    const kept = { left: -5, top: 35, right: 105, bottom: 85 };
+    expect(select(kept, 'window', all, null)).toBeNull();
+    expect(select(kept, 'window')).toEqual({ kind: 'body', featureId: 'block' });
+    expect(keys(select(kept, 'window', edges))).toEqual(['01', '02', '04', '13', '15', '23', '26', '37']);
+    expect(keys(select(kept, 'window', faces))).toEqual(['back', 'bottom', 'front', 'left', 'right']);
+    // A window around the whole block still leaves out what the section removed.
+    expect(keys(select({ left: -5, top: -5, right: 105, bottom: 85 }, 'window', faces))).toEqual(['back', 'bottom', 'front', 'left', 'right']);
+    // A window that holds only part of the kept half takes none of it.
+    expect(select({ left: -5, top: 45, right: 105, bottom: 85 }, 'window')).toBeNull();
   });
 });

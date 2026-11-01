@@ -413,7 +413,10 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     return () => publishHeader(null);
   }, [publishHeader, portalHost]);
   const [pickMode, setPickMode] = useState<CadPickMode>('auto');
-  const [pickedTopology, setPickedTopology] = useState<CadTopologyPickSet | null>(null);
+  const [pickedTopology, setPickedTopologyState] = useState<CadTopologyPickSet | null>(null);
+  // Each change to the topology selection, and each chain request, takes the next number; a chain answered after either is dropped.
+  const topologyRequest = useRef(0);
+  const setPickedTopology = useCallback((next: CadTopologyPickSet | null) => { topologyRequest.current++; setPickedTopologyState(next); }, []);
   const [resolvingTopology, setResolvingTopology] = useState<'fillet' | 'chamfer' | 'shell' | null>(null);
   const topologyResolution = useRef<{ controller: AbortController; source: CadTopologyPickSet } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -1186,7 +1189,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   }, [profileCopyAccepted, profileCopyCommand, pending, document, storageBusy, externalWorkflowOpen]);
   const editCurve = (feature: CadCurveFeature) => { if (interactionState.current.locked || !cadFeatureActive(feature, interactionState.current.document)) return; setPickedTopology(null); setSketchId(null); setCurveId(feature.id); setSelectedId(feature.id); setProfileId(null); setTool('select'); setProperties(null); };
   const openSolidMenu = (request: CadViewportContextMenuRequest) => {
-    if (interactionState.current.locked || !request.target) return;
+    // Over planes alone there is no target, and Select other is the one command.
+    if (interactionState.current.locked || !request.target && !request.selectOther) return;
+    if (!request.target) { setCanvasMenu({ kind: 'solid', document, version: props.documentVersion, buildId: build?.buildId ?? null, request }); return; }
     if (request.target.kind === 'topology') {
       try { validateTopologySelection({ documentVersion: props.documentVersion, buildId: build?.buildId ?? '', bodyId: request.target.hit.bodyId, picks: [request.target.hit.pick] },
         { documentVersion: props.documentVersion, buildId: build?.buildId ?? null, meshes: build?.meshes ?? [], ready: topologyReady }); }
@@ -1218,6 +1223,11 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const target = currentCanvasMenu.request.target;
     const id = target?.kind === 'topology' ? target.hit.bodyId : target?.kind === 'feature' ? target.featureId : null;
     const feature = document.features.find(feature => feature.id === id);
+    // Select other steps through whatever lies under the pointer, planes included, so it does not need a body.
+    const selectOther = currentCanvasMenu.request.selectOther;
+    const selectOtherItem: CadContextMenuItem | null = selectOther
+      ? { label: 'Select other', help: 'The next candidate under the pointer, faces behind included. N does the same, and Shift + N goes back.', onSelect: () => run(() => selectOther()) } : null;
+    if (!feature && selectOtherItem) { canvasMenuTitle = 'Selection'; canvasMenuItems.push(selectOtherItem); }
     if (feature) {
       canvasMenuTitle = feature.name;
       if (feature.kind !== 'sketch') canvasMenuItems.push({ label: 'Edit feature', onSelect: () => openFeatureEditor(feature) });
@@ -1234,10 +1244,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
             { label: 'Select tangent chain', help: 'The edges continuing this one without a turn. Alt + double-click an edge for the same.', onSelect: () => chainTopology(hit, 'tangent', false, faceKey) });
           else canvasMenuItems.push({ label: 'Select tangent faces', help: 'The faces meeting this one without a crease. Double-click a face for the same.', onSelect: () => chainTopology(hit, 'tangent', false, null) });
         }
-        if (currentCanvasMenu.request.selectOther) {
-          const selectOther = currentCanvasMenu.request.selectOther;
-          canvasMenuItems.push({ label: 'Select other', help: 'The next candidate under the pointer, faces behind included. N does the same, and Shift + N goes back.', onSelect: () => run(() => selectOther()) });
-        }
+        if (selectOtherItem) canvasMenuItems.push(selectOtherItem);
         if (target?.kind === 'topology' && props.onResolveSelection) {
           const picks: CadTopologyPickSet = { bodyId: feature.id, buildId: build?.buildId ?? '', documentVersion: props.documentVersion, picks: [target.hit.pick] };
           if (target.hit.pick.kind === 'face') canvasMenuItems.push({ label: 'Shell from face', onSelect: () => run(() => startTopologyFeature('shell', picks)) });
@@ -1245,7 +1252,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
         }
         canvasMenuItems.push({ kind: 'separator' }, ...(['transform', 'linear-pattern', 'circular-pattern', 'mirror'] as const).map(kind => ({ label: featureLabels[kind], onSelect: () => startFeature(kind, undefined, feature) })));
         if (props.onSectionForCam) canvasMenuItems.push({ label: 'Section for CAM', onSelect: () => run(() => props.onSectionForCam?.(feature.id)) });
-      }
+      } else if (selectOtherItem) canvasMenuItems.push(selectOtherItem);
       canvasMenuItems.push({ kind: 'separator' }, { label: 'Properties', onSelect: () => openProperties({ kind: 'feature', featureId: feature.id }) }, { label: 'Suppress feature', onSelect: () => submitEdit(signal => props.onEdit({ kind: 'update-feature', feature: { ...feature, suppressed: true } }, signal)) },
         { label: 'Delete feature', danger: true, onSelect: () => { setSelectedId(feature.id); setProfileId(null); setDeleteFeature(feature); } });
     }
@@ -1334,20 +1341,31 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   const setTopology = (bodyId: string, picks: readonly CadTopologyPick[]) => run(() => {
     selectTopology({ documentVersion: props.documentVersion, buildId: build?.buildId ?? '', bodyId, picks }, false);
   });
-  // One body's adjacency for the shown build, read on the first chain gesture and kept until the build or body changes.
-  const adjacencyRead = useRef<{ readonly key: string; readonly promise: Promise<CadTopologyAdjacency> } | null>(null);
+  // Each body's adjacency for the shown version and build, read on that body's first chain gesture and kept until the build changes.
+  const adjacencyReads = useRef<{ readonly key: string; readonly bodies: Map<string, Promise<CadTopologyAdjacency>> } | null>(null);
   /** Selects the loop or tangent chain through an edge, or the tangent faces of a face; `additive` adds them without removing any. */
   const chainTopology = (hit: CadTopologyHit, gesture: CadTopologyChainGesture, additive: boolean, faceKey: string | null) => run(async () => {
-    const read = props.onTopologyAdjacency, buildId = build?.buildId, version = props.documentVersion;
-    if (locked || !read || !buildId || !topologyReady) return;
-    const key = `${version}\u0000${buildId}\u0000${hit.bodyId}`;
-    const kept = adjacencyRead.current?.key === key ? adjacencyRead.current.promise : null;
-    const promise = kept ?? read({ bodyId: hit.bodyId, expectedBuildId: buildId }, version, new AbortController().signal);
-    if (!kept) { adjacencyRead.current = { key, promise }; promise.catch(() => { if (adjacencyRead.current?.promise === promise) adjacencyRead.current = null; }); }
-    const adjacency = await promise;
-    // A newer build, version or workflow makes the chain stale; it is dropped rather than applied to other geometry.
-    const now = topologySource.current;
-    if (interactionState.current.locked || !now.ready || now.buildId !== buildId || now.documentVersion !== version) return;
+    // A menu command runs after its menu closes, so the lock and build are read now, not from the render that opened the menu.
+    const read = props.onTopologyAdjacency, { buildId, documentVersion: version, ready } = topologySource.current, cancel = interactionState.current.cancel;
+    if (interactionState.current.locked || !read || !buildId || !ready) return;
+    const ticket = ++topologyRequest.current, key = `${version}\u0000${buildId}`;
+    if (adjacencyReads.current?.key !== key) adjacencyReads.current = { key, bodies: new Map() };
+    const { bodies } = adjacencyReads.current;
+    let promise = bodies.get(hit.bodyId);
+    if (!promise) {
+      const started = read({ bodyId: hit.bodyId, expectedBuildId: buildId }, version, new AbortController().signal);
+      bodies.set(hit.bodyId, started); promise = started;
+      started.catch(() => { if (bodies.get(hit.bodyId) === started) bodies.delete(hit.bodyId); });
+    }
+    // A later pick, clear or chain, a cancellation, a newer build or version, or a workflow begun since makes the chain stale: it is
+    // dropped, and so is its failure, rather than applied over newer work.
+    const stale = () => {
+      const now = topologySource.current, state = interactionState.current;
+      return topologyRequest.current !== ticket || state.locked || state.cancel !== cancel || !now.ready || now.buildId !== buildId || now.documentVersion !== version;
+    };
+    let adjacency: CadTopologyAdjacency;
+    try { adjacency = await promise; } catch (cause) { if (stale()) return; throw cause; }
+    if (stale()) return;
     const found = cadTopologyChainPicks(adjacency, hit.pick, gesture, faceKey);
     if (found) latestSelectTopology.current({ documentVersion: version, buildId, bodyId: hit.bodyId, picks: found.keys.map(item => ({ kind: found.kind, key: item })) }, additive ? 'union' : false);
   });
