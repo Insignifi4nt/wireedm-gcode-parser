@@ -105,9 +105,8 @@ every build (`CadBuildResult.bodies`, `CadMesh.bodyKey`). A kind's `body` behavi
   that descend from one group through one source form a group, so each pattern copy's pieces stay apart from every other copy's, until K5
   can establish identity. A group's earlier keys that no solid continues stay in it, as keys that can't be found, while a solid descends
   from the group through the target; once none does, they are lost. So do earlier keys that solids continue under other keys, as
-  `key/split(q)`: the kernel's order picked which member's key the split solid continued, so the old key may name a member's solid
-  left unchanged or gone. They leave the group, and resolve as missing, only once every earlier piece of the group was split. For the same
-  reason, a key no body lists resolves as ambiguous when its nearest listed ancestor is ambiguous and another member of that ancestor's
+  `key/split(q)` or a pattern copy's `key/inst(i,j)`: the kernel's order picked which member's key each solid continued, so the old key
+  may name any solid descending from the group in another order. A pattern keeps them in the original's group. For the same reason, a key no body lists resolves as ambiguous when its nearest listed ancestor is ambiguous and another member of that ancestor's
   group has a descendant by the same steps, which another kernel order would have given the key.
 - Each feature reports these in `CadBuildResult.bodyIssues` for D1 to adopt: `ambiguous-body-parts` for keys it makes ambiguous,
   `lost-body-parts` for pieces it removes or merges into another solid, and `untracked-body-parts` when a body gets more than

@@ -237,10 +237,11 @@ describe('body parts', () => {
     expect(parts({ before: [A, B, C], ambiguous: [[A, B]], facts: facts(3, [[[0, 0, 1]], [[0, 0, 4]], [[0, 2, 1]]]) }))
       .toEqual(changed([`${A}/split(0)`, `${A}/split(1)`, C], { ambiguous: [[`${A}/split(0)`, `${A}/split(1)`, A, B]], ambiguousNow: [],
         inherited: [[`${A}/split(0)`, A], [`${A}/split(1)`, A]] }));
-    // Once every piece of the group split, each key named a piece that split, so neither is left.
-    expect(parts({ before: [A, B], ambiguous: [[A, B]], facts: facts(4, [[[0, 0, 1]], [[0, 0, 4]], [[0, 1, 1]], [[0, 1, 4]]]) }))
-      .toEqual(changed([`${A}/split(0)`, `${A}/split(1)`, `${B}/split(0)`, `${B}/split(1)`], { ambiguous: [[`${A}/split(0)`, `${A}/split(1)`, `${B}/split(0)`, `${B}/split(1)`]],
-        ambiguousNow: [], inherited: [[`${A}/split(0)`, A], [`${A}/split(1)`, A], [`${B}/split(0)`, B], [`${B}/split(1)`, B]] }));
+    // And when every piece of the group split, since the solids may have split into other counts in another order.
+    expect(parts({ before: [A, B], ambiguous: [[A, B]], facts: facts(5, [[[0, 0, 1]], [[0, 0, 4]], [[0, 1, 1]], [[0, 1, 4]], [[0, 1, 6]]]) }))
+      .toEqual(changed([`${A}/split(0)`, `${A}/split(1)`, `${B}/split(0)`, `${B}/split(1)`, `${B}/split(2)`],
+        { ambiguous: [[`${A}/split(0)`, `${A}/split(1)`, `${B}/split(0)`, `${B}/split(1)`, `${B}/split(2)`, A, B]],
+        ambiguousNow: [], inherited: [[`${A}/split(0)`, A], [`${A}/split(1)`, A], [`${B}/split(0)`, B], [`${B}/split(1)`, B], [`${B}/split(2)`, B]] }));
   });
 
   it('never reports an ambiguous piece lost while a solid it could be is left', () => {
@@ -265,9 +266,9 @@ describe('body parts', () => {
     expect(parts({ facts: pattern(2, [[[0, 0, 1]], [[1, 0, 1], [2, 0, 1]]]) })).toEqual(changed(['pad/inst(0,0)', 'cut/split(0)']));
     const four = pattern(4, [[[0, 0, 1]], [[0, 1, 1]], [[1, 0, 1]], [[1, 1, 1]]], 1);
     expect(parts({ before: [A, B], facts: four })).toEqual(changed([`${A}/inst(0,0)`, `${B}/inst(0,0)`, `${A}/inst(1,0)`, `${B}/inst(1,0)`]));
-    // Ambiguous pieces stay ambiguous within each copy, never with another copy's pieces.
+    // Ambiguous pieces stay ambiguous within each copy, never with another copy's pieces; their old keys stay with the copied originals.
     expect(parts({ before: [A, B], ambiguous: [[A, B]], facts: four })).toEqual(changed([`${A}/inst(0,0)`, `${B}/inst(0,0)`, `${A}/inst(1,0)`, `${B}/inst(1,0)`],
-      { ambiguous: [[`${A}/inst(0,0)`, `${B}/inst(0,0)`], [`${A}/inst(1,0)`, `${B}/inst(1,0)`]], ambiguousNow: [],
+      { ambiguous: [[`${A}/inst(0,0)`, `${B}/inst(0,0)`, A, B], [`${A}/inst(1,0)`, `${B}/inst(1,0)`]], ambiguousNow: [],
         inherited: [[`${A}/inst(0,0)`, A], [`${B}/inst(0,0)`, B], [`${A}/inst(1,0)`, A], [`${B}/inst(1,0)`, B]] }));
     // The solids of a whole body several solids strong are told apart in each copy only by the kernel's order.
     expect(parts({ beforeSolids: 2, facts: four })).toEqual(changed(['pad/inst(0,0)/split(0)', 'pad/inst(0,0)/split(1)', 'pad/inst(1,0)/split(0)', 'pad/inst(1,0)/split(1)'],
@@ -323,26 +324,31 @@ describe('body parts', () => {
     const nicked = [`${copy(a, 1)}/split(0)`, `${copy(a, 1)}/split(1)`];
     expect(lineage.issues()).toEqual([{ code: 'ambiguous-body-parts', featureId: 'slot', body: 'box', pieces: [a, b, copy(a, 0), copy(b, 0), copy(a, 1), copy(b, 1), ...nicked],
       message: '8 pieces of body box can\'t be told apart after slot, so references to them are ambiguous.' }]);
-    expect(lineage.get(key('box'))?.ambiguous).toEqual([[copy(a, 0), copy(b, 0)], [...nicked, copy(b, 1), copy(a, 1)]]);
+    expect(lineage.get(key('box'))?.ambiguous).toEqual([[copy(a, 0), copy(b, 0), a, b], [...nicked, copy(b, 1), copy(a, 1)]]);
   });
 
   it('extends an issue up to the list limit, and reports the keys past it in an issue of the later feature', () => {
-    // A comb cut leaves 1,500 solids keeping no face, and a pattern copies them all: 3,000 inherited keys, more than the cut\'s issue takes.
-    const parsed = document([...box, sketch('slot_sketch', 18, 4), pad('slot', 'slot_sketch', 'cut', 'box'),
-      { ...base('row'), kind: 'linear-pattern', sourceId: 'slot', count: 2, spacing: [50, 0, 0] }]), lineage = createCadBodyLineage(), teeth = 1500;
-    for (const feature of parsed.features) lineage.apply(feature, parsed, feature.id === 'slot' ? facts(teeth, Array.from({ length: teeth }, () => []))
-      : feature.id === 'row' ? facts(teeth * 2, Array.from({ length: teeth * 2 }, (_, solid) => [[Math.floor(solid / teeth), solid % teeth, 1]]), { removesMaterial: false, sources: copies(1) })
-        : facts(1, []));
-    const tooth = (q: number, i: number) => `box/split(${q})/inst(${i},0)`, past = MAX_CAD_BODY_LIST - teeth - teeth;
+    // A comb cut leaves 1,000 teeth keeping no face. Each pattern copies them, and between the two a cut takes the originals away, so the
+    // cut\'s issue would reach 5,000 keys while the body\'s groups never hold more than 3,000.
+    const row = (id: string, sourceId: string): CadFeature => ({ ...base(id), kind: 'linear-pattern', sourceId, count: 2, spacing: [50, 0, 0] });
+    const parsed = document([...box, sketch('slot_sketch', 18, 4), pad('slot', 'slot_sketch', 'cut', 'box'), row('row', 'slot'),
+      sketch('trim_sketch', 0, 45), pad('trim', 'trim_sketch', 'cut', 'row'), row('again', 'trim')]), lineage = createCadBodyLineage(), teeth = 1000;
+    const copied = (source: (solid: number) => number) => facts(teeth * 2, Array.from({ length: teeth * 2 }, (_, solid) => [[Math.floor(solid / teeth), source(solid % teeth), 1]]),
+      { removesMaterial: false, sources: copies(1) });
+    const kernel: Record<string, CadBodyKernelFacts> = { slot: facts(teeth, Array.from({ length: teeth }, () => [])), row: copied(solid => solid),
+      trim: facts(teeth, Array.from({ length: teeth }, (_, solid) => [[0, teeth + solid, 1]])), again: copied(solid => solid) };
+    for (const feature of parsed.features) lineage.apply(feature, parsed, kernel[feature.id] ?? facts(1, []));
+    // The cut\'s issue takes the 3,000 keys up to the second pattern, then that pattern\'s first copies and as many of its second as fit.
+    const tooth = (k: number, i: number) => `box/split(${k})/inst(1,0)/inst(${i},0)`, fit = MAX_CAD_BODY_LIST - teeth * 4;
     const issues = lineage.issues();
     expect(issues.map(issue => [issue.code, issue.featureId, issue.pieces.length]))
-      .toEqual([['ambiguous-body-parts', 'slot', MAX_CAD_BODY_LIST], ['ambiguous-body-parts', 'row', teeth * 3 - MAX_CAD_BODY_LIST]]);
-    expect(issues[0].pieces.slice(teeth * 2 - 1, teeth * 2 + 1)).toEqual([tooth(teeth - 1, 0), tooth(0, 1)]);
-    expect(issues[1].pieces).toEqual(Array.from({ length: teeth - past }, (_, q) => tooth(past + q, 1)));
+      .toEqual([['ambiguous-body-parts', 'slot', MAX_CAD_BODY_LIST], ['lost-body-parts', 'trim', teeth * 2], ['ambiguous-body-parts', 'again', teeth * 5 - MAX_CAD_BODY_LIST]]);
+    expect([issues[0].pieces[teeth * 3], issues[0].pieces.at(-1)]).toEqual([tooth(0, 0), tooth(fit - 1, 1)]);
+    expect(issues[2].pieces).toEqual(Array.from({ length: teeth - fit }, (_, k) => tooth(fit + k, 1)));
     expect(issues.every(isCadBodyIssue)).toBe(true);
     // Every ambiguous key is listed by one of them, and each copy\'s teeth stay a group of their own.
     const listed = new Set(issues.flatMap(issue => issue.pieces)), body = lineage.get(key('box'))!;
-    expect(body.ambiguous?.map(group => group.length)).toEqual([teeth, teeth]);
+    expect(body.ambiguous?.map(group => group.length)).toEqual([teeth * 2, teeth]);
     expect(body.ambiguous?.flat().every(part => listed.has(part))).toBe(true);
   });
 

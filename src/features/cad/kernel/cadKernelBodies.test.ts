@@ -250,10 +250,11 @@ describe('kernel body parts are inherited only when continuity is certain', () =
     const creator = '3f2a9c1e-5b7d-4e8a-9c0f-1a2b3c4d5e6f', copy = (i: number) => [0, 1].map(k => `${creator}/split(${k})/inst(${i},0)`);
     built([...rod(creator), row('cleave', 100, 25)], model => {
       const body = model.result.bodies![0], expected = Array.from({ length: 100 }, (_, i) => copy(i));
+      const groups = [[...copy(0), `${creator}/split(0)`, `${creator}/split(1)`].sort(), ...expected.slice(1)];
       expect(model.result.meshes[0].solidCount).toBe(200);
       expect(new Set(body.pieces)).toEqual(new Set(expected.flat()));
-      // The halves of each copy can't be told apart, but each copy's are told apart from every other copy's.
-      expect(body.ambiguous?.map(group => [...group].sort())).toEqual(expected);
+      // The halves of each copy can't be told apart, but each copy's are told apart from every other copy's; the old keys stay with the first.
+      expect(body.ambiguous?.map(group => [...group].sort())).toEqual(groups);
       expect(model.result.bodyIssues!.map(issue => [issue.code, issue.featureId, issue.pieces.length])).toEqual([['ambiguous-body-parts', 'cleave', 202]]);
       expect(model.result.bodyIssues![0].message).toBe(`202 pieces of body ${creator} can't be told apart after cleave, so references to them are ambiguous.`);
       expect(isCadKernelReply({ id: 1, kind: 'built', result: structuredClone(model.result) })).toBe(true);
@@ -267,7 +268,9 @@ describe('kernel body parts are inherited only when continuity is certain', () =
       expect(found.status, key).toBe('ambiguous');
       if (found.status === 'ambiguous') expect([...found.candidates].sort(), key).toEqual(copy(i));
     }
-    expect(resolve(model, 'rod/split(0)')).toEqual({ status: 'missing' });
+    // The halves\' old keys stay with the copied originals.
+    const original = resolve(model, 'rod/split(0)');
+    expect(original.status === 'ambiguous' && [...original.candidates].sort()).toEqual(copy(0));
     expect(model.result.bodyIssues).toEqual([expect.objectContaining({ code: 'ambiguous-body-parts', featureId: 'cleave', pieces: ['rod/split(0)', 'rod/split(1)', ...copy(0), ...copy(1)] })]);
   }));
 
@@ -429,9 +432,10 @@ describe('kernel body parts over random histories', () => {
   /** The body every history starts from, keyed `box`: a box, or a disc, whose split pieces keep no face of it. */
   const disc = [sketch('box_sketch', { kind: 'circle', x: 20, y: 10, radius: 12 }), pad('box', 'box_sketch', 10)];
 
-  /** A random pattern, split, cut, join, pocket, mirror or intersection of the body feature `target`, aimed inside the body before. */
+  /** A random pattern, split, cut, join, pocket, mirror or intersection of the body feature `target`, aimed inside the body before or at an ambiguous piece. */
   function nextStep(rand: () => number, id: string, target: string, before: Snapshot, patterns: number): Step {
-    const kinds = ['split', 'cut', 'join', 'pocket', 'mirror', 'intersect', ...patterns < 2 ? ['pattern'] as const : []] as const;
+    const unsure = before.pieces?.filter(key => before.ambiguous.includes(key)) ?? [];
+    const kinds = ['split', 'cut', 'join', 'pocket', 'mirror', 'intersect', ...patterns < 2 ? ['pattern'] as const : [], ...unsure.length ? ['split-piece'] as const : []] as const;
     const kind = kinds[Math.floor(rand() * kinds.length)], at = (low: number, high: number) => Math.round((low + rand() * (high - low)) * 2) / 2;
     const bounds = before.bounds, x = () => at(bounds[0] - 2, bounds[1] + 2), y = () => at(bounds[2] - 2, bounds[3] + 2), size = (low: number, high: number) => at(low, high);
     // Now and then a cut takes one piece away whole, or a join bridges two pieces, as random blocks seldom do.
@@ -452,6 +456,11 @@ describe('kernel body parts over random histories', () => {
         for (let k = 0, from = across ? x() : y(); k < count; k++, from += width + size(3, 12))
           slots.push(across ? rect(from, bounds[2] - 10, width, bounds[3] - bounds[2] + 20) : rect(bounds[0] - 10, from, bounds[1] - bounds[0] + 20, width));
         return { id, features: [sketches(`${id}_sketch`, slots), pad(id, `${id}_sketch`, 30, 'cut', target)] };
+      }
+      case 'split-piece': {
+        // One slot through the middle of an ambiguous piece, which splits it while the rest of its group stays, whichever key it has.
+        const box = before.boxes.get(unsure[Math.floor(rand() * unsure.length)])!, width = size(1, 2), middle = Math.round(box[0] + box[1]) / 2, bottom = Math.floor(box[2]) - 1;
+        return { id, features: [sketch(`${id}_sketch`, rect(middle - width / 2, bottom, width, Math.ceil(box[3]) + 1 - bottom)), pad(id, `${id}_sketch`, 30, 'cut', target)] };
       }
       case 'cut': return { id, features: [sketch(`${id}_sketch`, aimed ? around(piece(), 0.5) : rect(x(), y(), size(5, 40), size(5, 40))), pad(id, `${id}_sketch`, 30, 'cut', target)] };
       case 'join': {

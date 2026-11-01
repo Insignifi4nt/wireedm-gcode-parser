@@ -353,7 +353,7 @@ function unsettled(list: readonly Placed[]): readonly (readonly Placed[])[] {
  * Ambiguity carries in groups: the keys that descend from one group through one source form a group, so the copies of one pattern
  * occurrence are never confused with another's. A group's earlier pieces that no solid continues stay in it, as keys that can't be found,
  * while any solid descends from the group through the target, and are lost once none does. So do earlier pieces continued under other
- * keys, since the kernel's order picked which member's key each solid continued, unless every earlier piece of the group was.
+ * keys, split or copied, since the kernel's order picked which member's key each solid continued.
  */
 export function cadBodyParts(input: {
   readonly featureId: string;
@@ -470,16 +470,13 @@ export function cadBodyParts(input: {
       if (!groupOf.has(piece)) inherited.push([piece, origin]);
     }
   });
-  const now = new Set(pieces), was = new Set(before);
-  const renamed = (earlier: CadBodyKey) => continuedFrom.has(earlier) && !now.has(earlier);
+  const now = new Set(pieces);
   previous.ambiguous?.forEach((group, g) => {
-    const home = descent.get(`${g} 0`), members = group.filter(earlier => was.has(earlier));
-    // A piece continued under other keys leaves its old key missing, as every split piece's does. But which member's key a solid continues
-    // follows the kernel's order, so a member continued under other keys may have been the key of another member's solid, kept unchanged or
-    // gone: it stays in its group unless every member that was a piece before was continued under other keys.
-    const split = members.length > 0 && members.every(renamed);
+    const home = descent.get(`${g} 0`);
     for (const earlier of group) {
-      if (now.has(earlier) || (split && renamed(earlier))) continue;
+      // Which member's key each solid continued follows the kernel's order, so a member's key that is no longer a piece, whether its solid
+      // split, was copied or went, may name any solid descending from the group in another order: it stays while one does.
+      if (now.has(earlier)) continue;
       if (home) home.push(earlier); else if (!unidentified.has(earlier)) lost.push(earlier);
     }
   });
