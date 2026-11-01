@@ -4,7 +4,8 @@ import { cadSketchGraphBoundary } from '@/domain/cad/compileCadSketchGeometry';
 import type { prepareCadSketchGraphInteraction } from './cadSketchGraphInteraction';
 import type { SketchPoint } from './cadSketchInteraction';
 import { cadArcSvgPath } from './cadSketchSvg';
-import { CAD_SKETCH_AXIS_PIXELS, type CadSketchDatum } from './cadSketchGraphSelection';
+import { CAD_SKETCH_AXIS_PIXELS } from './cadSketchGraphSelection';
+import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_ORIGIN_ID, CAD_SKETCH_V_AXIS_ID } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import { cadSketchHighlightRelationIds, cadSketchRelationHighlight, type CadSketchHighlight, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import './cad-sketch-graph-dimensions.css';
 
@@ -26,12 +27,11 @@ export const CadSketchHighlightOverlay = memo(function CadSketchHighlightOverlay
     for (const id of selectedRelationIds) { const found = relation(id); if (found) parts.push(cadSketchRelationHighlight(graph, found)); }
     if (source?.kind === 'geometry') parts.push(source);
     else for (const id of cadSketchHighlightRelationIds(source)) { const found = relation(id); if (found) parts.push(cadSketchRelationHighlight(graph, found)); }
-    return { pointIds: new Set(parts.flatMap(part => part.pointIds)), entityIds: new Set(parts.flatMap(part => part.entityIds)), datums: new Set(parts.flatMap(part => part.datums)) };
+    return { pointIds: new Set(parts.flatMap(part => part.pointIds)), entityIds: new Set(parts.flatMap(part => part.entityIds)) };
   }, [graph, selectedRelationIds, source]);
-  if (!highlight.pointIds.size && !highlight.entityIds.size && !highlight.datums.size) return null;
+  if (!highlight.pointIds.size && !highlight.entityIds.size) return null;
+  // The origin and the axes are lit where the canvas marks them: a ring at the origin and each axis's arrow from it.
   const origin: SketchPoint = [-center[0], -center[1]], axis = CAD_SKETCH_AXIS_PIXELS * mmPerPixel;
-  const datum = (kind: CadSketchDatum) => kind === 'origin' ? <circle key={kind} data-cad-highlight-datum={kind} cx={origin[0]} cy={origin[1]} r={4 * mmPerPixel} />
-    : <line key={kind} data-cad-highlight-datum={kind} x1={origin[0]} y1={origin[1]} x2={origin[0] + (kind === 'x-axis' ? axis : 0)} y2={origin[1] + (kind === 'y-axis' ? axis : 0)} />;
   return <g className="cad-sketch-highlight" data-cad-sketch-highlight="" pointerEvents="none" aria-hidden="true">
     {prepared.geometry.segments.filter(segment => highlight.entityIds.has(segment.id)).map(segment => {
       const boundary = cadSketchGraphBoundary(segment);
@@ -41,7 +41,9 @@ export const CadSketchHighlightOverlay = memo(function CadSketchHighlightOverlay
             : <path d={cadArcSvgPath(boundary, center)} />}
       </g>;
     })}
-    {[...highlight.datums].map(datum)}
+    {[CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_V_AXIS_ID].filter(id => highlight.entityIds.has(id)).map(id => <line key={id} data-cad-highlight-entity={id}
+      x1={origin[0]} y1={origin[1]} x2={origin[0] + (id === CAD_SKETCH_H_AXIS_ID ? axis : 0)} y2={origin[1] + (id === CAD_SKETCH_V_AXIS_ID ? axis : 0)} />)}
+    {highlight.pointIds.has(CAD_SKETCH_ORIGIN_ID) && <circle data-cad-highlight-point={CAD_SKETCH_ORIGIN_ID} cx={origin[0]} cy={origin[1]} r={4 * mmPerPixel} />}
     {prepared.points.filter(point => highlight.pointIds.has(point.id)).map(point => <circle key={point.id} data-cad-highlight-point={point.id} className="cad-sketch-highlight-point"
       cx={point.position[0] - center[0]} cy={point.position[1] - center[1]} r={3 * mmPerPixel} />)}
   </g>;

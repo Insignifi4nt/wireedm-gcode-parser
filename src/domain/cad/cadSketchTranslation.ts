@@ -22,7 +22,7 @@ export function translateCadSketchGraph({ graph, selections, translation, parame
   readonly graph: CadSketchGraph; readonly selections: readonly CadSketchGraphSelection[];
   readonly translation: CadPoint2; readonly parameters: Readonly<Record<string, number>>;
 }): CadSketchGraph {
-  const selected = cadSketchGraphSelectionSet(graph, selections);
+  const selected = cadSketchGraphSelectionSet(graph, selections, true);
   if (!selected.length) throw new CadError('invalid-sketch-selection', 'Choose at least one sketch point or edge to move.');
   const delta = translation.map(value => evaluateCadScalar(value, parameters));
   if (delta.every(value => value === 0)) return graph;

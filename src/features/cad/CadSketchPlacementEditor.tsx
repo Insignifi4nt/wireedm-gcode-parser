@@ -7,7 +7,7 @@ import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
 import type { CadSketchGraphControls } from './CadSketchGraphLayer';
-import type { CadSketchDatum } from './cadSketchGraphSelection';
+import { CAD_SKETCH_ORIGIN_ID, cadSketchVirtualPoint } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import type { SketchPoint } from './cadSketchInteraction';
 import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { CadSketchCommandForm, useCadSketchCommandSession, type CadSketchCommandSessionProps } from './useCadSketchCommandSession';
@@ -28,7 +28,6 @@ interface Props extends CadSketchCommandSessionProps {
 
 type Pair = readonly [string, string];
 type Slot = 'anchor' | 'target';
-const PLACEMENT_DATUMS: readonly CadSketchDatum[] = ['origin'];
 const finite = (value: number) => Number.isFinite(value) && Math.abs(value) <= 1e9;
 const position = (values: Pair): SketchPoint | null =>
   values.every(value => value.trim() !== '' && finite(Number(value))) ? [Number(values[0]), Number(values[1])] : null;
@@ -59,12 +58,13 @@ export function CadSketchPlacementEditor(props: Props) {
   }, [picking, session.previewEnabled, owner, props.onPreviewDocument]);
   pickOwner.current = pick?.token ?? null;
   const geometryPick = useMemo(() => pick && {
-    label: pick.label, eligibleEntityIds: [], eligiblePointIds: owner.sketch.graph?.points.map(point => point.id) ?? [], onCancel: cancel,
-    // The plane origin is an exact anchor or target, like a sketch point.
-    eligibleDatums: PLACEMENT_DATUMS, onPickDatum: () => pick.onPick([0, 0]),
+    // The origin is an exact anchor or target, like any sketch point.
+    label: pick.label, eligibleEntityIds: [], eligiblePointIds: [CAD_SKETCH_ORIGIN_ID, ...owner.sketch.graph?.points.map(point => point.id) ?? []], onCancel: cancel,
     onPick: (selection: CadSketchGraphSelection) => {
-      const point = selection.kind === 'point' ? owner.sketch.graph?.points.find(candidate => candidate.id === selection.id) : undefined;
-      if (point) pick.onPick([evaluateCadScalar(point.position[0], owner.document.parameters), evaluateCadScalar(point.position[1], owner.document.parameters)]);
+      if (selection.kind !== 'point') return;
+      const origin = cadSketchVirtualPoint(selection.id), point = origin ? undefined : owner.sketch.graph?.points.find(candidate => candidate.id === selection.id);
+      if (origin) pick.onPick([origin.position[0], origin.position[1]]);
+      else if (point) pick.onPick([evaluateCadScalar(point.position[0], owner.document.parameters), evaluateCadScalar(point.position[1], owner.document.parameters)]);
     } }, [pick, owner]);
   const interaction = useMemo<CadSketchPlacementInteraction | null>(() => session.previewEnabled
     ? { positionPick: pick, geometryPick, placement: { anchor, target, angleDegrees: angleValid ? angle : 0 } } : null,

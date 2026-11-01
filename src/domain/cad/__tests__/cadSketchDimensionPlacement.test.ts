@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
 import {
   cadSketchDimensionAngleSectorAt, cadSketchDimensionBatchAt, cadSketchDimensionCandidateAt, cadSketchDimensionPickEligibility, cadSketchDimensionPreselection, cadSketchDimensionRelationsAt,
-  cadSketchDimensionOnDatumReason, cadSketchDimensionRetry, cadSketchPointPairDimensionForm,
+  cadSketchDimensionRetry, cadSketchPointPairDimensionForm,
   planCadSketchDimension, type CadSketchDimensionCandidate, type CadSketchDimensionOperand, type CadSketchDimensionPlan
 } from '@/features/cad/cadSketchDimensionPlacement';
 import { placeCadSketchDimensions } from '@/features/cad/cadSketchGraphDimensionLayout';
@@ -11,7 +11,7 @@ import type { Point2 } from '@/domain/path-intel/types';
 const ids = () => { let next = 0; return () => `new-${++next}`; };
 const point = (id: string): CadSketchDimensionOperand => ({ kind: 'point', id });
 const entity = (id: string): CadSketchDimensionOperand => ({ kind: 'entity', id });
-const datum = (id: 'origin' | 'x-axis' | 'y-axis'): CadSketchDimensionOperand => ({ kind: 'datum', id });
+const origin = point('@origin'), hAxis = entity('@h'), vAxis = entity('@v');
 const plan = (graph: CadSketchGraph, operands: readonly CadSketchDimensionOperand[], parameters: Record<string, number> = {}) =>
   planCadSketchDimension(graph, parameters, operands, ids());
 const candidate = (result: CadSketchDimensionPlan, form: CadSketchDimensionCandidate['form']) => {
@@ -205,18 +205,21 @@ describe('dimension pick rules', () => {
   const next = (operands: readonly CadSketchDimensionOperand[]) => cadSketchDimensionPickEligibility(sketch(), targets, operands);
 
   it('offers each next pick the rules allow, and nothing once two are picked', () => {
-    expect(next([])).toEqual({ entityIds: edges, pointIds: corners, datums: ['origin', 'x-axis', 'y-axis'] });
-    // A point skips the lines it ends and itself; a line skips its own ends and the origin, and may be picked again for its length.
-    expect(next([point('a')])).toEqual({ entityIds: ['right', 'top', 'slant', 'hole', 'bend'], pointIds: corners.filter(id => id !== 'a'), datums: ['origin', 'x-axis', 'y-axis'] });
-    expect(next([entity('bottom')])).toEqual({ entityIds: edges, pointIds: corners.filter(id => id !== 'a' && id !== 'b'), datums: ['x-axis', 'y-axis'] });
-    expect(next([entity('hole')])).toEqual({ entityIds: edges, pointIds: corners.filter(id => id !== 'o'), datums: ['origin', 'x-axis', 'y-axis'] });
-    expect(next([datum('origin')])).toEqual({ entityIds: ['hole', 'bend'], pointIds: corners, datums: [] });
-    expect(next([datum('y-axis')])).toEqual({ entityIds: edges, pointIds: corners, datums: [] });
-    expect(next([point('a'), point('c')])).toEqual({ entityIds: [], pointIds: [], datums: [] });
+    const withAxes = (ids: readonly string[]) => [...ids, '@h', '@v'], withOrigin = (ids: readonly string[]) => [...ids, '@origin'];
+    expect(next([])).toEqual({ entityIds: withAxes(edges), pointIds: withOrigin(corners) });
+    // A point skips the lines it ends and itself; a line skips its own ends and may be picked again for its length. Both take the
+    // origin and the axes, as a point and lines.
+    expect(next([point('a')])).toEqual({ entityIds: withAxes(['right', 'top', 'slant', 'hole', 'bend']), pointIds: withOrigin(corners.filter(id => id !== 'a')) });
+    expect(next([entity('bottom')])).toEqual({ entityIds: withAxes(edges), pointIds: withOrigin(corners.filter(id => id !== 'a' && id !== 'b')) });
+    expect(next([entity('hole')])).toEqual({ entityIds: withAxes(edges), pointIds: withOrigin(corners.filter(id => id !== 'o')) });
+    // The origin and the axes are fixed together, so after one of them only the sketch's own geometry is next.
+    expect(next([origin])).toEqual({ entityIds: edges, pointIds: corners });
+    expect(next([vAxis])).toEqual({ entityIds: edges, pointIds: corners });
+    expect(next([point('a'), point('c')])).toEqual({ entityIds: [], pointIds: [] });
   });
 
   it('pairs a linked edge with other picks but never sizes it on its own', () => {
-    expect(next([entity('top')]).entityIds).toEqual(edges.filter(id => id !== 'top'));
+    expect(next([entity('top')]).entityIds).toEqual([...edges.filter(id => id !== 'top'), '@h', '@v']);
     expect(planCadSketchDimension(sketch(), {}, [entity('top')], ids(), targets.sizedEntityIds).candidates).toEqual([]);
     expect(available(planCadSketchDimension(sketch(), {}, [entity('top'), entity('bottom')], ids(), targets.sizedEntityIds), 'point-line').preview).toMatchObject({ value: 20 });
     expect(available(planCadSketchDimension(sketch(), {}, [entity('bottom')], ids(), targets.sizedEntityIds), 'aligned').preview).toMatchObject({ value: 40 });
@@ -224,10 +227,12 @@ describe('dimension pick rules', () => {
 
   it('starts from a preselection the tool takes in its own order, and from none it cannot take', () => {
     const preselect = (operands: readonly CadSketchDimensionOperand[]) => cadSketchDimensionPreselection(sketch(), targets, operands);
-    expect(preselect([datum('x-axis'), point('c')])).toEqual([datum('x-axis'), point('c')]);
-    expect(preselect([entity('bottom'), datum('y-axis')])).toEqual([entity('bottom'), datum('y-axis')]);
+    expect(preselect([hAxis, point('c')])).toEqual([hAxis, point('c')]);
+    expect(preselect([entity('bottom'), vAxis])).toEqual([entity('bottom'), vAxis]);
+    // A line takes its distance from the origin; the origin and an axis take none together.
+    expect(preselect([entity('bottom'), origin])).toEqual([entity('bottom'), origin]);
+    expect(preselect([origin, hAxis])).toEqual([]);
     expect(preselect([point('a'), entity('slant')])).toEqual([point('a'), entity('slant')]);
-    expect(preselect([entity('bottom'), datum('origin')])).toEqual([]);
     expect(preselect([point('a'), entity('bottom')])).toEqual([]);
     expect(preselect([entity('bottom'), entity('bottom')])).toEqual([]);
     expect(preselect([point('a'), point('b'), point('c')])).toEqual([]);
@@ -236,82 +241,106 @@ describe('dimension pick rules', () => {
 
 describe('dimensions to the origin and axes', () => {
   it('holds a point at its distance from an axis in either pick order, and an arc center the same way', () => {
-    for (const operands of [[point('c'), datum('x-axis')], [datum('x-axis'), point('c')]]) {
-      const fromX = plan(sketch(), operands);
-      expect(fromX.candidates).toHaveLength(1);
-      // An axis is a line, so the distance from it is named as any other; the axis stays in reasons.
-      expect(available(fromX, 'datum')).toMatchObject({ label: 'Distance', relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }],
-        reference: null, preview: { kind: 'datum', axes: ['y'] } });
+    for (const operands of [[point('c'), hAxis], [hAxis, point('c')]]) {
+      const fromH = plan(sketch(), operands);
+      expect(fromH.candidates).toHaveLength(1);
+      // An axis is a line, so a point's distance from it is a point-line distance, stored as the coordinate it keeps.
+      expect(available(fromH, 'point-line')).toMatchObject({ label: 'Distance', relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }],
+        reference: null, preview: { kind: 'point-line', point: { x: 50, y: 25 }, line: [{ x: 0, y: 0 }, { x: 1, y: 0 }], value: 25 } });
     }
-    expect(available(plan(sketch(), [datum('x-axis'), entity('bend')]), 'datum').relations).toEqual([{ id: 'new-1', kind: 'fixed-axis', pointId: 'arc-center', axis: 'y', value: 60 }]);
+    expect(available(plan(sketch(), [hAxis, entity('bend')]), 'point-line').relations).toEqual([{ id: 'new-1', kind: 'fixed-axis', pointId: 'arc-center', axis: 'y', value: 60 }]);
     // Its preview is drawn as placed: square to the axis, labelled with its size whichever side of the axis the point is on.
-    const belowPlan = plan(parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'c' ? { ...item, position: [50, -25] } : item) }), [datum('x-axis'), point('c')]), below = available(belowPlan, 'datum');
+    const belowPlan = plan(parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'c' ? { ...item, position: [50, -25] } : item) }), [hAxis, point('c')]), below = available(belowPlan, 'point-line');
     expect(below.relations).toMatchObject([{ kind: 'fixed-axis', axis: 'y', value: -25 }]);
     expect(previewOf(belowPlan, below, { x: 70, y: -10 }).map(mark => [mark.kind, mark.value])).toEqual([['distance', 25]]);
+    // The coordinate a joined point keeps is the one selected; a point fixed in place, or written as an expression, has its position already.
+    const joined = parseCadSketchGraph({ ...sketch(), points: [...sketch().points, { id: 'twin', position: [50, 25] }],
+      relations: [{ id: 'join', kind: 'coincident', pointIds: ['c', 'twin'] }, { id: 'held', kind: 'fixed-axis', pointId: 'twin', axis: 'y', value: 25 }] });
+    expect(candidate(plan(joined, [point('c'), hAxis]), 'point-line')).toMatchObject({ state: 'existing', relationIds: ['held'] });
+    const fixed = 'This point already has its position from a fixed point or an expression.';
+    expect(candidate(plan(sketch([{ id: 'pin', kind: 'fixed-point', pointId: 'c', position: [50, 25] }]), [vAxis, point('c')]), 'point-line')).toMatchObject({ state: 'blocked', reason: fixed });
+    const written = parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'c' ? { ...item, position: [' 50 ', 25] } : item) });
+    expect(candidate(plan(written, [vAxis, point('c')]), 'point-line')).toMatchObject({ state: 'blocked', reason: fixed });
   });
 
-  it('takes no distance from an axis for a point or line on it, and says Coincident keeps it there', () => {
-    expect(candidate(plan(sketch(), [datum('y-axis'), entity('bend')]), 'datum')).toEqual({ form: 'datum', label: 'Distance', state: 'blocked',
-      reason: 'This point is on the Y axis, so it has no distance from it. Use Coincident to keep it there.' });
-    const graph = parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'b' || item.id === 'c' ? { ...item, position: [0, item.position[1]] } : item) });
-    expect(candidate(plan(graph, [entity('right'), datum('y-axis')]), 'datum')).toMatchObject({ state: 'blocked',
-      reason: 'This line is on the Y axis, so it has no distance from it. Use Coincident to keep it there.' });
+  it('takes no distance from an axis for a point or line on it, and names the relation that keeps it there', () => {
+    const graph = parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'b' || item.id === 'c' || item.id === 'arc-center' ? { ...item, position: [0, item.position[1]] } : item) });
+    expect(candidate(plan(graph, [vAxis, point('arc-center')]), 'point-line')).toEqual({ form: 'point-line', label: 'Distance', state: 'blocked',
+      reason: 'This point is on the V axis, so it has no distance from it. Use Coincident to keep it there.' });
+    expect(candidate(plan(graph, [entity('right'), vAxis]), 'point-line')).toMatchObject({ state: 'blocked',
+      reason: 'This line is on the V axis, so it has no distance from it. Use Collinear to keep it there.' });
     // A line across the axis keeps its own refusal, even with an end on it.
-    expect(candidate(plan(graph, [datum('x-axis'), entity('right')]), 'datum')).toMatchObject({ state: 'blocked', reason: 'This line is not parallel to the X axis, so it has no distance from it.' });
+    expect(candidate(plan(graph, [hAxis, entity('right')]), 'point-line')).toMatchObject({ state: 'blocked', reason: 'This line is not parallel to the H axis, so it has no distance from it.' });
+    // A parameter of 0 keeps the point on the axis as a dimension, which is selected from the axis or along it from the origin; a plain 0 is not.
+    const offset = parseCadSketchGraph({ ...graph, relations: [{ id: 'offset', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 'offset' }] });
+    expect(candidate(plan(offset, [point('b'), vAxis], { offset: 0 }), 'point-line')).toMatchObject({ state: 'existing', relationIds: ['offset'] });
+    expect(candidate(plan(offset, [origin, point('b')], { offset: 0 }), 'horizontal')).toMatchObject({ state: 'existing', relationIds: ['offset'] });
+    const plain = parseCadSketchGraph({ ...graph, relations: [{ id: 'on', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 0 }] });
+    expect(candidate(plan(plain, [point('b'), vAxis]), 'point-line')).toMatchObject({ state: 'blocked', reason: 'This point is on the V axis, so it has no distance from it. Use Coincident to keep it there.' });
+    expect(candidate(plan(plain, [origin, point('b')]), 'horizontal')).toMatchObject({ state: 'blocked', reason: 'These points are upright, so they have no horizontal distance.' });
   });
 
-  it('gives a point and the origin its position, or one coordinate by the pointer region', () => {
-    const result = plan(sketch(), [datum('origin'), point('c')]);
+  it('gives a point and the origin the distances of a pair, holding a coordinate along an axis', () => {
+    const result = plan(sketch(), [origin, point('c')]);
     expect(result.pair).toEqual([{ x: 0, y: 0 }, { x: 50, y: 25 }]);
-    expect(available(result, 'datum').relations.map(relation => relation.kind === 'fixed-axis' && relation.axis)).toEqual(['x', 'y']);
-    expect(cadSketchDimensionCandidateAt(result, { x: 20, y: 10 })?.form).toBe('datum');
+    expect(available(result, 'aligned').relations).toMatchObject([{ kind: 'distance', pointIds: ['@origin', 'c'], value: Math.hypot(50, 25) }]);
+    // Along an axis from the origin the distance is the coordinate the point keeps.
+    expect(available(result, 'horizontal')).toMatchObject({ relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }], reference: null });
+    expect(available(result, 'vertical')).toMatchObject({ relations: [{ kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }], reference: null });
+    expect(cadSketchDimensionCandidateAt(result, { x: 20, y: 10 })?.form).toBe('aligned');
     expect(cadSketchDimensionCandidateAt(result, { x: 20, y: 40 })?.form).toBe('horizontal');
     expect(cadSketchDimensionCandidateAt(result, { x: 70, y: 10 })?.form).toBe('vertical');
-    const held = plan(sketch([{ id: 'x', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }]), [datum('origin'), point('c')]);
-    // The X it keeps already stays, and placing selects it with the Y it adds.
-    expect(available(held, 'datum')).toMatchObject({ reuses: 'x', relations: [{ id: 'new-1', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }] });
+    // A coordinate the point keeps already is selected, in either pick order.
+    const held = plan(sketch([{ id: 'x', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }]), [point('c'), origin]);
+    expect(held.pair).toEqual([{ x: 50, y: 25 }, { x: 0, y: 0 }]);
     expect(candidate(held, 'horizontal')).toMatchObject({ state: 'existing', relationIds: ['x'] });
-    const kept = plan(sketch([{ id: 'x', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }, { id: 'y', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }]), [point('c'), datum('origin')]);
-    expect(candidate(kept, 'datum')).toMatchObject({ state: 'existing', relationIds: ['x', 'y'] });
+    expect(available(held, 'vertical').relations).toMatchObject([{ kind: 'fixed-axis', pointId: 'c', axis: 'y' }]);
+    // A point at the origin has no distance from it; Coincident keeps it there.
+    const there = parseCadSketchGraph({ ...sketch(), points: sketch().points.map(item => item.id === 'c' ? { ...item, position: [0, 0] } : item) });
+    expect(candidate(plan(there, [origin, point('c')]), 'aligned')).toMatchObject({ state: 'blocked', reason: 'This point is at the origin, so it has no distance from it. Use Coincident to keep it there.' });
   });
 
-  it('says a point sits on an axis or the origin when every coordinate placed or kept is zero', () => {
-    const coordinate = (axis: 'x' | 'y', value: number | string) => ({ id: axis, kind: 'fixed-axis' as const, pointId: 'c', axis, value });
-    expect(cadSketchDimensionOnDatumReason([coordinate('x', 0)])).toBe('The point sits on the Y axis, so a relation keeps it there and there is no dimension to select.');
-    expect(cadSketchDimensionOnDatumReason([coordinate('y', ' 0 ')])).toBe('The point sits on the X axis, so a relation keeps it there and there is no dimension to select.');
-    expect(cadSketchDimensionOnDatumReason([coordinate('x', 0), coordinate('y', 0)])).toBe('The point sits at the origin, so relations keep it there and there is no dimension to select.');
-    // A drawn coordinate, or a relation of another kind, says nothing.
-    expect(cadSketchDimensionOnDatumReason([coordinate('x', 0), coordinate('y', 20)])).toBeNull();
-    expect(cadSketchDimensionOnDatumReason([{ id: 'h', kind: 'horizontal', pointIds: ['c', 'd'] }])).toBeNull();
-    expect(cadSketchDimensionOnDatumReason([])).toBeNull();
-  });
 
-  it('holds a line along an axis at its distance, in either pick order, and defers the angle to an axis', () => {
-    for (const operands of [[entity('top'), datum('x-axis')], [datum('x-axis'), entity('top')]]) {
-      const result = plan(sketch(), operands), distance = available(result, 'datum');
+  it('holds a line along an axis at its distance in either pick order, and gives a line across one its angle', () => {
+    for (const operands of [[entity('top'), hAxis], [hAxis, entity('top')]]) {
+      const result = plan(sketch(), operands), distance = available(result, 'point-line');
       expect(distance.relations).toEqual([{ id: 'new-2', kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 25 }, { id: 'new-1', kind: 'horizontal', pointIds: ['c', 'd'] }]);
       expect(distance.implied).toBe('new-1');
-      expect(candidate(result, 'angle')).toMatchObject({ state: 'blocked', reason: expect.stringContaining('angle to the X axis is not available yet') });
+      expect(candidate(result, 'angle')).toMatchObject({ state: 'blocked', reason: 'This line is parallel to the H axis, so it has no angle to it.' });
     }
-    const level = plan(sketch([{ id: 'h', kind: 'horizontal', pointIds: ['d', 'c'] }]), [entity('top'), datum('x-axis')]);
-    expect(available(level, 'datum')).toMatchObject({ implied: null, relations: [{ kind: 'fixed-axis' }] });
-    expect(candidate(plan(sketch(), [entity('slant'), datum('y-axis')]), 'datum')).toMatchObject({ state: 'blocked', reason: 'This line is not parallel to the Y axis, so it has no distance from it.' });
-    expect(candidate(plan(sketch(), [entity('right'), datum('origin')]), 'datum').state).toBe('blocked');
+    const level = plan(sketch([{ id: 'h', kind: 'horizontal', pointIds: ['d', 'c'] }]), [entity('top'), hAxis]);
+    expect(available(level, 'point-line')).toMatchObject({ implied: null, relations: [{ kind: 'fixed-axis' }] });
+    expect(candidate(plan(sketch(), [entity('slant'), vAxis]), 'point-line')).toMatchObject({ state: 'blocked', reason: 'This line is not parallel to the V axis, so it has no distance from it.' });
+    // A slanted line takes its angle to an axis as to any other line, and a line kept square to the axis refuses it first.
+    const slant = plan(sketch(), [entity('slant'), hAxis]);
+    expect(slant.defaultForm).toBe('angle');
+    expect(candidate(slant, 'angle')).toMatchObject({ state: 'available', preview: { kind: 'angle' } });
+    expect(candidate(plan(sketch([{ id: 'up', kind: 'vertical', pointIds: ['s0', 's1'] }]), [entity('slant'), hAxis]), 'angle'))
+      .toMatchObject({ state: 'blocked', reason: 'Remove Vertical before adding Angle.' });
+    // The origin is a point, so a line takes its distance from it.
+    expect(available(plan(sketch(), [entity('right'), origin]), 'point-line')).toMatchObject({ relations: [{ kind: 'point-line-distance', pointId: '@origin', lineId: 'right' }],
+      preview: { kind: 'point-line', point: { x: 0, y: 0 }, value: expect.any(Number) } });
   });
 
   it('reuses one end held from the axis and adds the Horizontal that keeps the line at that distance', () => {
     const line = (relations: unknown[]) => parseCadSketchGraph({ points: [{ id: 'p', position: [10, 10] }, { id: 'q', position: [50, 10] }],
       entities: [{ id: 'line', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }], relations });
     // Only the first end's Y is held, so the other end could still move up or down.
-    const result = plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }]), [entity('line'), datum('x-axis')]);
-    expect(available(result, 'datum')).toMatchObject({ reuses: 'held', implied: 'new-1', relations: [{ id: 'new-1', kind: 'horizontal', pointIds: ['p', 'q'] }], reference: null });
+    const result = plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }]), [entity('line'), hAxis]);
+    expect(available(result, 'point-line')).toMatchObject({ reuses: 'held', implied: 'new-1', relations: [{ id: 'new-1', kind: 'horizontal', pointIds: ['p', 'q'] }], reference: null });
     // A hold on the other end is reused the same way.
-    expect(available(plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }]), [datum('x-axis'), entity('line')]), 'datum'))
+    expect(available(plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }]), [hAxis, entity('line')]), 'point-line'))
       .toMatchObject({ reuses: 'held', relations: [{ kind: 'horizontal' }] });
     // With Horizontal, or both ends held, the holds already keep the distance, so placing only selects them.
     for (const [kept, ids] of [[[{ id: 'level', kind: 'horizontal', pointIds: ['q', 'p'] }], ['held']], [[{ id: 'other', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }], ['held', 'other']]] as const)
-      expect(candidate(plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }, ...kept]), [entity('line'), datum('x-axis')]), 'datum'))
+      expect(candidate(plan(line([{ id: 'held', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }, ...kept]), [entity('line'), hAxis]), 'point-line'))
         .toMatchObject({ state: 'existing', relationIds: ids });
+  });
+
+  it('takes no dimension between the origin and an axis, or with more than one sketch pick', () => {
+    expect(plan(sketch(), [origin, hAxis])).toBe(plan(sketch(), [hAxis, vAxis]));
+    expect(plan(sketch(), [origin, hAxis]).candidates).toEqual([]);
+    expect(plan(sketch(), [origin, point('a'), point('c')]).candidates).toEqual([]);
   });
 });
 
@@ -326,10 +355,11 @@ describe('preview measurement', () => {
     expect(upright).toMatchObject({ kind: 'distance-y', value: 20, line: [[70, 5], [70, 25]] });
   });
 
-  it('draws a datum per axis and a radial size toward the pointer', () => {
-    // Each coordinate from the origin previews as the distance from its axis it places, labelled with its size.
-    const origin = plan(sketch(), [datum('origin'), point('c')]), position = available(origin, 'datum');
-    expect(previewOf(origin, position, { x: 20, y: 10 }).map(mark => [mark.kind, mark.value])).toEqual([['distance', 50], ['distance', 25]]);
+  it('draws a distance from the origin and a radial size toward the pointer', () => {
+    // The distance from the origin draws as any pair's, and a coordinate along an axis as the distance from the other axis it holds.
+    const fromOrigin = plan(sketch(), [origin, point('c')]);
+    expect(previewOf(fromOrigin, available(fromOrigin, 'aligned'), { x: 20, y: 10 }).map(mark => [mark.kind, mark.value])).toEqual([['distance', Math.hypot(50, 25)]]);
+    expect(previewOf(fromOrigin, available(fromOrigin, 'horizontal'), { x: 20, y: 40 }).map(mark => [mark.kind, mark.value])).toEqual([['distance', 50]]);
     const bend = plan(sketch(), [entity('bend')]), radius = available(bend, 'radius'), [mark] = previewOf(bend, radius, { x: 0, y: 80 });
     expect(mark).toMatchObject({ kind: 'radius', value: 5 });
     expect(previewOf(bend, radius, { x: Number.NaN, y: 0 })).toEqual([]);

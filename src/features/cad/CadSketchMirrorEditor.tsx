@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import type { CadSketchFeature } from '@/domain/cad/cadDocument';
 import type { CadEdit } from '@/domain/cad/cadOperations';
 import type { CadSketchGraphControls } from './CadSketchGraphLayer';
+import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_V_AXIS_ID } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import { CadSketchCommandForm, useCadSketchCommandSession, type CadSketchCommandSessionProps } from './useCadSketchCommandSession';
 
@@ -23,7 +24,9 @@ export function CadSketchMirrorEditor(props: Props) {
     idPrefix: `mirror_${crypto.randomUUID().replaceAll('-', '')}` }), latest => latest.onInteractionChange(null));
   const { owner, setError, cancel } = session;
   const [axis, setAxis] = useState<string | null>(null);
-  const eligibleEntityIds = useMemo(() => owner.sketch.graph?.entities.filter(entity => entity.kind === 'line' && !owner.entityIds.includes(entity.id)).map(entity => entity.id) ?? [], [owner]);
+  // Any other line mirrors the set, and so do the H and V axes.
+  const eligibleEntityIds = useMemo(() => [...owner.sketch.graph?.entities.filter(entity => entity.kind === 'line' && !owner.entityIds.includes(entity.id)).map(entity => entity.id) ?? [],
+    CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_V_AXIS_ID], [owner]);
   const pick = useMemo<CadSketchGraphControls['geometryPick']>(() => axis !== null || !session.previewEnabled ? undefined : ({
     eligibleEntityIds, eligiblePointIds: [], label: 'Use as mirror line', onCancel: cancel,
     onPick: selection => {
@@ -49,7 +52,7 @@ export function CadSketchMirrorEditor(props: Props) {
       const copied = result?.kind === 'sketch' ? result.graph?.entities.filter(entity => !owner.sketch.graph?.entities.some(source => source.id === entity.id)).map(entity => entity.id) : null;
       if (copied?.length) session.submit(edits, prepared.document, () => props.onAccepted(copied), 'The mirror copy could not be applied.');
     }}>
-    {axis === null ? <div role="status">Choose a mirror line in the sketch</div> : <div className="cad-sketch-profile-actions">
+    {axis === null ? <div role="status">Choose a mirror line in the sketch, or the H or V axis</div> : <div className="cad-sketch-profile-actions">
       <span>Mirror line selected</span>
       <Button type="button" disabled={props.interactionLocked || session.applying} onClick={() => {
         props.onPreviewDocument(null); setAxis(null); setError(null);

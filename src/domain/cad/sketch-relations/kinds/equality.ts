@@ -1,5 +1,5 @@
 import { checkCadSketchEqualRelation, resolveCadSketchRadiusPair } from '../../cadSketchEqualRelations';
-import { CAD_SKETCH_LINE_PAIR_OPERANDS, CAD_SKETCH_RADIUS_PAIR_OPERANDS } from '../cadSketchOperandSignatures';
+import { CAD_SKETCH_EQUAL_LENGTH_OPERANDS, CAD_SKETCH_RADIUS_PAIR_OPERANDS } from '../cadSketchOperandSignatures';
 import type { CadSketchRelationDefinition } from '../cadSketchRelationTypes';
 import { LINE_SLOT, ROUND_SLOT, chainedPair, sortedIds } from './kindParts';
 import { directedLinePair } from './orientation';
@@ -8,11 +8,11 @@ import { directedLinePair } from './orientation';
 
 export const equalLength: CadSketchRelationDefinition<'equal-length'> = {
   kind: 'equal-length', family: 'equality', name: 'Equal length',
-  stored: CAD_SKETCH_LINE_PAIR_OPERANDS,
+  stored: CAD_SKETCH_EQUAL_LENGTH_OPERANDS,
   operands: relation => relation.lineIds,
   withOperands: (relation, [first, second]) => ({ ...relation, lineIds: [first, second] }),
   key: relation => `equal-length ${sortedIds(relation.lineIds)}`,
-  offers: [{ signature: chainedPair(LINE_SLOT), plan: (planner, [a, b]) => planner.equal(planner.entity(a.id)!, planner.entity(b.id)!) }],
+  offers: [{ signature: chainedPair({ ...LINE_SLOT, needs: ['length'] }), plan: (planner, [a, b]) => planner.equal(planner.entity(a.id)!, planner.entity(b.id)!) }],
   lower: (relation, context) => {
     const [a, b] = directedLinePair(context, relation.lineIds);
     context.emit('equal-length', [...context.support(a), ...context.support(b)]);

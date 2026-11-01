@@ -28,6 +28,8 @@ const roles = {
   closureUlps: 8,
   /** A radial point within this fraction of its radius (taken as at least 1 mm) from its centre has collapsed onto it, and the solver offers it fresh starts. */
   solverCollapsedStartRelative: 1e-12,
+  /** An arm held square to a support starts along it when the sine between them is below this, and the solver offers it quarter-turn starts. */
+  solverAlongSupportStartRelative: 1e-12,
   /** Cross product of two line directions, in square millimetres, at or below which legacy profile checks treat lines as parallel. */
   parallelCrossFloorMm2: 1e-14,
   /** Smallest size a pointer-drawn sketch shape accepts: circle radius, rectangle side, slot width or distinct arc centre. */

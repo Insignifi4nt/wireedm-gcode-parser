@@ -20,7 +20,7 @@ import { CadFeatureBaseSchemaFields, CadIdentifierSchema, CadLabelSchema, CadNum
 import { CadDatumPlaneFeatureSchema, resolveCadWorldDatum, resolveCadSketchPlacement, resolveCadExtrudeRevolvePlacement, type CadResolvedFrame } from './cadDatumPlanes';
 import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './cadFeatureInputs';
 import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
-import { CadSketchGraphSchema, cadSketchGraphWithPlacements, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
+import { CadSketchGraphSchema, assertNoReservedCadSketchIds, cadSketchGraphWithPlacements, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
 import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
 import { sameCadSketchGeometryParameters } from './cadSketchParameterReads';
 import { CAD_PRECISION } from '../precision/cadPrecision';
@@ -166,6 +166,11 @@ export function hasValidCadSketchGeometry(sketch: CadSketchFeature, parameters: 
 export function parseCadDocument(value: unknown): CadDocument {
   if (typeof value === 'object' && value !== null && acceptedDocuments.has(value as CadDocument)) return value as CadDocument;
   if (!isCadImportData(value, isAcceptedFeature)) throw new CadError('invalid-document', 'CAD documents must contain their own complete JSON data fields.');
+  // A sketch storing a reserved id is refused with that reason, which the schema check below would not give.
+  const features = (value as { readonly features?: unknown }).features;
+  if (Array.isArray(features)) for (const feature of features as readonly unknown[]) {
+    if (typeof feature === 'object' && feature !== null && (feature as { readonly kind?: unknown }).kind === 'sketch') assertNoReservedCadSketchIds((feature as { readonly graph?: unknown }).graph);
+  }
   if (!matchesCadDocumentSchema(value)) {
     const error = Value.Errors(CadDocumentSchema, value).First();
     throw new CadError('invalid-document', `Invalid CAD document${error ? ` at ${error.path || '/'}: ${error.message}` : '.'}`);

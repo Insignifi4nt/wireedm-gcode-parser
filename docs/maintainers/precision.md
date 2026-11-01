@@ -19,6 +19,7 @@ Units: `Mm` millimetres, `Mm2` square millimetres, `Mm3` cubic millimetres, `Rad
 | | `closureFloorMm` | 1e-12 | Floor of analytic closure. |
 | | `closureUlps` | 8 | Ulps of the coordinate magnitude that closure allows above the floor. |
 | | `solverCollapsedStartRelative` | 1e-12 | A radial point this close to its centre, relative to its radius, has collapsed and gets fresh solver starts. |
+| | `solverAlongSupportStartRelative` | 1e-12 | An arm held square to a support starts along it when the sine between them is below this, and gets quarter-turn solver starts. |
 | | `parallelCrossFloorMm2` | 1e-14 | Cross product below which legacy profile checks treat lines as parallel. |
 | | `pointerMinimumSizeMm` | 0.001 | Smallest pointer-drawn circle radius, rectangle side, slot width or arc centre separation. |
 | Sketch snaps and dimensions | `snapLineSpanSlack` | 1e-9 | Slack, per segment length, for a snapped intersection on a bounded line. |

@@ -32,10 +32,10 @@ export interface CadSketchRelationPresentation {
   /** The glyph of a Coincident between two arc or circle centres, which reads as Concentric. */
   readonly centred?: CadSketchRelationGlyphPresentation;
   /**
-   * Drawn only while it holds a point on an axis or at the origin, the Coincident that the Constrain tool puts there; held away from the
-   * axis, the coordinate is a Distance dimension.
+   * Drawn only while it holds a point on an axis, the form a Coincident with the axis takes; held away from the axis, the coordinate is a
+   * Distance dimension.
    */
-  readonly datumOnly?: true;
+  readonly onAxisOnly?: true;
   /** The icon that stands for the kind: its glyph's drawing, or the tool that makes it. */
   readonly icon: WorkbenchDrawnIconComponent;
 }
@@ -50,10 +50,10 @@ export const CAD_SKETCH_RELATION_PRESENTATION: Presentations = Object.freeze({
   horizontal: glyph('horizontal', 'between'), vertical: glyph('vertical', 'between'),
   parallel: glyph('parallel', 'edges'), perpendicular: glyph('perpendicular', 'edges'), collinear: glyph('collinear', 'edges'),
   midpoint: glyph('midpoint', 'at-point'), 'point-on-line': glyph('point-on-line', 'at-point'), 'point-on-curve': glyph('point-on-curve', 'operands'),
-  'tangent-joint': glyph('tangent', 'at-end'), symmetric: glyph('symmetric', 'operands'),
+  'tangent-joint': glyph('tangent', 'at-end'), tangent: glyph('tangent', 'edges'), symmetric: glyph('symmetric', 'operands'),
   'equal-length': glyph('equal-length', 'edges'), 'equal-radius': glyph('equal-radius', 'edges'),
   'line-angle': drawnOtherwise(MeasureIcon), 'radial-size': drawnOtherwise(MeasureIcon), 'fixed-point': glyph('fix', 'at-point'),
-  'fixed-axis': { ...glyph('coincident', 'at-point'), datumOnly: true },
+  'fixed-axis': { ...glyph('coincident', 'at-point'), onAxisOnly: true },
   distance: drawnOtherwise(MeasureIcon), 'point-line-distance': drawnOtherwise(MeasureIcon), 'axis-distance': drawnOtherwise(MeasureIcon),
   'fillet-corner': drawnOtherwise(FilletIcon), 'chamfer-corner': drawnOtherwise(ChamferIcon)
 } satisfies Presentations);

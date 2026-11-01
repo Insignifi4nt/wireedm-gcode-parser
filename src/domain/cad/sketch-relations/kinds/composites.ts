@@ -61,7 +61,7 @@ function cornerOnSupports(relation: CadSketchRelationOf<'fillet-corner' | 'chamf
   return topology;
 }
 const CORNER = {
-  slots: [{ role: 'Corner point', accepts: ['point'] }, { role: 'First line', accepts: ['line'] }, { role: 'Second line', accepts: ['line'] }]
+  slots: [{ role: 'Corner point', accepts: ['point'], needs: ['movable'] }, { role: 'First line', accepts: ['line'], needs: ['ends'] }, { role: 'Second line', accepts: ['line'], needs: ['ends'] }]
 } as const satisfies CadSketchOperandSignature;
 export const filletCorner: CadSketchRelationDefinition<'fillet-corner'> = {
   kind: 'fillet-corner', family: 'composite', name: 'Fillet',

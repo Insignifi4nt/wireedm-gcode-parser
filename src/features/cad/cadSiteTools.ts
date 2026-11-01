@@ -22,6 +22,7 @@ import { CadToolDocumentEnvelope, CadToolEditDefinitions, CadToolEditEnvelope, C
 import { pageCadSketchConstraints, summarizeCadSketchConstraintAnalysis } from './cadSketchConstraintInspection';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { CadSketchRegionProposalSchema, CadSketchTrimAtSchema, CadSketchExtendAtSchema, CadSketchRegionReadTargetSchema } from '@/domain/cad/cadSketchRegionInspection';
+import { CadSketchCutAxesSchema } from '@/domain/cad/cadSketchTrimExtend';
 import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
 import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
 import { CadSketchTangentOwnershipError } from '@/domain/cad/cadSketchTangentRelations';
@@ -50,8 +51,8 @@ const regionProposalEnvelope = Type.Object({ sketch: Type.Optional(CadToolSketch
 }, { additionalProperties: false, minProperties: 1, description: 'At most one of sketch, split, trim, extend, offset or mirror.' });
 const regionInspectionSchema = Type.Union([
   object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), proposal: Type.Optional(CadSketchRegionProposalSchema) }),
-  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), trimAt: CadSketchTrimAtSchema }),
-  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), extendAt: CadSketchExtendAtSchema })
+  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), trimAt: CadSketchTrimAtSchema, axes: Type.Optional(CadSketchCutAxesSchema) }),
+  object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')), extendAt: CadSketchExtendAtSchema, axes: Type.Optional(CadSketchCutAxesSchema) })
 ]);
 const regionReferenceCommon = { ...version, sketchId: CadIdentifierSchema, offset: pageFields.offset,
   length: Type.Optional(Type.Integer({ minimum: 1, maximum: 4096 })), proposal: Type.Optional(CadSketchRegionProposalSchema) };
@@ -59,7 +60,8 @@ const regionReferenceSchema = Type.Union([object({ ...regionReferenceCommon, bou
   object({ ...regionReferenceCommon, ...CadSketchRegionReadTargetSchema.anyOf[1].properties })]);
 /** Flat discovery rows; the execution unions above still reject combined or missing selectors. */
 const regionInspectionDiscovery = Type.Object({ ...version, sketchId: CadIdentifierSchema, ...pageFields, mode: Type.Optional(Type.Literal('graph-cells')),
-  proposal: Type.Optional(regionProposalEnvelope), trimAt: Type.Optional(CadSketchTrimAtSchema), extendAt: Type.Optional(CadSketchExtendAtSchema)
+  proposal: Type.Optional(regionProposalEnvelope), trimAt: Type.Optional(CadSketchTrimAtSchema), extendAt: Type.Optional(CadSketchExtendAtSchema),
+  axes: Type.Optional(CadSketchCutAxesSchema)
 }, { additionalProperties: false, description: 'proposal, trimAt and extendAt are mutually exclusive.' });
 const regionReferenceDiscovery = Type.Object({ ...regionReferenceCommon, proposal: Type.Optional(proposalTarget('The identical proposal object given to cad_inspect_sketch_regions.')),
   boundaryProfileId: Type.Optional(CadSketchRegionReadTargetSchema.anyOf[0]), cellIds: Type.Optional(CadSketchRegionReadTargetSchema.anyOf[1].properties.cellIds)
@@ -224,7 +226,7 @@ export function cadSiteTools(getController: () => CadController) {
     }, false, object({ ...version, package: CadToolPluginPackageEnvelope })),
     tool('cad_inspect_plane', 'Resolve the current active datum, sketch or curve world frame and signed offset in mm. Preserves authored placement; does not certify native solid precision. Finish pending workflows; stale/unavailable references and cancellation reject. Feature definitions: cad_describe_features.', object({ ...version, featureId: id }),
       (cad, input, signal) => cad.inspectPlane(input.featureId, input.expectedVersion, signal)),
-    tool('cad_inspect_sketch_regions', 'Inspect current or proposed closed sketch cells with local area/bounds. Default rows keep contour references; mode=graph-cells lists all graph-owned bounded cells, including intersections, as numeric cellId receipts to pack with cad_read_sketch_region_reference. Pin version, sketch, mode and identical proposal across pages. proposal previews one complete same-ID sketch, split, trim, extend, offset or mirror, with optional numeric parameterValues; source preflight only. trimAt:{entityId,parameter} or extendAt:{entityId,end} return trimPreview/extendPreview without allocating IDs. Complete targets per cad_describe_edits, reusing witnessed endpoint IDs, then inspect proposal.trim/extend with that exact target. offset and mirror reuse the exact edit request. Reads reserve no IDs; apply topology and consumer repairs atomically. Full sketch: cad_describe_features(kind=sketch). No edits.', regionInspectionSchema, async (cad, input, signal) => {
+    tool('cad_inspect_sketch_regions', 'Inspect current or proposed closed sketch cells with local area/bounds. Default rows keep contour references; mode=graph-cells lists all graph-owned bounded cells, including intersections, as numeric cellId receipts to pack with cad_read_sketch_region_reference. Pin version, sketch, mode and identical proposal across pages. proposal previews one complete same-ID change, with optional numeric parameterValues; source preflight only. trimAt or extendAt return trimPreview/extendPreview; axes:[@h,@v] also cut. Complete targets per cad_describe_edits, reusing witnessed endpoint IDs, then inspect proposal.trim/extend with that exact target. offset and mirror reuse the exact edit request. Reads reserve no IDs; apply topology and consumer repairs atomically.', regionInspectionSchema, async (cad, input, signal) => {
       const { expectedVersion, mode, limit, offset = 0 } = input;
       const inspection = await cad.inspectSketchRegions(input.sketchId, input, expectedVersion, signal);
       const rows: ReadonlyArray<(typeof inspection.items)[number]> = inspection.items;
@@ -360,7 +362,7 @@ export function cadSiteTools(getController: () => CadController) {
       if (input.direction === 'undo') cad.undo(input.expectedVersion); else cad.redo(input.expectedVersion);
       return context(cad);
     }, false),
-    tool('cad_get_viewport', 'Read current CAD selection/view/build/reference metadata and viewportToken. Large ID collections report exact totals/omissions: page visible-bodies or reference-features with the same expectedVersion and expectedViewportToken. STALE_VIEW requires a new summary. referencePlanes identifies principal glyphs without feature IDs. Verify view changes before capture.', Type.Union([
+    tool('cad_get_viewport', 'Read CAD selection, view, section, build and reference metadata with viewportToken. Large ID lists report totals/omissions; page visible-bodies or reference-features at the same expectedVersion/expectedViewportToken. STALE_VIEW needs a new summary. referencePlanes are principal glyphs without feature IDs. Verify views before capture.', Type.Union([
       object(version), object({ ...version, collection: Type.Union([Type.Literal('visible-bodies'), Type.Literal('reference-features')]),
         expectedViewportToken: Type.String({ minLength: 1, maxLength: 128 }), ...pageFields })
     ]), (cad, input) => {
@@ -372,7 +374,7 @@ export function cadSiteTools(getController: () => CadController) {
       if (rows === undefined) throw new ToolError('VIEW_UNAVAILABLE', 'Installed reference IDs are available in the solid viewport. Finish sketch or curve editing and wait for the reference layer.');
       return { documentId: state.documentId, documentVersion: state.documentVersion, viewportToken, collection: input.collection, ...page(rows, input) };
     }),
-    tool('cad_set_viewport', 'Use visible CAD viewport operations: named view, fit/grid, feature/profile/reference-plane selection and ordered sketch point/edge sets, enter/finish sketch or curve editing, body/face/edge pick mode and exact-build topology selection. Plane selection never inserts a sketch: use cad_edit_document with an explicit plane to create one. Does not edit geometry or save. Active workflows block changes. Read cad_get_viewport after applying.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
+    tool('cad_set_viewport', 'Viewport operations: selection, named view, fit/grid, sketch/curve editing, pick mode, topology, section by the selected plane. Selecting a plane adds no sketch; cad_edit_document does. No edits or saves; active workflows block. Verify with cad_get_viewport.', object({ ...version, command: CadViewportCommandSchema }), (cad, input) => cad.changeViewport(input.command, input.expectedVersion), false),
     tool('cad_capture_preview', 'Capture current CAD draft pixels as a local PNG receipt with version, view metadata and SHA-256. Requires current build/reference layers; stale views reject. Read omitted IDs via cad_get_viewport collection pages. The blob URL is browser-local. Optional download requests a browser save; no CAD/storage edits.', object({ ...version, download: Type.Optional(Type.Boolean()) }), async (cad, input, signal) => {
       const captured = await cad.captureViewport(input.expectedVersion, input.download ?? false, signal);
       const receipt = (viewState: unknown) => ({ ...captured, viewState });

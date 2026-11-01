@@ -2,6 +2,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } fro
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
 import { cadSketchRelationDefinition, cadSketchRelationSignature, cadSketchSignatureSlots } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { evaluateCadScalar } from '@/domain/cad/cadExpression';
+import { CAD_SKETCH_VIRTUAL_LABELS, isCadSketchVirtualId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import type { SketchPoint } from './cadSketchInteraction';
 import { CAD_SKETCH_ORIGIN_PAIR_NAME, cadSketchPointIdentity, cadSketchRelationHighlight, isCadSketchGlyphRelation } from './cadSketchDimensionSelection';
 import { cadSketchCurveCentres, cadSketchRelationDescription, cadSketchRelationName, cadSketchRelationOperandLabels, createCadSketchRelationLabels, isCadSketchConcentric } from './cadSketchRelationNames';
@@ -13,7 +14,7 @@ export type { CadSketchRelationGlyphKind } from './sketch-relations/cadSketchRel
 export type CadSketchRelationGlyphOperand = `point:${string}` | `entity:${string}`;
 /**
  * One relation glyph on one operand. A relation on several operands draws a glyph on each, its siblings; X and Y held at 0 on one point
- * draw one At the origin glyph that names both. The anchor is in sketch millimetres and the offset in screen pixels, x right and y down, so the
+ * draw one Coincident glyph with the origin that names both. The anchor is in sketch millimetres and the offset in screen pixels, x right and y down, so the
  * glyph keeps its distance from the geometry at every zoom.
  */
 export interface CadSketchRelationGlyph {
@@ -42,7 +43,7 @@ export function cadSketchRelationGlyphKind(graph: CadSketchGraph, relation: CadS
 function glyphPresentation(graph: CadSketchGraph, relation: CadSketchGraphRelation, centres: ReadonlyMap<string, readonly string[]>): CadSketchRelationGlyphPresentation | null {
   const presentation = CAD_SKETCH_RELATION_PRESENTATION[relation.kind];
   if (presentation.centred && isCadSketchConcentric(graph, relation, centres)) return presentation.centred;
-  return presentation.datumOnly && !isCadSketchGlyphRelation(relation) ? null : presentation.glyph;
+  return presentation.onAxisOnly && !isCadSketchGlyphRelation(relation) ? null : presentation.glyph;
 }
 
 /** Screen-pixel placement: glyphs sit 12 px off a line or curve, 10 px diagonally off a point, and stack 15 px apart. */
@@ -61,7 +62,8 @@ const point = (id: string): CadSketchRelationGlyphOperand => `point:${id}`, enti
 
 /**
  * Where each relation draws its glyphs, by the anchor its kind's presentation names, from the operands its definition stores, with points
- * by Coincident identity.
+ * by Coincident identity. A glyph marks the sketch's own geometry: the origin and the axes are fixed and always shown, so a relation that
+ * names one marks only its other operands, and a point at the origin marks the edges it relates instead.
  */
 function glyphOperands(graph: CadSketchGraph, relation: CadSketchGraphRelation, lines: ReadonlyMap<string, string>, centres: ReadonlyMap<string, readonly string[]>,
   identity: (pointId: string) => string): { readonly kind: CadSketchRelationGlyphKind; readonly operands: Operands } | null {
@@ -76,7 +78,10 @@ function glyphOperands(graph: CadSketchGraph, relation: CadSketchGraphRelation, 
     }
     case 'edges': return { kind, operands: cadSketchRelationEntityIds(relation).map(entity) };
     // The two points of a Coincident share one place, so one glyph marks them.
-    case 'at-point': return { kind, operands: [at(cadSketchRelationPointIds(graph, relation)[0])] };
+    case 'at-point': {
+      const [first] = cadSketchRelationPointIds(graph, relation);
+      return { kind, operands: first === undefined ? cadSketchRelationEntityIds(relation).map(entity) : [at(first)] };
+    }
     case 'at-end': {
       const ids = cadSketchRelationDefinition(relation).operands(relation);
       return { kind, operands: [at(ids[cadSketchRelationSignature(relation).slots.findIndex(slot => slot.end)])] };
@@ -84,7 +89,8 @@ function glyphOperands(graph: CadSketchGraph, relation: CadSketchGraphRelation, 
     // Point on curve marks its point and the arc or circle that keeps it; Symmetric marks both points and its axis.
     case 'operands': {
       const ids = cadSketchRelationDefinition(relation).operands(relation), slots = cadSketchSignatureSlots(cadSketchRelationSignature(relation));
-      return { kind, operands: [...slots.points.map(index => at(ids[index])), ...slots.entities.map(index => entity(ids[index]))] };
+      const stored = (indices: readonly number[]) => indices.filter(index => !isCadSketchVirtualId(ids[index]));
+      return { kind, operands: [...stored(slots.points).map(index => at(ids[index])), ...stored(slots.entities).map(index => entity(ids[index]))] };
     }
     // A Concentric marks both curves.
     case 'curves': return { kind, operands: cadSketchRelationPointIds(graph, relation).map(id => entity(centres.get(id)![0])) };
@@ -145,8 +151,9 @@ function glyphEntries(graph: CadSketchGraph): readonly Entry[] {
       if (shared[0] !== relation) continue;
       if (shared.length > 1) {
         const both = shared.some(item => item.axis === 'x') && shared.some(item => item.axis === 'y'), name = both ? CAD_SKETCH_ORIGIN_PAIR_NAME : cadSketchRelationName(graph, relation, centres);
-        entries.push({ relationIds: shared.map(item => item.id), operand: placed.operands[0], kind: placed.kind, name,
-          label: `${name}: ${cadSketchRelationOperandLabels(graph, relation, labels).join(' and ')}`, holds: holdsOf(shared) });
+        // X and Y at 0 keep the point at the origin, a Coincident with it.
+        const operands = both ? [labels.point(relation.pointId), CAD_SKETCH_VIRTUAL_LABELS['@origin']] : cadSketchRelationOperandLabels(graph, relation, labels);
+        entries.push({ relationIds: shared.map(item => item.id), operand: placed.operands[0], kind: placed.kind, name, label: `${name}: ${operands.join(' and ')}`, holds: holdsOf(shared) });
         continue;
       }
     }

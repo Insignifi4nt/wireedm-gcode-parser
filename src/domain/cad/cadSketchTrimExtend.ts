@@ -14,11 +14,18 @@ import { createArcSegment, createCircleSegment, createLineSegment, distance, poi
 import type { ArcPathSegment, CirclePathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
 import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
+import { cadSketchAxisNormal, isCadSketchVirtualAxisId, type CadSketchVirtualAxisId } from './sketch-relations/cadSketchVirtualElements';
 
 const strict = { additionalProperties: false }, id = CadIdentifierSchema;
 const parameter = Type.Number({ minimum: 0, maximum: 1 });
-const boundary = Type.Object({ entityId: id, index: Type.Integer({ minimum: 0, maximum: 1 }), parameter,
+// A boundary is a graph edge or the H or V axis, which cuts as an infinite line and is only read.
+const boundary = Type.Object({ entityId: Type.String({ pattern: '^(@[hv]|[A-Za-z0-9][A-Za-z0-9_-]{0,95})$' }), index: Type.Integer({ minimum: 0, maximum: 1 }), parameter,
   position: Type.Tuple([CadNumberSchema, CadNumberSchema]), endpointPointId: Type.Optional(id) }, strict);
+/**
+ * The H and V axes a trim or extension also cuts at, as infinite lines. Only the axes named cut, so a pick alone still cuts at drawn
+ * edges only, and a target that names an axis as its boundary is checked with that axis cutting.
+ */
+export const CadSketchCutAxesSchema = Type.Array(Type.String({ pattern: '^@[hv]$' }), { uniqueItems: true });
 // The relations a trim removes with its piece; a request that omits them confirms that none are removed.
 const removedRelationIds = Type.Optional(Type.Array(id, { uniqueItems: true }));
 // A fresh relation that keeps a cut inside a cutting edge on that edge's support; null leaves that cut numeric.
@@ -37,8 +44,12 @@ export type CadSketchTrimTarget = Immutable<Static<typeof CadSketchTrimTargetSch
 export type CadSketchEndTrimTarget = Extract<CadSketchTrimTarget, { kind: 'end' }>;
 export type CadSketchMiddleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'middle' }>;
 export type CadSketchCircleTrimTarget = Extract<CadSketchTrimTarget, { kind: 'circle' }>;
-/** The relation a fresh cut inside a cutting edge keeps: on a line's support, or on an arc's or circle's full circle. */
-export type CadSketchTrimAttachment = { readonly kind: 'point-on-line'; readonly lineId: string } | { readonly kind: 'point-on-curve'; readonly curveId: string };
+/**
+ * The relation a fresh cut inside a cutting edge keeps: on a line's support, or on an arc's or circle's full circle. A cut on the H or
+ * V axis keeps its canonical form, a fixed coordinate at 0.
+ */
+export type CadSketchTrimAttachment = { readonly kind: 'point-on-line'; readonly lineId: string } | { readonly kind: 'point-on-curve'; readonly curveId: string }
+  | { readonly kind: 'fixed-axis'; readonly axis: 'x' | 'y'; readonly value: 0 };
 export const CadSketchExtendTargetSchema = Type.Object({ kind: Type.Union([Type.Literal('line'), Type.Literal('arc')]), entityId: id,
   end: Type.Union([Type.Literal('start'), Type.Literal('end')]),
   boundary: Type.Object({ ...boundary.properties, parameter: Type.Number() }, strict), endPointId: id }, strict);
@@ -133,7 +144,15 @@ type SourceLine = Extract<CadSketchGraph['entities'][number], { kind: 'line' }>;
 type Witness = CadSketchEndTrimTarget['boundary'];
 /** `tangent` marks a contact Trim cannot cut at; it may only bound a piece nobody asks to remove. */
 interface Event { witness: Witness; boundary: PathSegment; point: Point2; tangent?: true }
-type BoundaryQuery = { kind: 'trim'; segment: PathSegment } | { kind: 'extend'; segment: OpenSegment; end: 'start' | 'end' };
+type BoundaryQuery = ({ kind: 'trim'; segment: PathSegment } | { kind: 'extend'; segment: OpenSegment; end: 'start' | 'end' }) & { axes: readonly CadSketchVirtualAxisId[] };
+/** The axes a request names to cut at, checked; none when it names none. */
+function cutAxes(axes: readonly string[] | undefined, operation: 'trim' | 'extend'): readonly CadSketchVirtualAxisId[] {
+  if (axes === undefined) return [];
+  if (!Value.Check(CadSketchCutAxesSchema, axes)) throw new CadError(`invalid-sketch-${operation}`, 'Name each of the H and V axes (@h, @v) at most once.');
+  return axes.filter(isCadSketchVirtualAxisId);
+}
+/** The axes a target names as its boundaries, which its check cuts at. */
+const namedAxes = (boundaries: readonly Witness[]) => [...new Set(boundaries.map(witness => witness.entityId).filter(isCadSketchVirtualAxisId))];
 const fullTurn = 2 * Math.PI;
 const precision = (operation: 'trim' | 'extend' = 'trim') => new CadError(`sketch-${operation}-precision`,
   operation === 'trim' ? 'This intersection cannot leave an exact nondegenerate trim at these coordinates.' : 'This intersection cannot produce an exact nondegenerate extension at these coordinates.');
@@ -355,12 +374,17 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
     const t = trimParameter(segment, point, tolerance);
     return t === null || ownEnd(point, tolerance, other) ? null : t;
   };
-  for (const other of segments) {
+  const axes = axisCutters(query, support);
+  for (const other of [...segments, ...axes.cutters]) {
     if (other.id === segment.id) continue;
-    const tolerance = cadPathClosureTolerance([...extent(support ?? segment), ...extent(other)]);
+    // An axis has no extent of its own: its tolerance is the reach of the query, however far its stand-in is drawn.
+    const axis = isCadSketchVirtualAxisId(other.id);
+    const tolerance = cadPathClosureTolerance([...extent(support ?? segment), ...(axis ? axes.reach : extent(other))]);
     const result = query.kind === 'extend' && query.segment.kind === 'line' ? classifyLineRayPathSegmentIntersection(query.segment, other, query.end, tolerance)
       : classifyParameterizedPathSegmentIntersection(support ?? segment, other, tolerance);
     if (result.kind === 'overlap') {
+      // An edge along an axis is never cut by it: the axis has no ends to bound a piece with.
+      if (axis) continue;
       if (query.kind !== 'trim') throw ambiguous(operation);
       // A shared stretch has no crossing of its own: the overlapping edge's own ends inside the source bound its pieces.
       const owner = graph.entities.find(item => item.id === other.id);
@@ -372,11 +396,15 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
     }
     if (query.kind === 'trim') {
       // A tangent contact cannot be cut at, but it only blocks the pieces it bounds.
-      const contact = undeclaredTangent(segment, other, tolerance), t = contact ? inside(contact, tolerance, other) : null;
+      // An edge only touching an axis is neither cut nor blocked there: the axis is no drawn edge that could hide a near crossing.
+      const contact = undeclaredTangent(segment, other, tolerance), t = contact && !axis ? inside(contact, tolerance, other) : null;
       if (contact && t !== null) events.push({ witness: { entityId: other.id, index: 0, parameter: t, position: [contact.x, contact.y] }, boundary: other, point: contact, tangent: true });
       if (contact) continue;
     // A line extension's span is only known per hit; arc supports also catch rounded near-misses.
-    } else if (segment.kind !== 'line') assertTransverse(support ?? segment, other, tolerance);
+    } else if (segment.kind !== 'line') {
+      if (axis && undeclaredTangent(support ?? segment, other, tolerance)) continue;
+      assertTransverse(support ?? segment, other, tolerance);
+    }
     if (result.kind !== 'points') continue;
     const hits = result.points.map(hit => ({ hit, parameter: query.kind === 'extend' && segment.kind === 'arc' ? arcOutwardParameter(segment, hit.point, query.end)
       : segment.kind === 'circle' ? cadSketchCircleTrimParameter(segment, hit.point) : hit.leftParameter }))
@@ -461,6 +489,27 @@ function boundaryEvents(graph: CadSketchGraph, parameters: Readonly<Record<strin
   return unique;
 }
 
+/**
+ * The named H and V axes as cutters: lines through the origin drawn past everything the query can reach, so each crossing is found as
+ * on an infinite line. A line extension reaches as far as its ray meets each axis. None unless the query names them.
+ */
+function axisCutters(query: BoundaryQuery, support: CirclePathSegment | null): { readonly cutters: readonly LinePathSegment[]; readonly reach: readonly Point2[] } {
+  if (!query.axes.length) return { cutters: [], reach: [] };
+  const reach: Point2[] = [{ x: 0, y: 0 }, ...extent(support ?? query.segment)];
+  if (query.kind === 'extend' && query.segment.kind === 'line') {
+    const { start, end } = query.segment, from = query.end === 'start' ? start : end, to = query.end === 'start' ? end : start;
+    const dx = from.x - to.x, dy = from.y - to.y;
+    // Where the ray beyond the endpoint meets y = 0 and x = 0.
+    if (dy !== 0 && -from.y / dy > 0) reach.push({ x: from.x - from.y / dy * dx, y: 0 });
+    if (dx !== 0 && -from.x / dx > 0) reach.push({ x: 0, y: from.y - from.x / dx * dy });
+  }
+  const span = 2 * Math.max(1, ...reach.map(point => Math.max(Math.abs(point.x), Math.abs(point.y))));
+  const source = { sourceEntityIndex: -1, sourceEntityType: 'axis', layer: null, exact: true };
+  const cutter = (id: CadSketchVirtualAxisId) => createLineSegment({ id, source,
+    start: cadSketchAxisNormal(id) === 'y' ? { x: -span, y: 0 } : { x: 0, y: -span }, end: cadSketchAxisNormal(id) === 'y' ? { x: span, y: 0 } : { x: 0, y: span } });
+  return { reach, cutters: query.axes.map(cutter) };
+}
+
 /** How far two supports meeting at a shared point meet again: distinct lines never do, a line crosses a circle again along
  * its chord, and two circles cross again mirrored across their line of centers. */
 function secondMeeting(left: PathSegment, right: PathSegment, shared: Point2): number {
@@ -505,22 +554,26 @@ function replaceEndpoint(graph: CadSketchGraph, parameters: Readonly<Record<stri
 /** Relations that leave with the removed piece; omitted when there are none so plain trims keep their request shape. */
 const removals = ({ relationIds }: { readonly relationIds: readonly string[] }) => relationIds.length ? { removedRelationIds: [...relationIds] } : {};
 
-/** One clicked span between its nearest cuts; only the relations of the removed piece go with it. */
-export function prepareCadSketchTrim({ graph: input, parameters, entityId, parameter: pick }: Source & {
-  readonly entityId: string; readonly parameter: number;
+/**
+ * One clicked span between its nearest cuts; only the relations of the removed piece go with it. Drawn edges cut, and the H and V axes
+ * only where `axes` names them.
+ */
+export function prepareCadSketchTrim({ graph: input, parameters, entityId, parameter: pick, axes }: Source & {
+  readonly entityId: string; readonly parameter: number; readonly axes?: readonly string[];
 }): CadSketchTrimPreparation {
   if (!Number.isFinite(pick) || pick < 0 || pick > 1) throw new CadError('invalid-sketch-trim', 'Choose a finite source parameter from zero to one.');
   const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === entityId);
   if (!entity) throw new CadError('invalid-sketch-trim-target', 'Trim needs an existing graph edge.');
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
   if (!segment) throw new CadError('invalid-sketch-trim-target', 'Trim needs an existing graph edge.');
-  const unique = boundaryEvents(graph, parameters, geometry.segments, { kind: 'trim', segment });
+  const unique = boundaryEvents(graph, parameters, geometry.segments, { kind: 'trim', segment, axes: cutAxes(axes, 'trim') });
   const bounds = (...events: Event[]) => {
     if (events.some(event => event.tangent)) throw new CadError('tangent-sketch-trim', 'Trim cannot cut where an edge only touches this one. Choose a piece between crossing edges.');
     for (const event of events) assertEndpointRange(event.point, 'trim');
   };
   // A fresh cut inside a cutting edge can stay on that edge's line or circle.
   const attach = (event: Event): CadSketchTrimAttachment | null => event.witness.endpointPointId !== undefined ? null
+    : isCadSketchVirtualAxisId(event.boundary.id) ? { kind: 'fixed-axis', axis: cadSketchAxisNormal(event.boundary.id), value: 0 }
     : event.boundary.kind === 'line' ? { kind: 'point-on-line', lineId: event.boundary.id } : { kind: 'point-on-curve', curveId: event.boundary.id };
   if (!unique.length) {
     const result: CadSketchEndTrimPreparation = { target: { kind: 'delete', entityId, parameter: pick, ...removals(trimRemovals(graph, entity, { kind: 'delete' })) }, removed: segment,
@@ -578,10 +631,14 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
   deepFreezeCadData(result); return result;
 }
 
-/** Recheck the exact preview witness and removals; never retarget a changed source to another intersection. */
+/**
+ * Recheck the exact preview witness and removals; never retarget a changed source to another intersection. An axis the target names as
+ * a boundary cuts in that check.
+ */
 export function trimCadSketchEntity({ graph: input, parameters, trim }: Source & { readonly trim: CadSketchTrimTarget }): CadSketchTrimResult {
   if (!isCadImportData(trim) || !Value.Check(CadSketchTrimTargetSchema, trim)) throw new CadError('invalid-sketch-trim', 'Choose one complete trim request.');
-  const graph = parseCadSketchGraph(input), prepared = prepareCadSketchTrim({ graph, parameters, entityId: trim.entityId, parameter: trim.parameter });
+  const axes = namedAxes(trim.kind === 'delete' ? [] : trim.kind === 'end' ? [trim.boundary] : trim.boundaries);
+  const graph = parseCadSketchGraph(input), prepared = prepareCadSketchTrim({ graph, parameters, entityId: trim.entityId, parameter: trim.parameter, axes });
   const removedRelationIds = trim.removedRelationIds ?? [], confirmed = removals({ relationIds: removedRelationIds });
   const target = trim.kind === 'delete' ? { kind: trim.kind, entityId: trim.entityId, parameter: trim.parameter, ...confirmed } : trim.kind === 'end'
     ? { kind: trim.kind, entityId: trim.entityId, parameter: trim.parameter, end: trim.end, boundary: trim.boundary, ...confirmed }
@@ -679,17 +736,22 @@ export function trimCadSketchEntity({ graph: input, parameters, trim }: Source &
   return Object.freeze({ graph: candidate, retainedEntityId: trim.entityId, removedEntityId: null, cutPointId: trim.cutPointId });
 }
 
-/** Extend one endpoint along its exact source support; cutters remain finite and untouched. */
-export function prepareCadSketchExtend({ graph: input, parameters, entityId, end }: Source & { readonly entityId: string; readonly end: 'start' | 'end' }): CadSketchExtendPreparation {
+/**
+ * Extend one endpoint along its exact source support; cutters remain finite and untouched. Drawn edges bound it, and the H and V axes
+ * only where `axes` names them.
+ */
+export function prepareCadSketchExtend({ graph: input, parameters, entityId, end, axes: named }: Source & {
+  readonly entityId: string; readonly end: 'start' | 'end'; readonly axes?: readonly string[];
+}): CadSketchExtendPreparation {
   if (end !== 'start' && end !== 'end') throw new CadError('invalid-sketch-extend', 'Choose the start or end of one edge.');
-  const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === entityId);
-  if (entity?.kind === 'line') return prepareLineExtend(graph, parameters, entity, end);
+  const graph = parseCadSketchGraph(input), entity = graph.entities.find(item => item.id === entityId), axes = cutAxes(named, 'extend');
+  if (entity?.kind === 'line') return prepareLineExtend(graph, parameters, entity, end, axes);
   if (!entity || entity.kind !== 'arc') throw new CadError('invalid-sketch-extend-target', 'Extend needs an existing line or open arc.');
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
   if (!segment || segment.kind !== 'arc') throw precision('extend');
   assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId], 'extend', entity);
-  const events = boundaryEvents(graph, parameters, geometry.segments, { kind: 'extend', segment, end }), event = end === 'start' ? events.at(-1) : events[0];
-  if (!event) throw new CadError('missing-sketch-extend-boundary', 'No finite boundary intersects the unused circular support beyond this endpoint.');
+  const events = boundaryEvents(graph, parameters, geometry.segments, { kind: 'extend', segment, end, axes }), event = end === 'start' ? events.at(-1) : events[0];
+  if (!event) throw new CadError('missing-sketch-extend-boundary', `No finite boundary${axes.length ? ' or named axis' : ''} intersects the unused circular support beyond this endpoint.`);
   assertEndpointRange(event.point, 'extend');
   const current = end === 'start' ? segment.start : segment.end, opposite = end === 'start' ? segment.end : segment.start;
   const tolerance = cadPathClosureTolerance([segment.center, segment.start, segment.end, event.point]), minimum = Math.max(CAD_PRECISION.minimumLengthMm, tolerance);
@@ -709,14 +771,15 @@ export function prepareCadSketchExtend({ graph: input, parameters, entityId, end
   deepFreezeCadData(result); return result;
 }
 
-function prepareLineExtend(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entity: SourceLine, end: 'start' | 'end'): CadSketchLineExtendPreparation {
+function prepareLineExtend(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>, entity: SourceLine, end: 'start' | 'end',
+  axes: readonly CadSketchVirtualAxisId[]): CadSketchLineExtendPreparation {
   const entityId = entity.id;
   const geometry = compileCadSketchGraph(graph, parameters), segment = geometry.segments.find(item => item.id === entityId);
   if (!segment || segment.kind !== 'line') throw new CadError('invalid-sketch-extend-target', 'This extension supports an existing line endpoint.');
   assertDependencies(graph, entityId, [end === 'start' ? entity.startPointId : entity.endPointId], 'extend', entity);
-  const events = boundaryEvents(graph, parameters, geometry.segments, { kind: 'extend', segment, end });
+  const events = boundaryEvents(graph, parameters, geometry.segments, { kind: 'extend', segment, end, axes });
   const event = end === 'start' ? events.at(-1) : events[0];
-  if (!event) throw new CadError('missing-sketch-extend-boundary', 'No finite boundary intersects this line beyond the selected endpoint.');
+  if (!event) throw new CadError('missing-sketch-extend-boundary', `No finite boundary${axes.length ? ' or named axis' : ''} intersects this line beyond the selected endpoint.`);
   assertEndpointRange(event.point, 'extend');
   const original = end === 'start' ? segment.start : segment.end;
   if (distance(original, event.point) <= Math.max(CAD_PRECISION.minimumLengthMm, cadPathClosureTolerance([segment.start, segment.end, event.point]))) throw precision('extend');
@@ -730,7 +793,8 @@ export function extendCadSketchEntity({ graph: input, parameters, extend }: Sour
   if (!isCadImportData(extend) || !Value.Check(CadSketchExtendTargetSchema, extend)) throw new CadError('invalid-sketch-extend', 'Choose one complete line or arc extension request.');
   const graph = parseCadSketchGraph(input), source = graph.entities.find(entity => entity.id === extend.entityId);
   if (!source || source.kind !== extend.kind) throw new CadError('invalid-sketch-extend-target', 'The extension source must retain its requested kind.');
-  const prepared = prepareCadSketchExtend({ graph, parameters, entityId: extend.entityId, end: extend.end });
+  // An axis the target names as its boundary bounds it in this check.
+  const prepared = prepareCadSketchExtend({ graph, parameters, entityId: extend.entityId, end: extend.end, axes: namedAxes([extend.boundary]) });
   const { endPointId, ...target } = extend;
   if (!Value.Equal(prepared.target, target)) throw new CadError('stale-sketch-extend', 'The extension boundary changed. Choose the endpoint again.');
   if (source.kind === 'arc') {

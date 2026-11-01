@@ -52,7 +52,8 @@ export function createCadBackgroundDim(): CadBackgroundDim {
   };
 }
 
-const isPlane = (reference: CadViewportReference) => reference.featureKind === 'principal-plane' || reference.featureKind === 'datum-plane';
+/** Reference planes, axes and the origin stay out of a sketch's background; only sketch and curve outlines show behind it. */
+const isPlane = (reference: CadViewportReference) => reference.featureKind !== 'sketch' && reference.featureKind !== 'curve';
 const sameNumbers = (a: readonly number[] | undefined, b: readonly number[] | undefined) => a === b || Boolean(a && b && a.length === b.length && a.every((value, index) => value === b[index]));
 const samePlane = (a: CadViewportReference['plane'], b: CadViewportReference['plane']) => a === b || typeof a === 'object' && typeof b === 'object' && a.featureId === b.featureId;
 /** Whether two references draw the same lines, so the one already installed can stay. */

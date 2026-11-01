@@ -195,7 +195,7 @@ describe('sketch canvas cursor rendering', () => {
     await show({ graphControls: { ...props().graphControls!, onSelectRelations: vi.fn(), highlight: store } });
     glyphRenders.mockClear(); clearRenders(); glyphLayerRenders.mockClear();
     await act(async () => container.querySelector('[data-cad-sketch-point="b"]')!.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })));
-    await act(async () => store.show('row', { kind: 'geometry', pointIds: ['a', 'b'], entityIds: ['bottom'], datums: [], relationIds: ['h1'] })); await elapse(CAD_SKETCH_RELATION_GLYPH_REVEAL_MS * 2);
+    await act(async () => store.show('row', { kind: 'geometry', pointIds: ['a', 'b'], entityIds: ['bottom'], relationIds: ['h1'] })); await elapse(CAD_SKETCH_RELATION_GLYPH_REVEAL_MS * 2);
     expect(container.querySelectorAll('[data-cad-highlight-glyph="h1"]')).toHaveLength(1); expect(glyphRenders).toHaveBeenCalledTimes(1); expect(glyphLayerRenders).not.toHaveBeenCalled();
     await act(async () => store.hide('row'));
 
@@ -220,7 +220,7 @@ describe('sketch canvas cursor rendering', () => {
     // A relations-list row the pointer rests on shows its relation's glyphs, and its geometry hover shows nothing more.
     const store = createCadSketchHighlightStore();
     await show({ graphControls: { ...props().graphControls!, highlight: store } });
-    await act(async () => store.show('row', { kind: 'geometry', pointIds: ['s40a', 's40b'], entityIds: ['s40e0'], datums: [], relationIds: ['s40r0'] }));
+    await act(async () => store.show('row', { kind: 'geometry', pointIds: ['s40a', 's40b'], entityIds: ['s40e0'], relationIds: ['s40r0'] }));
     expect(shownGlyphs()).toEqual(['s7r1', 's30r2']);
     await elapse(rest); expect(shownGlyphs()).toEqual(['s7r1', 's30r2', 's40r0']);
     await act(async () => store.hide('row')); await elapse(rest); expect(shownGlyphs()).toEqual(['s7r1', 's30r2']);
@@ -436,14 +436,14 @@ describe('sketch canvas cursor rendering', () => {
     await move(20.2, 10.1, across[0]); await move(20.4, 10.2, across[0]); expect(pathJoins).not.toHaveBeenCalled();
     await leave(across[0]); expect(shared()).toBe(7); expect(lit()).toBe(0); expect(rings()).toBe(0); expect(pathJoins).not.toHaveBeenCalled(); expect(unchanged()).toBe(true);
     // A dock row naming geometry alone lights no glyph, so it joins nothing.
-    pathJoins.mockClear(); await act(async () => store.show('row', { kind: 'geometry', pointIds: ['a'], entityIds: ['bottom'], datums: [] }));
+    pathJoins.mockClear(); await act(async () => store.show('row', { kind: 'geometry', pointIds: ['a'], entityIds: ['bottom'] }));
     expect(pathJoins).not.toHaveBeenCalled(); expect(shared()).toBe(7); await act(async () => store.hide('row'));
 
     // A selected glyph draws in its row, in the selected state, and leaves the shared paths.
     await show({ graphControls: { ...props().graphControls!, dimensionSelection: ['h1'] } });
     expect(own()).toEqual(['h1']); expect(ownIcons()).toEqual(['h1']); expect(row('h1')[0].querySelector('path')?.classList.contains('is-selected')).toBe(true); expect(shared()).toBe(6);
     // A lit glyph that already draws on its own keeps one drawing and gains only its ring; the other draws a copy and joins nothing.
-    pathJoins.mockClear(); await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], datums: [], relationIds: ['h1', 'h2'] }));
+    pathJoins.mockClear(); await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], relationIds: ['h1', 'h2'] }));
     expect(lit()).toBe(1); expect(rings()).toBe(2); expect(shared()).toBe(6); expect(own()).toEqual(['h1']);
     await act(async () => store.hide('row')); expect(shared()).toBe(6); expect(lit()).toBe(0); expect(pathJoins).not.toHaveBeenCalled();
     // A focused glyph draws in its row, so its focus ring shows, and returns to the shared paths once focus leaves it.
@@ -515,8 +515,8 @@ describe('sketch canvas cursor rendering', () => {
     await show({ graphControls: { ...props().graphControls!, selection: [] } });
     // Lit, the later glyph draws a copy on top; the earlier, under the later one, gains only its ring, so no copy covers the later glyph.
     const copies = () => [...container.querySelectorAll('.cad-sketch-relation-glyphs-lit > g')].length, rings = () => container.querySelectorAll('[data-cad-highlight-glyph]').length;
-    await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], datums: [], relationIds: ['pin'] })); expect(copies()).toBe(0); expect(rings()).toBe(1);
-    await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], datums: [], relationIds: ['peg'] })); expect(copies()).toBe(1); expect(rings()).toBe(1);
+    await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], relationIds: ['pin'] })); expect(copies()).toBe(0); expect(rings()).toBe(1);
+    await act(async () => store.show('row', { kind: 'geometry', pointIds: [], entityIds: [], relationIds: ['peg'] })); expect(copies()).toBe(1); expect(rings()).toBe(1);
     await act(async () => store.hide('row'));
 
     // Dragging the rectangle's top right corner up moves the right edge's Vertical. Its row stands aside, hidden and out of picks, while the
@@ -648,11 +648,11 @@ describe('sketch canvas cursor rendering', () => {
     const graph: NonNullable<CadSketchFeature['graph']> = { points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 10] }],
       entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [] };
     const { props, show, move } = await mountCanvas(graph, { tool: 'select' });
-    await show({ graphControls: { ...props().graphControls!, onSelectDatum: vi.fn() } });
-    const highlighted = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
+    await show({ graphControls: { ...props().graphControls! } });
+    const highlighted = () => [...container.querySelectorAll('[data-cad-sketch-fixed].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-fixed'));
     clearRenders();
-    await move(15, 0.02); expect(highlighted()).toEqual(['x-axis']);
-    await move(0.02, 8); expect(highlighted()).toEqual(['y-axis']);
+    await move(15, 0.02); expect(highlighted()).toEqual(['@h']);
+    await move(0.02, 8); expect(highlighted()).toEqual(['@v']);
     await move(12, 8); expect(highlighted()).toEqual([]);
     expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual([]);
   });
@@ -663,13 +663,13 @@ describe('sketch canvas cursor rendering', () => {
     const { props, show, move } = await mountCanvas(graph, { tool: 'select' });
     const box = (id: string, x: number, y: number, width: number, height: number) => ({ id, name: id, construction: false, geometry: { kind: 'rectangle' as const, x, y, width, height, cornerRadius: 0 } });
     const sketch = props().sketch; if (sketch.kind !== 'sketch') throw new Error('Sketch missing.');
-    await show({ sketch: { ...sketch, profiles: [box('across', -30, -5, 10, 10), box('above', -4, 20, 12, 4)] }, onMoveHandle: vi.fn(), graphControls: { ...props().graphControls!, onSelectDatum: vi.fn() } });
-    const highlighted = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
+    await show({ sketch: { ...sketch, profiles: [box('across', -30, -5, 10, 10), box('above', -4, 20, 12, 4)] }, onMoveHandle: vi.fn(), graphControls: { ...props().graphControls! } });
+    const highlighted = () => [...container.querySelectorAll('[data-cad-sketch-fixed].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-fixed'));
     const hover = async (x: number, y: number, target?: Element) => { Object.assign(picks, { graph: 0, profile: 0, edge: 0, grip: 0 }); await move(x, y, target); return { ...picks }; };
     // Open axis: the grip test the move already made, then one pruned edge query.
-    expect(await hover(40, 0.02)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(highlighted()).toEqual(['x-axis']);
+    expect(await hover(40, 0.02)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(highlighted()).toEqual(['@h']);
     // Inside a rectangle the axis still answers; at a side grip, and on an edge away from its grips, the profile keeps the pointer.
-    expect(await hover(-25, 0.02)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(highlighted()).toEqual(['x-axis']);
+    expect(await hover(-25, 0.02)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(highlighted()).toEqual(['@h']);
     expect(await hover(-20, 0.02)).toEqual({ graph: 0, profile: 0, edge: 0, grip: 1 }); expect(highlighted()).toEqual([]);
     expect(await hover(0.02, 20)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(highlighted()).toEqual([]);
     // Over sketch geometry on the axis, the graph layer's own hit area answers without any picker.
@@ -687,7 +687,7 @@ describe('sketch canvas cursor rendering', () => {
     const pointer = createCadSketchPointerStore(), plan = planCadSketchDimension(graph, {}, [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'c' }], () => `new-${++next}`);
     const onPick = vi.fn(), onConfirm = vi.fn();
     await show({ graphControls: { ...props().graphControls!, onSelectDimension: vi.fn(), onConfigureRelation: vi.fn(), geometryPick: {
-      eligibleEntityIds: [], eligiblePointIds: [], eligibleDatums: [], label: 'Distance', onPick, onConfirm, onCancel: vi.fn(), pointer, dimensionPreview: plan } } });
+      eligibleEntityIds: [], eligiblePointIds: [], label: 'Distance', onPick, onConfirm, onCancel: vi.fn(), pointer, dimensionPreview: plan } } });
     const preview = () => container.querySelector('[data-cad-dimension-preview]'), caption = () => container.querySelector('.cad-view-caption')?.textContent;
     clearRenders(); canvasRenders.mockClear(); dimensionRenders.mockClear(); Object.assign(picks, { graph: 0, profile: 0, edge: 0, grip: 0 });
     // Between the two points the preview is aligned; above or below them it is horizontal, and beside them vertical.
@@ -719,7 +719,7 @@ describe('sketch canvas cursor rendering', () => {
     // The Dimension preview of a line follows the pointer.
     const store = createCadSketchPointerStore(), plan = planCadSketchDimension(graph, {}, [{ kind: 'entity', id: 'ab' }], () => 'new');
     await show({ graphControls: { ...props().graphControls!, onSelectDimension: vi.fn(), onConfigureRelation: vi.fn(), geometryPick: {
-      eligibleEntityIds: [], eligiblePointIds: [], eligibleDatums: [], label: 'Distance', onPick: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(), pointer: store, dimensionPreview: plan } } });
+      eligibleEntityIds: [], eligiblePointIds: [], label: 'Distance', onPick: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(), pointer: store, dimensionPreview: plan } } });
     await move(4, 6); changes();
     await move(6, 9); await move(14, -7); await move(3, 12);
     expect(overlay.querySelector('[data-cad-dimension-preview]')).not.toBeNull(); expect(changes()).toEqual({ canvas: 0, overlay: true });
@@ -741,22 +741,22 @@ describe('sketch canvas cursor rendering', () => {
   it('answers hover over a dimension line from one query of each picker, rendering neither rows nor dimensions for it', async () => {
     const { props, show, move, view } = await mountCanvas({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }],
       entities: [{ id: 'ab', kind: 'line', construction: false, startPointId: 'a', endPointId: 'b' }], relations: [{ id: 'length', kind: 'distance', pointIds: ['a', 'b'], value: 20 }] }, { tool: 'select' });
-    await show({ onMoveHandle: vi.fn(), graphControls: { ...props().graphControls!, onSelectDatum: vi.fn(), onSelectDimension: vi.fn(), onConfigureRelation: vi.fn() } });
+    await show({ onMoveHandle: vi.fn(), graphControls: { ...props().graphControls!, onSelectDimension: vi.fn(), onConfigureRelation: vi.fn() } });
     const state = view(); if (!state || state.mode === 'solid') throw new Error('Sketch frame missing');
     const line = () => container.querySelector('[data-cad-sketch-dimension-hit="length"] line')!, value = (name: string) => Number(line().getAttribute(name));
-    // The graph layer draws relative to the view center; the line starts above a, on the Y axis.
+    // The graph layer draws relative to the view center; the line starts above a, on the V axis.
     const along = (share: number) => [state.centerMm[0] + value('x1') + (value('x2') - value('x1')) * share, state.centerMm[1] + value('y1') + (value('y2') - value('y1')) * share] as const;
-    const datums = () => [...container.querySelectorAll('[data-cad-sketch-datum].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-datum'));
+    const fixed = () => [...container.querySelectorAll('[data-cad-sketch-fixed].is-pick-highlighted')].map(item => item.getAttribute('data-cad-sketch-fixed'));
     const pointed = () => container.querySelector('[data-cad-sketch-dimension="length"]')!.classList.contains('is-pointed');
     const hover = async (share: number) => { Object.assign(picks, { graph: 0, profile: 0, edge: 0, grip: 0 }); await move(...along(share), line()); return { ...picks }; };
     expect(value('x1')).toBeCloseTo(-state.centerMm[0], 9);
     clearRenders(); dimensionRenders.mockClear();
     // Along the line, the cover test's grip and edge queries serve the canvas hover too, and the line marks its own dimension.
-    expect(await hover(.5)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true); expect(datums()).toEqual([]);
+    expect(await hover(.5)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true); expect(fixed()).toEqual([]);
     expect(await hover(.6)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true);
-    // Where it crosses the Y axis, the axis takes the hover from the same queries.
-    expect(await hover(0)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(false); expect(datums()).toEqual(['y-axis']);
-    expect(await hover(.5)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true); expect(datums()).toEqual([]);
+    // Where it crosses the V axis, the axis takes the hover from the same queries.
+    expect(await hover(0)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(false); expect(fixed()).toEqual(['@v']);
+    expect(await hover(.5)).toEqual({ graph: 0, profile: 0, edge: 1, grip: 1 }); expect(pointed()).toBe(true); expect(fixed()).toEqual([]);
     // Only the overlay draws the measured edge, once for each time the line takes the hover; no row or dimension renders again.
     expect(renderedPoints()).toEqual([]); expect(renderedEdges()).toEqual(['ab', 'ab']); expect(dimensionRenders).not.toHaveBeenCalled();
     // A window that loses focus sends no pointer leave; it still drops the mark and the measured edge.

@@ -320,7 +320,7 @@ describe('prepared sketch geometry snaps', () => {
       // Beyond the crossing's reach the plain position on the edge remains.
       expect(at([15, 10.2], { alignTo: [[25, 50]] })).toEqual({ kind: 'hit', candidate: { target: { kind: 'on-entity', entityId: 'ab', entityKind: 'line' }, point: [15, 10], distancePx: expect.closeTo(2, 9), entityIds: ['ab'] } });
       expect(cadSketchSnapTargetLabel({ kind: 'on-entity', entityId: 'ab', entityKind: 'line', vertical: [15.3, 50] })).toBe('On line · vertical with point');
-      expect(cadSketchSnapTargetLabel({ kind: 'on-axis', axis: 'y', horizontal: [60, -30] })).toBe('On Y axis · horizontal with point');
+      expect(cadSketchSnapTargetLabel({ kind: 'on-axis', axis: 'y', horizontal: [60, -30] })).toBe('On V axis · horizontal with point');
     });
   });
   describe('line relations from the start guide', () => {
@@ -344,7 +344,7 @@ describe('prepared sketch geometry snaps', () => {
       expect(cadSketchDrawingInferenceLabel({ kind: 'aligned', horizontal: [10, 20], vertical: [40, 90] }, 'horizontal')).toBe('Horizontal · vertical with point');
       expect(cadSketchDrawingInferenceLabel({ kind: 'on-entity', entityId: 'edge', entityKind: 'line', vertical: [10, 20] }, 'vertical')).toBe('Point on line · Vertical');
       expect(cadSketchDrawingInferenceLabel({ kind: 'on-entity', entityId: 'hole', entityKind: 'circle', horizontal: [10, 20] }, 'horizontal')).toBe('Point on curve · Horizontal');
-      expect(cadSketchDrawingInferenceLabel({ kind: 'on-axis', axis: 'x', vertical: [10, 20] }, 'vertical')).toBe('Fixed Y at 0 · Vertical');
+      expect(cadSketchDrawingInferenceLabel({ kind: 'on-axis', axis: 'x', vertical: [10, 20] }, 'vertical')).toBe('Coincident · Vertical');
     });
   });
 });

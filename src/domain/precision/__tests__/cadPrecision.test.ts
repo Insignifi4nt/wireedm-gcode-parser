@@ -18,7 +18,7 @@ import {
 /** The values this version shipped with. Changing one means bumping `CAD_PRECISION_VERSION`. */
 const VERSION_1: Readonly<Record<CadPrecisionRole, number>> = {
   solverResidualMm: 1e-10, solverDragReachedMm: 1e-8, angularAccuracyRad: 1e-12, angularRoundoffCapRad: 1e-9,
-  closureFloorMm: 1e-12, closureUlps: 8, solverCollapsedStartRelative: 1e-12, parallelCrossFloorMm2: 1e-14, pointerMinimumSizeMm: 0.001,
+  closureFloorMm: 1e-12, closureUlps: 8, solverCollapsedStartRelative: 1e-12, solverAlongSupportStartRelative: 1e-12, parallelCrossFloorMm2: 1e-14, pointerMinimumSizeMm: 0.001,
   snapLineSpanSlack: 1e-9, snapArcSweepSlackRad: 1e-9, snapParallelRelative: 1e-12, snapTangentRelative: 1e-12,
   annotationReadingTie: 1e-12, annotationParallelRelative: 1e-12, annotationFullTurnSlackRad: 1e-9, annotationMinimumRadiusMm: 1e-6,
   kernelConfusionMm: 1e-7, minimumLengthMm: 1e-7, minimumAngleDeg: 1e-7, modelExtentMm: 1e6, sweepTopologyMm: 2e-7,

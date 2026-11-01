@@ -49,6 +49,8 @@ const allowed: Readonly<Record<string, Allowance>> = {
   'src/features/cad/cadSketchRelationGlyphLayout.ts': { literals: { '1e-9': 1, '1e-6': 1 }, reason: VIEW },
   'src/features/cad/cadSketchSvg.ts': { literals: { '1e-12': 1 }, reason: VIEW },
   'src/features/cad/cadTopologyPicking.ts': { literals: { '1e-7': 1, '2e-7': 1 }, reason: VIEW },
+  'src/features/cad/view/cadSectionCaps.ts': { literals: { '1e-6': 1 }, reason: VIEW },
+  'src/features/cad/view/cadSectionView.ts': { literals: { '1e-12': 1 }, reason: VIEW },
   'src/features/cad/view/cadSketchCamera.ts': { literals: { '1e-5': 1 }, reason: VIEW },
   'src/features/editor/EditorInspectorPanel.tsx': { literals: { '1e-6': 1 }, reason: VIEW },
   'src/features/editor/EditorPathNavigatorPanel.tsx': { literals: { '1e-6': 1 }, reason: VIEW },

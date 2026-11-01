@@ -66,8 +66,8 @@
 /* Behind an open sketch the model view fills the same area under the sketch canvas, which lets it show through and keeps every pointer. */
 .cad-viewport.is-sketch-background { position: absolute; inset: 0; pointer-events: none; }
 .cad-center.has-sketch-background .cad-sketch-canvas { background: none; }
-.cad-sketch-view-choices { display: flex; align-items: center; gap: 5px; }
-.cad-sketch-view-choices .cad-check { margin: 0 0 0 5px; font-size: 10px; }
+.cad-sketch-view-choices, .cad-part-view-choices { display: flex; align-items: center; gap: 5px; }
+.cad-sketch-view-choices .cad-check, .cad-part-view-choices .cad-check { margin: 0 0 0 5px; font-size: 10px; }
 .cad-view-tools { position: absolute; z-index: 2; bottom: 66px; right: 12px; display: flex; align-items: center; gap: 2px; padding: 3px 5px; background: var(--card); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 3px 8px color-mix(in srgb, var(--background) 55%, transparent); color: var(--muted-foreground); }
 .cad-view-tools select { padding: 3px 5px; font-size: 12px; width: 98px; }
 .cad-view-tools button { padding: 3px 6px; font-size: 12px; }

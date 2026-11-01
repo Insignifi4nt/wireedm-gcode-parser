@@ -1,8 +1,8 @@
 # Precision literal survey
 
-The survey behind [the precision policy](precision.md). It lists every candidate tolerance literal in non-test source at 8c7c3b50 (release 0.0.788): negative exponents, `Number.EPSILON`, `1e6` and `1e9` bounds, and small decimals. Locations are lines at that commit. Each row says which role or policy function replaced the literal, or why it stays.
+The survey behind [the precision policy](precision.md). It lists every candidate tolerance literal in non-test source at 8c7c3b50 (release 0.0.788): negative exponents, `Number.EPSILON`, `1e6` and `1e9` bounds, and small decimals. Locations are lines at that commit. Each row says which role or policy function replaced the literal, or why it stays. [Literals added by the merge with 26089af0](#literals-added-by-the-merge-with-26089af0) lists the three that releases 0.0.789 and 0.0.790 added, at lines of 26089af0.
 
-434 candidates: 246 moved behind roles and policy functions, 188 stay.
+437 candidates: 247 moved behind roles and policy functions, 190 stay.
 
 A literal stays as view or pointer space only if its value never ends up in model coordinates, saved placements, CAM or output. Sketch snap intersections and dimension placement fail that test, so their tolerances are roles.
 
@@ -10,7 +10,7 @@ A literal stays as view or pointer space only if its value never ends up in mode
 
 | Reason | Literals |
 | --- | ---: |
-| View or pointer space | 60 |
+| View or pointer space | 62 |
 | Coordinate and scalar budget (1e9), a data range separate from the 1e6 model extent | 49 |
 | Message or help text | 22 |
 | Plugin input range, default or expression | 16 |
@@ -86,9 +86,20 @@ Counted under the first role or function each row names.
 | `snapLineSpanSlack` | 1 |
 | `snapParallelRelative` | 1 |
 | `snapTangentRelative` | 1 |
+| `solverAlongSupportStartRelative` | 1 |
 | `solverCollapsedStartRelative` | 1 |
 | `sweepTopologyMm` | 1 |
 | `tessellationMm` | 1 |
+
+## Literals added by the merge with 26089af0
+
+Releases 0.0.789 (section caps and plane selection) and 0.0.790 (sketch axis elements) added three candidates in non-test source. Their line numbers are at 26089af0, and they are counted in the totals above. Release 0.0.790 also rewrote the collapsed-start test in `cadSketchNativeAttempt.ts`, now at line 109, which still reads `solverCollapsedStartRelative`. `cadSameLine` in `cadReferenceSelection.ts` reads the datum aliases of `frameOrthonormalResidual` and `kernelConfusionMm`, so it adds no literal.
+
+| Location | Value | Role | Moved |
+| --- | --- | --- | --- |
+| `features/cad/sketch-solver/native/cadSketchNativeAttempt.ts:131` | `1e-12` | `solverAlongSupportStartRelative` | moved |
+| `features/cad/view/cadSectionCaps.ts:359` | `1e-6` |  | left: View or pointer space (the section cap quad's margin past the cut outline, drawn only) |
+| `features/cad/view/cadSectionView.ts:46` | `1e-12` |  | left: View or pointer space (a pick ray parallel to the section plane) |
 
 ## Every candidate
 

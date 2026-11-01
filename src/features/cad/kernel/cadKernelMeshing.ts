@@ -2,6 +2,7 @@ import { getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh } from 'replica
 import type { BRepBuilderAPI_Transform, TopoDS_Shape } from 'replicad-opencascadejs';
 import type { CadMesh } from '../../../domain/cad/cadDocument';
 import { CadError } from '../../../domain/cad/cadError';
+import { cadKernelDisposeShape, cadKernelSolids } from './cadKernelShapes';
 
 interface MeshOptions { readonly tolerance: number; readonly angularTolerance: number }
 type TopologyKind = 'face' | 'edge';
@@ -116,4 +117,36 @@ export function meshCadKernelPreview(shape: Shape3D, bounds: CadMesh['bounds'], 
       } finally { transform.delete(); }
     } finally { vector.delete(); }
   } finally { translation.delete(); }
+}
+
+/**
+ * The native solid each face of `faceIds` bounds, numbered as `cadKernelSolids` lists the solids of `shape`, or `undefined` when a face
+ * bounds no solid or more than one, so that faces do not tell the solids apart. A face id is the face's index in the map of `shape`'s
+ * faces, as the preview's face groups give it. Section caps count the solids of a body in groups by these numbers. Costs O(faces).
+ */
+export function cadKernelFaceSolids(shape: Shape3D, faceIds: readonly number[]): number[] | undefined {
+  const oc = getOC(), face = oc.TopAbs_ShapeEnum.TopAbs_FACE, any = oc.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const faces = new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher();
+  try {
+    const explorer = new oc.TopExp_Explorer(shape.wrapped, face, any);
+    try {
+      // The same map, in the same order, as the one the face ids index.
+      for (; explorer.More(); explorer.Next()) { const element = explorer.Current(); try { faces.Add(element); } finally { element.Nullify(); element.delete(); } }
+      const solidOf = new Int32Array(faces.Extent() + 1).fill(-1), solids = cadKernelSolids(shape);
+      try {
+        for (const [index, solid] of solids.entries()) {
+          for (explorer.Init(solid.wrapped, face, any); explorer.More(); explorer.Next()) {
+            const element = explorer.Current();
+            try {
+              const id = faces.FindIndex(element);
+              if (!id || (solidOf[id] >= 0 && solidOf[id] !== index)) return undefined;
+              solidOf[id] = index;
+            } finally { element.Nullify(); element.delete(); }
+          }
+        }
+      } finally { for (const solid of solids) cadKernelDisposeShape(solid); }
+      const labels = faceIds.map(id => (Number.isSafeInteger(id) && id > 0 && id < solidOf.length ? solidOf[id] : -1));
+      return labels.every(label => label >= 0) ? labels : undefined;
+    } finally { explorer.delete(); }
+  } finally { faces.delete(); }
 }

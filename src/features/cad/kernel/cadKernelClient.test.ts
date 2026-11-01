@@ -43,7 +43,7 @@ describe('CAD worker lifetime and cancellation', () => {
       await rejected; expect(transport.terminated).toBe(true);
     } finally { encode.mockRestore(); client.dispose(); }
   });
-  it('preserves optional native solid counts and rejects invalid counts at the worker boundary', async () => {
+  it('preserves optional native solid counts and face solids, and rejects invalid ones at the worker boundary', async () => {
     const mesh = { featureId: 'body', name: 'Body', positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], normals: [0, 0, 1, 0, 0, 1, 0, 0, 1], indices: [0, 1, 2], edges: [], volume: 1,
       faceGroups: [{ start: 0, count: 3, key: 'face' }], edgeGroups: [], bounds: { min: [0, 0, 0], max: [1, 1, 1] } };
     const reply = (changed: unknown) => ({ id: 1, kind: 'built', result: { buildId: 'counted', meshes: [changed], diagnostics: [], durationMs: 1 } });
@@ -52,7 +52,13 @@ describe('CAD worker lifetime and cancellation', () => {
     for (const solidCount of [0, -1, 1.5, Infinity, NaN, '2', null, Number.MAX_SAFE_INTEGER + 1]) {
       expect(isCadKernelReply(reply({ ...mesh, solidCount })), String(solidCount)).toBe(false);
     }
-    for (const counted of [mesh, { ...mesh, solidCount: 2 }]) {
+    // One solid number for each face group, below the solid count.
+    expect(isCadKernelReply(reply({ ...mesh, solidCount: 2, faceSolids: [1] }))).toBe(true);
+    for (const faceSolids of [[2], [-1], [0.5], [0, 1], [], ['0'], '0', null]) {
+      expect(isCadKernelReply(reply({ ...mesh, solidCount: 2, faceSolids })), JSON.stringify(faceSolids)).toBe(false);
+    }
+    expect(isCadKernelReply(reply({ ...mesh, faceSolids: [0] }))).toBe(false);
+    for (const counted of [mesh, { ...mesh, solidCount: 2 }, { ...mesh, solidCount: 2, faceSolids: [1] }]) {
       const transport = new TestTransport(), client = createCadKernelClient(() => transport), pending = client.build(createCadDocument());
       transport.onmessage?.(new MessageEvent('message', { data: reply(counted) }));
       expect((await pending).meshes[0]).toEqual(counted);
