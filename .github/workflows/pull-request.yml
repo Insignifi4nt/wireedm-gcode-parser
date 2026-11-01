@@ -86,7 +86,7 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: npm test -- --run --maxWorkers=3 --shard=${{ matrix.shard }}/4 --reporter=default --reporter=json --outputFile.json=test-results/unit-shard-${{ matrix.shard }}.json
+      - run: npm test -- --run --maxWorkers=2 --shard=${{ matrix.shard }}/4 --reporter=default --reporter=json --outputFile.json=test-results/unit-shard-${{ matrix.shard }}.json
       - name: Keep the shard's file timings
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -102,7 +102,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -148,7 +148,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [7, 8, 9, 10, 11]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
