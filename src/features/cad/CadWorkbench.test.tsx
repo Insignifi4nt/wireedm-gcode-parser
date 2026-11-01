@@ -1339,8 +1339,8 @@ describe('CAD sketch interaction', () => {
     // Each body is one edge bounding one face, so its loop and its tangent chain are that edge.
     const adjacencyOf = (bodyId: string, edge: string, face: string, buildId = build.buildId): CadTopologyAdjacency => ({ bodyId, buildId, edges: [edge], edgeVertices: [0, 1],
       edgeTangents: [1, 0, 0, 1, 0, 0], edgeFaces: [0, -1], edgeSmooth: [false], faces: [face], faceLoops: [[[0]]] });
-    const reads: ((value: CadTopologyAdjacency) => void)[] = [];
-    const read = vi.fn((_request: CadTopologyAdjacencyRequest) => new Promise<CadTopologyAdjacency>(resolve => { reads.push(resolve); }));
+    const reads: ((value: CadTopologyAdjacency) => void)[] = [], failures: ((cause: Error) => void)[] = [];
+    const read = vi.fn((_request: CadTopologyAdjacencyRequest) => new Promise<CadTopologyAdjacency>((resolve, reject) => { reads.push(resolve); failures.push(reject); }));
     await mount(initial, { build, buildState: 'ready', onInspectTopology: inspectTopology, onTopologyAdjacency: read });
     const menu = async (bodyId: string, key: string, label: string) => {
       await act(async () => requestViewportMenu?.({ clientX: 100, clientY: 100, trigger: 'pointer', target: { kind: 'topology', hit: { bodyId, pick: { kind: 'edge', key } } } }));
@@ -1369,7 +1369,14 @@ describe('CAD sketch interaction', () => {
     expect(read).toHaveBeenCalledTimes(4);
     await act(async () => { reads[3](adjacencyOf('pad', 'edge-1', 'face-1', 'build-2')); reads[2](adjacencyOf('pad-b', 'edge-b', 'face-b', 'build-2')); });
     expect(picks()).toBe('pad: edge-1');
-    expect(container.querySelector('[role="alert"]')?.textContent ?? '').toBe('');
+    // A read that fails after a later chain says nothing; one that fails while its chain is the latest request says so.
+    const failed = () => statusMessage.mock.calls.filter(([message, tone]) => tone === 'error' && String(message).includes('The adjacency read failed.')).length;
+    await act(async () => replaceBuild({ ...build, buildId: 'build-3' }));
+    await menu('pad', 'edge-1', 'Select loop'); await menu('pad-b', 'edge-b', 'Select loop');
+    await act(async () => failures[4](new Error('The adjacency read failed.')));
+    expect(failed()).toBe(0);
+    await act(async () => failures[5](new Error('The adjacency read failed.')));
+    expect(failed()).toBe(1);
   });
   it('offers Select other over planes, with or without a body under the pointer', async () => {
     await mount(solidDocument(), { build: topologyBuild, buildState: 'ready' });
