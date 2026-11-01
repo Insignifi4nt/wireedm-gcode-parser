@@ -106,11 +106,21 @@ every build (`CadBuildResult.bodies`, `CadMesh.bodyKey`). A kind's `body` behavi
   can establish identity. A group's earlier keys that no solid continues stay in it, as keys that can't be found, while a solid descends
   from the group through the target; once none does, they are lost. So do earlier keys that solids continue under other keys, as
   `key/split(q)` or a pattern copy's `key/inst(i,j)`: the kernel's order picked which member's key each solid continued, so the old key
-  may name any solid descending from the group in another order. A pattern keeps them in the original's group. For the same reason, a key no body lists resolves as ambiguous when its nearest listed ancestor is ambiguous and another member of that ancestor's
-  group has a descendant by the same steps, which another kernel order would have given the key.
+  may name any solid descending from the group in another order. A pattern keeps them in the original's group.
+- A key no body lists resolves as ambiguous when another kernel order would have given it a solid. The order decides only which of the
+  keys one split gave at once names which solid; every later step follows its solid, and pattern copies and mirror images are told apart
+  by the faces they keep, never by the order. So a twin of the key is the key with one `split` step changed to a sibling's, a key the same
+  split gave beside it in its group, and the nearest such step with a twin the body lists decides, among the groups of all its twins. A
+  later feature's key with the same steps, such as the copy of a join that merged the originals, is never a twin, and the search stops at
+  a certain piece or the body's own key.
 - Each feature reports these in `CadBuildResult.bodyIssues` for D1 to adopt: `ambiguous-body-parts` for keys it makes ambiguous,
-  `lost-body-parts` for pieces it removes or merges into another solid, and `untracked-body-parts` when a body gets more than
-  `MAX_CAD_BODY_LIST` (4,096) parts. Its parts are then no longer tracked, and references to them resolve as missing. A key ambiguous only
+  `lost-body-parts` for pieces it removes or merges into another solid, and `untracked-body-parts` when a body tracks more than
+  `MAX_CAD_BODY_LIST` (4,096) part keys: its pieces and the keys its groups keep, together. Its parts are then untracked for the rest of
+  the history, and references to them resolve as missing. Since groups keep every former member's key while a solid descends from them,
+  the keys grow with the history, not the solid count: a body of 100 ambiguous solids that loses one piece and splits another at each
+  feature adds two keys a feature and passes the limit at the 1,999th such feature. That limit is separate from an issue's 4,096 keys
+  below. Collapsing a group's kept keys to a common prefix was not done: removed and merged keys leave no descendant to imply them, so it
+  would at most halve the growth while adding a third way to resolve a key. A key ambiguous only
   because it descends from an ambiguous key is added to the issue that reported that key instead of being reported again, until that
   issue lists 4,096 keys. The later feature then reports the keys that did not fit in an `ambiguous-body-parts` issue of its own, which
   later descendants extend in turn. A message gives counts,
