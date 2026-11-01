@@ -7,7 +7,7 @@ import { CadStorageError } from '@/domain/cad/cadStorage';
 import { CadSectionRequestSchema } from '@/domain/cad/cadSection';
 import { CadViewportCommandSchema } from './cadViewportControls';
 import { cadViewportMetadataToken, cadViewportToolState } from './cadViewportToolReplies';
-import { CadFeatureSchema } from '@/domain/cad/cadSchema';
+import { cadFeatureDefinition, cadFeatureKinds } from '@/domain/cad/features/cadFeatureRegistry';
 import { CadTopologyPickSchema, CadTopologyResolvePicksRequestSchema } from '@/domain/cad/cadTopology';
 import { CadSolidImportSourceSchema } from '@/domain/cad/cadImports';
 import { CadDxfImportSourceSchema } from '@/domain/cad/cadDxfSource';
@@ -27,12 +27,11 @@ import { CadSketchSplitDependencyError } from '@/domain/cad/cadSketchSplit';
 import { CadSketchTrimDependencyError, CadSketchExtendDependencyError } from '@/domain/cad/cadSketchTrimExtend';
 import { CadSketchTangentOwnershipError } from '@/domain/cad/cadSketchTangentRelations';
 import { CadSketchPlacementDependencyError } from '@/domain/cad/cadSketchPlacement';
-import { CadSketchDimensionAnnotationSchema } from '@/domain/cad/cadSketchGraph';
 import { CAD_SKETCH_AGENT_RELATION_KINDS } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { CadConstructionPointSchema, CadPathConstructionStepSchema, createCadPathProfile, createCadOpenCurveSegments } from '@/domain/cad/cadPathConstruction';
 import { cadAnalyticPathMetrics, resolveCadProfile } from '@/domain/cad/cadSketchGeometry';
 import { resolveCadCurve } from '@/domain/cad/cadCurve';
-import { CadIdentifierSchema, CadScalarSchema } from '@/domain/cad/cadPrimitives';
+import { CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
 import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from '@/domain/cad/cadLoft';
 import { CadFeatureInputRequestSchema } from './cadFeatureInput';
 
@@ -86,10 +85,6 @@ function withSharedDefinitions(schema: TSchema, shared: Readonly<Record<string, 
   };
   return { ...visit(schema) as TSchema, $defs: Object.fromEntries(Object.entries(shared).map(([name, definition]) => [name, { ...definition, $id: name }])) };
 }
-const sketchSharedDefinitions: Readonly<Record<string, TSchema>> = {
-  CadScalar: CadScalarSchema, CadIdentifier: CadIdentifierSchema,
-  ...Object.fromEntries(CadSketchDimensionAnnotationSchema.anyOf.map(variant => [`CadSketch${variant.properties.kind.const[0].toUpperCase()}${variant.properties.kind.const.slice(1)}Annotation`, variant])),
-};
 const documentText = new WeakMap<CadDocument, string>();
 function diagnosticSummary(diagnostics: readonly CadDiagnostic[]) {
   const summaries = diagnostics.slice(0, 10).map(summarizeDiagnostic);
@@ -122,25 +117,8 @@ function parameterContext(document: CadDocument) {
     omittedParameterCount: parameterCount - retainedParameterCount, parameterGroups, parameterGroupCount: allGroups.length,
     omittedParameterGroups: parameterGroups.length < allGroups.length, omittedParameterGroupCount: allGroups.length - parameterGroups.length };
 }
-const featureDescriptions: Record<CadFeature['kind'], string> = {
-  'datum-plane': 'An independent world reference plane. definition.kind=world uses basePlane XY/XZ/YZ, world origin in mm and rotation in degrees around world X then Y then Z. Rotation turns its basis without rotating its origin. All coordinates accept parameter expressions. Sketch/Curve plane may reference this preceding active feature with {kind:datum-plane,featureId}; offset remains along its normal. No body, material or CAM role. cad_inspect_plane resolves the frame without loading the solid engine. Datum Pad/Revolve/Loft/Sweep require conservative placement precision. Loft sections must share oriented axes and normal; use cad_inspect_loft before adding one. Sweep preserves authored section and rail frames; its section normal must align with the first rail tangent. Datum Through-all Pocket is not yet supported and is rejected before editing.',
-  curve: 'An ordered open reference chain of exact lines and circular arcs on XY, XZ, YZ or a preceding active datum-plane at a signed normal offset. Dimensions accept parameter expressions. Segments must connect within modeling precision without closing, crossing, touching nonadjacent segments or overlapping. Sharp corners are allowed. Curves are independent references, never solid bodies or closed material profiles. Retains original DXF source when imported; exact open DXF export preserves traversal in local millimeters.',
-  sketch: 'Plane-local legacy closed profiles and optional schema-2 graph of stable open/closed line, arc and circle entities on XY/XZ/YZ or a preceding active datum-plane, with optional construction geometry. Offset follows the resolved plane normal; changing placement preserves local coordinates. Nesting automatically determines material, voids and islands. Dimensions accept finite arithmetic over document parameters. Use cad_inspect_plane for world placement.',
-  imported: 'An independent solid from an original STEP or STL file. Original source bytes are preserved in the document. STEP retains exact BRep; STL is faceted and requires explicit mm/inch source units. Native validation rejects open or invalid solids.',
-  extrude: 'Pad the preceding sketch, symmetrically if requested. New creates a body; join/cut consumes and replaces targetId. Absent regionSelection keeps whole-sketch automatic holes. Explicit regionSelection accepts the unchanged nonempty contour-reference array, or a graph-cells envelope packed from inspected cellIds. Contour references retain exact boundaryProfileId, sorted immediate voidProfileIds and complete ordered ancestorProfileIds. Graph cells require schema 2 and deliberate selection; exact source/event witnesses reject topology changes. Neighboring selected cells cancel their shared contour. Changed/missing topology rejects; never infer references from profile names, array indices or points.',
-  pocket: 'Cut the whole sketch automatic material regions, or explicit bounded regionSelection cells, through a current target body. Obtain complete cell references from cad_inspect_sketch_regions; changed/missing topology rejects instead of substituting another area. extent.kind is through-all; direction positive follows the sketch normal (XY +Z, XZ -Y, YZ +X) from its authored plane, negative follows the opposite side, and both spans the complete target independent of sketch offset. Recomputes finite caps from exact target bounds on each build. Replaces targetId and retains the sketch. No distance, symmetric or operation fields. Rejects no material, complete erasure, uncertain native precision and required spans above one million mm; build and inspect diagnostics before export or CAM handoff.',
-  revolve: 'Revolve the preceding sketch around its local x or y axis by degrees. New creates a body; join/cut replaces targetId.',
-  loft: 'Build a solid through 2–16 unique sketchIds in their supplied order. Each active sketch must have one closed material boundary without holes; construction geometry is ignored. All sections share oriented local axes and normal, on a principal plane or compatible datum planes. Effective normal stations must increase or decrease strictly beyond modeling precision; authored origin translations and in-plane shifts are preserved. Call cad_inspect_loft before adding the feature. No sorting or dropped contours. ruled=true connects consecutive sections directly; false uses fitted native smooth surfaces. New creates a body; join/cut replaces targetId while retaining sketches. Invalid solids and end-plane overshoot fail. STEP preserves the resulting BRep; some section curves cannot transfer to analytic-only CAM.',
-  sweep: 'Transport one preceding sketch along one preceding open Curve with fixed planar binormal, using exact extrusions and signed revolutions. Principal or datum sources must preserve their actual world placement. The sketch must contain one active closed material boundary without holes and lie at the actual curve start, perpendicular to its first tangent. Section roll and parallel or antiparallel normal orientation are retained. Preserves authored position, orientation and traversal; no automatic relocation or reversal. Curve joints require matching tangent directions. Conservative enclosing-radius, global clearance and precision checks may reject otherwise valid sections. Supports up to 64 curve segments and section edges × curve segments <= 2048. Call cad_inspect_sweep before adding the feature; then build and inspect diagnostics. New creates one body; join/cut replaces targetId while retaining both references.',
-  fillet: 'Round current target edges. Absent/null selection means all edges; supplied geometric queries must match their exact expected counts. Selected seeds continue through native tangent chains only with tangentPropagation=true; absent/false requires the complete chain selected explicitly. Replaces targetId; invalid radii report a build diagnostic.',
-  chamfer: 'Chamfer current target edges. The radius field is the distance in mm. Optional geometric selection must match exact counts; absent/null retains all-edge semantics. Selected seeds continue through native tangent chains only with tangentPropagation=true; absent/false requires the complete chain selected explicitly.',
-  shell: 'Hollow a current solid inward by positive thickness in mm, opening exactly one planar face selected by geometric predicates. Ambiguous selections and invalid walls fail explicitly.',
-  boolean: 'Union/cut/intersect current target and tool bodies. Both inputs are consumed and replaced by this feature.',
-  transform: 'Translate in mm and rotate in degrees about global axes. Replaces its current source body.',
-  'linear-pattern': 'Fuse the original current source and translated copies, retaining disconnected solids where copies do not touch. Count includes the original; spacing is the XYZ translation between instances in mm. Replaces sourceId.',
-  'circular-pattern': 'Fuse the original current source and rotated copies, retaining disconnected solids where copies do not touch. Count includes the original (2–100). Rotate about the positive world x/y/z axis through center in mm, following the right-hand rule. angle is the signed total angular extent in degrees, greater than 0.0000001 in magnitude and at most 360. Exactly ±360 distributes count instances without a duplicate endpoint; partial extents include both endpoints. Center and angle accept parameter expressions. Replaces sourceId; combined expanded pattern instances are limited to 1000.',
-  mirror: 'Mirror the current source across a global reference plane, preserving the original source as a separate body.'
-};
+// The kinds agents may name, in catalog order; each definition holds what they are told of it.
+const agentFeatureKinds = cadFeatureKinds().filter(kind => cadFeatureDefinition(kind).agent.exposed);
 
 /** No code execution or hidden controller shortcuts: agents use the visible CAD operations. */
 export function cadSiteTools(getController: () => CadController) {
@@ -293,22 +271,12 @@ export function cadSiteTools(getController: () => CadController) {
       return { geometry, units: 'mm', segmentCount: geometry.segments.length,
         areaMm2: Math.abs(metrics.signedArea), perimeterMm: metrics.length, boundsMm: metrics.bounds, persisted: false };
     }),
-    tool('cad_describe_features', 'Discover exact CAD feature definitions and semantics without opening or changing a document. With no kind returns a compact catalog; provide kind for its JSON schema. Use complete feature definitions in add-feature/update-feature. Dimensions are mm, angles degrees.', object({ kind: Type.Optional(Type.Union(Object.keys(featureDescriptions).map(kind => Type.Literal(kind)))) }), (_cad, input) => {
-      if (!input.kind) return { items: Object.entries(featureDescriptions).map(([kind, description]) => ({ kind, description })) };
+    tool('cad_describe_features', 'Discover exact CAD feature definitions and semantics without opening or changing a document. With no kind returns a compact catalog; provide kind for its JSON schema. Use complete feature definitions in add-feature/update-feature. Dimensions are mm, angles degrees.', object({ kind: Type.Optional(Type.Union(agentFeatureKinds.map(kind => Type.Literal(kind)))) }), (_cad, input) => {
+      if (!input.kind) return { items: agentFeatureKinds.map(kind => ({ kind, description: cadFeatureDefinition(kind).agent.description })) };
       const kind = input.kind as CadFeature['kind'];
-      const schema = CadFeatureSchema.anyOf.find(candidate => {
-        const value = candidate.properties.kind;
-        return value.const === kind || ('anyOf' in value && value.anyOf.some((variant: TSchema) => variant.const === kind));
-      });
-      if (!schema) throw new ToolError('NOT_FOUND', 'CAD feature kind was not found.');
-      if (kind === 'sketch' && 'profiles' in schema.properties) {
-        // Saved legacy constraints remain parseable, but new contours use nesting.
-        const authoringSchema = Type.Object({ ...schema.properties,
-          profiles: Type.Array(Type.Omit(schema.properties.profiles.items, ['role']))
-        }, { additionalProperties: false });
-        return { kind, description: featureDescriptions[kind], schema: withSharedDefinitions(authoringSchema, sketchSharedDefinitions) };
-      }
-      return { kind, description: featureDescriptions[kind], schema };
+      if (!agentFeatureKinds.includes(kind)) throw new ToolError('NOT_FOUND', 'CAD feature kind was not found.');
+      const { schema, agent } = cadFeatureDefinition(kind), authoring = agent.authoringSchema ?? schema;
+      return { kind, description: agent.description, schema: agent.sharedDefinitions ? withSharedDefinitions(authoring, agent.sharedDefinitions) : authoring };
     }),
     tool('cad_open_workspace', 'Open the desktop CAD workspace, retaining its current draft. Refuses to leave an unsaved CAM draft or active CAM workflow.', object({}), cad => { cad.enter(); return context(cad); }, false),
     tool('cad_create_document', 'Create a blank CAD draft with a fresh identity. Does not save. Save an existing nonempty draft before replacing it.', object({ ...version, name: Type.String({ minLength: 1, maxLength: 160 }) }), (cad, input) => {

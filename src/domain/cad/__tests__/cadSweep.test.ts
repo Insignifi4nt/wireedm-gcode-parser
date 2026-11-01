@@ -150,7 +150,7 @@ describe('Sweep saved history compatibility and atomic operations', () => {
     const original=document([section(),rail(),feature]);
     expect(cadFeatureInputs(feature)).toEqual({sketchIds:['section'],curveIds:['rail'],bodyIds:[],datumIds:[]});
     expect(cadFeatureDependencies(feature)).toEqual(['section','rail']);
-    expect(cadFeatureProducesBody(feature)).toBe(true); expect(cadVisibleBodyIds(original.features)).toEqual(['sweep']);
+    expect(cadFeatureProducesBody(feature)).toBe(true); expect(cadVisibleBodyIds(original.features, original)).toEqual(['sweep']);
     expectCode(()=>document([feature,section(),rail()]),'invalid-reference');
     expectCode(()=>document([section(),rail(),{...feature,curveId:'section'}]),'invalid-reference');
     expectCode(()=>applyCadEdits(original,[{kind:'delete-feature',featureId:'rail',cascade:false}]),'dependent-feature');
@@ -169,9 +169,9 @@ describe('Sweep saved history compatibility and atomic operations', () => {
     const pad: CadFeature={kind:'extrude',id:'pad',name:'Pad',suppressed:false,sketchId:'section',distance:2,symmetric:false,operation:'new',targetId:null};
     const joined={...feature,operation:'join' as const,targetId:'pad'};
     const original=document([section(),rail(),pad,joined]);
-    expect(cadConsumedBodyIds(joined)).toEqual(['pad']); expect(cadVisibleBodyIds(original.features)).toEqual(['sweep']);
+    expect(cadConsumedBodyIds(joined, original)).toEqual(['pad']); expect(cadVisibleBodyIds(original.features, original)).toEqual(['sweep']);
     expectCode(()=>document([...original.features,{...joined,id:'second'}]),'unavailable-body');
-    expect(cadConsumedBodyIds({...joined,suppressed:true})).toEqual([]);
+    expect(cadConsumedBodyIds({...joined,suppressed:true}, original)).toEqual([]);
     expectCode(()=>document([section(),rail(),{...joined,targetId:'rail'}]),'invalid-reference');
   });
   it('counts a new generated operand plus target through nested pattern budgets', () => {

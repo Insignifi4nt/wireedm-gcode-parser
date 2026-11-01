@@ -1,4 +1,5 @@
 import type { CadDocument, CadFeature, CadMesh, CadSketchFeature } from '@/domain/cad/cadDocument';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
 import { cadScalarValueIntent } from '@/domain/cad/cadScalarValueIntent';
 import { cadFeatureCandidateEdits, type CadFeatureCandidateEdits } from './cadFeaturePreview';
@@ -65,11 +66,11 @@ function materialBounds(sketch: CadSketchFeature, parameters: CadDocument['param
 
 /** Resolve the real candidate frame even when its driver cannot safely be dragged. */
 export function inspectCadExtrudeDepth(document: CadDocument, feature: CadFeature): CadExtrudeDepthModel | null {
-  if (feature.kind !== 'extrude' || feature.suppressed) return null;
+  if (feature.kind !== 'extrude' || !cadFeatureActive(feature, document)) return null;
   const index = document.features.findIndex(entry => entry.id === feature.id);
   const preceding = index < 0 ? document.features : document.features.slice(0, index);
   const sketch = preceding.find(entry => entry.id === feature.sketchId);
-  if (sketch?.kind !== 'sketch' || sketch.suppressed) return null;
+  if (sketch?.kind !== 'sketch' || !cadFeatureActive(sketch, document)) return null;
   const binding = inspectCadScalarValue(feature.distance, document.parameters);
   if (binding.kind === 'invalid') return null;
   const materialBoundsMm = materialBounds(sketch, document.parameters, feature.regionSelection);
@@ -156,7 +157,7 @@ export function cadExtrudeForEndFace(document: CadDocument, mesh: CadMesh, faceK
   const queue = [mesh.featureId], visited = new Set<string>();
   while (queue.length) {
     const id = queue.shift(); if (!id || visited.has(id)) continue; visited.add(id);
-    const feature = byId.get(id); if (!feature || feature.suppressed) continue;
+    const feature = byId.get(id); if (!feature || !cadFeatureActive(feature, document)) continue;
     if (feature.kind === 'transform' || feature.kind === 'linear-pattern' || feature.kind === 'circular-pattern' || feature.kind === 'mirror') continue;
     if (feature.kind === 'extrude') {
       let model: CadExtrudeDepthModel | null = null;

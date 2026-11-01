@@ -1,12 +1,11 @@
 import { Type, type Static } from '@sinclair/typebox';
-import type { CadDocument, CadFeature, CadPathSegment, CadPoint2, CadPoint3, CadProfile, CadScalar } from './cadDocument';
-import type { CadEdgePredicate, CadFacePredicate } from './cadTopology';
+import type { CadDocument, CadFeature, CadScalar } from './cadDocument';
 import { CadError } from './cadError';
 import { cadFeatureDependencies } from './cadFeatureInputs';
 import { evaluateCadScalar } from './cadExpression';
 import { createCadPluginProfile, inspectCadPluginProfile, type CadPluginPackage } from './plugins/cadPlugins';
-import type { CadSketchGraph } from './cadSketchGraph';
-import { mapCadSketchRelationScalars } from './cadSketchGraphReferences';
+import { cadFeatureActive } from './features/cadFeatureActivity';
+import { cadFeatureLayout } from './features/cadFeatureRegistry';
 
 const strict = { additionalProperties: false };
 export const CadParameterNameSchema = Type.String({ pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$' });
@@ -42,69 +41,20 @@ export function cadScalarParameterNames(value: CadScalar): readonly string[] {
   return [...new Set((value.match(/(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|[A-Za-z_][A-Za-z_0-9]*|[^\s]/g) ?? []).filter(token => /^[A-Za-z_][A-Za-z_0-9]*$/.test(token)))];
 }
 type ScalarMapper = (value: CadScalar, path: string) => CadScalar;
-function point2(point: CadPoint2, path: string, map: ScalarMapper): CadPoint2 { return [map(point[0], `${path}.0`), map(point[1], `${path}.1`)]; }
-function point3(point: CadPoint3, path: string, map: ScalarMapper): CadPoint3 { return [map(point[0], `${path}.0`), map(point[1], `${path}.1`), map(point[2], `${path}.2`)]; }
-function graphScalars(graph: CadSketchGraph, map: ScalarMapper): CadSketchGraph {
-  return { ...graph,
-    points: graph.points.map((point, index) => ({ ...point, position: point2(point.position, `graph.points.${index}.position`, map) })),
-    entities: graph.entities.map((entity, index) => entity.kind === 'circle' ? { ...entity, radius: map(entity.radius, `graph.entities.${index}.radius`) } : entity),
-    relations: graph.relations.map((relation, index) => mapCadSketchRelationScalars(relation, (value, key) => map(value, `graph.relations.${index}.${key}`)))
-  };
-}
-function segment(segment: CadPathSegment, path: string, map: ScalarMapper): CadPathSegment {
-  return segment.kind === 'line' ? { ...segment, start: point2(segment.start, `${path}.start`, map), end: point2(segment.end, `${path}.end`, map) }
-    : { ...segment, center: point2(segment.center, `${path}.center`, map), radius: map(segment.radius, `${path}.radius`), startAngle: map(segment.startAngle, `${path}.startAngle`), sweep: map(segment.sweep, `${path}.sweep`) };
-}
-function profileScalars(profile: CadProfile, path: string, map: ScalarMapper): CadProfile {
-  const scalar = (value: CadScalar, key: string) => map(value, `${path}.${key}`);
-  switch (profile.kind) {
-    case 'plugin': return { ...profile, inputs: Object.fromEntries(Object.entries(profile.inputs).map(([name, value]) => [name, scalar(value, `inputs.${name}`)])) };
-    case 'rectangle': return { ...profile, x: scalar(profile.x, 'x'), y: scalar(profile.y, 'y'), width: scalar(profile.width, 'width'), height: scalar(profile.height, 'height'), cornerRadius: scalar(profile.cornerRadius, 'cornerRadius') };
-    case 'circle': return { ...profile, x: scalar(profile.x, 'x'), y: scalar(profile.y, 'y'), radius: scalar(profile.radius, 'radius') };
-    case 'slot': return { ...profile, x: scalar(profile.x, 'x'), y: scalar(profile.y, 'y'), length: scalar(profile.length, 'length'), width: scalar(profile.width, 'width'), angle: scalar(profile.angle, 'angle') };
-    case 'polygon': return { ...profile, points: profile.points.map((point, index) => point2(point, `${path}.points.${index}`, map)) };
-    case 'path': return { ...profile, segments: profile.segments.map((entry, index) => segment(entry, `${path}.segments.${index}`, map)) };
-    default: { const exhaustive: never = profile; return exhaustive; }
-  }
-}
-function edgePredicate(predicate: CadEdgePredicate, path: string, map: ScalarMapper): CadEdgePredicate {
-  switch (predicate.kind) {
-    case 'length': return { ...predicate, value: map(predicate.value, `${path}.value`) };
-    case 'on-plane': return { ...predicate, offset: map(predicate.offset, `${path}.offset`) };
-    case 'line-endpoints': return { ...predicate, start: point3(predicate.start, `${path}.start`, map), end: point3(predicate.end, `${path}.end`, map) };
-    case 'arc-points': return { ...predicate, start: point3(predicate.start, `${path}.start`, map), end: point3(predicate.end, `${path}.end`, map), midpoint: point3(predicate.midpoint, `${path}.midpoint`, map) };
-    case 'circle': return { ...predicate, center: point3(predicate.center, `${path}.center`, map), radius: map(predicate.radius, `${path}.radius`) };
-    case 'parallel': case 'curve-type': return predicate;
-    default: { const exhaustive: never = predicate; return exhaustive; }
-  }
-}
-function facePredicate(predicate: CadFacePredicate, path: string, map: ScalarMapper): CadFacePredicate {
-  switch (predicate.kind) {
-    case 'plane': return { ...predicate, offset: map(predicate.offset, `${path}.offset`) };
-    case 'centroid': return { ...predicate, point: point3(predicate.point, `${path}.point`, map) };
-    case 'cylinder': return { ...predicate, origin: point3(predicate.origin, `${path}.origin`, map), radius: map(predicate.radius, `${path}.radius`) };
-    case 'area': case 'surface-type': return predicate;
-    default: { const exhaustive: never = predicate; return exhaustive; }
-  }
-}
 
-/** Visit only dimension-bearing fields; source text, IDs and pinned packages stay exact. */
+/**
+ * `feature` with each dimension-bearing scalar replaced through `map`, which is given its path, in schema order. Ids, source text and
+ * pinned packages stay exact. Fields absent or null are left out, as are pattern counts, which stay literal.
+ */
 export function mapCadFeatureScalars(feature: CadFeature, map: ScalarMapper): CadFeature {
-  switch (feature.kind) {
-    case 'datum-plane': return { ...feature, definition: { ...feature.definition, origin: point3(feature.definition.origin, 'definition.origin', map), rotation: point3(feature.definition.rotation, 'definition.rotation', map) } };
-    case 'sketch': return { ...feature, offset: map(feature.offset, 'offset'), profiles: feature.profiles.map((profile, index) => ({ ...profile, geometry: profileScalars(profile.geometry, `profiles.${index}.geometry`, map) })), ...(feature.graph ? { graph: graphScalars(feature.graph, map) } : {}) };
-    case 'curve': return { ...feature, offset: map(feature.offset, 'offset'), segments: feature.segments.map((entry, index) => segment(entry, `segments.${index}`, map)) };
-    case 'extrude': return { ...feature, distance: map(feature.distance, 'distance') };
-    case 'revolve': return { ...feature, angle: map(feature.angle, 'angle') };
-    case 'fillet': case 'chamfer': return { ...feature, radius: map(feature.radius, 'radius'), ...(feature.selection ? { selection: { ...feature.selection, queries: feature.selection.queries.map((query, index) => ({ ...query,
-      predicates: query.predicates.map((predicate, predicateIndex) => edgePredicate(predicate, `selection.queries.${index}.predicates.${predicateIndex}`, map)) })) } } : {}) };
-    case 'shell': return { ...feature, thickness: map(feature.thickness, 'thickness'), opening: { ...feature.opening, predicates: feature.opening.predicates.map((predicate, index) => facePredicate(predicate, `opening.predicates.${index}`, map)) } };
-    case 'transform': return { ...feature, translation: point3(feature.translation, 'translation', map), rotation: point3(feature.rotation, 'rotation', map) };
-    case 'linear-pattern': return { ...feature, spacing: point3(feature.spacing, 'spacing', map) };
-    case 'circular-pattern': return { ...feature, center: point3(feature.center, 'center', map), angle: map(feature.angle, 'angle') };
-    case 'imported': case 'loft': case 'sweep': case 'pocket': case 'boolean': case 'mirror': return feature;
-    default: { const exhaustive: never = feature; return exhaustive; }
+  const { mapped } = cadFeatureLayout(feature);
+  if (!mapped.length) return feature;
+  const stored = feature as unknown as Readonly<Record<string, unknown>>, copy: Record<string, unknown> = { ...stored };
+  for (const { name, field } of mapped) {
+    const value = stored[name];
+    if (value !== undefined && value !== null) copy[name] = field.scalars!(value, name, map);
   }
+  return copy as unknown as CadFeature;
 }
 
 export function renameCadScalarParameter(value: CadScalar, name: string, newName: string): CadScalar {
@@ -126,6 +76,7 @@ export function inspectCadParameters(document: CadDocument) {
   const usages = new Map<string, CadParameterUsage[]>(Object.keys(document.parameters).map(name => [name, []]));
   const pluginInputs: CadPluginInputBinding[] = [];
   for (const feature of document.features) {
+    const active = cadFeatureActive(feature, document);
     if (feature.kind === 'sketch') for (const profile of feature.profiles) if (profile.geometry.kind === 'plugin') {
       const inspection = inspectCadPluginProfile(profile.geometry, document.parameters);
       for (const input of profile.geometry.package.inputs) {
@@ -140,7 +91,7 @@ export function inspectCadParameters(document: CadDocument) {
         const appliedValue = automatic ? inspection.values[input.name === 'profileShift' ? 'effectiveShift' : input.name === 'tolerance' ? 'effectiveTolerance' : 'effectiveCutterTipRadius'] : inspection.values[input.name];
         pluginInputs.push({ featureId: feature.id, featureName: feature.name, profileId: profile.id, profileName: profile.name,
           inputName: input.name, label: input.label, expression, value: inspection.values[input.name], appliedValue, parameterNames,
-          linked: parameterNames.length > 0, effective: !feature.suppressed && !automatic, editable: field?.enabled !== false });
+          linked: parameterNames.length > 0, effective: active && !automatic, editable: field?.enabled !== false });
       }
     }
     mapCadFeatureScalars(feature, (value, path) => {
@@ -148,17 +99,17 @@ export function inspectCadParameters(document: CadDocument) {
       const match = feature.kind === 'sketch' ? /^profiles\.(\d+)\.geometry(?:\.inputs\.([A-Za-z_][A-Za-z_0-9]*))?/.exec(path) : null;
       const profile = match && feature.kind === 'sketch' ? feature.profiles[Number(match[1])] : undefined;
       const binding = match?.[2] ? pluginInputs.find(binding => binding.featureId === feature.id && binding.profileId === profile?.id && binding.inputName === match[2]) : undefined;
-      const active = !feature.suppressed && binding?.effective !== false;
+      const effective = active && binding?.effective !== false;
       for (const name of cadScalarParameterNames(value)) usages.get(name)?.push({ featureId: feature.id, featureName: feature.name,
-        ...(profile ? { profileId: profile.id } : {}), ...(binding ? { inputName: binding.inputName } : {}), path, expression: value, active,
-        ...(!active ? { reason: feature.suppressed ? 'Feature is suppressed.' : 'Input is controlled automatically; the stored expression is inactive.' } : {}) });
+        ...(profile ? { profileId: profile.id } : {}), ...(binding ? { inputName: binding.inputName } : {}), path, expression: value, active: effective,
+        ...(!effective ? { reason: !active ? 'Feature is suppressed.' : 'Input is controlled automatically; the stored expression is inactive.' } : {}) });
       return value;
     });
   }
   return { groups: document.parameterGroups ?? [], pluginInputs, parameters: Object.entries(document.parameters).map(([name, value]) => {
     const references = usages.get(name) ?? [], directlyUsed = new Set(references.filter(usage => usage.active).map(usage => usage.featureId));
     const affected = new Set(directlyUsed);
-    for (const feature of document.features) if (!feature.suppressed && cadFeatureDependencies(feature).some(id => affected.has(id))) affected.add(feature.id);
+    for (const feature of document.features) if (cadFeatureActive(feature, document) && cadFeatureDependencies(feature).some(id => affected.has(id))) affected.add(feature.id);
     return { name, value, groupId: document.parameterMetadata?.[name]?.groupId ?? null,
       source: document.parameterMetadata?.[name]?.source ?? { kind: 'manual' satisfies CadParameterSource['kind'] },
       usages: references, downstreamFeatureIds: [...affected].filter(id => !directlyUsed.has(id)),

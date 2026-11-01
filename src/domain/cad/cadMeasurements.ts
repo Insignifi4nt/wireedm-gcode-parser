@@ -1,4 +1,5 @@
 import type { CadDocument, CadSketchPlane, CadProfile } from './cadDocument';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { parseCadDocument } from './cadSchema';
@@ -76,7 +77,7 @@ export function measureCadSketch(document: CadDocument, sketchId: string): CadSk
   const sketch = validated.features.find(feature => feature.id === sketchId);
   if (sketch?.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to measure.');
   const regions = resolveCadSketchRegions(sketch, validated.parameters);
-  const frame = sketch.suppressed ? null : resolveCadSketchPlacement(sketch, validated.parameters, prepareCadDocumentFrames(validated)).frame;
+  const frame = !cadFeatureActive(sketch, validated) ? null : resolveCadSketchPlacement(sketch, validated.parameters, prepareCadDocumentFrames(validated)).frame;
   const depths = new Map(regions.flatMap(region => [region.boundary, ...region.voids]).map(contour => [contour.profile.id, contour.depth]));
   const profiles = compileCadSketchGeometry(sketch, validated.parameters).profiles.map(profile => ({ profileId: profile.id, name: profile.name, kind: profile.geometry.kind,
     role: profile.construction && profile.role !== undefined ? profile.role
@@ -88,7 +89,7 @@ export function measureCadSketch(document: CadDocument, sketchId: string): CadSk
     maxX: Math.max(bounds.maxX, profile.boundsMm.maxX), maxY: Math.max(bounds.maxY, profile.boundsMm.maxY)
   }, null);
   return { sketchId: sketch.id, name: sketch.name, plane: sketch.plane, frame, offsetMm: evaluateCadScalar(sketch.offset, validated.parameters),
-    suppressed: sketch.suppressed, coordinateSystem: 'sketch-local', profiles, boundsMm,
+    suppressed: !cadFeatureActive(sketch, validated), coordinateSystem: 'sketch-local', profiles, boundsMm,
     cutContourCount: cuts.length,
     materialAreaMm2: cuts.reduce((area, profile) => area + (profile.role === 'outer' ? profile.areaMm2 : -profile.areaMm2), 0),
     boundaryLengthMm: cuts.reduce((length, profile) => length + profile.perimeterMm, 0) };

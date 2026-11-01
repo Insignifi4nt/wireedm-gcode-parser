@@ -122,6 +122,6 @@ describe('datum placement editing with shared Session history', () => {
     await menu('Outline', 'Change sketch plane'); await click('Mount'); expect(session.getSnapshot().document.features[1]).toMatchObject({ plane: { kind: 'datum-plane', featureId: 'mount' } });
     await click('Select XY plane'); expect(session.getSnapshot().document.features[1]).toMatchObject({ plane: 'XY', suppressed: true });
     const later = { ...datum, id: 'later', name: 'Later' };
-    expect(cadPlacementOptions([datum, sketch, later], sketch.id, sketch.plane).some(option => option.value === 'datum:later')).toBe(false);
+    expect(cadPlacementOptions({ features: [datum, sketch, later], parameters: {} }, sketch.id, sketch.plane).some(option => option.value === 'datum:later')).toBe(false);
   });
 });

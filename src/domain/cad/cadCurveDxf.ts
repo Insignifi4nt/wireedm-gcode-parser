@@ -1,4 +1,5 @@
 import { Type } from '@sinclair/typebox';
+import { cadFeatureActive, cadFeatureSuppressionFlag } from './features/cadFeatureActivity';
 import { Value } from '@sinclair/typebox/value';
 import { dxfUnitsFromInsunitsCode, parseDxf, splitDxfLines } from '@/domain/dxf/parseDxf';
 import type { DxfEntity, DxfUnitDeclaration } from '@/domain/dxf/types';
@@ -50,7 +51,7 @@ export function parseCadDxfCurveImportInput(value: unknown): CadDxfCurveImportIn
 export function isCadDxfCurveImportResult(value: unknown): value is CadDxfCurveImportResult {
   try {
     if (!isCadImportData(value) || !Value.Check(resultSchema, value) || value.curve.kind !== 'curve' || !value.curve.source
-      || value.curve.plane !== 'XY' || value.curve.offset !== 0 || value.curve.suppressed || value.sourceEntityCount > value.curve.segments.length) return false;
+      || value.curve.plane !== 'XY' || value.curve.offset !== 0 || cadFeatureSuppressionFlag(value.curve) || value.sourceEntityCount > value.curve.segments.length) return false;
     const source = parseCadDxfImportSource(value.curve.source);
     let declared: number | null = null;
     if ('units' in value.unitDeclaration) {
@@ -164,7 +165,7 @@ export function importCadDxfCurve(input: CadDxfCurveImportInput): CadDxfCurveImp
 /** Standard ordered OPEN LWPOLYLINE; local millimetres, no extra closure or proprietary metadata. */
 export function exportCadCurveDxf(curve: CadCurveFeature, parameters: Readonly<Record<string,number>>): string {
   const resolved = resolveCadCurveGeometry(curve, parameters);
-  if (curve.suppressed) throw new CadError('suppressed-curve', 'Unsuppress the Curve before exporting its geometry.');
+  if (!cadFeatureActive(curve, { parameters })) throw new CadError('suppressed-curve', 'Unsuppress the Curve before exporting its geometry.');
   const vertices: { x: number; y: number; bulge: number }[] = resolved.entities.map((entity, index) => {
     if (entity.type !== 'line' && entity.type !== 'arc') throw new CadError('dxf-inexact', 'Curve exports require ordered analytic line/arc edges.');
     const segment = resolved.segments[index];

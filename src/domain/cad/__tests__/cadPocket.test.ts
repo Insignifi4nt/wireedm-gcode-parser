@@ -317,7 +317,7 @@ describe('Through-all Pocket schema and atomic history', () => {
     expect(cadFeatureProducesBody(feature)).toBe(true);
     const other: CadFeature = { ...base, id: 'other' };
     const value = document([section(), base, other, feature]);
-    expect(cadVisibleBodyIds(value.features)).toEqual(['other', 'pocket']);
+    expect(cadVisibleBodyIds(value.features, value)).toEqual(['other', 'pocket']);
     for (const changed of [
       { ...feature, sketchId: 'target' },
       { ...feature, targetId: 'section' },

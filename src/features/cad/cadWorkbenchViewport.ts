@@ -1,4 +1,5 @@
 import { Value } from '@sinclair/typebox/value';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import type { CadDocument, CadMesh, CadPlane, CadSketchPlane } from '@/domain/cad/cadDocument';
 import { cadFeatureProducesBody } from '@/domain/cad/cadSchema';
 import { CadError } from '@/domain/cad/cadError';
@@ -77,14 +78,14 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
           case 'select-reference-plane': {
             if (bindings.sketchId || bindings.curveId) throw new ToolError('WRONG_VIEW', 'Finish sketch or curve editing before selecting a reference plane.');
             const plane = command.plane;
-            if (typeof plane === 'object' && plane !== null && !bindings.document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && !feature.suppressed)) throw new ToolError('NOT_FOUND', 'Choose an active datum plane in the current CAD draft.');
+            if (typeof plane === 'object' && plane !== null && !bindings.document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && cadFeatureActive(feature, bindings.document))) throw new ToolError('NOT_FOUND', 'Choose an active datum plane in the current CAD draft.');
             bindings.selectReferencePlane(plane); return;
           }
           case 'edit-sketch':
-            if (!bindings.document.features.some((feature) => feature.kind === 'sketch' && feature.id === command.sketchId && !feature.suppressed)) throw new ToolError('NOT_FOUND', 'Choose an active sketch in the current CAD draft.');
+            if (!bindings.document.features.some((feature) => feature.kind === 'sketch' && feature.id === command.sketchId && cadFeatureActive(feature, bindings.document))) throw new ToolError('NOT_FOUND', 'Choose an active sketch in the current CAD draft.');
             bindings.editSketch(command.sketchId); return;
           case 'edit-curve':
-            if (!bindings.document.features.some((feature) => feature.kind === 'curve' && feature.id === command.curveId && !feature.suppressed)) throw new ToolError('NOT_FOUND', 'Choose an active curve in the current CAD draft.');
+            if (!bindings.document.features.some((feature) => feature.kind === 'curve' && feature.id === command.curveId && cadFeatureActive(feature, bindings.document))) throw new ToolError('NOT_FOUND', 'Choose an active curve in the current CAD draft.');
             bindings.editCurve(command.curveId); return;
           case 'select-profile': {
             const sketch = bindings.document.features.find((feature) => feature.kind === 'sketch' && feature.id === bindings.sketchId);
@@ -94,7 +95,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
           }
           case 'select-sketch-geometry':
           case 'select-sketch-geometry-set': {
-            const sketch = bindings.document.features.find(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId && !feature.suppressed);
+            const sketch = bindings.document.features.find(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId && cadFeatureActive(feature, bindings.document));
             if (sketch?.kind !== 'sketch') throw new ToolError('WRONG_VIEW', 'Open the sketch editor before selecting points or edges.');
             const request = command.kind === 'select-sketch-geometry-set' ? command.selections : command.selection ? [command.selection] : [];
             let selections: readonly CadSketchGraphSelection[];
@@ -106,7 +107,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
             bindings.selectSketchGeometrySet(selections); return;
           }
           case 'set-sketch-pick-filter': {
-            if (bindings.curveId || !bindings.document.features.some(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId && !feature.suppressed)) throw new ToolError('WRONG_VIEW', 'Open an active sketch editor before changing its pick filter.');
+            if (bindings.curveId || !bindings.document.features.some(feature => feature.kind === 'sketch' && feature.id === bindings.sketchId && cadFeatureActive(feature, bindings.document))) throw new ToolError('WRONG_VIEW', 'Open an active sketch editor before changing its pick filter.');
             if (!rendered) throw new ToolError('VIEW_UNAVAILABLE', 'Wait for the sketch viewport to load.');
             const view = rendered.getState();
             if (view.mode !== 'sketch') throw new ToolError('WRONG_VIEW', 'Open the sketch viewport before changing its pick filter.');
@@ -139,7 +140,7 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
             // The selected plane, or the section's own plane to change only its side or caps.
             const plane = bindings.selectedReferencePlane ?? bindings.section?.plane ?? null;
             if (!plane) throw new ToolError('INVALID_INPUT', 'Select an origin or datum plane with select-reference-plane before turning the section view on.');
-            if (typeof plane === 'object' && !bindings.document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && !feature.suppressed))
+            if (typeof plane === 'object' && !bindings.document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && cadFeatureActive(feature, bindings.document)))
               throw new ToolError('NOT_FOUND', 'Choose an origin plane or an active datum plane in the current CAD draft.');
             const current = bindings.section && cadSameReferencePlane(bindings.section.plane, plane) ? bindings.section : null;
             bindings.setSection({ plane, flip: command.flip ?? current?.flip ?? false, caps: command.caps ?? current?.caps ?? true }); return;
@@ -163,8 +164,8 @@ export function createCadWorkbenchViewportControls(getBindings: () => CadViewpor
       const rendered = bindings.rendered;
       const before = getState();
       if (!rendered || !before.view?.available) throw new ToolError('CAPTURE_UNAVAILABLE', 'Wait for a visible CAD viewport to load.');
-      const hasReferences = bindings.visibleReferencePlanes.length > 0 || before.view.mode === 'solid' && Boolean(before.view.referencePlanes?.length) || bindings.document.features.some(feature => !feature.suppressed && (feature.kind === 'datum-plane' || feature.kind === 'curve' || feature.kind === 'sketch' && (feature.profiles.length > 0 || Boolean(feature.graph?.entities.length))));
-      const requiresBuild = !hasReferences || bindings.document.features.some(feature => cadFeatureProducesBody(feature) && !feature.suppressed);
+      const hasReferences = bindings.visibleReferencePlanes.length > 0 || before.view.mode === 'solid' && Boolean(before.view.referencePlanes?.length) || bindings.document.features.some(feature => cadFeatureActive(feature, bindings.document) && (feature.kind === 'datum-plane' || feature.kind === 'curve' || feature.kind === 'sketch' && (feature.profiles.length > 0 || Boolean(feature.graph?.entities.length))));
+      const requiresBuild = !hasReferences || bindings.document.features.some(feature => cadFeatureProducesBody(feature) && cadFeatureActive(feature, bindings.document));
       if (before.view.mode === 'solid') {
         if (requiresBuild && (bindings.buildState !== 'ready' || bindings.buildVersion !== bindings.documentVersion)) throw new ToolError('STALE_STATE', 'Wait for this exact CAD draft to finish building before capturing its solid view.');
         if (hasReferences && !referencesInstalled(bindings, before)) throw new ToolError('STALE_STATE', 'Wait for the current reference geometry to appear before capturing the view.');

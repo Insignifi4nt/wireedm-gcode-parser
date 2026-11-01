@@ -31,7 +31,7 @@ describe('native solids alongside exact Curve reference features',()=>{
       expect(after.positions).toEqual(before.positions); expect(after.indices).toEqual(before.indices); expect(after.edges).toEqual(before.edges);
       expect(result.section({bodyId:'pattern',plane:'XY',offset:2}).contourCount).toBe(2);
       expect(()=>result.section({bodyId:'reference_rail',plane:'XY',offset:0})).toThrow(/unavailable/);
-      expect(cadVisibleBodyIds(withReference.features)).toEqual(['pattern']); expect(cadKernelPlaneBasis(plane)).toEqual(cadPlaneBasis(plane));
+      expect(cadVisibleBodyIds(withReference.features, withReference)).toEqual(['pattern']); expect(cadKernelPlaneBasis(plane)).toEqual(cadPlaneBasis(plane));
     } finally {original.dispose();result.dispose();}
   });
   it('exports existing solids without including imported reference paths as STEP/STL bodies',async()=>{

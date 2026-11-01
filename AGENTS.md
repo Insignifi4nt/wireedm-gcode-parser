@@ -13,7 +13,7 @@ Wire EDM Workbench is being rebuilt as a client-only, local-first Wire EDM app. 
 - `PLANEGCS_CORPUS_TALLY=1 npm test -- --run src/features/cad/sketch-solver/__tests__/planeGcsCorpus.test.ts --silent=false` - replay the frozen PlaneGCS corpus natively and print its tally; the corpus is fixed since PlaneGCS was removed in 0.0.757
 - `npm run solver:build` / `npm run solver:check` - rebuild the Rust sketch solver module, or test it and verify the committed module matches its source (needs `rustup`)
 - `npm run build` - type-check (TypeScript 7 native `tsc`) and build
-- `npm run lint` - oxlint correctness rules and the precision literal check (`docs/maintainers/precision.md`); must stay at zero findings
+- `npm run lint` - oxlint correctness rules, the precision literal check (`docs/maintainers/precision.md`) and the feature activity check (`docs/maintainers/cad-features.md`); must stay at zero findings
 - `npm run ui:check` - enforce shared controls, menus and tooltip ownership
 - `npm run preview` - preview production build on port **3778**
 

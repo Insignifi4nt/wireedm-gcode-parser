@@ -121,8 +121,8 @@ describe('feature compatibility and inward shell history', () => {
   it('encodes shell as a consumed-body successor and supports safe cascade and undoable atom edits', () => {
     const document = part([...baseFeatures, shellFeature]);
     expect(cadFeatureDependencies(shellFeature)).toEqual(['pad']);
-    expect(cadConsumedBodyIds(shellFeature)).toEqual(['pad']);
-    expect(cadVisibleBodyIds(document.features)).toEqual(['shell']);
+    expect(cadConsumedBodyIds(shellFeature, document)).toEqual(['pad']);
+    expect(cadVisibleBodyIds(document.features, document)).toEqual(['shell']);
     expect(() => applyCadEdits(document, [{ kind: 'delete-feature', featureId: 'pad', cascade: false }])).toThrow('depends');
     expect(applyCadEdits(document, [{ kind: 'delete-feature', featureId: 'pad', cascade: true }]).features.map(feature => feature.id)).toEqual(['profile']);
     expect(() => applyCadEdits(document, [{ kind: 'move-feature', featureId: 'shell', beforeId: 'pad' }])).toThrow('missing or later');

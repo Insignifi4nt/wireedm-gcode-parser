@@ -1,17 +1,16 @@
-import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import type { CadFeature, CadPocketFeature, CadPlane, CadSketchFeature } from './cadDocument';
 export type { CadPocketFeature } from './cadDocument';
 import { CadError } from './cadError';
 import { isCadImportData } from './cadImportData';
-import { CadFeatureBaseSchemaFields, CadIdentifierSchema } from './cadPrimitives';
-import { CadPocketDirectionSchema, type CadPocketDirection } from './cadPocketExtent';
+import type { CadPocketDirection } from './cadPocketExtent';
 import { evaluateCadScalar } from './cadExpression';
 import { resolveCadSketchRegions, cadProfileToEntities, type CadSketchMaterialRegion } from './cadSketchGeometry';
 import { cadFeatureProducesBody, cadVisibleBodyIds } from './cadFeatureInputs';
 import { cadPocketSectionScale } from './cadPocketSectionScale';
 import { requireCadPrincipalPlane } from './cadDatumPlanes';
-import { CadSketchRegionSelectionSchema } from './cadSketchRegionSelection';
+import { cadFeatureActive } from './features/cadFeatureActivity';
+import { CadPocketFeatureSchema } from './features/kinds/solids';
 export {
   resolveCadPocketExtent,
   CAD_POCKET_NATIVE_PRECISION,
@@ -22,17 +21,7 @@ export {
   type CadPocketExtentInput,
   type CadPocketDirection,
 } from './cadPocketExtent';
-export const CadPocketFeatureSchema = Type.Object(
-  {
-    ...CadFeatureBaseSchemaFields,
-    kind: Type.Literal('pocket'),
-    sketchId: CadIdentifierSchema,
-    regionSelection: Type.Optional(CadSketchRegionSelectionSchema),
-    targetId: CadIdentifierSchema,
-    extent: Type.Object({ kind: Type.Literal('through-all'), direction: CadPocketDirectionSchema }, { additionalProperties: false }),
-  },
-  { additionalProperties: false },
-);
+export { CadPocketFeatureSchema };
 export interface CadResolvedPocketInputs {
   readonly sketch: CadSketchFeature;
   readonly plane: CadPlane;
@@ -66,9 +55,9 @@ export function resolveCadPocketInputs(
   ) {
     throw new CadError('invalid-reference', 'Pocket requires a preceding sketch and a preceding solid target.');
   }
-  if (sketch.suppressed) throw new CadError('suppressed-sketch', `Pocket sketch "${sketch.name}" is suppressed.`);
+  if (!cadFeatureActive(sketch, { parameters })) throw new CadError('suppressed-sketch', `Pocket sketch "${sketch.name}" is suppressed.`);
   const plane = requireCadPrincipalPlane(sketch.plane, 'Through-all Pocket');
-  if (!cadVisibleBodyIds([...precedingFeatures.values()]).includes(feature.targetId))
+  if (!cadVisibleBodyIds([...precedingFeatures.values()], { parameters }).includes(feature.targetId))
     throw new CadError('unavailable-body', 'Pocket target is suppressed or consumed. Choose its current successor.');
   const offset = evaluateCadScalar(sketch.offset, parameters);
   const regions = resolveCadSketchRegions(sketch, parameters, feature.regionSelection);

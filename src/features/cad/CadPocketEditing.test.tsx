@@ -29,7 +29,7 @@ async function mount(initial = part()) {
   session.markSaved({ document: snapshot.document, savedVersion: 'saved-original', updatedAt: '2026-10-13T12:00:00.000Z' }, snapshot.version);
   function Harness() {
     const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
-    const meshes = cadVisibleBodyIds(state.document.features).map(featureId => ({ featureId, name: featureId, positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 100,
+    const meshes = cadVisibleBodyIds(state.document.features, state.document).map(featureId => ({ featureId, name: featureId, positions: [], normals: [], indices: [], edges: [], faceGroups: [], edgeGroups: [], volume: 100,
       bounds: { min: [-5, -5, -5] as const, max: [5, 5, 5] as const } }));
     return <CadWorkbench document={state.document} documentVersion={state.version} buildVersion={state.version} buildState="ready" build={{ buildId: state.version, meshes, diagnostics: [], durationMs: 0 }}
       dirty={state.dirty} canUndo={state.canUndo} canRedo={state.canRedo} onEditMany={edits => { session.edit(edits); }} onEdit={edit => { session.assertWorkflowClosed('editor'); session.edit([edit], state.version); }}

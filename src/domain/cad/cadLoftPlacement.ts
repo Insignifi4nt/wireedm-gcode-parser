@@ -10,9 +10,8 @@ import {
 } from './cadDatumPlanes';
 import type { CadNumericPoint2, CadNumericPoint3 } from './cadPlanes';
 import { CAD_PRECISION, cadRoundoff } from '../precision/cadPrecision';
-
-export const MIN_CAD_LOFT_SECTIONS = 2;
-export const MAX_CAD_LOFT_SECTIONS = 16;
+import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from './cadLoftLimits';
+export { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS } from './cadLoftLimits';
 export const CAD_LOFT_NATIVE_PRECISION = CAD_PRECISION.kernelConfusionMm;
 /** Preserve the existing principal-offset comparison and range policy. */
 export function cadLoftOffsetTolerance(offsets: readonly number[]): number {

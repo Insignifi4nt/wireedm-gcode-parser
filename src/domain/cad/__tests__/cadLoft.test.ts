@@ -87,13 +87,13 @@ describe('loft section eligibility and order', () => {
 
 describe('typed loft inputs and atomic saved-history compatibility', () => {
   it('partitions section inputs from solid targets and consumes only an active target', () => {
-    const joined: CadLoftFeature = { ...loft, operation: 'join', targetId: 'pad' };
+    const joined: CadLoftFeature = { ...loft, operation: 'join', targetId: 'pad' }, unparameterized = { parameters: {} };
     expect(cadFeatureInputs(joined)).toEqual({ datumIds: [], sketchIds: ['first', 'last'], curveIds: [], bodyIds: ['pad'] });
     expect(cadFeatureDependencies(joined)).toEqual(['first', 'last', 'pad']);
-    expect(cadConsumedBodyIds(joined)).toEqual(['pad']); expect(cadConsumedBodyIds(loft)).toEqual([]);
-    expect(cadConsumedBodyIds({ ...joined, suppressed: true })).toEqual([]);
-    expect(cadVisibleBodyIds(document([first, last, pad, joined]).features)).toEqual(['loft']);
-    expect(cadConsumedBodyIds({ kind: 'mirror', id: 'mirror', name: 'Mirror', suppressed: false, sourceId: 'pad', plane: 'XY' })).toEqual([]);
+    expect(cadConsumedBodyIds(joined, unparameterized)).toEqual(['pad']); expect(cadConsumedBodyIds(loft, unparameterized)).toEqual([]);
+    expect(cadConsumedBodyIds({ ...joined, suppressed: true }, unparameterized)).toEqual([]);
+    expect(cadVisibleBodyIds(document([first, last, pad, joined]).features, unparameterized)).toEqual(['loft']);
+    expect(cadConsumedBodyIds({ kind: 'mirror', id: 'mirror', name: 'Mirror', suppressed: false, sourceId: 'pad', plane: 'XY' }, unparameterized)).toEqual([]);
     expect(cadFeatureInputs(pad)).toEqual({ datumIds: [], sketchIds: ['first'], curveIds: [], bodyIds: [] });
   });
   it('rejects malformed complete features, invalid targets, later references and active suppressed sections', () => {
@@ -123,7 +123,7 @@ describe('typed loft inputs and atomic saved-history compatibility', () => {
     const original = document([first, last, { ...loft, suppressed: true }]);
     const holed = { ...last, offset: 0, profiles: [contour('outer', 10), contour('hole', 3)] };
     const changed = applyCadEdits(original, [{ kind: 'update-feature', feature: holed }]);
-    expect(changed.features[1]).toEqual(holed); expect(cadVisibleBodyIds(changed.features)).toEqual([]);
+    expect(changed.features[1]).toEqual(holed); expect(cadVisibleBodyIds(changed.features, changed)).toEqual([]);
     expectCode(() => applyCadEdits(changed, [{ kind: 'update-feature', feature: loft }]), 'unsupported-loft-section');
     expect(changed.features[2].suppressed).toBe(true);
     const coplanar = applyCadEdits(changed, [{ kind: 'update-feature', feature: { ...last, offset: 0 } }]);

@@ -97,7 +97,7 @@ function relationGlyphPicks(graph: NonNullable<CadSketchFeature['graph']>, value
   const whole = glyph(value);
   return whole ? [whole] : value.split(' ').flatMap(id => { const pick = glyph(id); return pick ? [pick] : []; });
 }
-interface DrawingCursor { readonly point: SketchPoint; readonly mode: 'pointer' | 'position'; readonly suppressed: boolean }
+interface DrawingCursor { readonly point: SketchPoint; readonly mode: 'pointer' | 'position'; readonly snapSuppressed: boolean }
 /** What the workbench needs to finish or leave a drawing while the canvas is not focused. */
 export interface CadSketchDrawingControls {
   /** One Escape for the drawing. False when nothing is pending, so the Escape leaves the tool. */
@@ -255,7 +255,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const points = useMemo(() => picks.map(pick => pick.point), [picks]);
   const [inferCoincidence, setInferCoincidence] = useState(true);
   const [pathDraft, setPathDraft] = useState(createCadPathDraft);
-  const [cursorInput, setCursorInput] = useState<DrawingCursor>({ point: [0, 0], mode: 'position', suppressed: false });
+  const [cursorInput, setCursorInput] = useState<DrawingCursor>({ point: [0, 0], mode: 'position', snapSuppressed: false });
   const [center, setCenter] = useState<SketchPoint>([0, 0]);
   const [span, setSpan] = useState(160);
   const [aspect, setAspect] = useState(1.3);
@@ -467,8 +467,8 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   // Published before paint, so a view behind the canvas moves in the same frame as the canvas.
   useLayoutEffect(() => { publishViewFrame.current?.(overlayFrame); }, [overlayFrame, onViewFrame]);
   const drawingCandidate = (candidate: CadSketchSnapCandidate): DrawingPick => ({ point: candidate.point, candidate });
-  const resolveDrawingPick = (raw: SketchPoint, suppressed: boolean, mode: DrawingCursor['mode'], mmPerPixel: SketchPoint = [width / viewportSize.width, span / viewportSize.height]): DrawingPick => {
-    if (suppressed || mode === 'position') return { point: raw };
+  const resolveDrawingPick = (raw: SketchPoint, snapSuppressed: boolean, mode: DrawingCursor['mode'], mmPerPixel: SketchPoint = [width / viewportSize.width, span / viewportSize.height]): DrawingPick => {
+    if (snapSuppressed || mode === 'position') return { point: raw };
     // A chain's start is a target once a segment leaves it; before that it would only give a zero-length segment.
     const draftStart = !positionPick && chainTool && pathDraft.kind === 'ready' && pathDraft.segments.length ? { point: pathDraft.start } : undefined;
     if (drawing || positionPick) {
@@ -496,7 +496,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     // A rectangle's own first corner would only offer a zero-height or zero-width rectangle.
     : tool === 'rectangle' ? [] : points, [positionPick, pathTool, pathDraft, tool, points]);
   const alignSources = (): readonly SketchPoint[] => acquired.current.length ? [...ownAlignSources, ...acquired.current] : ownAlignSources;
-  const cursorPick = resolveDrawingPick(cursorInput.point, cursorInput.suppressed, cursorInput.mode);
+  const cursorPick = resolveDrawingPick(cursorInput.point, cursorInput.snapSuppressed, cursorInput.mode);
   const cursor = cursorPick.point;
   const snapHint = (drawing || positionPick) && !interactionLocked ? cursorPick.candidate : undefined;
   // Snapped picks can become relations only where the drawing is saved as connected edges.
@@ -526,9 +526,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     if (!drawing && !positionPick) return;
     const modifiers = (event: KeyboardEvent) => {
       if (event.isComposing || event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
-      setCursorInput(current => current.suppressed === (event.ctrlKey || event.metaKey) ? current : { ...current, suppressed: event.ctrlKey || event.metaKey });
+      setCursorInput(current => current.snapSuppressed === (event.ctrlKey || event.metaKey) ? current : { ...current, snapSuppressed: event.ctrlKey || event.metaKey });
     };
-    const blur = () => setCursorInput(current => ({ ...current, mode: 'position', suppressed: false }));
+    const blur = () => setCursorInput(current => ({ ...current, mode: 'position', snapSuppressed: false }));
     window.addEventListener('keydown', modifiers); window.addEventListener('keyup', modifiers); window.addEventListener('blur', blur);
     return () => { window.removeEventListener('keydown', modifiers); window.removeEventListener('keyup', modifiers); window.removeEventListener('blur', blur); };
   }, [tool, positionPick]);
@@ -832,9 +832,9 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
   const pickMenuContent = currentPickMenu ? currentPickMenu.geometryPick.contextMenu?.(currentPickMenu.pointer) ?? null : null;
   useLayoutEffect(() => { if (pickMenu && !currentPickMenu) setPickMenu(null); }, [pickMenu, currentPickMenu]);
   const getDrawingPick = (event: { clientX: number; clientY: number; ctrlKey: boolean; metaKey: boolean }): DrawingPick => {
-    const raw = getRawPoint(event) ?? [0, 0], suppressed = event.ctrlKey || event.metaKey, rect = svg.current?.getBoundingClientRect();
-    setCursorInput({ point: raw, suppressed, mode: 'pointer' });
-    const pick = resolveDrawingPick(raw, suppressed, 'pointer', [width / (rect?.width || 0), span / (rect?.height || 0)]);
+    const raw = getRawPoint(event) ?? [0, 0], snapSuppressed = event.ctrlKey || event.metaKey, rect = svg.current?.getBoundingClientRect();
+    setCursorInput({ point: raw, snapSuppressed, mode: 'pointer' });
+    const pick = resolveDrawingPick(raw, snapSuppressed, 'pointer', [width / (rect?.width || 0), span / (rect?.height || 0)]);
     const target = pick.candidate?.target;
     if (pick.candidate && target && !SNAP_PLACEMENTS.has(target.kind) && target.kind !== 'draft-start'
       && !acquired.current.some(point => point[0] === pick.point[0] && point[1] === pick.point[1])) acquired.current = [pick.candidate.point, ...acquired.current].slice(0, ACQUIRED_POINTS);
@@ -1073,7 +1073,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
     setCenter(framedCenter); setSpan(heightSpan);
     if (initialCursorFit.current) {
       const snapped = snapSketchPoint(target, gridStep, gridSnap);
-      setCursorInput({ point: Math.abs(snapped[0] - target[0]) <= heightSpan * measuredAspect.current / 2 && Math.abs(snapped[1] - target[1]) <= heightSpan / 2 ? snapped : target, suppressed: false, mode: 'position' });
+      setCursorInput({ point: Math.abs(snapped[0] - target[0]) <= heightSpan * measuredAspect.current / 2 && Math.abs(snapped[1] - target[1]) <= heightSpan / 2 ? snapped : target, snapSuppressed: false, mode: 'position' });
     }
   };
   fitView.current = fit;
@@ -1538,7 +1538,7 @@ export function CadSketchCanvas({ sketch: sourceSketch, parameters, documentVers
         const step = gridStep * (event.shiftKey ? 10 : 1);
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown') {
           event.preventDefault();
-          setCursorInput({ point: [cursor[0] + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0), cursor[1] + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0)], suppressed: false, mode: 'position' });
+          setCursorInput({ point: [cursor[0] + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0), cursor[1] + (event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0)], snapSuppressed: false, mode: 'position' });
         } else if ((event.key === 'Enter' || event.key === ' ') && (drawing || positionPick)) {
           event.preventDefault();
           if (positionPick) acceptDrawingPick(cursorPick);

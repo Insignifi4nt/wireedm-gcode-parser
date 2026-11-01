@@ -62,8 +62,8 @@ describe('circular pattern document and edit semantics', () => {
     expect(JSON.parse(JSON.stringify(old)).features[2]).toEqual(linear);
     const mixed = document([sketch, body, linear, { ...pattern, sourceId: 'linear' }]);
     expect(cadFeatureDependencies(mixed.features[3])).toEqual(['linear']);
-    expect(cadConsumedBodyIds(mixed.features[3])).toEqual(['linear']);
-    expect(cadVisibleBodyIds(mixed.features)).toEqual(['pattern']);
+    expect(cadConsumedBodyIds(mixed.features[3], mixed)).toEqual(['linear']);
+    expect(cadVisibleBodyIds(mixed.features, mixed)).toEqual(['pattern']);
     expect(JSON.parse(JSON.stringify(mixed)).features[3]).toEqual({ ...pattern, sourceId: 'linear' });
   });
   it('enforces strict shape, preceding visible solid references and suppression', () => {
@@ -76,7 +76,7 @@ describe('circular pattern document and edit semantics', () => {
     expectCode(() => document([sketch, { ...body, suppressed: true }, pattern]), 'unavailable-body');
     expectCode(() => document([sketch, body, linear, pattern]), 'unavailable-body');
     const suppressed = document([sketch, body, { ...pattern, suppressed: true }]);
-    expect(cadConsumedBodyIds(suppressed.features[2])).toEqual([]); expect(cadVisibleBodyIds(suppressed.features)).toEqual(['body']);
+    expect(cadConsumedBodyIds(suppressed.features[2], suppressed)).toEqual([]); expect(cadVisibleBodyIds(suppressed.features, suppressed)).toEqual(['body']);
   });
   it('enforces the shared expanded limit across both pattern kinds in either order', () => {
     expect(document([sketch, body, linear, { ...pattern, count: 20, sourceId: 'linear' }]).features).toHaveLength(4);

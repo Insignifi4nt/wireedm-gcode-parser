@@ -124,10 +124,10 @@ describe('the pick filter through a section', () => {
 describe('section plane lifecycle', () => {
   it('follows a datum plane while it is active and lets the view turn off once it is suppressed or deleted', () => {
     const plane = { kind: 'datum-plane', featureId: 'mount' } as const;
-    expect(cadSectionPlaneAvailable('XZ', [])).toBe(true);
-    expect(cadSectionPlaneAvailable(plane, [mount])).toBe(true);
-    expect(cadSectionPlaneAvailable(plane, [{ ...mount, suppressed: true }])).toBe(false);
-    expect(cadSectionPlaneAvailable(plane, [])).toBe(false);
+    expect(cadSectionPlaneAvailable('XZ', { features: [], parameters: {} })).toBe(true);
+    expect(cadSectionPlaneAvailable(plane, { features: [mount], parameters: {} })).toBe(true);
+    expect(cadSectionPlaneAvailable(plane, { features: [{ ...mount, suppressed: true }], parameters: {} })).toBe(false);
+    expect(cadSectionPlaneAvailable(plane, { features: [], parameters: {} })).toBe(false);
     expect(resolveCadSectionFrame(plane, [mount], { lift: 7 })?.origin).toEqual([0, 0, 7]);
     expect(resolveCadSectionFrame(plane, [{ ...mount, suppressed: true }], { lift: 7 })).toBeNull();
     // A datum whose expression no longer resolves leaves nothing to cut by, rather than throwing out of the view.

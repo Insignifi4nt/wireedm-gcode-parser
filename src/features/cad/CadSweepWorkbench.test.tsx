@@ -24,7 +24,7 @@ const pad = { id: 'pad', name: 'Pad', kind: 'extrude', suppressed: false, sketch
 async function mount(document = part()) {
   session = new CadSession(document);
   function Harness() {
-    const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot); const ids = cadVisibleBodyIds(snapshot.document.features);
+    const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot); const ids = cadVisibleBodyIds(snapshot.document.features, snapshot.document);
     const build: CadBuildResult = { buildId: snapshot.version, durationMs: 0, diagnostics: [], meshes: ids.map(id => ({ featureId: id, name: id,
       positions: [], indices: [], normals: [], edges: [], faceGroups: [], edgeGroups: [], volume: 1, bounds: { min: [0, 0, 0], max: [10, 10, 10] } })) };
     return <CadWorkbench document={snapshot.document} documentVersion={snapshot.version} buildVersion={snapshot.version} build={build} buildState="ready"
