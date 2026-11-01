@@ -141,7 +141,7 @@ jobs:
       - run: npm run test:e2e -- --workers=2 --max-failures=5 --shard=${{ matrix.shard }}/11
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
-          PWTEST_SHARD_WEIGHTS: '16:15:17:15:22:15:16:25:30:31:34'
+          PWTEST_SHARD_WEIGHTS: '15:14:18:16:21:16:17:26:30:28:35'
       - name: Preserve browser failure reports
         if: failure()
         uses: actions/upload-artifact@v7

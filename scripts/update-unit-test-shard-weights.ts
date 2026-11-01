@@ -1,5 +1,5 @@
-// Rebuilds scripts/unit-test-shard-weights.json from the Vitest JSON reports of every unit shard of one review run
-// (the unit-test-timings-* artifacts). Usage: tsx scripts/update-unit-test-shard-weights.ts <report.json>...
+// Rebuilds scripts/unit-test-shard-weights.json from the Vitest JSON reports of every unit shard of one or more review runs
+// (the unit-test-timings-* artifacts); a file reported more than once is averaged. Usage: tsx scripts/update-unit-test-shard-weights.ts <report.json>...
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
@@ -7,7 +7,7 @@ import {
 } from './unit-test-shards';
 
 const files = process.argv.slice(2);
-if (!files.length) throw new Error('Pass the JSON report of every unit shard of one run.');
+if (!files.length) throw new Error('Pass the JSON report of every unit shard of one or more runs.');
 const checkout = process.cwd();
 const target = path.join(checkout, unitShardWeightsPath);
 const { overheadSeconds } = parseUnitShardWeights(readFileSync(target, 'utf8'));

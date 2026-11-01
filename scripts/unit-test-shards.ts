@@ -75,7 +75,7 @@ export function reportCheckoutRoot(names: readonly string[], isFile: (relativePa
 }
 
 /**
- * Builds the weight table from JSON reports of every shard of one run, whose files are named under `root`. A file
+ * Builds the weight table from JSON reports of every shard of one or more runs, whose files are named under `root`. A file
  * reported more than once is averaged. The per-file overhead is not in the reports, so it is kept from the current table.
  */
 export function unitShardWeightsFromReports(reports: readonly VitestJsonReport[], root: string, overheadSeconds: number): UnitShardWeights {
