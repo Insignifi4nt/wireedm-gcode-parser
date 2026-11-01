@@ -78,6 +78,16 @@ const roles = {
   tessellationMm: 0.05,
   /** Display mesh angular deviation. */
   tessellationAngleRad: 0.15,
+  /**
+   * Angular tolerance, in radians, within which fuse, cut and intersect merge tangent faces and edges of their result when they
+   * call `SimplifyResult` (OpenCascade's `theAngularTol`). Replicad 1.1's value, kept so boolean results stay the same.
+   */
+  kernelBooleanSimplifyRad: 0.001,
+  /**
+   * Two profile points within this distance on each axis are the same when a profile's lines and arcs are oriented and its
+   * outline is closed. Replicad 1.1's samePoint, kept so profile curves stay the same.
+   */
+  kernelProfilePointMm: 1e-6,
 
   // Gear generation.
   /** Margin that keeps gear tooth half-angles away from pointed tips and overlap. */

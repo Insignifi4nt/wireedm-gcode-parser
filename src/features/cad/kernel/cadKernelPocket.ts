@@ -1,22 +1,21 @@
-import { cast, getOC, isShape3D, Plane, Vector, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
+import { cast, getOC, isShape3D, Vector, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { resolveCadPocketExtent, type CadResolvedPocketInputs } from '../../../domain/cad/cadPocket';
-import { cadKernelPlaneBasis } from './cadKernelPlane';
+import { CadKernelPlane, cadKernelPlaneBasis } from './cadKernelPlane';
+import { cadKernelBuilders } from './cadKernelBuilders';
 import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
 import { cadKernelDisposeOwned } from './cadKernelShapes';
 import { cadKernelShapeTolerance as pocketShapeTolerance, cadKernelSolidEvidence as solidEvidence } from './cadKernelCutEvidence';
 import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
+import { cadKernelBounds } from './cadKernelQueries';
 
 export function prepareCadPocketExtent(target: Shape3D, inputs: CadResolvedPocketInputs): ReturnType<typeof resolveCadPocketExtent> {
   // A Boolean may omit an unresolved target component completely. Its absence
   // from Common cannot be certified by inspecting only the returned material.
   solidEvidence(target, 'target');
-  const box = target.boundingBox;
-  try {
-    const [min, max] = box.bounds;
-    return resolveCadPocketExtent({ plane: inputs.plane, offsetMm: inputs.offset,
-      direction: inputs.direction, sectionScaleMm: inputs.sectionScaleMm, targetBounds: { min, max }, nativeToleranceMm: pocketShapeTolerance(target) });
-  } finally { box.delete(); }
+  const [min, max] = cadKernelBounds(target);
+  return resolveCadPocketExtent({ plane: inputs.plane, offsetMm: inputs.offset,
+    direction: inputs.direction, sectionScaleMm: inputs.sectionScaleMm, targetBounds: { min, max }, nativeToleranceMm: pocketShapeTolerance(target) });
 }
 
 function extrudePocketRegion(wires: readonly Sketch[], span: number, normal: SimplePoint): Shape3D {
@@ -46,7 +45,7 @@ function extrudePocketRegion(wires: readonly Sketch[], span: number, normal: Sim
 export function buildCadPocketCut(target: Shape3D, inputs: CadResolvedPocketInputs): Shape3D {
   const extent = prepareCadPocketExtent(target, inputs); const basis = cadKernelPlaneBasis(inputs.plane);
   const origin: SimplePoint = [basis.normal[0] * extent.startStationMm, basis.normal[1] * extent.startStationMm, basis.normal[2] * extent.startStationMm];
-  const plane = new Plane(origin, basis.u, basis.normal); const drawings: Drawing[] = []; const sketches: Sketch[] = [];
+  const plane = new CadKernelPlane(origin, basis.u, basis.normal); const drawings: Drawing[] = []; const sketches: Sketch[] = [];
   const shapes = new Set<Shape3D>(); const own = (shape: Shape3D) => { shapes.add(shape); return shape; };
   const release = (shape: Shape3D) => { cadKernelDisposeOwned(shape); shapes.delete(shape); };
   let tool: Shape3D | undefined;
@@ -62,17 +61,17 @@ export function buildCadPocketCut(target: Shape3D, inputs: CadResolvedPocketInpu
         throw new CadError('unsupported-pocket-removal', 'A cutting region is too thin to resolve at native precision. Enlarge its material width or revise its holes.');
       }
       if (tool) {
-        const previous = tool; tool = own(previous.fuse(piece)); solidEvidence(tool, 'tool'); release(previous); release(piece);
+        const previous = tool; tool = own(cadKernelBuilders.fuse(previous, piece)); solidEvidence(tool, 'tool'); release(previous); release(piece);
       } else tool = piece;
     }
     if (!tool) throw new CadError('empty-sketch', 'Pocket needs a closed non-construction material profile.');
-    const common = own(target.intersect(tool)); const evidence = solidEvidence(common, 'common');
+    const common = own(cadKernelBuilders.common(target, tool)); const evidence = solidEvidence(common, 'common');
     // Evidence is checked per Common solid at its own precision scale.
     // Whole-target subtraction can lose a small bore or even become negative;
     // a broad removed component must not hide a second unresolved component.
     if (evidence.tolerance * 4 > extent.capMarginMm) throw new CadError('unsupported-pocket-precision', 'Pocket intersection exceeds the reserved cap precision. Revise the target or profile.');
     release(common);
-    const result = own(target.cut(tool)); const final = solidEvidence(result, 'result');
+    const result = own(cadKernelBuilders.cut(target, tool)); const final = solidEvidence(result, 'result');
     if (final.tolerance * 4 > extent.capMarginMm) throw new CadError('unsupported-pocket-precision', 'Pocket result exceeds the reserved cap precision. Revise the target or profile.');
     shapes.delete(result); return result;
   } finally {

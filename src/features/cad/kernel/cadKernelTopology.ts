@@ -1,7 +1,8 @@
-import { Edge, Face, getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh, type Vector } from 'replicad';
+import { Edge, Face, getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh } from 'replicad';
 import type { gp_Dir, gp_Pnt } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
-import { cadKernelDisposeShape } from './cadKernelShapes';
+import { cadKernelDisposeShape, cadKernelScope } from './cadKernelShapes';
+import { cadKernelBounds, cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKernelFaceNormal } from './cadKernelQueries';
 import type { CadMeshTopologyGroup } from '../../../domain/cad/cadDocument';
 import {
   parseCadEdgeSelection, parseCadFaceQuery, resolveCadEdgeSelection, resolveCadFaceQuery,
@@ -24,11 +25,9 @@ const tolerance = (...values: number[]) => Math.max(CAD_PRECISION.kernelConfusio
 const sameNumber = (a: number, b: number) => Math.abs(a - b) <= tolerance(a, b);
 const samePoint = (a: CadVector3, b: CadVector3) => norm(subtract(a, b)) <= tolerance(...a, ...b);
 const tuple = (point: gp_Pnt | gp_Dir): CadVector3 => [point.X(), point.Y(), point.Z()];
-function vectorTuple(vector: Vector): CadVector3 { try { return vector.toTuple(); } finally { vector.delete(); } }
 
 function boundsOf(shape: Edge | Face): CadTopologyDescriptor['bounds'] {
-  const box = shape.boundingBox;
-  try { const [min, max] = box.bounds; return { min, max }; } finally { box.delete(); }
+  const [min, max] = cadKernelBounds(shape); return { min, max };
 }
 function propertiesOf(shape: Edge | Face, surface: boolean) {
   const oc = getOC();
@@ -47,16 +46,15 @@ function describeEdge(entry: Extract<Entry, { kind: 'edge' }>): EdgeDescriptor {
   try {
     const nativeType = curve.curveType;
     if (nativeType !== 'LINE' && nativeType !== 'CIRCLE') return { ...base, curveType: 'other', nativeType };
-    const start = vectorTuple(curve.startPoint); const end = vectorTuple(curve.endPoint);
+    const start = cadKernelCurveStart(curve.wrapped); const end = cadKernelCurveEnd(curve.wrapped);
     if (nativeType === 'LINE') return { ...base, curveType: 'line', start, end };
-    const adaptor = new (getOC()).BRepAdaptor_Curve(entry.shape.wrapped);
-    try {
-      const circle = adaptor.Circle(); const center = circle.Location(); const axis = circle.Axis(); const direction = axis.Direction();
-      try {
-        return { ...base, curveType: 'circle', start, end, midpoint: vectorTuple(curve.pointAt(.5)),
-          center: tuple(center), axis: tuple(direction), radius: circle.Radius(), closed: curve.isClosed };
-      } finally { direction.delete(); axis.delete(); center.delete(); circle.delete(); }
-    } finally { adaptor.delete(); }
+    // Each native result is owned as soon as it is made, so a later failure still deletes it.
+    return cadKernelScope(own => {
+      const circle = own(own(new (getOC()).BRepAdaptor_Curve(entry.shape.wrapped)).Circle());
+      const center = own(circle.Location()), direction = own(own(circle.Axis()).Direction());
+      return { ...base, curveType: 'circle', start, end, midpoint: cadKernelCurvePointAt(curve.wrapped, .5),
+        center: tuple(center), axis: tuple(direction), radius: circle.Radius(), closed: curve.isClosed };
+    });
   } finally { curve.delete(); }
 }
 function describeFace(entry: Extract<Entry, { kind: 'face' }>): FaceDescriptor {
@@ -66,25 +64,23 @@ function describeFace(entry: Extract<Entry, { kind: 'face' }>): FaceDescriptor {
   try {
     const nativeType = surface.surfaceType;
     if (nativeType !== 'PLANE' && nativeType !== 'CYLINDRE') return { ...base, surfaceType: 'other', nativeType };
-    const adaptor = new (getOC()).BRepAdaptor_Surface(entry.shape.wrapped, false);
-    try {
+    return cadKernelScope(own => {
+      const adaptor = own(new (getOC()).BRepAdaptor_Surface(entry.shape.wrapped, false));
       if (nativeType === 'PLANE') {
-        const plane = adaptor.Plane(); const origin = plane.Location();
-        try {
-          // A reflected surface may reverse its parameter-frame handedness.
-          // The plane axis plus TopAbs orientation alone then points inward.
-          // BRepGProp evaluates the oriented surface normal in world coordinates.
-          const rawNormal = vectorTuple(entry.shape.normalAt());
-          const magnitude = norm(rawNormal);
-          if (!Number.isFinite(magnitude) || magnitude <= cadRoundoff(1)) throw new CadError('unsupported-selection', 'The planar face has no reliable oriented normal.');
-          const normal: CadVector3 = [rawNormal[0] / magnitude, rawNormal[1] / magnitude, rawNormal[2] / magnitude];
-          return { ...base, surfaceType: 'plane', normal, offset: dot(normal, tuple(origin)) };
-        } finally { origin.delete(); plane.delete(); }
+        const origin = own(own(adaptor.Plane()).Location());
+        // A reflected surface may reverse its parameter-frame handedness.
+        // The plane axis plus TopAbs orientation alone then points inward.
+        // BRepGProp evaluates the oriented surface normal in world coordinates.
+        const rawNormal = cadKernelFaceNormal(entry.shape);
+        const magnitude = norm(rawNormal);
+        if (!Number.isFinite(magnitude) || magnitude <= cadRoundoff(1)) throw new CadError('unsupported-selection', 'The planar face has no reliable oriented normal.');
+        const normal: CadVector3 = [rawNormal[0] / magnitude, rawNormal[1] / magnitude, rawNormal[2] / magnitude];
+        return { ...base, surfaceType: 'plane', normal, offset: dot(normal, tuple(origin)) };
       }
-      const cylinder = adaptor.Cylinder(); const origin = cylinder.Location(); const axis = cylinder.Axis(); const direction = axis.Direction();
-      try { return { ...base, surfaceType: 'cylinder', origin: tuple(origin), axis: tuple(direction), radius: cylinder.Radius() }; }
-      finally { direction.delete(); axis.delete(); origin.delete(); cylinder.delete(); }
-    } finally { adaptor.delete(); }
+      const cylinder = own(adaptor.Cylinder());
+      const origin = own(cylinder.Location()), direction = own(own(cylinder.Axis()).Direction());
+      return { ...base, surfaceType: 'cylinder', origin: tuple(origin), axis: tuple(direction), radius: cylinder.Radius() };
+    });
   } finally { surface.delete(); }
 }
 

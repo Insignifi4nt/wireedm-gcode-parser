@@ -1,11 +1,12 @@
-import { cast, getOC, isShape3D, measureVolume, Plane, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
+import { cast, getOC, isShape3D, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { CAD_LOFT_NATIVE_PRECISION, type resolveCadLoftSections } from '../../../domain/cad/cadLoft';
-import { cadKernelPlaneBasis } from './cadKernelPlane';
+import { CadKernelPlane, cadKernelPlaneBasis } from './cadKernelPlane';
 import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
 import { cadKernelDisposeOwned, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 import type { CadResolvedFrame } from '../../../domain/cad/cadDatumPlanes';
 import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
+import { cadKernelBounds, cadKernelVolume } from './cadKernelQueries';
 
 function validateLoftSolid(shape: Shape3D) {
   const oc = getOC();
@@ -22,7 +23,7 @@ function validateLoftSolid(shape: Shape3D) {
         explorer.Next();
       }
     } finally { explorer.delete(); }
-    const volume = measureVolume(shape);
+    const volume = cadKernelVolume(shape);
     if (!Number.isFinite(volume) || volume <= CAD_PRECISION.kernelMinimumVolumeMm3) throw new CadError('loft-volume', 'The loft must contain positive volume with outward orientation. Revise the section spacing.');
   } finally { for (const solid of solids) cadKernelDisposeOwned(solid); }
 }
@@ -63,7 +64,7 @@ export function buildCadLoftSolid(resolved: ReturnType<typeof resolveCadLoftSect
   if (!first || !last) throw new CadError('loft-sections', 'A loft needs at least two ordered sketch sections.');
   const oc = getOC();
   const builder = new oc.BRepOffsetAPI_ThruSections(true, ruled, CAD_LOFT_NATIVE_PRECISION);
-  const planes: Plane[] = []; const drawings: Drawing[] = []; const sketches: Sketch[] = [];
+  const planes: CadKernelPlane[] = []; const drawings: Drawing[] = []; const sketches: Sketch[] = [];
   let shape: Shape3D | undefined;
   try {
     builder.CheckCompatibility(true);
@@ -74,7 +75,7 @@ export function buildCadLoftSolid(resolved: ReturnType<typeof resolveCadLoftSect
       const origin: SimplePoint = resolved.legacyPrincipalPlane === null
         ? [section.tangentialOffsetMm[0], section.tangentialOffsetMm[1], section.stationMm]
         : [basis.normal[0] * section.offset, basis.normal[1] * section.offset, basis.normal[2] * section.offset];
-      const plane = new Plane(origin, basis.u, basis.normal); planes.push(plane);
+      const plane = new CadKernelPlane(origin, basis.u, basis.normal); planes.push(plane);
       const drawing = cadKernelProfileDrawing(section.geometry, drawings);
       const sketch = cadKernelSketchOnPlane(drawing, plane); sketches.push(sketch);
       builder.AddWire(sketch.wire.wrapped);
@@ -90,19 +91,16 @@ export function buildCadLoftSolid(resolved: ReturnType<typeof resolveCadLoftSect
     validateLoftSolid(shape);
     // Native validity alone can accept a fitted surface outside its end planes.
     // Optimal native bounds include native precision padding even for an exact cylinder.
-    const box = shape.boundingBox;
-    try {
-      const [min, max] = box.bounds; const normal = cadKernelPlaneBasis(resolved.legacyPrincipalPlane ?? 'XY').normal;
-      const lower = normal.reduce((sum, value, axis) => sum + value * (value < 0 ? max[axis] : min[axis]), 0);
-      const upper = normal.reduce((sum, value, axis) => sum + value * (value < 0 ? min[axis] : max[axis]), 0);
-      const tolerance = CAD_LOFT_NATIVE_PRECISION + resolved.offsetTolerance;
-      const firstStation = resolved.legacyPrincipalPlane === null ? first.stationMm : first.offset;
-      const lastStation = resolved.legacyPrincipalPlane === null ? last.stationMm : last.offset;
-      if (!Number.isFinite(lower) || !Number.isFinite(upper)
-        || lower < Math.min(firstStation, lastStation) - tolerance || upper > Math.max(firstStation, lastStation) + tolerance) {
-        throw new CadError('loft-overshoot', 'The loft extends beyond its end-section planes. Try ruled mode or adjust the section spacing.');
-      }
-    } finally { box.delete(); }
+    const [min, max] = cadKernelBounds(shape); const normal = cadKernelPlaneBasis(resolved.legacyPrincipalPlane ?? 'XY').normal;
+    const lower = normal.reduce((sum, value, axis) => sum + value * (value < 0 ? max[axis] : min[axis]), 0);
+    const upper = normal.reduce((sum, value, axis) => sum + value * (value < 0 ? min[axis] : max[axis]), 0);
+    const tolerance = CAD_LOFT_NATIVE_PRECISION + resolved.offsetTolerance;
+    const firstStation = resolved.legacyPrincipalPlane === null ? first.stationMm : first.offset;
+    const lastStation = resolved.legacyPrincipalPlane === null ? last.stationMm : last.offset;
+    if (!Number.isFinite(lower) || !Number.isFinite(upper)
+      || lower < Math.min(firstStation, lastStation) - tolerance || upper > Math.max(firstStation, lastStation) + tolerance) {
+      throw new CadError('loft-overshoot', 'The loft extends beyond its end-section planes. Try ruled mode or adjust the section spacing.');
+    }
     if (resolved.legacyPrincipalPlane === null) {
       const local = shape;
       shape = placeLoftSolid(local, resolved.commonFrame);

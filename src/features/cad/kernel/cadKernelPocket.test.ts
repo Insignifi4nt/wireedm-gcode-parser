@@ -2,12 +2,14 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, getOC, measureVolume, setOC, Sketch, type Shape3D, type Wire } from 'replicad';
+import { getOC, measureVolume, setOC, Sketch, type Shape3D, type Wire } from 'replicad';
 import type { CadDocument, CadFeature, CadPlane, CadProfile, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { type CadPocketFeature } from '../../../domain/cad/cadPocket';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import { buildCadKernelModel, type CadKernelModel } from './cadKernelModel';
 import { prepareCadSolidImport } from './cadKernelImport';
+import { cadKernelBuilders } from './cadKernelBuilders';
+import { watchCadKernelBuilders } from './__tests__/cadKernelBuilderWatch';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -145,7 +147,7 @@ describe('exact target-derived Through-all Pocket', () => {
       { ...base('thin'), kind: 'extrude', sketchId: 'thin_profile', distance: 6e-7, symmetric: false, operation: 'new', targetId: null }];
     const union: CadFeature = { ...base('compound'), kind: 'boolean', operation: 'union', targetId: 'stock', toolId: 'thin' };
     const moved: CadFeature = { ...base('moved'), kind: 'transform', sourceId: 'compound', translation: [1e8, 0, 0], rotation: [0, 0, 0] };
-    const common = vi.spyOn(_3DShape.prototype, 'intersect'); const cut = vi.spyOn(_3DShape.prototype, 'cut');
+    const common = vi.spyOn(cadKernelBuilders, 'common'); const cut = vi.spyOn(cadKernelBuilders, 'cut');
     try {
       built([...stock(), ...thin, union, moved, profile(circle(3, 1e8)), pocket('both', 'moved')], model => {
         expect(model.result.diagnostics[0]).toMatchObject({ featureId: 'pocket', code: 'unsupported-pocket-target' });
@@ -168,7 +170,9 @@ describe('exact target-derived Through-all Pocket', () => {
   });
   it.each(['intersect', 'cut'] as const)('releases completed tools and source wires if %s throws, leaving the target usable', phase => {
     let target: Shape3D | undefined; let tool: Shape3D | undefined;
-    const fail = vi.spyOn(_3DShape.prototype, phase).mockImplementation(function(this: Shape3D, other: Shape3D) { target = this; tool = other; throw new Error(`Interrupted Pocket ${phase}`); });
+    const kind = phase === 'intersect' ? 'common' : 'cut', native = cadKernelBuilders[kind];
+    const watch = watchCadKernelBuilders({ kinds: [kind], call: 1, error: new Error(`Interrupted Pocket ${phase}`) });
+    const fail = vi.spyOn(cadKernelBuilders, kind).mockImplementation((left, other) => { target = left; tool = other; return native(left, other); });
     const wires: Wire[] = []; const originalDelete = Sketch.prototype.delete;
     const released = vi.spyOn(Sketch.prototype, 'delete').mockImplementation(function(this: Sketch) { wires.push(this.wire); originalDelete.call(this); });
     try {
@@ -177,8 +181,9 @@ describe('exact target-derived Through-all Pocket', () => {
         if (!target || !tool) throw new Error('Expected native Pocket operands');
         expect(measureVolume(target)).toBeCloseTo(4000, 6); const releasedTool = tool; expect(() => releasedTool.wrapped).toThrow();
         for (const wire of wires) expect(() => wire.wrapped).toThrow();
+        expect(watch.failed).toHaveLength(1); expect(watch.outstanding()).toBe(0);
       });
-    } finally { fail.mockRestore(); released.mockRestore(); }
+    } finally { fail.mockRestore(); released.mockRestore(); watch.restore(); }
   });
   it('reads actual native target tolerance rather than assuming bounding-box padding', () => {
     const oc = getOC(); const actualTolerance = oc.BRep_Tool.Tolerance; let reads = 0; const kinds = new Set<unknown>();

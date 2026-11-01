@@ -2,13 +2,14 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { getOC, measureVolume, Plane, setOC, Shape, Sketch, type Shape3D } from 'replicad';
+import { getOC, measureVolume, setOC, Shape, Sketch, type Shape3D } from 'replicad';
 import type { CadDatumPlaneFeature, CadDocument, CadFeature, CadPlane, CadProfile, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import { buildCadKernelModel } from './cadKernelModel';
 import { loadCadSolidImport } from './cadKernelImport';
 import { sectionCadKernelShape } from './cadKernelSection';
 import * as kernelPlanes from './cadKernelPlane';
+import { CadKernelPlane } from './cadKernelPlane';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -128,7 +129,7 @@ describe('exact world datum Pad and Revolve', () => {
   });
   it('rejects unsupported datum precision before native construction and preserves legacy principal acceptance', () => {
     const stockSketch: CadSketchFeature = { ...sketch('XY'), id: 'stock_sketch' };
-    const deleted = vi.spyOn(Plane.prototype, 'delete');
+    const deleted = vi.spyOn(CadKernelPlane.prototype, 'delete');
     const model = buildCadKernelModel(document([stockSketch, { ...pad(), id: 'stock', sketchId: 'stock_sketch' }, datum('XZ', rotation, [1e8, -1e8, 1e8]), sketch(onDatum), pad()]));
     try {
       expect(model.result.meshes.map(mesh => mesh.featureId)).toEqual(['stock']); expect(model.result.diagnostics[0].featureId).toBe('solid');
@@ -143,7 +144,7 @@ describe('exact world datum Pad and Revolve', () => {
     const stockSketch: CadSketchFeature = { ...sketch('XY'), id: 'stock_sketch' };
     const documentInput = parseCadDocument(document([stockSketch, { ...pad(), id: 'stock', sketchId: 'stock_sketch' }, datum(), sketch(onDatum, outline, true), pad()]));
     const oc = getOC(), original = oc.BRepPrimAPI_MakePrism.prototype.Shape;
-    const deleted = vi.spyOn(Plane.prototype, 'delete'); const deletedSketches = vi.spyOn(Sketch.prototype, 'delete');
+    const deleted = vi.spyOn(CadKernelPlane.prototype, 'delete'); const deletedSketches = vi.spyOn(Sketch.prototype, 'delete');
     const readNull = Object.getOwnPropertyDescriptor(Shape.prototype, 'isNull')?.get;
     if (!readNull) throw new Error('Expected native shape status getter');
     let transient: Shape3D | undefined;
@@ -164,7 +165,7 @@ describe('exact world datum Pad and Revolve', () => {
   });
   it('releases an allocated native plane when reading its world origin fails', () => {
     const createPlane = kernelPlanes.createCadKernelPlane;
-    const deleted = vi.spyOn(Plane.prototype, 'delete'); let failedPlane: Plane | undefined;
+    const deleted = vi.spyOn(CadKernelPlane.prototype, 'delete'); let failedPlane: CadKernelPlane | undefined;
     const originReads: { mockRestore(): void }[] = [];
     const factory = vi.spyOn(kernelPlanes, 'createCadKernelPlane').mockImplementation((frame, station) => {
       const plane = createPlane(frame, station); failedPlane = plane;

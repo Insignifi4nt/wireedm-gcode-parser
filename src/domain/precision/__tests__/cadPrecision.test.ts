@@ -28,7 +28,7 @@ const VERSION_2: Readonly<Record<CadPrecisionRole, number>> = {
   annotationReadingTie: 1e-12, annotationParallelRelative: 1e-12, annotationFullTurnSlackRad: 1e-9, annotationMinimumRadiusMm: 1e-6,
   kernelConfusionMm: 1e-7, minimumLengthMm: 1e-7, minimumAngleDeg: 1e-7, modelExtentMm: 1e6, sweepTopologyMm: 2e-7,
   kernelMinimumVolumeMm3: 1e-9, kernelBoundsSlackMm: 1e-6, pocketCapMarginFloorMm: 1e-6, kernelDirection: 1e-10,
-  frameOrthonormalResidual: 64 * Number.EPSILON, tessellationMm: 0.05, tessellationAngleRad: 0.15,
+  frameOrthonormalResidual: 64 * Number.EPSILON, tessellationMm: 0.05, tessellationAngleRad: 0.15, kernelBooleanSimplifyRad: 0.001, kernelProfilePointMm: 1e-6,
   gearAngleMarginRad: 1e-6, gearParameterSlackRad: 1e-10, gearJoinPerModule: 1e-8, gearUndercutShiftSlack: 1e-12, gearBoundReserveRelative: 1e-12,
   camHandoffEndpointMm: 1e-7, camHandoffCoincidenceMm: 1e-9, camDefaultEndpointMm: 0.001, camDefaultCoincidenceMm: 1e-5,
   dxfCamCoincidenceMm: 0.000002, camDegenerateAreaMm2: 1e-9, camClosingDuplicateMm: 1e-9, camTieMm: 1e-12,
@@ -70,6 +70,9 @@ const ORDERING: readonly Order[] = [
   { name: 'angular accuracy <= kernel direction, and < roundoff cap < tessellation angle',
     holds: () => P.angularAccuracyRad <= P.kernelDirection && P.angularAccuracyRad < P.angularRoundoffCapRad
       && P.angularRoundoffCapRad < P.tessellationAngleRad },
+  { name: 'angular roundoff cap < boolean simplify angle < tessellation angle',
+    // Booleans merge faces that are tangent up to roundoff, and never merge across a kink the display mesh would show.
+    holds: () => P.angularRoundoffCapRad < P.kernelBooleanSimplifyRad && P.kernelBooleanSimplifyRad < P.tessellationAngleRad },
   { name: 'closure across the model extent stays within the CAD handoff endpoint and kernel confusion',
     holds: () => cadClosureTolerance(P.modelExtentMm) <= P.camHandoffEndpointMm && cadClosureTolerance(P.modelExtentMm) <= P.kernelConfusionMm },
   { name: 'output fitting never narrows the plan tolerance and grows point <= length <= arc sweep',

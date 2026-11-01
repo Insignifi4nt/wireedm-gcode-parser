@@ -40,6 +40,8 @@ Units: `Mm` millimetres, `Mm2` square millimetres, `Mm3` cubic millimetres, `Rad
 | | `kernelDirection` | 1e-10 | Unit direction normalization, parallel test and plane normal match. |
 | | `frameOrthonormalResidual` | 64 ε | Orthonormality residual of a datum or placement frame. |
 | | `tessellationMm`, `tessellationAngleRad` | 0.05, 0.15 | Display mesh deviation. |
+| | `kernelBooleanSimplifyRad` | 0.001 | Angular tolerance within which `SimplifyResult` merges tangent faces and edges after fuse, cut and intersect (OpenCascade's `theAngularTol`). Replicad 1.1's value, so boolean results stay the same. |
+| | `kernelProfilePointMm` | 1e-6 | Two profile points within this distance on each axis are the same when a profile's lines and arcs are oriented and its outline is closed. Replicad 1.1's `samePoint`, so profile curves stay the same. |
 | Gears | `gearAngleMarginRad` | 1e-6 | Keeps tooth half-angles away from pointed tips and overlap. |
 | | `gearParameterSlackRad` | 1e-10 | Allowed slack below zero for the flank's first roll parameter. |
 | | `gearJoinPerModule` | 1e-8 | Largest rack envelope to involute gap, per module. |
@@ -91,6 +93,7 @@ The module's JSDoc is the source of truth. Update this table when a role changes
 - CAD handoff coincidence < CAD handoff endpoint ≤ kernel confusion < approximation chord < tessellation;
 - imported coincidences < imported endpoint, and the CAD handoff endpoint < the imported endpoint;
 - angular accuracy ≤ kernel direction, and < the angular roundoff cap < tessellation angle;
+- the angular roundoff cap < the boolean simplify angle < tessellation angle: booleans merge faces that are tangent up to roundoff, and never merge across a kink the display mesh would show;
 - closure across the model extent ≤ the CAD handoff endpoint and kernel confusion;
 - output fitting never narrows the plan tolerance, and point ≤ length ≤ arc sweep;
 - output point roundoff ≤ output derived roundoff per term; both cover an ulp of every compared magnitude and never fall below the fixed guard they replaced;

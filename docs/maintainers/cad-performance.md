@@ -47,7 +47,7 @@ App 0.0.736, Node 24.22, Intel Core i9-14900HX laptop on the Balanced power plan
 
 1. Drag previews re-solve every graph sketch in the document, so preview cost grows with unrelated sketches.
 2. PlaneGCS aborts on a few hundred constrained entities because its memory cannot grow; the worker reports the raw abort text and restarts. Measured with one solver group, the abort depends on unfixed parameters times constraints: 760 x 760 solved and 800 x 800 aborted for independent rectangles, while a connected chain solved 800 x 800 and aborted at 1000 x 1000.
-3. Every edit rebuilds every feature. Unchanged expensive bodies dominate edits of cheap ones. OpenCascade memory already grows from 100 to 127 MiB between the 10th and 50th edit of the holed plate, so a feature cache must show no more growth than that over the same 50 edits.
+3. Every edit rebuilds every feature. Unchanged expensive bodies dominate edits of cheap ones. OpenCascade memory already grows from 100 to 127 MiB between the 10th and 50th edit of the holed plate, so a feature cache must show no more growth than that over the same 50 edits. From 0.0.793 the holed plate stays at 100 MiB through those 50 edits: the growth came from native builders and transforms that Replicad left undeleted (see [From 0.0.793](#from-00793)).
 4. Build results cross the worker as plain arrays (1.1 MiB JSON for 5.8k triangles) and are validated and prepared for display again on the main thread. That costs about 5 ms a build here, so it is a payload and memory cleanup, not the main latency.
 
 Proposed order: solve only edited sketches and their reference dependents, then solve independent sketch components separately with a clear limit message; incremental feature rebuilds keyed by a chain hash with bounded memory after 50 rebuilds as a gate; typed-array transfer with display preparation in the worker. Rust or kernel replacements are considered only where this benchmark shows the remaining time is inside the native kernel or solver.
@@ -68,6 +68,7 @@ Each row compares runs on the same host whose compared groups were bracketed at 
 | 0.0.762 | A parse takes the features of a document it accepted as they are, and checks, copies and freezes only the other parts of a new document listing them | 0.0.761, drag preview p50, bundled, three runs of 30 samples alternating with the three after it, at 57 to 96 ms of calibration: 1, 4, 8 and 32 sketches 2.57 to 2.61, 6.87 to 7.38, 12.91 to 15.48 and 50.23 to 53.00 ms; dependent workload, referenced drag 4.52 to 5.14 ms and unreferenced drag 4.32 to 4.48 ms | 2.59 to 2.69, 3.18 to 3.27, 3.87 to 3.97 and 8.05 to 8.61 ms; referenced drag 4.60 to 4.72 ms and unreferenced drag 4.43 to 4.50 ms, the same within noise, as both drags change most of that small document. Each preview makes the same solver calls, 0.32 to 0.69 ms |
 | 0.0.763 | A parse remembers that an accepted sketch's geometry was valid, and that an accepted extrude or revolve found regions in its sketch, and skips those checks while the sketch reads the same parameter values; previews skip relation checks of such unchanged sketches | 0.0.762 checks in the 0.0.763 benchmark, drag preview p50, bundled, three runs of 30 samples alternating with the three after it, at 57 to 83 ms of calibration: 4, 8 and 32 sketches 3.01 to 3.13, 3.61 to 3.69 and 8.07 to 8.38 ms; with an extrude after every sketch 3.19 to 3.54, 4.66 to 5.09 and 13.38 to 13.45 ms | 2.23 to 2.42, 2.18 to 2.38 and 2.36 to 2.52 ms; with the extrudes 2.28 to 2.43, 2.29 to 2.96 and 2.65 to 3.43 ms. One sketch, with or without its extrude, and the dependent drags, whose sketches all change, take the same time within noise: 2.42 to 2.56 ms before and 2.46 to 2.61 ms after for one sketch, with paired differences of both signs |
 | 0.0.764 | Viewport references keep the references of an accepted sketch while its profiles and graph read the same parameter values and it is placed the same; the viewport keeps the lines of references that keep their objects | 0.0.763 references in the 0.0.764 benchmark, p50 of three bundled runs of 41 samples, each sample alternating with the cache in the same process: 4, 8 and 32 sketches 0.74 to 0.78, 1.31 to 1.34 and 5.00 to 5.16 ms at 66 to 80 ms of calibration; with an extrude after every sketch 0.57 to 0.61 and 1.14 to 1.21 ms, and at 32 sketches 10.89 to 12.07 ms in groups throttled to 171 to 303 ms | 0.22 to 0.23, 0.22 and 0.28 to 0.30 ms; with the extrudes 0.18 to 0.19, 0.20 to 0.21 and 0.54 to 0.75 ms, paired ratios of 17.4 to 19.9 at 32 sketches. One sketch, with or without its extrude, and the dependent drags, whose sketches all change, are 0.02 to 0.05 ms slower, paired ratios of 0.8 to 0.9: one sketch 0.23 to 0.25 ms before and 0.26 to 0.28 ms after |
+| 0.0.793 | Booleans, transforms, all-edge fillets and chamfers, sketch placement, sketch faces, profile translations and rotations, and curve and face queries delete their native builders and temporaries (owned adapters in `cadKernelBuilders.ts`, `cadKernelQueries.ts`, `cadKernelSketch.ts` and `CadKernelPlane`) | 0.0.789, 100 rebuilds of each part in a fresh module with the event loop turning between rebuilds as in the worker: OpenCascade memory grew by 27.1 to 244.1 MiB on 5 of 12 parts, and by up to 979.1 MiB back to back; an imported STL cut by a slot grew from 1,543.1 to 4,023.1 MiB and 5 of 100 rebuilds failed. After 50 benchmark edits: holed plate 127.1 MiB, gear and plate 238.9 MiB | No growth on any part, settled or back to back; the STL part stays at 1,543.1 MiB with no failure; after 50 edits the holed plate is at 100 MiB and the gear and plate at 199.1 MiB. On all 12 parts the best of three 15-build minimums is 0 to 6% below 0.0.789's, from back-to-back pairs that calibration did not bracket (see [From 0.0.793](#from-00793)) |
 
 The limit stays about a fifth below the smallest measured abort, so a connected group of 89 to about 100 fully constrained rectangles, which solved before, is now refused with a message instead of risking an abort.
 
@@ -235,6 +236,150 @@ Results:
   - A flat patch shows one side at each pixel, so `forceSinglePass` draws the same pixels in one pass. In the profiled Plain run, the program lookups fell from 111 to 20 ms and three.js's draw call from 73 to 35 ms.
   - Main had the same three patches at 25 mm, so it gains this too.
 - **Plane hover.** Pointing at an origin plane renders the workbench once when the hovered plane changes, as pointing at a plane did before, so the tree row can highlight. The planes now reach past the part, so a pointer leaving the part meets one more often.
+
+### From 0.0.793
+
+Rebuilds release the kernel memory they use. Replicad 1.1 leaks native objects on several paths:
+
+- **Booleans.** Its fuse, cut and intersect leave their builder to garbage collection and never delete the raw result handle, which keeps a reference to the result's topology for the life of the module.
+- **Transforms.** Its translate, rotate, mirror and scale leak their builder and raw handle, and consume their input.
+- **Planes.** Its `Plane` builds coordinate transforms the kernel never reads, leaking a `gp_Trsf` and two `gp_Ax3` for every sketch placement and leaving a third transform to garbage collection.
+- **Temporaries.** `CompoundSketch.face()` leaves its intermediate outer face to garbage collection, and so do `Vector` arithmetic and `makeAx1`.
+- **Queries.** `Curve.startPoint`, `endPoint` and `pointAt` wrap the `gp_Pnt` that `Value` returns in a `Vector` and never delete it. Every `Vector` made from a native point, vector or direction copies it through a `gp_XYZ` it never deletes, so `tangentAt`, `Face.normalAt` and `makePln` leak one too. Topology descriptors, selected-edge fillets and chamfers, and sections called them for every edge and face they read.
+- **Profile transforms.** `Drawing.translate` and `rotate` never delete their `gp_Trsf2d`, and leave its general form to garbage collection: one for every circle, rectangle and slot profile on every rebuild.
+- **Shell.** The kernel's own shell never deleted the copy of the opening face that `NCollection_List.Append` returns, which kept that face's topology alive.
+- **Profiles.** Its pen deletes the points and curve maker of a line or arc only after the curve is made. A maker given coincident or collinear points is not done and its `Value` is null, so Replicad throws on the null curve and leaves two or three `gp_Pnt2d` and the maker on every rejected rebuild.
+- **Measurements.** `measureVolume`, `measureArea` and `Shape.boundingBox` leave their `GProp_GProps` or `Bnd_Box` to garbage collection, and lose it if the measurement throws.
+
+The kernel now runs these operations itself:
+
+- **Adapters.** `cadKernelBuilders.ts` holds fuse, cut and common; translate, rotate, mirror and scale, which leave their input intact; and fillet and chamfer of every edge.
+  - Each repeats Replicad's native calls exactly, borrows its inputs and returns a new shape the caller owns.
+  - Each deletes its builder, raw result and every vector, point, direction, axis and transform it makes in `finally`, so they are released also when the native operation throws.
+  - Booleans keep Replicad's second `Build()` and `SimplifyResult(true, true, 0.001)` after the constructor (see the findings below). The third argument is OpenCascade's angular tolerance, in radians, within which tangent faces and edges of the result merge; it is read from the precision role `kernelBooleanSimplifyRad`.
+  - `cadKernelAx1` and `cadKernelScaledUnitVector` give the revolve axis and the extrusion vector with the values `makeAx1` and `new Vector(normal).normalized().multiply(distance)` give.
+- **Placement.** `CadKernelPlane` owns only the origin, x direction and normal that Replicad's `Plane` gives a sketch. The sketch axis and the faces of profiles with holes (`cadKernelSketchFace`) are built and deleted by the kernel, as `makeAx2`, `Sketch.face` and `CompoundSketch.face` build them.
+- **Queries.** `cadKernelQueries.ts` reads a curve's start, end, points and tangents and a face's normal, and makes the section plane, with Replicad's native calls and parameters, so the numbers are the same, and deletes every point, vector, direction and property object it makes. Topology descriptors and sections use them. `cadKernelVolume`, `cadKernelArea` and `cadKernelBounds` measure with the calls and flags of `measureVolume`, `measureArea` and `boundingBox` and delete their property object or box; the model, loft, sweep, Pocket, section, import, cut evidence and topology descriptors use them. The descriptors own their circle, plane and cylinder, and each location, axis and direction, as soon as it is made.
+- **Profiles.** `cadKernelTranslateDrawing` and `cadKernelRotateDrawing` in `cadKernelSketch.ts` repeat `Drawing.translate` and `rotate` with the same `gp_Trsf2d`, `gp_GTrsf2d` and `GeomLib.GTransform` of each curve, and delete both transforms. Circle, rectangle and slot profiles use them.
+- **Pen.** `cadKernelPen.ts` repeats Replicad's `draw` lines, three-point and sagitta arcs and close, `drawCircle`, and `drawRoundedRectangle` without corners, with the same native calls, arithmetic and orientation checks, so the curves are the same. Two profile points within `kernelProfilePointMm`, Replicad's 1e-6 mm `samePoint`, are the same point. Every point and maker is owned through `cadKernelScope` and deleted when the curve is made or fails, and a drawing that fails deletes the curves it made. A line or arc that OpenCascade refuses is `invalid-profile`, where Replicad's script error was `kernel-operation-failed`. Every profile is drawn with it.
+- **Callers.** Extrude and Revolve with every operation, boolean features, linear and circular patterns, Mirror, Transform, loft, segment sweep, Pocket, cut evidence and inch STL import use the adapters. Shell and selected-edge fillet and chamfer already owned their builders; Shell now also deletes the copy that `Append` returns. `cadKernelConsumeShape`, which existed only because Replicad's transforms consumed their input, is gone.
+
+**Memory over 100 rebuilds.** Each part ran in a fresh OpenCascade module in Node: 3 warm-up builds, then 100 rebuilds, then a garbage collection. The values are OpenCascade linear memory, a high-water mark, before and after the 100 rebuilds. They were measured before the query, profile transform and shell fixes above, which delete further small objects, and were not measured again.
+
+- **Settled** turns the event loop and collects garbage after each rebuild, as the worker's event loop turns between messages.
+- **Back to back** does neither, so only what the kernel deletes itself is released.
+- **Builds.** Main is 0.0.789 at `ef007299`; the branch is 0.0.793.
+
+| Part | 0.0.789 settled | 0.0.793 settled | 0.0.789 back to back | 0.0.793 back to back |
+|---|---|---|---|---|
+| 200 × 100 mm plate, 40 holes in its sketch | 100 → 100 MiB | 100 → 100 MiB | 100 → 127.1 MiB | 100 → 100 MiB |
+| Same plate, 40 holes cut by a second sketch | 100 → 238.9 MiB | 100 → 100 MiB | 100 → 1,079.1 MiB | 100 → 100 MiB |
+| Same plate, a hole patterned 10 × 4 and cut | 100 → 344.1 MiB | 100 → 100 MiB | 100 → 811.1 MiB | 100 → 100 MiB |
+| Shelled box with every edge filleted | 100 → 127.1 MiB | 100 → 100 MiB | 100 → 127.1 MiB | 100 → 100 MiB |
+| Box with every edge chamfered | 100 → 100 MiB | 100 → 100 MiB | 100 → 100 MiB | 100 → 100 MiB |
+| Disk with 24 patterned bosses joined and 12 patterned holes cut | 100 → 344.1 MiB | 100 → 100 MiB | 100 → 947.1 MiB | 100 → 100 MiB |
+| Revolves, mirror and transform | 100 → 100 MiB | 100 → 100 MiB | 100 → 100 MiB | 100 → 100 MiB |
+| Loft cut, sweep cut and Pocket | 100 → 100 MiB | 100 → 100 MiB | 100 → 163.1 MiB | 100 → 100 MiB |
+| Benchmark holed plate | 100 → 100 MiB | 100 → 100 MiB | 100 → 199.1 MiB | 100 → 100 MiB |
+| Benchmark gear and plate | 199.1 → 199.1 MiB | 199.1 → 199.1 MiB | 199.1 → 344.1 MiB | 199.1 → 199.1 MiB |
+| Benchmark box fillet | 100 → 100 MiB | 100 → 100 MiB | 100 → 100 MiB | 100 → 100 MiB |
+| Imported STEP of the disk, cut by a slot | 100 → 238.9 MiB | 100 → 100 MiB | 100 → 344.1 MiB | 100 → 100 MiB |
+| Imported STL of the disk, cut by a slot | not run | not run | 1,543.1 → 4,023.1 MiB, 5 of 100 rebuilds failed | 1,543.1 MiB throughout, none failed |
+
+- **Objects left after garbage collection.** A proxy on the OpenCascade constructors counted the builders, transforms and coordinate systems still undeleted after the final garbage collection.
+  - 0.0.789 left a `gp_Trsf` and two `gp_Ax3` for every sketch placement on every part, settled or not: 103 to 515 transforms and 206 to 1,030 coordinate systems.
+  - It also left a transform builder for every pattern copy, mirror and transform: 3,502 on the disk with 24 bosses and 12 holes, 34 a build.
+  - 0.0.793 left none on any part.
+- **Every object.** A one-off probe watched every OpenCascade constructor, instance method and static function. Its filter for `Handle_` results excluded nothing: this OpenCascade build has no `Handle_` classes, and a handle result is an object of the class it points to, such as the `Geom2d_TrimmedCurve` a curve maker's `Value` returns. Like the rebuild-memory watch until review round 3, it did not watch embind's shared base, so a `clone` would not have been counted. No kernel or Replicad code calls embind's `clone` or `deleteLater`, and the rebuild-memory cases pass with both watched.
+  - Before the query, profile transform and shell fixes it found, left after garbage collection, a `gp_Trsf2d` for every translated or rotated profile on every part, the `Value` points and `gp_XYZ` copies of topology descriptors, selected edges and sections, and the shell's `Append` copy.
+  - After them it found nothing left after garbage collection on the 16 parity parts, in topology inspection of every edge and face, in sections across XY and XZ, in selected-edge fillets and chamfers, or in STEP and STL export. Before garbage collection only `GProp_GProps` of Replicad's measurements remained. The measurements are now owned, and the rebuild-memory suite runs the same whole-module watch before garbage collection with nothing left.
+- **Benchmark edits.** `cad:benchmark` in its legacy group measured memory after 1, 10 and 50 shipped edits, in a fresh module for each case.
+
+  | Case | 0.0.789 | 0.0.793 |
+  |---|---|---|
+  | Holed plate | 100, 100 and 127.1 MiB | 100 MiB throughout |
+  | Gear and plate | 199.1, 199.1 and 238.9 MiB | 199.1 MiB throughout |
+  | Box fillet | 100 MiB throughout | 100 MiB throughout |
+
+  Finding 3's growth of the holed plate between the 10th and 50th edit came from these leaks.
+
+**Build time.** Each pair ran 15 uncached builds of one part, after 2 warm-up builds, on main and then on the branch, back to back in fresh processes, in an order that alternated by round. Each process ran the same bundled script and collected garbage after each build. Three rounds ran for each part. A watcher logged every moment another session's test, build or benchmark process ran, and a pair that one overlapped ran again: 7 of the 36 pairs needed a second to fourth attempt.
+
+- **Medians and minimums.** The longer parts' medians were 2 to 3 times their minimums in both builds, as this laptop's clock falls under sustained load, so the minimums compare the code.
+- **Best minimum.** The table gives the best minimum over the three rounds, the ratio of those, and the three paired ratios of a round's minimums.
+
+| Part | 0.0.789 minimum per round | 0.0.793 minimum per round | Best minimum | Paired ratios | Medians, 0.0.789 → 0.0.793 |
+|---|---|---|---|---|---|
+| Plate, 40 holes in its sketch | 132.5, 131.4, 133.8 ms | 131.4, 126.9, 128.7 ms | 131.4 → 126.9 ms, 0.966 | 0.992, 0.966, 0.962 | 146.4–149.4 → 136.2–138.0 ms |
+| Plate, 40 holes cut by a second sketch | 478.2, 484.1, 529.8 ms | 480.6, 467.8, 477.7 ms | 478.2 → 467.8 ms, 0.978 | 1.005, 0.966, 0.902 | 1,278–1,410 → 1,234–1,483 ms |
+| Plate, a hole patterned 10 × 4 and cut | 407.2, 428.3, 418.0 ms | 398.3, 451.5, 412.0 ms | 407.2 → 398.3 ms, 0.978 | 0.978, 1.054, 0.986 | 1,009–1,226 → 1,040–1,187 ms |
+| Shelled box, every edge filleted | 102.3, 103.3, 103.3 ms | 102.3, 101.0, 102.6 ms | 102.3 → 101.0 ms, 0.987 | 1.000, 0.977, 0.993 | 106.0–112.7 → 104.8–110.0 ms |
+| Box, every edge chamfered | 20.4, 20.1, 21.1 ms | 19.7, 19.8, 20.0 ms | 20.1 → 19.7 ms, 0.981 | 0.966, 0.987, 0.951 | 20.8–21.7 → 20.4–22.0 ms |
+| Disk, 24 bosses joined and 12 holes cut | 427.9, 430.0, 449.6 ms | 429.1, 455.2, 427.8 ms | 427.9 → 427.8 ms, 1.000 | 1.003, 1.059, 0.951 | 1,083–1,139 → 991–1,194 ms |
+| Revolves, mirror and transform | 20.4, 19.2, 18.9 ms | 18.6, 18.5, 18.9 ms | 18.9 → 18.5 ms, 0.980 | 0.912, 0.961, 1.001 | 20.0–22.3 → 19.4–20.1 ms |
+| Loft cut, sweep cut and Pocket | 76.7, 77.6, 76.3 ms | 75.5, 75.8, 75.4 ms | 76.3 → 75.4 ms, 0.988 | 0.985, 0.977, 0.988 | 80.0–81.2 → 77.7–80.3 ms |
+| Benchmark holed plate | 61.2, 61.3, 62.2 ms | 61.1, 62.3, 62.1 ms | 61.2 → 61.1 ms, 0.999 | 0.999, 1.017, 0.999 | 62.9–66.7 → 62.9–66.4 ms |
+| Benchmark gear and plate | 461.4, 474.2, 474.9 ms | 450.7, 443.5, 434.9 ms | 461.4 → 434.9 ms, 0.943 | 0.977, 0.935, 0.916 | 1,307–1,401 → 1,221–1,466 ms |
+| Benchmark box fillet | 36.6, 36.8, 36.7 ms | 37.0, 36.0, 37.7 ms | 36.6 → 36.0 ms, 0.986 | 1.013, 0.980, 1.028 | 38.0–39.3 → 37.4–39.9 ms |
+| Imported STEP of the disk, cut by a slot | 308.9, 284.9, 303.2 ms | 292.9, 296.2, 278.8 ms | 284.9 → 278.8 ms, 0.979 | 0.948, 1.040, 0.920 | 709–812 → 655–752 ms |
+
+The branch is no slower on any part: its best minimum is 0 to 6% below main's. The paired ratios of single rounds range from 0.90 to 1.06, with both signs on most parts, which is the noise of these runs. Only the plate with 40 holes in its sketch is faster in every round, by 1 to 4%, and its medians by 6 to 9%.
+
+**Legacy benchmark.** Two pairs of `cad:benchmark` in its legacy group ran the same way, with the same watcher.
+
+- **Attempts.** The first pair ran without another session's process on its second attempt. The second overlapped one in all five attempts.
+- **Throttling.** Every run throttled: calibration ranged from 60 to 270 ms, against 57 to 84 ms for the baseline above, and most steps were marked `THROTTLED`.
+- **What is kept.** On this shared, throttling machine their build and edit times are not comparable, and they are not reported as a result. Their memory figures do not depend on the clock and are given above.
+
+**Same geometry.** Each adapter returns the same BRep as the Replicad call it replaces.
+
+- **BRep comparison.** `cadKernelBuilders.test.ts` serializes both results, across every boolean, transform, mirror plane, fillet and chamfer and the extrude, revolve and sketch-face paths.
+- **Parity set.** `cadKernelParity.test.ts` builds every part of `__tests__/cadKernelParity.ts` and compares each body's fingerprint with `__tests__/cadKernelParity.fingerprints.json`. The parts include every step of the benchmark cases, and the fingerprints were generated on 0.0.789.
+  - A fingerprint is the volume, the solid, face and edge counts, the bounds and an FNV-1a hash of the exact bytes of the preview buffers.
+  - All 24 bodies match.
+  - Regenerate the file only for a deliberate geometry change, with `-u`.
+
+**Tests that hold this.**
+
+- **Fault seam.** `cadKernelBuilderFactory` makes each adapter's builder. Tests spy on it to see every builder the adapters create and to make one throw inside its adapter.
+  - The fault-injection tests of cuts, Pocket, loft, sweep, patterns, shapes, sketches and datum planes moved from Replicad's prototypes to this seam, with the same assertions, and so did the Join count spies.
+  - Each fault-injection test still fails when its adapter's `delete` or `finally` is removed.
+- **Native-object watch.** `__tests__/cadKernelNativeObjects.ts` records every object of the named classes that kernel or Replicad code constructs, and every native object the named methods return, such as `gp_Vec.Normalized`, `Adaptor3d_Curve.Value` through `BRepAdaptor_Curve.Value`, or a builder's `Shape`. It patches the prototype that defines each method and refuses two names for one method.
+  - `cadKernelBuilders.test.ts` requires each adapter, the extrusion vector and both of its intermediates, the revolve axis and each plane and sketch placement to leave none of its vectors, points, directions, axes or transforms.
+  - It compares each curve query on lines, circles and half-circle arcs, each face normal on a cut box, a mirrored box and a sphere, and each section plane with Replicad's own query, number for number, and requires each to leave nothing. It compares each profile translation and rotation of a circle, a rectangle and a slot with Replicad's, curve for curve and wire for wire, and requires each to leave no 2D transform, vector or point.
+  - Two controls show the watch sees what Replicad's own queries and `Drawing.translate` leave.
+  - `watchEveryCadKernelNativeObject` reads the watched list from the OpenCascade module, so it cannot fall behind the adapters. It records every object any constructor makes, labelled with the class, and every native object returned by:
+    - any instance method, static function or property getter of a class, labelled with the class that defines it;
+    - the same members of every prototype a class inherits that no class of the module owns. That is embind's shared base, labelled `ClassHandle`, whose `clone` makes a new handle that keeps the object alive until it too is deleted;
+    - the module's own functions.
+
+    A result that is the object the method was called on, as `deleteLater` returns, is not a new object. Nothing is exempt. Until review round 3 the shared base was not watched, so a `clone` was not counted.
+  - `cadKernelRebuildMemory.test.ts` uses it for every case. It requires 20 rebuilds of the holed plate to leave none after any rebuild and to keep the module's memory the same, and one build of each other leak-prone parity part, of a box with an angled slot, of topology inspection of every edge and face, of sections across XY and XZ and of a selected-edge fillet and chamfer to leave none. Garbage collection does not run before these counts.
+  - Its negative control leaks, on a cylinder, a curve adaptor with its `Circle`, `Location`, `Axis` and `Direction`, plane and cylinder surface adaptors with `Plane`, `Cylinder` and their `Location` and `Axis`, a loft builder, a refused arc maker with its three points, a `GProp_GProps` with `CentreOfMass` and a `Bnd_Box`. The watch sees each one exactly, and nothing once they are deleted.
+  - A second control clones a point and deletes the point. The clone is counted, and its `X()` still reads 1, until the clone is deleted. Clones of a shape made before the watch are counted the same way, and `deleteLater` adds nothing new.
+  - A module shaped like OpenCascade's has a shared base, a base class it does not name, a property getter, a static function and a function of its own. On it, the watch sees what each one returns, and restoring puts back every original property.
+  - Rejected profiles: a closed sector of radius 1,000,000 mm and sweep 0.0000001°, extruded by 1 mm, is rebuilt 5 times in a fresh module, where it is refused as `invalid-profile`, and 5 times after another build, where it may be refused as `empty-solid` instead. The holed box with its second half circle or third rectangle side refused through `refuseCadKernelMaker` is rebuilt 5 times. None leaves anything after any rebuild.
+  - `cadKernelPen.test.ts` draws 12 shapes with both pens, from a 0.001 mm circle and a rectangle of zero width to clockwise and major arcs and an outline ending 0.0000005 mm from its start. Each gives Replicad's curves and, if it is not degenerate, its wire, and leaves only the curves its drawing owns. Zero-length lines and refused arcs and closing lines are `invalid-profile` with nothing left, where Replicad's controls leave the points and maker; orientation failures and a throwing step delete what they made.
+  - `cadKernelBuilders.test.ts` also compares zero and identity transforms, a cut and a common with a shape that does not meet the target, and profile translation by zero and rotation by 0° and 360° with Replicad's. Fillets and chamfers larger than the box, a rotation about a zero axis and zero extrusion and revolve directions throw OpenCascade's exception from both; the adapters leave nothing, and Replicad leaves its builder or its transform and vectors.
+- **Mutation checks.** Five rounds of local mutations removed one `delete`, `finally` or ownership at a time, skipped the second `Build()`, sent one call back through Replicad, or narrowed the watch.
+  - Two mutations survived the first round: the axis temporaries and the model's revolve axis. The native-object watch was added for them, and both fail now.
+  - One survived the second: the model's delete of the extrusion vector, which `Multiplied` returns, so no constructor watch could see it.
+  - The third round ran 20 mutations against the 77 tests of the adapter and rebuild-memory suites, and every one fails. Removing the model's extrusion vector delete fails 14 tests and the unit vector's 17. In the queries, the curve point's delete fails 8, the tangent's point and derivative 3 each, the face normal's property object, point and vector 4 each, and the plane's point and direction 5 each. The `gp_Trsf2d` and `gp_GTrsf2d` deletes fail 20 each, the translation vector 17, the rotation centre 4 and the shell's `Append` copy 1. Sending descriptor start points, face normals, section tangents, circle profiles or slot rotations back through Replicad fails 4, 3, 1, 11 and 1.
+  - The fourth round ran 52 mutations against the 149 tests of the adapter, pen and rebuild-memory suites, and every one fails. Round 3's 20 fail again, 1 to 30 tests each. In the pen, the ownership of a line's maker or either point fails 31 tests, of an arc's maker or middle point 25 and of its first point 22; skipping the line and arc refusal checks fails 4 and 3; keeping a curve whose orientation fails 1 for a line and 1 for an arc, and a failed drawing's curves 7; and `cadKernelScope`'s disposal 37. The bounds box fails 14, and the volume and area property objects 15 and 3. In the descriptors, the circle, the review's mutation, and its curve adaptor, location, axis and direction fail 4 each; the face adaptor, plane and plane location 3 each, and the cylinder and its location, axis and direction 2 each. Sending descriptor bounds or the model's volume back through Replicad fails 5 and 14. Drawing circle, rectangle or path profiles with Replicad's pen fails 1 each, as Replicad's pen leaks only when a curve is refused: the refused-arc, refused-line and fresh-module sector tests catch them.
+  - The fifth round ran 7 mutations of the watch against the 21 rebuild-memory tests, and every one fails:
+    - excluding `clone` again, not scanning inherited prototypes, and counting a method's receiver as a new object fail 2 tests each;
+    - not wrapping property getters, not wrapping the module's functions, restoring getters as values, and labelling the shared base by its minified constructor name fail 1 each.
+
+**Findings for later.**
+
+- **`deleteLater` never deletes in this build.** The module exports neither `flushPendingDeletes` nor `setDelayFunction`, so an object scheduled with `deleteLater` stays alive and cannot be deleted again. No kernel or Replicad code calls it.
+- **OpenCascade's verdict on nearly collinear arc points varies.** The sector above is refused by its arc maker in a fresh module, but after any other build the same three points make an arc and the extrusion is refused as an empty solid. In probes, exactly collinear points through the pen were refused in one sequence and made into a curve in another. Both refusals leave nothing. A check for such arcs, probably at sketch level so a sketch never produces one, will ship in its own pull request as a deliberate behaviour change, as it changes which arcs are refused.
+
+- **`SimplifyResult` rewrites shared topology.** After a boolean, `SimplifyResult` (UnifySameDomain) rewrites, in place, topology that the result shares with its inputs.
+  - A cut tool with coplanar faces measured 282.74 mm³ before a cut and 471.24 mm³ after it, and a second cut with that tool removed nothing.
+  - A standalone Replicad box and cylinder are unaffected. 0.0.789 does the same; this change keeps it.
+  - Because of it, a boolean fault test fails at the second `Build()`, not at the constructor.
+- **The second `Build()` is part of the geometry.** Three cylinders patterned over 359.9999°, whose first and last copies nearly coincide, build 2 solids with 6 faces with Replicad's second build and 7 faces without it. The `near-full-turn-pattern` parity part fails if an adapter skips it.
 
 ## Native sketch solver
 

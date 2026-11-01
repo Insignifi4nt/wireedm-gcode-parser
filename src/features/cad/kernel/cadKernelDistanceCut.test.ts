@@ -2,12 +2,14 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, isShape3D, measureVolume, setOC, type AnyShape, type Shape3D } from 'replicad';
+import { isShape3D, measureVolume, setOC, type Shape3D } from 'replicad';
 import type { CadDocument, CadFeature, CadProfile, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import { buildCadKernelModel } from './cadKernelModel';
 import { prepareCadSolidImport } from './cadKernelImport';
 import { createCadKernelRuntime } from './cadKernelRuntime';
+import { cadKernelBuilders } from './cadKernelBuilders';
+import { watchCadKernelBuilders } from './__tests__/cadKernelBuilderWatch';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -100,10 +102,10 @@ describe('confirmed material removal by sketch-based Distance Cut', () => {
   });
   it('diagnoses complete erasure and releases the rejected native result while preserving the target', () => {
     let result: Shape3D | undefined;
-    const nativeCut = _3DShape.prototype.cut;
-    const capture = vi.spyOn(_3DShape.prototype, 'cut').mockImplementation(function(this: Shape3D, other: AnyShape) {
+    const nativeCut = cadKernelBuilders.cut, watch = watchCadKernelBuilders();
+    const capture = vi.spyOn(cadKernelBuilders, 'cut').mockImplementation((target, other) => {
       if (!isShape3D(other)) throw new Error('Expected a cutting solid');
-      result = nativeCut.call(this, other); return result;
+      result = nativeCut(target, other); return result;
     });
     try {
       const model = buildCadKernelModel(parseCadDocument(document([...stock(), sketch('tool', circle(50)), cut(20)])));
@@ -111,8 +113,9 @@ describe('confirmed material removal by sketch-based Distance Cut', () => {
         expect(model.result.diagnostics[0]).toMatchObject({ featureId: 'cut', code: 'cut-erased' });
         expect(model.result.meshes[0].featureId).toBe('stock'); expect(model.result.meshes[0].volume).toBeCloseTo(4000, 7);
         if (!result) throw new Error('Expected the completed native result'); const rejected = result; expect(() => rejected.wrapped).toThrow();
+        expect(watch.builders.map(item => item.kind)).toContain('cut'); expect(watch.outstanding()).toBe(0);
       } finally { model.dispose(); }
-    } finally { capture.mockRestore(); }
+    } finally { capture.mockRestore(); watch.restore(); }
   });
   it('does not hide an unresolved cutting annulus behind a broad cutting component', () => {
     const tool = sketch('tool', circle());
@@ -143,7 +146,7 @@ describe('confirmed material removal by sketch-based Distance Cut', () => {
     const thin: CadFeature = { ...base('thin'), kind: 'extrude', sketchId: thinProfile.id, distance: 6e-7, symmetric: false, operation: 'new', targetId: null };
     const union: CadFeature = { ...base('compound'), kind: 'boolean', operation: 'union', targetId: 'stock', toolId: thin.id };
     const moved: CadFeature = { ...base('moved'), kind: 'transform', sourceId: 'compound', translation: [1e8, 0, 0], rotation: [0, 0, 0] };
-    const common = vi.spyOn(_3DShape.prototype, 'intersect'), subtract = vi.spyOn(_3DShape.prototype, 'cut');
+    const common = vi.spyOn(cadKernelBuilders, 'common'), subtract = vi.spyOn(cadKernelBuilders, 'cut');
     try {
       const model = buildCadKernelModel(parseCadDocument(document([...stock(), thinProfile, thin, union, moved, sketch('tool', circle(3, 1e8)), { ...cut(30), targetId: 'moved' }])));
       try {
@@ -155,13 +158,14 @@ describe('confirmed material removal by sketch-based Distance Cut', () => {
   });
   it.each(['intersect', 'cut'] as const)('releases cutting temporaries if native %s throws and keeps the borrowed target usable', phase => {
     let target: Shape3D | undefined, tool: Shape3D | undefined, common: Shape3D | undefined;
-    const nativeCommon = _3DShape.prototype.intersect;
-    const commonSpy = phase === 'cut' ? vi.spyOn(_3DShape.prototype, 'intersect').mockImplementation(function(this: Shape3D, other: AnyShape) {
-      common = nativeCommon.call(this, other); return common;
+    const { common: nativeCommon, cut: nativeCut } = cadKernelBuilders;
+    const watch = watchCadKernelBuilders({ kinds: [phase === 'intersect' ? 'common' : 'cut'], call: 1, error: new Error(`Interrupted Cut ${phase}`) });
+    const commonSpy = phase === 'cut' ? vi.spyOn(cadKernelBuilders, 'common').mockImplementation((left, right) => {
+      common = nativeCommon(left, right); return common;
     }) : null;
-    const failure = vi.spyOn(_3DShape.prototype, phase).mockImplementation(function(this: Shape3D, other: AnyShape) {
+    const failure = vi.spyOn(cadKernelBuilders, phase === 'intersect' ? 'common' : 'cut').mockImplementation((left, other) => {
       if (!isShape3D(other)) throw new Error('Expected a cutting solid');
-      target = this; tool = other; throw new Error(`Interrupted Cut ${phase}`);
+      target = left; tool = other; return (phase === 'intersect' ? nativeCommon : nativeCut)(left, other);
     });
     try {
       const model = buildCadKernelModel(parseCadDocument(document([...stock(), sketch('tool', circle()), cut()])));
@@ -170,8 +174,9 @@ describe('confirmed material removal by sketch-based Distance Cut', () => {
         if (!target || !tool) throw new Error('Expected native cutting operands');
         expect(measureVolume(target)).toBeCloseTo(4000, 7); const releasedTool = tool; expect(() => releasedTool.wrapped).toThrow();
         if (phase === 'cut') { if (!common) throw new Error('Expected owned intersection'); const releasedCommon = common; expect(() => releasedCommon.wrapped).toThrow(); }
+        expect(watch.failed).toHaveLength(1); expect(watch.outstanding()).toBe(0);
       } finally { model.dispose(); }
-    } finally { failure.mockRestore(); commonSpy?.mockRestore(); }
+    } finally { failure.mockRestore(); commonSpy?.mockRestore(); watch.restore(); }
   });
   it('keeps the accepted native cache and inspection ownership when an isolated no-material candidate rejects', async () => {
     const acceptedDocument = parseCadDocument(document(stock())), candidateDocument = parseCadDocument(document([...stock(), sketch('tool', circle(3, 50)), cut()]));
