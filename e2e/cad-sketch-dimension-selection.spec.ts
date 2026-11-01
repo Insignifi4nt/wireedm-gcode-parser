@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures/native-sketch-solver';
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { prepareCadTools, callCadTool as call, cadContext as context, historyRow } from './cad-tool-helpers';
 
 test('selects a dimension with a click, edits it on double-click and removes selected dimensions with Delete in one undo step', async ({ page }) => {
@@ -211,8 +211,8 @@ test('leaves a construction edge its picks in the gaps of its dashes, where a di
   await expect(edge).toHaveAttribute('aria-pressed', 'true'); await expect(label).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('opens the value editor with its value focused from a double-click or Enter, so typing edits it, and keeps it between the bar and the dock as the window shrinks', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+/** Opens a 40 mm line with its length dimension for editing. */
+async function openStrip(page: Page) {
   await prepareCadTools(page); await call(page, 'cad_open_workspace');
   const sketch = { id: 'strip', kind: 'sketch', name: 'Strip', suppressed: false, plane: 'XY', offset: 0, profiles: [], graph: {
     points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [40, 0] }],
@@ -221,6 +221,12 @@ test('opens the value editor with its value focused from a double-click or Enter
   await call(page, 'cad_edit_document', { expectedVersion: (await context(page)).version, edits: [{ kind: 'add-feature', feature: sketch }] });
   await (await historyRow(page, 'Strip')).dblclick();
   await expect(page.getByRole('button', { name: 'Finish sketch', exact: true })).toBeVisible();
+  return sketch;
+}
+
+test('opens the value editor with its value focused from a double-click or Enter, so typing edits it, and keeps it between the bar and the dock as the window shrinks', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const sketch = await openStrip(page);
   const label = page.locator('[data-cad-sketch-dimension="length"] [role="button"]'), value = page.getByRole('textbox', { name: 'Length mm', exact: true });
   /** Types over the selected value without clicking it first, and applies it with Enter. */
   const typeValue = async (text: string) => { await expect(value).toBeFocused(); await page.keyboard.type(text); await page.keyboard.press('Enter'); await expect(value).toHaveCount(0); };
@@ -245,4 +251,29 @@ test('opens the value editor with its value focused from a double-click or Enter
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
   const finished = (await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: 'strip' })).feature;
   expect(finished.graph.relations).toEqual([{ ...sketch.graph.relations[0], value: 55 }]);
+});
+
+test('keeps the value focused through the reset Escape makes, and returns focus to the dimension as the editor closes, so the canvas keys work', async ({ page }) => {
+  await openStrip(page);
+  const label = page.locator('[data-cad-sketch-dimension="length"] [role="button"]'), value = page.getByRole('textbox', { name: 'Length mm', exact: true });
+  const editor = page.locator('form[data-cad-sketch-value-editor="length"]'), canvas = page.getByRole('application', { name: 'Sketch drawing canvas', exact: true });
+  // Escape resets an edited value: the value keeps focus, selected, so typing replaces it rather than reaching the tool shortcuts.
+  await label.dblclick(); await expect(value).toBeFocused();
+  await page.keyboard.type('47'); await page.keyboard.press('Escape');
+  await expect(value).toHaveValue('40'); await expect(value).toBeFocused();
+  await page.keyboard.type('48'); await expect(value).toHaveValue('48'); await expect(editor).toHaveCount(1);
+  // Cancel returns focus to the dimension's label, where Enter opens it again.
+  await editor.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(editor).toHaveCount(0); await expect(label).toBeFocused();
+  await page.keyboard.press('Enter'); await expect(value).toBeFocused(); await expect(value).toHaveValue('40');
+  // A clean Escape the same.
+  await page.keyboard.press('Escape'); await expect(editor).toHaveCount(0); await expect(label).toBeFocused();
+  await page.keyboard.press('Enter'); await expect(value).toBeFocused();
+  // Apply the same: the dimension stays selected, so Delete on its label removes it, and focus then goes to the canvas.
+  await page.keyboard.type('48'); await editor.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(editor).toHaveCount(0); await expect(label).toBeFocused(); await expect(label).toContainText('48');
+  await page.keyboard.press('Delete'); await expect(label).toHaveCount(0); await expect(canvas).toBeFocused();
+  await page.getByRole('button', { name: 'Finish sketch', exact: true }).click();
+  await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+  expect((await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: 'strip' })).feature.graph.relations).toEqual([]);
 });

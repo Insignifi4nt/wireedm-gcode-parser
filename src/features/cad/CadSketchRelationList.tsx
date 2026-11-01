@@ -109,8 +109,9 @@ export const CadSketchRelationList = memo(function CadSketchRelationList({ expan
         title={expanded ? 'Hide the relations of this sketch' : 'List the relations of this sketch'} onClick={() => onExpandedChange(!expanded)}>
         <ExpandRightIcon size={10} />Relations <small aria-label={`${graph.relations.length} relations`}>{graph.relations.length}</small>
       </Button>
-      {expanded && <Button type="button" size="icon" aria-label="Only the selection" aria-pressed={onlySelection} disabled={!selection.length && !onlySelection}
-        title="List only the relations on the selected points and edges" onClick={() => onOnlySelection(!onlySelection)}><SelectIcon size={12} /></Button>}
+      {/* Inactive rather than disabled with nothing selected, so turning it off then keeps focus on it. */}
+      {expanded && <Button type="button" size="icon" aria-label="Only the selection" aria-pressed={onlySelection} aria-disabled={!selection.length && !onlySelection || undefined}
+        title="List only the relations on the selected points and edges" onClick={() => { if (selection.length || onlySelection) onOnlySelection(!onlySelection); }}><SelectIcon size={12} /></Button>}
     </div>
     {expanded && <CadSketchRelationRows {...props} id={listId} onEmpty={() => toggle.current?.focus({ preventScroll: true })} />}
   </div>;
@@ -195,6 +196,9 @@ function CadSketchRelationRows({ id, graph, parameters, issues, selectedIds, sel
   // The tab stop is the focused row, else the first row in view, so it survives scrolling and a deleted row.
   const focusIndex = focusId === null ? undefined : positions.get(focusId);
   const stopId = focusIndex !== undefined && focusIndex >= first && focusIndex < last ? focusId : relations[first]?.id;
+  // The rows in view, and the focused row though the list scrolled it out of view, which keeps focus rather than dropping it to the page.
+  const rendered = Array.from({ length: Math.max(0, last - first) }, (_, offset) => first + offset);
+  if (focusIndex !== undefined && (focusIndex < first || focusIndex >= last)) rendered.push(focusIndex);
   // Focus moving elsewhere ends the rows' hold on it; focus falling to the page because its row went does not. A row being removed can be
   // told blur while still in the page, so that case is decided once the render that removes it is done.
   const blurred = (event: FocusEvent<HTMLButtonElement>) => {
@@ -206,8 +210,8 @@ function CadSketchRelationRows({ id, graph, parameters, issues, selectedIds, sel
   return relations.length === 0 ? <p id={id} className="cad-sketch-relation-list-empty">{onlySelection && selection.length ? 'Nothing constrains the selection.' : 'No relations yet.'}</p>
       : <div ref={scroller} id={id} className="cad-sketch-relation-list-scroller" style={{ height }} onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
         <ul aria-label="Sketch relations" style={{ height: relations.length * CAD_SKETCH_RELATION_ROW_HEIGHT }}>
-          {relations.slice(first, last).map((relation, offset) => {
-            const at = first + offset, row = cadSketchRelationRow(graph, relation), Icon = row.icon, states = issueStates(issues.byRelation.get(relation.id));
+          {rendered.map(at => {
+            const relation = relations[at], row = cadSketchRelationRow(graph, relation), Icon = row.icon, states = issueStates(issues.byRelation.get(relation.id));
             const value = cadSketchRelationRowQuantity(graph, relation, parameters);
             // A pending edit leaves the rows in place, inactive, so the focused row keeps focus while its deletion is judged.
             return <li key={relation.id} aria-setsize={relations.length} aria-posinset={at + 1} style={{ top: at * CAD_SKETCH_RELATION_ROW_HEIGHT }}>

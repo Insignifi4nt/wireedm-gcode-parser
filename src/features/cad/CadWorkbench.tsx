@@ -1937,12 +1937,8 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const id = CSS.escape(valueAnchorId);
     return root.querySelector(`[data-cad-sketch-dimension="${id}"]`) ?? root.querySelector(`[data-cad-sketch-relation-glyph~="${id}"]`) ?? root.querySelector(`[data-cad-sketch-relation-row="${id}"]`);
   }, [valueAnchorId]);
-  /** Closing the value editor keeps its dimension selected and returns focus to what it opened beside. */
-  const closeValueEditor = () => {
-    const anchor = findValueAnchor();
-    setGraphRelationCommand(current => current?.kind === 'value' ? null : current);
-    if (anchor instanceof HTMLElement || anchor instanceof SVGElement) anchor.focus({ preventScroll: true });
-  };
+  /** Closing the value editor keeps its dimension selected; the editor returns focus to what it opened beside, else to the canvas. */
+  const closeValueEditor = () => setGraphRelationCommand(current => current?.kind === 'value' ? null : current);
   const drawnRelationPick = (relationId: string) => { const graph = sketch?.graph; return graph && drawnAnnotations?.graph === graph ? cadSketchDimensionPick(drawnAnnotations, relationId) : null; };
   /** A tree row selects its relation's mark when the canvas draws it, otherwise the row itself; Shift, Ctrl or Command adds or removes it. */
   const selectRelationRow = (relation: CadSketchGraphRelation, additive: boolean) => {

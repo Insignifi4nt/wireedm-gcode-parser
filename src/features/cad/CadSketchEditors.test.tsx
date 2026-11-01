@@ -1,4 +1,4 @@
-import { act, useSyncExternalStore, type ReactElement } from 'react';
+import { act, useState, useSyncExternalStore, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CadDocument, CadSketchFeature } from '@/domain/cad/cadDocument';
@@ -46,6 +46,15 @@ async function input(name: string, value: string) {
 const settle = () => act(async () => new Promise(resolve => setTimeout(resolve, 125)));
 const key = (target: Element, name: string) => act(async () => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })));
 const line = (id: string, startPointId: string, endPointId: string) => ({ id, kind: 'line', startPointId, endPointId, construction: false });
+/** A workbench with the sketch canvas and one drawn dimension, whose label holds its tab stop; the editor goes as it closes, as the workbench drops it. */
+function Closable({ editor }: { readonly editor: (close: () => void) => ReactElement }) {
+  const [open, setOpen] = useState(true);
+  return <div className="cad-workbench">
+    <svg className="cad-sketch-canvas" tabIndex={0} aria-label="Sketch drawing canvas"><g data-cad-sketch-dimension="size"><g role="button" tabIndex={0} aria-label="Dimension size" /></g></svg>
+    {open && editor(() => setOpen(false))}
+  </div>;
+}
+const canvas = () => container.querySelector('svg.cad-sketch-canvas'), dimensionLabel = () => container.querySelector('[aria-label="Dimension size"]');
 
 describe('value editor at a dimension', () => {
   const editor = (relationId: string, close = vi.fn(), accepted = vi.fn()) => (props: Shared) =>
@@ -181,6 +190,34 @@ describe('value editor at a dimension', () => {
     } finally { vi.restoreAllMocks(); }
   });
 
+  it('keeps focus through the reset Escape makes, with the value selected, and through the reference flip, and returns it to its dimension, else the canvas, however it closes', async () => {
+    const source = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [10, 0] }], entities: [line('base', 'a', 'b')],
+      relations: [{ id: 'size', kind: 'distance', pointIds: ['a', 'b'], value: 10 }] });
+    // The far end follows the parameter, so the stand-in preparation accepts an applied length.
+    const linked = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: ['span', '0'] }], entities: [line('base', 'a', 'b')],
+      relations: [{ id: 'size', kind: 'distance', pointIds: ['a', 'b'], value: ' span ' }] }, { span: 10 });
+    const open = async (anchored = true, from = source) => {
+      await act(async () => root.render(<></>));
+      return mount(from, props => <Closable editor={close => <CadSketchDimensionValueEditor {...props} relationId="size" onClose={close} onAccepted={close}
+        findAnchor={() => anchored ? container.querySelector('[data-cad-sketch-dimension="size"]') : null} />} />);
+    };
+    // Escape resets an edited value, remounting the fields: the value takes focus again, selected, ready for typing.
+    await open(); await input('Length mm', '12'); await key(field('Length mm'), 'Escape');
+    expect([document.activeElement === field('Length mm'), field('Length mm').value, field('Length mm').selectionStart, field('Length mm').selectionEnd]).toEqual([true, '10', 0, 2]);
+    // A clean Escape closes it: focus goes to the label holding the dimension's tab stop, not to its group.
+    await key(field('Length mm'), 'Escape'); expect(document.activeElement).toBe(dimensionLabel());
+    // Cancel and Apply the same; with no dimension to return to, the canvas.
+    await open(); await click('Cancel'); expect(document.activeElement).toBe(dimensionLabel());
+    await open(true, linked); await input('Length mm', '12'); await click('Apply'); await settle(); expect(document.activeElement).toBe(dimensionLabel());
+    await open(false); await click('Cancel'); expect(document.activeElement).toBe(canvas());
+    // Focus the user moved elsewhere stays there.
+    await open(); const outside = document.createElement('button'); document.body.append(outside);
+    await act(async () => outside.focus()); await click('Cancel'); expect(document.activeElement).toBe(outside); outside.remove();
+    // The reference flip is one button, so the button pressed keeps focus as the dimension changes kind.
+    await open(); await act(async () => button('Make reference').focus()); await click('Make reference');
+    expect([document.activeElement === button('Make driving'), button('Make driving').getAttribute('aria-disabled')]).toEqual([true, 'true']);
+  });
+
   it('keeps a distance from an axis on its side of the axis and edits an angle in degrees', async () => {
     const source = part({ points: [{ id: 'a', position: [-10, 0] }, { id: 'b', position: [0, 0] }, { id: 'c', position: [0, 10] }], entities: [line('base', 'a', 'b'), line('side', 'b', 'c')],
       relations: [{ id: 'left', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: -10 },
@@ -287,6 +324,13 @@ describe('move and corner editors', () => {
     expect(h.edit).toHaveBeenLastCalledWith([{ kind: 'translate-sketch-geometry', sketchId: 'sketch', selections, translation: [10, 5] }], expect.any(AbortSignal));
     expect(close).toHaveBeenCalledOnce();
     await act(async () => root.render(<></>)); await act(async () => h.session.undo()); expect(h.session.getSnapshot().document).toBe(source);
+  });
+
+  it('returns focus to the sketch canvas as it closes', async () => {
+    const source = part({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: [20, 0] }], entities: [line('line', 'a', 'b')], relations: [] });
+    await mount(source, props => <Closable editor={close => <CadSketchMoveEditor {...props} selection={[{ kind: 'entity', id: 'line' }]} onClose={close} />} />);
+    expect(document.activeElement).toBe(field('Move X'));
+    await click('Cancel'); expect(document.activeElement).toBe(canvas());
   });
 
   it('rounds a corner with a typed radius and hands the new arc and its relation to the caller', async () => {

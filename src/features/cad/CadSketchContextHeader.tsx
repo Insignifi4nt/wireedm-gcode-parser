@@ -1,8 +1,9 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FocusEvent, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { ConstraintIcon, MeasureIcon, WarningIcon } from '@wire-edm/icons-react';
 import type { CadSketchHighlight, CadSketchHighlightStore } from './cadSketchDimensionSelection';
 import type { CadSketchIssue, CadSketchIssues } from './cadSketchIssues';
+import { cadSketchCanvasOf, restoreFocus } from './cadFocus';
 import './cad-sketch-context-header.css';
 
 export interface CadSketchContextHeaderProps {
@@ -44,11 +45,35 @@ export function CadSketchContextHeader({ name, status, issues, inspectedIssue, i
   useLayoutEffect(() => { if (shown.current && !issues.list.some(issue => issue.key === shown.current)) hide(); });
   useEffect(() => () => highlight?.hide(owner), [highlight, owner]);
   const close = () => { setOpen(false); hide(); trigger.current?.focus(); };
+  // While the issues hold focus, the place of the row holding it, or -1 for the button. An edit, such as Undo, can fix the focused row's issue,
+  // or the last issue, which closes the list and disables the button, or make the rows inactive; focus falling to the page then moves to the
+  // row now in that place, else the button, else the sketch canvas.
+  const area = useRef<HTMLDivElement>(null), held = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const element = area.current, at = held.current;
+    if (!element || at === null) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && !(element.contains(active) && active.matches(':disabled'))) return;
+    const rows = [...element.querySelectorAll<HTMLButtonElement>('li > button')];
+    const target = restoreFocus(at >= 0 ? rows[Math.min(at, rows.length - 1)] : null, trigger.current, cadSketchCanvasOf(element));
+    if (!target || !element.contains(target)) held.current = null;
+  });
+  const focused = (event: FocusEvent<HTMLDivElement>) => {
+    const control: EventTarget = event.target, rows: EventTarget[] = [...event.currentTarget.querySelectorAll('li > button')];
+    held.current = control === trigger.current ? -1 : rows.indexOf(control);
+  };
+  // Focus moving elsewhere ends the hold; focus falling to the page because its row went or was disabled does not. A row being removed can be
+  // told blur while still in the page, so that case is decided once the render that removes it is done.
+  const blurred = (event: FocusEvent<HTMLDivElement>) => {
+    const related = event.relatedTarget, control = event.target, owner = event.currentTarget;
+    if (related instanceof Node) { if (!owner.contains(related)) held.current = null; return; }
+    queueMicrotask(() => { if (control.isConnected && !control.matches(':disabled') && document.activeElement !== control) held.current = null; });
+  };
   const label = count ? `${count} constraint ${count === 1 ? 'issue' : 'issues'}` : 'No constraint issues';
   return <div className="cad-sketch-header" role="group" aria-label="Sketch editing" data-cad-sketch-header="">
     <span className="cad-sketch-header-name">{name}</span>
     {status}
-    <div className="cad-sketch-header-issues">
+    <div ref={area} className="cad-sketch-header-issues" onFocus={focused} onBlur={blurred}>
       <Button ref={trigger} type="button" className={count ? 'has-issues' : undefined} aria-label={label} aria-expanded={open} aria-controls={open ? listId : undefined}
         title={issues.message ?? (count ? 'Show the constraint issues' : 'The sketch reports no constraint issues')} disabled={!count} data-cad-sketch-issues={count}
         onClick={() => setOpen(value => !value)}><WarningIcon size={13} /><span>{count}</span></Button>

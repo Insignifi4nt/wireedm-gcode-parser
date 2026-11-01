@@ -3,6 +3,7 @@ import { MenuCheckboxItem, MenuItem, MenuLabel, MenuSeparator, MenuSurface } fro
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from '@wire-edm/icons-react';
+import { focusFell, restoreFocus } from './cadFocus';
 import { cadToolbarPopupPosition } from './cadToolbarPopupPosition';
 
 export type CadToolbarMenuItem = { readonly kind?: 'command'; readonly key: string; readonly label: string; readonly icon?: ReactNode; readonly title?: string; readonly disabled?: boolean;
@@ -20,7 +21,16 @@ export function CadToolbarMenu({ label, icon, menuLabel, disabled, pressed, titl
   const popup = useRef<HTMLDivElement>(null);
   const initialFocus = useRef<'first' | 'last'>('first');
   const id = useId();
-  const close = (restoreFocus = false) => { setOpen(false); if (restoreFocus) trigger.current?.focus(); };
+  const close = (returnFocus = false) => { setOpen(false); if (returnFocus) trigger.current?.focus(); };
+  // A chosen command closes the menu with focus in it; focus that fell to the page then returns to the button, while an editor the command
+  // opened keeps the focus it took.
+  const chosen = useRef(false);
+  useLayoutEffect(() => {
+    if (open || !chosen.current) return;
+    chosen.current = false;
+    if (focusFell()) restoreFocus(trigger.current);
+  }, [open]);
+  const choose = (onSelect: () => void) => { chosen.current = true; close(); onSelect(); };
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   useLayoutEffect(() => {
     if (!open || disabled) return;
@@ -70,8 +80,8 @@ export function CadToolbarMenu({ label, icon, menuLabel, disabled, pressed, titl
         commands[next]?.focus();
       }}>
       {items.map(item => item.kind === 'separator' ? <MenuSeparator key={item.key} /> : item.kind === 'label' ? <MenuLabel key={item.key}>{item.label}</MenuLabel>
-        : item.checked !== undefined ? <MenuCheckboxItem key={item.key} title={item.title} disabled={item.disabled} checked={item.checked} onCheckedChange={() => { close(); item.onSelect(); }}>{item.icon} {item.label}</MenuCheckboxItem>
-        : <MenuItem key={item.key} title={item.title} disabled={item.disabled} onClick={() => { close(); item.onSelect(); }}>{item.icon} {item.label}</MenuItem>)}
+        : item.checked !== undefined ? <MenuCheckboxItem key={item.key} title={item.title} disabled={item.disabled} checked={item.checked} onCheckedChange={() => choose(item.onSelect)}>{item.icon} {item.label}</MenuCheckboxItem>
+        : <MenuItem key={item.key} title={item.title} disabled={item.disabled} onClick={() => choose(item.onSelect)}>{item.icon} {item.label}</MenuItem>)}
     </MenuSurface>, window.document.body)}
   </>;
 }

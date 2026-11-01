@@ -14,6 +14,7 @@ import { cadSketchRelationName } from './cadSketchRelationNames';
 import type { CadEditCompletion } from './useCadEditSubmission';
 import type { CadPrepareEdits } from './useCadPreparedPreview';
 import { useCadSketchDraft } from './useCadSketchDraft';
+import { useCadSketchEditorFocusReturn } from './cadFocus';
 import './cad-sketch-value-editor.css';
 
 /** The relations whose values the editor at the dimension edits: every dimension, corner size and fixed point. */
@@ -48,7 +49,7 @@ export interface CadSketchDimensionValueEditorProps {
   onPreviewDocument?(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
   onFeedback?(feedback: CadSketchConstraintFeedback | null): void;
   readonly interactionLocked: boolean;
-  /** Cancel or Escape with nothing pending closes the editor; focus returns to its anchor. */
+  /** Cancel or Escape with nothing pending closes the editor; focus returns to its anchor, else to the sketch canvas. */
   onClose(): void;
   onAccepted(): void;
 }
@@ -104,6 +105,23 @@ export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, g
     const field = [...form.current?.querySelectorAll<HTMLInputElement>('input[data-cad-field-key]') ?? []].find(input => !input.readOnly && !input.disabled);
     field?.focus({ preventScroll: true }); field?.select();
   }, [shown]);
+  // While the editor holds focus, the value field that had it last. Escape's reset and a reset after an outside edit remount the fields, and
+  // Apply disables them while it is checked, so focus falls to the page; it goes back to that field, or the first editable value, selected and
+  // ready for typing, or to the first control above Cancel where it has no value to type. Focus the user moves elsewhere ends the hold, so
+  // placing the editor again never takes focus.
+  const held = useRef<{ readonly key: string | null } | null>(null);
+  useLayoutEffect(() => {
+    const element = form.current, hold = held.current;
+    if (!element || !hold || !shown) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && !(element.contains(active) && active.matches(':disabled'))) return;
+    const inputs = [...element.querySelectorAll<HTMLInputElement>('input[data-cad-field-key]')], fields = inputs.filter(input => !input.readOnly && !input.matches(':disabled'));
+    // While Apply is checked every value is disabled: focus waits for them rather than moving to a button.
+    const target = fields.find(input => input.dataset.cadFieldKey === hold.key) ?? fields[0] ?? (inputs.length ? null : element.querySelector<HTMLElement>('fieldset select:not(:disabled), fieldset button:not(:disabled)'));
+    target?.focus({ preventScroll: true });
+    if (target instanceof HTMLInputElement) target.select();
+  });
+  useCadSketchEditorFocusReturn(form, findAnchor);
   if (!relation || !accepted) return null;
   const parameters = draft.parameters, change = draft.changeRelation;
   // A distance from an axis shows its size; a number on the negative side keeps its side as it is edited, and a negative entry crosses the axis.
@@ -121,6 +139,10 @@ export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, g
   const toReference = relation.kind !== 'reference-dimension' && relation.kind !== 'fixed-point' ? cadSketchDimensionToReference(draft.draft, relation) : null;
   const toDriving = relation.kind === 'reference-dimension' ? measured && measuredDocument ? cadSketchDimensionToDriving(measured, measuredDocument.parameters, relation)
     : { relation: null, reason: 'Wait for the measurement to update.' } : null;
+  // One button turns the dimension either way, so the button pressed stays, with focus, as the dimension changes kind; it waits for a
+  // measurement inactive rather than disabled, which would drop its focus.
+  const flip = toDriving ? { to: toDriving, label: 'Make driving', title: 'Convert this measurement into a dimension that drives geometry' }
+    : toReference ? { to: toReference, label: 'Make reference', title: 'Keep measuring this without driving the geometry' } : null;
   const label = cadSketchValueLabel(draft.draft, relation);
   const submit = () => draft.apply(onAccepted);
   return <form ref={form} className="cad-property-form cad-sketch-value-editor" aria-label={`${relation.kind === 'reference-dimension' ? 'Reference dimension' : label} value`} aria-busy={draft.applying || undefined}
@@ -130,7 +152,15 @@ export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, g
       event.preventDefault(); event.stopPropagation();
       if (draft.pending && !draft.applying) draft.reset(); else if (!draft.applying) onClose();
     }}
-    onSubmit={event => { event.preventDefault(); submit(); }}>
+    onSubmit={event => { event.preventDefault(); submit(); }}
+    onFocus={event => { held.current = { key: event.target.getAttribute('data-cad-field-key') ?? held.current?.key ?? null }; }}
+    onBlur={event => {
+      // Focus moving elsewhere ends the hold; focus falling to the page because its control went or was disabled does not. A control being
+      // removed can be told blur while still in the page, so that case is decided once the render that removes it is done.
+      const related = event.relatedTarget, control = event.target, owner = event.currentTarget;
+      if (related instanceof Node) { if (!owner.contains(related)) held.current = null; return; }
+      queueMicrotask(() => { if (control.isConnected && !control.matches(':disabled') && document.activeElement !== control) held.current = null; });
+    }}>
     <fieldset key={draft.resetVersion} className="cad-feature-fields" disabled={interactionLocked || draft.applying}>
       <CadScalarEditContext.Provider value={draft.scalarContext}>
         {(relation.kind === 'distance' || relation.kind === 'point-line-distance' || relation.kind === 'axis-distance' || relation.kind === 'fixed-axis' || relation.kind === 'line-angle') &&
@@ -151,10 +181,7 @@ export function CadSketchDimensionValueEditor({ document: cadDocument, sketch, g
             <dd aria-label="Reference dimension value">{referenceValue(relation)}</dd></div></dl>
         </>}
       </CadScalarEditContext.Provider>
-      {toDriving && <Button type="button" disabled={!toDriving.relation} title={toDriving.reason ?? 'Convert this measurement into a dimension that drives geometry'}
-        onClick={() => { if (toDriving.relation) change(toDriving.relation); }}>Make driving</Button>}
-      {toReference && <Button type="button" disabled={!toReference.relation} title={toReference.reason ?? 'Keep measuring this without driving the geometry'}
-        onClick={() => { if (toReference.relation) change(toReference.relation); }}>Make reference</Button>}
+      {flip && <Button type="button" aria-disabled={!flip.to.relation || undefined} title={flip.to.reason ?? flip.title} onClick={() => { if (flip.to.relation) change(flip.to.relation); }}>{flip.label}</Button>}
     </fieldset>
     {draft.issue && <p className="cad-error" role="alert">{draft.issue}</p>}
     <div className="cad-form-actions">

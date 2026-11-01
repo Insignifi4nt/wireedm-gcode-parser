@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CloseIcon, ConfirmIcon } from '@wire-edm/icons-react';
@@ -14,6 +14,7 @@ import type { CadEditCompletion } from './useCadEditSubmission';
 import type { CadPrepareEdits } from './useCadPreparedPreview';
 import './cad-sketch-profile.css';
 import { useCadSketchDraft, type CadSketchDraft } from './useCadSketchDraft';
+import { useCadSketchEditorFocusReturn } from './cadFocus';
 
 /** What the move and corner editors share with the sketch they edit. */
 export interface CadSketchGeometryEditorProps {
@@ -26,7 +27,7 @@ export interface CadSketchGeometryEditorProps {
   onPreviewDocument?(document: CadDocument | null, marks?: CadSketchDiagnosisMarks | null): void;
   onFeedback?(feedback: CadSketchConstraintFeedback | null): void;
   readonly interactionLocked: boolean;
-  /** Cancel, Escape, or an accepted edit with nothing to select closes the editor. */
+  /** Cancel, Escape, or an accepted edit with nothing to select closes the editor; focus it held goes to the sketch canvas. */
   onClose(): void;
 }
 
@@ -56,7 +57,9 @@ export function CadSketchMoveEditor({ selection, onPlaceGeometry, ...props }: Ca
   }, [move, props.sketch.id, selection]);
   const draft = useCadSketchDraft({ ...props, command, held: true });
   const change = (axis: 'x' | 'y', value: string) => { draft.setError(null); setMove(current => ({ ...current, [axis]: value })); };
-  return <form className="cad-property-form cad-sketch-profile-panel" aria-label="Move selection" aria-busy={draft.applying || undefined} onKeyDown={escapeCloses(draft, props.onClose)}
+  const form = useRef<HTMLFormElement>(null);
+  useCadSketchEditorFocusReturn(form);
+  return <form ref={form} className="cad-property-form cad-sketch-profile-panel" aria-label="Move selection" aria-busy={draft.applying || undefined} onKeyDown={escapeCloses(draft, props.onClose)}
     onSubmit={event => { event.preventDefault(); draft.apply(props.onClose); }}>
     <div className="cad-property-title">Move selection
       <CadContextHelp label="Move selection">Translate the selected points and edges together without changing their sizes. Shared endpoints also change their incident edges. Outside points and existing dimensions stay in place; a blocked move rejects instead of stretching the selection or releasing constraints.</CadContextHelp></div>
@@ -83,7 +86,9 @@ export function CadSketchCornerEditor({ kind, pointId, onAccepted, ...props }: C
     ? { ...corner, ...ids } : { ...corner, trimPointIds: ids.trimPointIds, entityId: ids.entityId, relationId: ids.relationId } }], [corner, ids, pointId, props.sketch.id]);
   const draft = useCadSketchDraft({ ...props, command });
   const title = corner.kind === 'fillet' ? 'Sketch fillet' : 'Sketch chamfer';
-  return <form className="cad-property-form cad-sketch-profile-panel" aria-label={title} aria-busy={draft.applying || undefined} onKeyDown={escapeCloses(draft, props.onClose)}
+  const form = useRef<HTMLFormElement>(null);
+  useCadSketchEditorFocusReturn(form);
+  return <form ref={form} className="cad-property-form cad-sketch-profile-panel" aria-label={title} aria-busy={draft.applying || undefined} onKeyDown={escapeCloses(draft, props.onClose)}
     onSubmit={event => { event.preventDefault(); draft.apply(() => onAccepted(ids.entityId, ids.relationId)); }}>
     <div className="cad-property-title">{title}
       <CadContextHelp label="Corner treatment">The original corner stays as a reference, preserving its dimensions. Fillet radius rounds this corner tangentially. Chamfer setbacks measure from the original corner along the two incident lines.</CadContextHelp></div>

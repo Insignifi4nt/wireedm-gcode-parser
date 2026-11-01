@@ -326,14 +326,29 @@ describe('relations under the sketch in the feature tree', () => {
     await act(async () => row('up').focus());
     expect(highlight.getSnapshot()).toMatchObject({ kind: 'geometry', pointIds: ['b', 'c'], relationIds: ['up'] });
     await act(async () => row('up').blur()); expect(highlight.getSnapshot()).toBeNull();
-    // With nothing selected the toggle is off and disabled; with a selection it lists the relations on its points.
-    expect(named('Only the selection').disabled).toBe(true);
+    // With nothing selected the toggle is off and inactive, and pressing it does nothing; it stays focusable, so turning it off with nothing
+    // selected keeps focus on it. With a selection it lists the relations on its points.
+    expect([named('Only the selection').disabled, named('Only the selection').getAttribute('aria-disabled')]).toEqual([false, 'true']);
+    await act(async () => named('Only the selection').click()); expect(onOnlySelection).not.toHaveBeenCalled();
     await act(async () => root.render(<CadSketchRelationList {...base} selection={[{ kind: 'point', id: 'c' }]} />));
     await act(async () => named('Only the selection').click()); expect(onOnlySelection).toHaveBeenCalledWith(true);
     await act(async () => root.render(<CadSketchRelationList {...base} selection={[{ kind: 'point', id: 'c' }]} onlySelection />));
     expect(rows().map(button => button.dataset.cadSketchRelationRow)).toEqual(['up', 'tall']); expect(named('Only the selection').getAttribute('aria-pressed')).toBe('true');
     await act(async () => root.render(<CadSketchRelationList {...base} selection={[{ kind: 'point', id: 'zz' }]} onlySelection />));
     expect(container.textContent).toContain('Nothing constrains the selection.');
+  });
+
+  it('keeps the focused row, and its focus, while the list scrolls it out of view, with the tab stop on the rows in view', async () => {
+    const graph = many(120), base = props(graph);
+    await act(async () => root.render(<CadSketchRelationList {...base} />));
+    const { scroll } = scrollable();
+    await act(async () => row('h1').focus());
+    await scroll(80 * CAD_SKETCH_RELATION_ROW_HEIGHT);
+    expect(document.activeElement).toBe(row('h1'));
+    // The one tab stop is on a row in view, so Tab returns to the list where it is scrolled; the arrows still move on from the focused row.
+    const stops = rows().filter(button => button.tabIndex === 0).map(button => Number(button.dataset.cadSketchRelationRow!.slice(1)));
+    expect(stops).toHaveLength(1); expect(stops[0]).toBeGreaterThanOrEqual(70);
+    await key(row('h1'), 'ArrowDown'); expect(document.activeElement).toBe(row('h2'));
   });
 
   it('scrolls a revealed relation into view once for each request', async () => {
@@ -401,5 +416,33 @@ describe('sketch context header', () => {
     // A pending edit of another sketch keeps each issue from opening on the canvas.
     await h.render({ ...issues, omitted: 4 }, { locked: true });
     expect(container.querySelector<HTMLButtonElement>('ul[aria-label="Constraint issues"] button')!.disabled).toBe(true);
+  });
+
+  it('keeps focus as an edit fixes the issues: on the row taking the fixed one\'s place, then the count, then the sketch canvas', async () => {
+    const source = graph(), both = cadSketchIssuesStandInForD1({ sketchId: 'sketch', graph: source, analysis: { kind: 'rejected', reason: 'conflicting',
+      diagnostics: { conflictingIds: ['level'], redundantIds: ['again'], partiallyRedundantIds: [], issues: [] } } });
+    const one = { ...both, list: both.list.slice(0, 1) }, none = cadSketchIssuesStandInForD1({ sketchId: 'sketch', graph: source });
+    const render = (issues: CadSketchIssues, locked = false) => act(async () => root.render(<div className="cad-workbench">
+      <svg className="cad-sketch-canvas" tabIndex={0} aria-label="Sketch drawing canvas" />
+      <CadSketchContextHeader name="Sketch 1" status={null} issues={issues} inspectedIssue={null} issuesLocked={locked} highlightOf={issue => ({ pointIds: issue.pointIds, entityIds: issue.entityIds })}
+        onInspectIssue={vi.fn()} dimensionsShown relationsShown={false} onShowDimensions={vi.fn()} onShowRelations={vi.fn()} actions={null} />
+    </div>));
+    const count = () => container.querySelector<HTMLButtonElement>('[data-cad-sketch-issues]')!, items = () => [...container.querySelectorAll<HTMLButtonElement>('ul[aria-label="Constraint issues"] button')];
+    const canvas = () => container.querySelector('svg.cad-sketch-canvas');
+    await render(both); expect(both.list).toHaveLength(2);
+    await act(async () => count().click()); await act(async () => items()[1]!.focus());
+    // The focused row's issue fixed, as by Undo from the row: the row now in its place, or the one before it, takes focus.
+    await render(one); expect(document.activeElement).toBe(items()[0]);
+    // The rows inactive while an edit applies: the count. The last issue fixed closes the list and disables the count: the canvas.
+    await render(one, true); expect(document.activeElement).toBe(count());
+    await render(none); expect([count().disabled, document.activeElement]).toEqual([true, canvas()]);
+    // The count itself disabled while it holds focus: the canvas too.
+    await render(one); await act(async () => count().focus());
+    await render(none); expect(document.activeElement).toBe(canvas());
+    // Focus the user moved elsewhere stays there.
+    await render(both); await act(async () => count().click()); await act(async () => items()[0]!.focus());
+    const outside = document.createElement('button'); document.body.append(outside);
+    await act(async () => outside.focus()); await render(none);
+    expect(document.activeElement).toBe(outside); outside.remove();
   });
 });

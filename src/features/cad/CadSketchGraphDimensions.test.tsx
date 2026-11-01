@@ -106,6 +106,18 @@ describe('graph dimension selection and editing', () => {
     expect(graph.relations[0]).toMatchObject({ value: ' length ' });
   });
 
+  it('gives focus to the canvas when its focused label leaves the drawing, and keeps it on a label drawn again', async () => {
+    const draw = (relations: object[]) => act(async () => root.render(<svg tabIndex={0} aria-label="Sketch drawing canvas"><g transform="scale(1,-1)">
+      <CadSketchGraphDimensions graph={parseCadSketchGraph({ points: [{ id: 'a', position: [0, 0] }, { id: 'b', position: ['length', 0] }], entities: [], relations })}
+        parameters={{ length: 20 }} center={[7, 2]} mmPerPixel={.1} interactive onConfigure={vi.fn()} onSelect={vi.fn()} onDelete={vi.fn()} /></g></svg>));
+    await draw([{ id: 'dimension', kind: 'distance', pointIds: ['a', 'b'], value: ' length ' }]);
+    const label = container.querySelector<SVGGElement>('[data-cad-sketch-dimension="dimension"] [role="button"]')!;
+    await act(async () => label.focus());
+    await draw([{ id: 'dimension', kind: 'distance', pointIds: ['a', 'b'], value: 20 }]); expect(document.activeElement).toBe(label);
+    // Deleted while focused, as by Delete on the label: the canvas, so its keys keep working.
+    await draw([]); expect(document.activeElement).toBe(container.querySelector('svg'));
+  });
+
   it('highlights the measured geometry while hovered and only while picks are accepted', async () => {
     const highlight = createCadSketchHighlightStore(), view = mount(graph, { length: 20 }, { highlight });
     await act(async () => view.render());
