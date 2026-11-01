@@ -55,7 +55,8 @@ Units: `Mm` millimetres, `Mm2` square millimetres, `Mm3` cubic millimetres, `Rad
 | | `zeroLengthMm` | 1e-12 | A vector or chord this short has no direction. |
 | | `pathInsideSlackMm` | 1e-9 | Slack for a path editor point on or inside an arc radius. |
 | | `upidRecordedValueFloorMm` | 1e-9 | Floor when recorded UPID lengths and bounds are compared with recomputed ones. |
-| Output | `outputRoundingGuardMm` | ε | Guard added to the post's coordinate rounding in the output audit. |
+| Output | `outputPointRoundoffUlps` | 4 | Ulps of the largest compared coordinate that the output audit allows when it compares an emitted endpoint or arc centre with the plan. |
+| | `outputDerivedRoundoffUlps` | 32 | Ulps per summed term that the output audit allows for a distance from a planned line, a radial distance, a path length or an arc sweep. |
 | Imports | `approximationChordMm` | 0.001 | Default chord deviation when DXF splines and ellipses are approximated. |
 | | `dxfPlanarNormal`, `dxfPlanarZMm` | 1e-12, 1e-9 | DXF extrusion direction and Z planarity. |
 | External G-code | `gcodePositionMm` | 1e-9 | Position equality when G-code is parsed, measured and previewed. |
@@ -74,7 +75,8 @@ The module's JSDoc is the source of truth. Update this table when a role changes
 - `cadRoundoff(ulps, magnitude = 1)` is `ulps * Number.EPSILON * magnitude`, evaluated in that order. The caller derives `ulps` from its arithmetic. Replacing `N * Number.EPSILON * x` with `cadRoundoff(N, x)` gives the same bits.
 - `cadClosureTolerance(scale)` is analytic closure: `max(closureFloorMm, cadRoundoff(closureUlps, scale))`, where `scale` is the largest coordinate magnitude. It allows arithmetic roundoff, never a physical gap repair. `cadPathClosureTolerance` and `cadSketchDriverTolerance` use it.
 - `cadSupportedLength(value)` is `minimumLengthMm < value <= modelExtentMm`. NaN fails. It replaces checks that already had exactly this form. Checks written as `value <= min || value > max` let NaN through and keep that form.
-- `cadOutputFitting(sourceToleranceMm, coordinateQuantumMm)` gives the output audit's point, length and arc sweep allowances. Each is the plan's endpoint tolerance or the post's rounding plus `outputRoundingGuardMm`, whichever is larger.
+- `cadOutputPointRoundoff(magnitudeMm)` is `cadRoundoff(outputPointRoundoffUlps, max(1, magnitudeMm))`, and `cadOutputDerivedRoundoff(magnitudeMm, terms = 1)` is `cadRoundoff(outputDerivedRoundoffUlps * terms, max(1, magnitudeMm))`. They are the floating-point roundoff the output audit allows above the post's rounding (half a quantum per axis) and the plan's endpoint tolerance. `magnitudeMm` is the largest value the comparison reads; a sweep adds a full turn's arc length. A path length or sweep has one term for the planned value and one for each emitted motion. Magnitudes below 1 mm count as 1 mm, so no allowance falls below the fixed guard of one ulp of 1 mm (`Number.EPSILON`) that the audit used up to version 1.
+- `cadOutputFitting(sourceToleranceMm, coordinateQuantumMm, roundoffMm)` gives the output audit's point, length and arc sweep allowances for motion without per-axis rounding. Each is the plan's endpoint tolerance or the post's rounding plus the comparison's roundoff, whichever is larger.
 
 ## Ordering
 
@@ -87,15 +89,18 @@ The module's JSDoc is the source of truth. Update this table when a role changes
 - angular accuracy ≤ kernel direction, and < the angular roundoff cap < tessellation angle;
 - closure across the model extent ≤ the CAD handoff endpoint and kernel confusion;
 - output fitting never narrows the plan tolerance, and point ≤ length ≤ arc sweep;
+- output point roundoff ≤ output derived roundoff per term; both cover an ulp of every compared magnitude and never fall below the fixed guard they replaced;
+- across the model extent, one emitted motion's output roundoff stays below half a 6-decimal quantum (5e-7 mm), so rounding, not roundoff, decides the audit for posts of up to 6 decimals;
 - pointer-drawn sizes are valid model lengths.
 
-Three relations that ought to hold do not. The test marks each `known` and asserts it is still violated, so a fix shows up as a failing test that asks for the marker to go.
+Four relations that ought to hold do not. The test marks each `known` and asserts it is still violated, so a fix shows up as a failing test that asks for the marker to go.
 
 Closure is `max(1e-12, 8ε·scale)`. It stays at its 1e-12 floor up to about 563 mm, reaches the solver's 1e-10 at about 56,295 mm, the CAD handoff coincidence of 1e-9 at about 562,950 mm, and kernel confusion of 1e-7 at about 5.6e7 mm. The test pins each crossover.
 
 1. The solver accepts residuals of `solverResidualMm` (1e-10), but structural checks hold arc endpoints to closure, which is 1e-12 up to about 563 mm and stays below 1e-10 up to about 56,295 mm. An arc of radius 10 whose end radius is 5e-11 off counts as converged for the solver, but `checkCadSketchGraph` reports `arc-radius-mismatch`.
 2. Sketch coordinates are accepted up to 1e9 mm, but above about 5.6e7 mm closure is larger than kernel confusion and the CAD handoff endpoint. At x = 1e8 mm, endpoints 1.5e-7 mm apart are joined for closure (1.8e-7) but not for the handoff (1e-7). A test reproduces it: CAD closes a square at x = 1e8 mm with a 1.5e-7 mm gap, and the handoff leaves it open.
 3. Closure passes the CAD handoff coincidence (`camHandoffCoincidenceMm`, 1e-9) above about 562,950 mm, inside the 1e6 mm model extent, where it is 1.8e-9. A test reproduces it: a square near x = 999,000 mm whose closing end lies on its first edge 1.5134e-9 mm from its start is closed for CAD, but the handoff reports `intersecting-topology` and refuses it with `cam-geometry`. Near the origin the same gap is a physical gap for CAD too.
+4. Post packages may emit up to 12 decimals, but a 1e-12 mm quantum is below the output point roundoff above about 563 mm, and below one ulp of the coordinate itself from 8,192 mm. There the audit cannot tell a correct last digit near half-way from a wrong one, and passes both. The test pins the 563 mm crossover. The allowance stays because a smaller one would refuse correctly rounded output; limiting a post's decimals by the coordinates it emits would remove the gap.
 
 ## Imported tolerances
 
