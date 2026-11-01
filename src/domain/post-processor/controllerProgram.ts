@@ -18,6 +18,12 @@ export interface ControllerMotionTrace {
   readonly start: Point2;
   readonly end: Point2;
   readonly center?: Point2;
+  /**
+   * How the block wrote its arc centre: absolute coordinates, or offsets from the motion's start that
+   * the runtime added to the start. Only an incremental centre carries the start's floating-point
+   * roundoff; a trace without it is audited as absolute.
+   */
+  readonly centerReference?: 'absolute' | 'incremental';
   readonly clockwise?: boolean;
   readonly fullCircle?: boolean;
   /** Coordinate representability of this block, in millimeters. */
@@ -166,7 +172,7 @@ export function auditControllerProgram(
     if (!sameMotionSequence(event, motions, plan.tolerance.endpointMm, coordinateQuantumMm)) {
       diagnostics.push({
         code: 'POST_AUDIT_MOTION_MISMATCH',
-        message: `Controller motion blocks do not preserve motion event ${event.id}: each emitted coordinate may differ from the plan only by rounding to its last digit, a floating-point allowance that grows with its magnitude, and the plan's endpoint tolerance. These audit rules changed in app 0.0.792.`,
+        message: `Controller motion blocks do not preserve motion event ${event.id}: each emitted coordinate may differ from the plan only by rounding to its last digit, a floating-point allowance that grows with its magnitude, and the plan's endpoint tolerance, except that a point splitting an arc may lie off the arc by up to half the diagonal of its rounding. These audit rules changed in app 0.0.792.`,
         eventId: event.id
       });
     }
@@ -176,14 +182,16 @@ export function auditControllerProgram(
 
 // Each axis may differ by the post's rounding on that axis (half its quantum) and by floating-point
 // roundoff that grows with that axis's magnitude; what remains may not exceed the plan's endpoint
-// tolerance. One axis's allowance never excuses another axis's error: a point comparison clamps each
-// axis's residual by that axis's allowance before the Euclidean comparison, and a distance from a planned
-// line, or the roundoff of a radial distance, weights each axis's allowance by that axis's share of the
-// distance. Path lengths and arc sweeps compare scalar totals with one roundoff term per summed value;
-// they only reject, and every point they read is held to its own axes by the point, line and radial
-// comparisons. The roundoff counts live in the precision policy: `outputPointRoundoffUlps` for endpoints
-// and centres, and `outputDerivedRoundoffUlps` per term for line distances, radial distances, lengths
-// and sweeps.
+// tolerance. A point comparison clamps each axis's residual by that axis's allowance before the Euclidean
+// comparison, and a distance from a planned line, or the roundoff of a radial distance, weights each
+// axis's allowance by that axis's share of the distance, so there one axis's allowance never excuses
+// another axis's error. The exception is the radial check's rounding term, kept from before 0.0.792: a
+// point that splits an arc may leave it by half its rounding box's diagonal, so the coarser axis's half
+// quantum can cover the finer axis there. Path lengths and arc sweeps compare scalar totals with one
+// roundoff term per summed value; they only reject, and every point they read is also held by a point,
+// line or radial comparison. The roundoff counts live in the precision policy: `outputPointRoundoffUlps`
+// for endpoints and centres, and `outputDerivedRoundoffUlps` per term for line distances, radial
+// distances, lengths and sweeps.
 
 /** Largest coordinate magnitude on each axis. */
 interface AxisMagnitudes {
@@ -256,7 +264,9 @@ function sameMotionSequence(
   // The radial distance is formed from the point and the planned start directly, so its roundoff
   // scales with their coordinates and not with a distant centre. Each axis's roundoff is weighted by
   // that axis's share of the distance. The post's rounding keeps the bound it had before 0.0.792: half
-  // the rounding box's diagonal, which holds in any radial direction.
+  // the rounding box's diagonal, which holds in any radial direction. On a post that writes X and Y to
+  // different decimals it lets the coarser axis's half quantum cover the finer axis at a split point;
+  // holding it per axis would reject output accepted before, so it is left for a separate change.
   const radialRoundoffX = cadOutputDerivedRoundoff(axisMagnitude.x);
   const radialRoundoffY = cadOutputDerivedRoundoff(axisMagnitude.y);
   const radialFallbackMm = cadOutputFitting(
@@ -274,7 +284,7 @@ function sameMotionSequence(
     !motion.center ||
     !sameRoundedPoint(
       motion.center, center, sourceToleranceMm, motion.rounding?.centerX, motion.rounding?.centerY,
-      fallbackPointMm, motion.start
+      fallbackPointMm, motion.centerReference === 'incremental' ? motion.start : undefined
     ) ||
     motion.clockwise !== event.clockwise ||
     circularRadialDistance(motion.start, event.start, center, radius) >
@@ -438,8 +448,9 @@ function samePoint(first: Point2, second: Point2, toleranceMm: number) {
 /**
  * Whether an emitted point is the planned point rounded to the post's quanta, within the plan's
  * endpoint tolerance. Each axis may differ by half its quantum plus the roundoff of that axis's values;
- * what remains on both axes may not exceed the plan's endpoint tolerance. `reference` is the motion's
- * start, whose magnitude an incremental arc centre also carries.
+ * what remains on both axes may not exceed the plan's endpoint tolerance. `reference` is given only for
+ * an incremental arc centre: the motion's start, whose magnitude the runtime's start-plus-offset sum
+ * also carries. An absolute centre is held to its own magnitude.
  */
 function sameRoundedPoint(
   first: Point2, second: Point2, sourceToleranceMm: number,

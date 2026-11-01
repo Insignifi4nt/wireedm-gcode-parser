@@ -126,8 +126,8 @@ describe('post audit of output that is wrong beyond rounding', () => {
 });
 
 /**
- * A post that writes X to 3 decimals and Y to 12. Each axis may differ from the plan only by its own rounding and
- * roundoff: X's allowance at 1000 mm, about 1e-12 mm of roundoff, must not excuse a Y error of 1e-12 mm.
+ * A post that writes X to 3 decimals and Y to 12. On a straight move each axis may differ from the plan only by its own
+ * rounding and roundoff: X's allowance at 1000 mm, about 1e-12 mm of roundoff, must not excuse a Y error of 1e-12 mm.
  */
 describe('post audit of mixed-precision axes', () => {
   const correct = "api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y });";
@@ -168,6 +168,106 @@ describe('post audit of mixed-precision axes', () => {
     });
   });
 });
+
+describe('post audit of arc centres', () => {
+  // A full circle about the origin from (1000, 0), written to 12 decimals. An absolute centre is held to half its unit;
+  // an incremental centre is the start plus the offset, so it may carry both their roundings, one unit together.
+  it.each([
+    { name: 'a correct absolute centre', reference: 'absolute' as const, units: 0, word: 'I0.000000000000' },
+    { name: 'an incremental centre one unit off', reference: 'incremental' as const, units: 1, word: 'I-999.999999999999' }
+  ])('accepts $name', async ({ reference, units, word }) => {
+    const result = await postCircleCenter(reference, units);
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.program.lines.join(' ').split(' ')).toContain(word);
+  });
+
+  it.each([
+    // The start at 1000 mm must not widen an absolute centre at the origin.
+    { name: 'an absolute centre one unit off (I0.000000000001)', reference: 'absolute' as const, units: 1 },
+    { name: 'an incremental centre two units off (I-999.999999999998)', reference: 'incremental' as const, units: 2 }
+  ])('rejects $name', async ({ reference, units }) => {
+    const result = await postCircleCenter(reference, units);
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({
+        code: 'POST_CUSTOM_AUDIT_FAILED',
+        message: expect.stringContaining('These audit rules changed in app 0.0.792.')
+      })]
+    });
+  });
+});
+
+/**
+ * Runs a full circle of radius 1000 about the origin through a minimal post that writes every coordinate to 12 decimals
+ * and its arc centre with the given reference, `units` of 1e-12 mm off on X, under a plan endpoint tolerance of zero.
+ */
+async function postCircleCenter(reference: 'absolute' | 'incremental', units: number) {
+  let document = createUpidFromDxfEntities([{ type: 'circle', layer: 'CUT', center: { x: 0, y: 0 }, radius: 1000 }]);
+  for (const operation of document.plan.operations) {
+    document = setManualCompensationIntent(document, operation.id, 'centerline') ?? document;
+  }
+  const start = document.plan.operations[0].startPoint;
+  if (start.x !== 1000 || start.y !== 0) throw new Error(`Expected the circle to start at (1000, 0), not ${JSON.stringify(start)}.`);
+  document.setup = { initialWirePosition: { kind: 'manual', point: { x: 999, y: 0 }, review: 'reviewed' } };
+  const compiled = compileWireEdmExecutionPlan(document);
+  if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+  const packageValue = minimalPostPackage();
+  packageValue.manifest.capabilities.circularInterpolation = 'both';
+  packageValue.manifest.capabilities.controllerCompensation = 'none';
+  packageValue.manifest.capabilities.threading = 'none';
+  packageValue.manifest.execution.compensationLifecycle = 'none';
+  packageValue.manifest.execution.compensationRequiredForEveryOperation = false;
+  const format = {
+    style: 'fixed' as const, fractionDigits: { kind: 'fixed' as const, value: 12 },
+    decimalSeparator: '.' as const, trimTrailingZeros: false, negativeZero: 'zero' as const
+  };
+  const end = {
+    x: { type: 'number' as const, role: 'motion.end-x' as const, description: 'X endpoint.', format },
+    y: { type: 'number' as const, role: 'motion.end-y' as const, description: 'Y endpoint.', format }
+  };
+  const centerReference = { kind: 'fixed' as const, mode: reference };
+  const center = {
+    i: { type: 'number' as const, role: 'motion.center-x' as const, centerReference, description: 'Arc-center X.', format },
+    j: { type: 'number' as const, role: 'motion.center-y' as const, centerReference, description: 'Arc-center Y.', format }
+  };
+  const command = (template: string) => ({
+    template, parameters: end, effects: ['position.changed'], requires: ['distance.absolute'], evidenceRefs: ['robofil-program']
+  });
+  packageValue.dialect.commands['motion.linear'] = command('G1 X{x} Y{y}');
+  for (const [name, arcDirection, code] of [
+    ['motion.arc-clockwise', 'clockwise', 'G2'], ['motion.arc-counterclockwise', 'counterclockwise', 'G3']
+  ] as const) {
+    packageValue.dialect.commands[name] = {
+      ...command(`${code} X{x} Y{y} I{i} J{j}`), arcDirection, parameters: { ...end, ...center }
+    };
+  }
+  const offset = reference === 'absolute' ? '0' : 'event.start';
+  packageValue.source.code = `
+    export function createPost(api) {
+      return { onEvent(event) {
+        if (event.kind === 'program-start') return api.emitCommand('distance.absolute', {});
+        if (event.kind === 'position') return api.emitMotion('motion.linear', { x: event.to.x, y: event.to.y });
+        if (event.kind === 'motion' && event.motion === 'linear') {
+          return api.emitMotion('motion.linear', { x: event.end.x, y: event.end.y });
+        }
+        if (event.kind === 'motion') {
+          const origin = ${offset === '0' ? '{ x: 0, y: 0 }' : offset};
+          return api.emitMotion(event.clockwise ? 'motion.arc-clockwise' : 'motion.arc-counterclockwise', {
+            x: event.end.x, y: event.end.y,
+            i: event.center.x - origin.x + ${units} * 1e-12, j: event.center.y - origin.y
+          });
+        }
+        if (event.kind === 'program-end') return api.emitCommand('program.end', {});
+        api.consume('No controller block required.');
+      } };
+    }
+  `;
+  return runCustomPost({
+    package: packageValue,
+    plan: { ...compiled.plan, tolerance: { ...compiled.plan.tolerance, endpointMm: 0 } },
+    properties: { coordinatePrecision: 3 }
+  });
+}
 
 /** Runs one straight cut through a minimal post with mixed axis precision, under a plan endpoint tolerance of zero. */
 async function postMixedPrecision(start: DxfPoint, end: DxfPoint, motion: string) {

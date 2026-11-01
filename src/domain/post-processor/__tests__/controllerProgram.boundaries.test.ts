@@ -38,6 +38,23 @@ function auditSplitCircle(center: Point2, plannedStart: Point2, split: Point2) {
   })));
 }
 
+/**
+ * Audits one planned counterclockwise full circle about the origin from (1000, 0), emitted as a single block whose arc
+ * centre is `center`, with a zero quantum on every axis. Only the centre comparison reads the emitted centre.
+ */
+function auditCircleCenter(center: Point2, centerReference?: 'absolute' | 'incremental') {
+  const plannedStart = { x: 1000, y: 0 };
+  const event = {
+    ...canonicalMotion(), motion: 'circular' as const, start: plannedStart, end: plannedStart, center: { x: 0, y: 0 },
+    clockwise: false, fullCircle: true
+  };
+  const rounding = { startX: 0, startY: 0, endX: 0, endY: 0, centerX: 0, centerY: 0 };
+  return auditMotions(event, 'motion.arc-counterclockwise', [{
+    motion: 'circular' as const, role: event.role, start: plannedStart, end: plannedStart, center,
+    ...(centerReference ? { centerReference } : {}), clockwise: false, fullCircle: true, rounding
+  }]);
+}
+
 function canonicalMotion() {
   const source = CANONICAL_POST_PLAN_FIXTURES['core.single-closed-contour.v1'].events.find(event => event.kind === 'motion');
   if (!source || source.kind !== 'motion') throw new Error('Canonical contour must contain a motion event.');
@@ -107,6 +124,30 @@ describe('outputPointRoundoffUlps', () => {
     )).toEqual(expected);
   });
 
+  // The runtime forms an incremental centre as the motion's start plus the emitted offset, so the sum carries the
+  // start's roundoff: a centre at the origin of a circle starting at (1000, 0) may lie 7.8125 * 2^-43 off on X.
+  it.each([
+    { name: 'inside', ulps: 7, expected: ACCEPTED },
+    { name: 'outside', ulps: 8, expected: REJECTED }
+  ])('$name: an incremental arc centre $ulps ulps of 1000 mm off, from a start at 1000 mm', ({ ulps, expected }) => {
+    expect(auditCircleCenter({ x: ulps * ulp1000, y: 0 }, 'incremental')).toEqual(expected);
+  });
+
+  // An absolute centre is the emitted value itself, so the start's magnitude does not widen it: the same centre below
+  // 1 mm allows 4 ulps of 1 mm on X, and the 7 ulps of 1000 mm an incremental centre may carry fail.
+  it.each([
+    { name: 'inside', off: '4 ulps of 1 mm', offset: 4 * Number.EPSILON, expected: ACCEPTED },
+    { name: 'outside', off: '5 ulps of 1 mm', offset: 5 * Number.EPSILON, expected: REJECTED },
+    { name: 'outside', off: '7 ulps of 1000 mm', offset: 7 * ulp1000, expected: REJECTED }
+  ])('$name: an absolute arc centre $off off, from a start at 1000 mm', ({ offset, expected }) => {
+    expect(auditCircleCenter({ x: offset, y: 0 }, 'absolute')).toEqual(expected);
+  });
+
+  it('holds a trace without a centre reference to its own magnitude, as an absolute centre', () => {
+    expect(auditCircleCenter({ x: 4 * Number.EPSILON, y: 0 })).toEqual(ACCEPTED);
+    expect(auditCircleCenter({ x: 5 * Number.EPSILON, y: 0 })).toEqual(REJECTED);
+  });
+
   it('accepts 2.002 for a planned 2.0025, whose binary values sit 0.75 epsilon beyond half a quantum apart', () => {
     // `(2.0025).toFixed(3)` is '2.002', so a correct post emits exactly this.
     expect(auditRoundedMove({ x: 2.0025, y: 0 }, [{ x: 2.002, y: 0 }], 0.001)).toEqual(ACCEPTED);
@@ -145,5 +186,29 @@ describe('outputDerivedRoundoffUlps', () => {
   ])('$name: a full-circle split point $ulps ulps of 1 mm off the circle at X = 1000 mm', ({ ulps, expected }) => {
     expect(auditSplitCircle({ x: 1000, y: 0 }, { x: 1000, y: -1 }, { x: 1000, y: 1 + ulps * Number.EPSILON }))
       .toEqual(expected);
+  });
+});
+
+describe('radial rounding term, a recorded known limit', () => {
+  // A point that splits an arc is checked only by its distance from the arc, whose rounding term is half the diagonal
+  // of the point's rounding box, as before 0.0.792. With X written to 0 decimals and Y to 12, X's half unit covers Y:
+  // a split point of a radius 10 circle may be almost 0.5 mm off on Y. Holding this term per axis would reject output
+  // accepted before, so it is left for a separate audit compatibility release; this test then changes.
+  function auditSplitPoint(split: Point2) {
+    const start = { x: 0, y: -10 };
+    const event = {
+      ...canonicalMotion(), motion: 'circular' as const, start, end: start, center: { x: 0, y: 0 },
+      clockwise: false, fullCircle: true
+    };
+    const rounding = { startX: 1, startY: 1e-12, endX: 1, endY: 1e-12, centerX: 1, centerY: 1e-12 };
+    return auditMotions(event, 'motion.arc-counterclockwise', [[start, split], [split, start]].map(([from, to]) => ({
+      motion: 'circular' as const, role: event.role, start: from, end: to, center: { x: 0, y: 0 },
+      centerReference: 'absolute' as const, clockwise: false, fullCircle: false, rounding
+    })));
+  }
+
+  it('accepts a split point almost half a coarse unit off on the fine axis, and rejects one beyond it', () => {
+    expect(auditSplitPoint({ x: 0, y: 10.499999999999 })).toEqual(ACCEPTED);
+    expect(auditSplitPoint({ x: 0, y: 10.500000000001 })).toEqual(REJECTED);
   });
 });
