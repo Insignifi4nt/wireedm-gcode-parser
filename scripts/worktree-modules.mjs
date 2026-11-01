@@ -55,8 +55,8 @@ const linksIn = (folder) => {
 };
 
 const comparable = (target) => {
-  // Windows may report a junction target with the \\?\ long-path prefix.
-  const resolved = path.resolve(target.replace(/^\\\\\?\\/, ''));
+  // Windows may report a junction target with the \\?\ long-path prefix, or \\?\UNC\ for a share.
+  const resolved = path.resolve(target.replace(/^\\\\\?\\UNC\\/i, '\\\\').replace(/^\\\\\?\\/, ''));
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 };
 const pointsAt = (link, target) => comparable(path.resolve(path.dirname(link), fs.readlinkSync(link))) === comparable(target);
