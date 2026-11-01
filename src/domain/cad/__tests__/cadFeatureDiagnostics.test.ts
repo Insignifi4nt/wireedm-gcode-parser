@@ -29,7 +29,8 @@ const ARRANGEMENT_ISSUE = 'A sketch arrangement issue. Cells refuse an arrangeme
 const NOT_REFUSALS: Readonly<Record<string, string>> = {
   STALE_BUILD: 'A topology snapshot refuses use once disposed. A rebuild selects edges and faces on the snapshot of its own build, before disposing it.',
   'relation-residual': GRAPH_ISSUE, 'invalid-coordinate': GRAPH_ISSUE, 'degenerate-entity': GRAPH_ISSUE, 'arc-radius-mismatch': GRAPH_ISSUE,
-  overlap: ARRANGEMENT_ISSUE, 'ambiguous-tangency': ARRANGEMENT_ISSUE, precision: ARRANGEMENT_ISSUE, 'non-simple-boundary': ARRANGEMENT_ISSUE
+  overlap: ARRANGEMENT_ISSUE, 'ambiguous-tangency': ARRANGEMENT_ISSUE, precision: ARRANGEMENT_ISSUE, 'non-simple-boundary': ARRANGEMENT_ISSUE,
+  'ambiguous-split-order': 'A body issue. The body lineage, which the parse and the rebuild both keep, records it, and a build returns it in bodyIssues beside its bodies; nothing turns it into a diagnostic.'
 };
 
 /**
@@ -108,7 +109,7 @@ describe('CAD feature diagnostics', () => {
     for (const [group, codes] of Object.entries(CAD_FEATURE_SHARED_DIAGNOSTICS)) {
       const reach = sharedReach(group as keyof typeof CAD_FEATURE_SHARED_DIAGNOSTICS);
       expect(reach.unexpanded, group).toEqual([]);
-      expect(sorted(reach.codes), group).toEqual(sorted(codes));
+      expect(sorted([...reach.codes].filter(code => !(code in NOT_REFUSALS))), group).toEqual(sorted(codes));
     }
   }, 30_000);
 

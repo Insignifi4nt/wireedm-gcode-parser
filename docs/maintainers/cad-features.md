@@ -11,7 +11,7 @@ features through the definition rather than switching on kinds. What a kind show
 | Scalars (`cadFeatureScalarField`, `cadFeatureVectorField`) | Range checks while parsing, parameter traversals (`mapCadFeatureScalars`) and kernel limits (`cadFeatureScalar`). |
 | `quantities` of a field holding nested values | What each number inside it measures, by path (`cadFeatureQuantityAt`). |
 | `choices`, `condition` | Choice values in forms, and conditional fields such as a target that only exists for join and cut. |
-| `outputs`, `body`, `suppression` | Which features may feed a slot, which bodies a feature replaces (`cadConsumedBodyIds`) and what an inactive feature leaves. |
+| `outputs`, `body`, `occurrence`, `suppression` | Which features may feed a slot, which body a feature creates, keeps or consumes ([body identity](#body-identity)) and what an inactive feature leaves. |
 | `evaluator` | Where the feature is evaluated and the version of that evaluation, for the rebuild cache. |
 | `diagnostics` | Every code the kind's own checks and evaluation raise, apart from the steps all kinds share (`CAD_FEATURE_SHARED_DIAGNOSTICS`). |
 | `check`, `instances` | Checks beyond the schema while parsing, and the solid count a feature makes. |
@@ -59,6 +59,42 @@ Read whether a feature takes part in a rebuild with `cadFeatureActive(feature, s
 assignment, `'suppressed' in` and reflective reads. Code that means the stored value itself, such as the suppression toggle or a check
 on an import result, reads it with `cadFeatureSuppressionFlag`. The check cannot see reads that never name the flag (key enumeration,
 spreads, serialization) or keys built at run time; `scripts/check-feature-activity.ts` lists what it covers.
+
+## Body identity
+
+`src/domain/cad/cadBodies.ts` derives the bodies after each feature and keys each one by the feature that created it, so a body keeps one
+key however often features change it. `createCadBodyLineage()` applies features in history order. Validation, the kernel, the workbench and
+the export dialogs each derive the lineage of the history they show. The kernel adds what only geometry knows and returns the states with
+every build (`CadBuildResult.bodies`, `CadMesh.bodyKey`). A kind's `body` behaviour decides the key:
+
+| `body` | Key after the feature | What the feature's id leads to (`of`) |
+| --- | --- | --- |
+| `none` | – | nothing |
+| `new` | the feature's id, followed by the kind's `occurrence`: a mirror's is `flip/mirror` | the new body |
+| `modify-target` | the key of its target or source | that body |
+| `new-or-modify` | as `modify-target` when it names a target, otherwise as `new` | the body made or modified |
+| `consume-tools` | the key of its target. Each tool body is consumed and records the feature as `consumedBy` | the target body |
+
+- A kind's repeating counts (`repeats`) record pattern copies as `inst(i,j)` occurrences inside the body, such as `box/inst(2,0)`. Nested
+  patterns nest them.
+- A feature that removes material and leaves more solids than its target had splits the body. The solids become pieces, `box/split(k)`,
+  numbered by the first face of the body before that each piece keeps unchanged (`cadKernelSolidOrigins`), never by position or size.
+  Later features follow each piece by the faces it keeps, and a piece split again becomes `box/split(k)/split(q)`. A solid that keeps no
+  face takes the one piece left, or else a new number. When two or more solids keep no face, the kernel might list them in another order
+  for the same input: they are numbered in the kernel's order, marked `ambiguous`, and reported as an `ambiguous-split-order` issue in
+  `CadBuildResult.bodyIssues` for D1 to adopt. Two cases are reported this way today. A fillet or chamfer of every edge rebuilds
+  every face, so the pieces it changes keep none. A pattern of a body already split places its copies' faces elsewhere, so the original
+  pieces keep their keys and each copy's piece gets a new number until K5 names pieces through copies.
+- An inactive feature changes no body. Under `pass-through` its id leads to the body it would have changed, so selecting it selects that
+  body; under `no-output` it leads nowhere. Validation and the kernel resolve a stored target strictly (`at`): it names the feature whose
+  result the body now is, as before.
+- Keys are derived on every rebuild and never stored, so the stored document is unchanged and targets still hold feature ids. S8's format
+  cut stores targets as `CadBodyRef` (`{ kind: 'body', key }`, resolved by `resolveCadBodyRef` to a body, a part of one, a missing body
+  with the feature that consumed it, or an ambiguous piece) and body metadata as `CadBodyMetadata` (`{ name, role, appearance?, material? }`)
+  keyed by body key. Until then `resolveCadBodyMetadata` names each body after its creating feature, in the `part` role.
+- Consumers choose a body by key. A selected feature leads to its body wherever it sits in that body's history (`cadSelectedBody`), and
+  the latest body is chosen only when the selection leads to none. Worker requests and agent tools still pass the `featureId` of a body's
+  current state as `bodyId`.
 
 ## Not yet slots
 

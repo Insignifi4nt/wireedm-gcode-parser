@@ -26,7 +26,8 @@ import { exportCadKernelStep } from './cadKernelExport';
 import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest, type CadTopologyInspectRequest, type CadTopologyInspectResult,
   type CadTopologyResolvePicksRequest, type CadTopologyResolvePicksResult } from '../../../domain/cad/cadTopology';
 import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
-import { cadConsumedBodyIds } from '../../../domain/cad/cadFeatureInputs';
+import { createCadBodyLineage, type CadBodyKey } from '../../../domain/cad/cadBodies';
+import { cadKernelSolidOrigins } from './cadKernelBodyPieces';
 import { cadFeatureActive } from '../../../domain/cad/features/cadFeatureActivity';
 import { cadFeatureScalar, cadFeatureScalarAccepts } from '../../../domain/cad/features/cadFeatureRegistry';
 import { cadKernelBounds, cadKernelVolume } from './cadKernelQueries';
@@ -66,13 +67,13 @@ function positiveVolume(volume: number) {
   return Number.isFinite(volume) && volume > CAD_PRECISION.kernelMinimumVolumeMm3;
 }
 
-function shapeMesh(shape: Shape3D, feature: CadFeature, topology: CadKernelTopology, { solidCount, volume }: { solidCount: number; volume: number }): CadMesh {
+function shapeMesh(shape: Shape3D, feature: CadFeature, bodyKey: CadBodyKey, topology: CadKernelTopology, { solidCount, volume }: { solidCount: number; volume: number }): CadMesh {
   const [min, max] = cadKernelBounds(shape);
   const { mesh, edgeMesh } = meshCadKernelPreview(shape, { min, max }, meshOptions);
   const groups = topology.meshGroups(mesh, edgeMesh);
   // The face groups that meshGroups keeps, in its order: those with triangles.
   const faceSolids = solidCount > 1 ? cadKernelFaceSolids(shape, mesh.faceGroups.filter(group => group.count > 0).map(group => group.faceId)) : undefined;
-  return { featureId: feature.id, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
+  return { featureId: feature.id, bodyKey, name: feature.name, positions: mesh.vertices, normals: mesh.normals, indices: mesh.triangles,
     edges: edgeMesh.lines, ...groups, volume, solidCount, ...(faceSolids ? { faceSolids } : {}), bounds: { min, max } };
 }
 
@@ -81,8 +82,9 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
   const started = performance.now();
   const buildId = crypto.randomUUID();
   const shapes = new Set<Shape3D>();
-  const bodies = new Map<string, { shape: Shape3D; feature: CadFeature; mesh: CadMesh; instances: number; topology: CadKernelTopology }>();
-  const visible = new Set<string>();
+  /** Built bodies by key. The lineage resolves a stored target, the id of the feature whose result a body is, to its key. */
+  const bodies = new Map<CadBodyKey, { shape: Shape3D; feature: CadFeature; mesh: CadMesh; instances: number; topology: CadKernelTopology }>();
+  const lineage = createCadBodyLineage();
   const sketches = new Map<string, CadSketchFeature>();
   const references = new Map<string, CadFeature>();
   const datumFrames = new Map<string, CadResolvedFrame>();
@@ -93,12 +95,13 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
   const release = (shape: Shape3D) => { cadKernelDisposeShape(shape); shapes.delete(shape); };
   /** Applies an owned operation to a transient input, then releases the input. A failed operation leaves the input to releaseTransientShapes. */
   const replace = (input: Shape3D, operation: (input: Shape3D) => Shape3D) => { const next = own(operation(input)); release(input); return next; };
+  const entryOf = (id: string) => { const state = lineage.at(id); return state ? bodies.get(state.key) : undefined; };
   const body = (id: string) => {
-    const found = bodies.get(id);
-    if (!found || !visible.has(id)) throw new CadError('missing-body', `Body ${id} is unavailable or has already been consumed. Choose a current body from the feature tree.`);
+    const found = entryOf(id);
+    if (!found) throw new CadError('missing-body', `Body ${id} is unavailable or has already been consumed. Choose a current body from the feature tree.`);
     return found.shape;
   };
-  const instancesOf = (id: string) => bodies.get(id)?.instances ?? 1;
+  const instancesOf = (id: string) => entryOf(id)?.instances ?? 1;
   const checkedInstances = (count: number) => {
     if (!Number.isSafeInteger(count) || count < 1) throw new CadError('invalid-instances', 'Expanded solid instance counts must be positive safe integers.');
     return count;
@@ -164,9 +167,11 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
   }
 
   for (const [featureIndex, feature] of document.features.entries()) {
-    if (!cadFeatureActive(feature, document)) continue;
+    if (!cadFeatureActive(feature, document)) { lineage.apply(feature, document); continue; }
     try {
       let result: Shape3D;
+      // Whether the feature takes material from its target, and so may split it, and whether its result lists solids as its source did.
+      let removesMaterial = false, sameSolidOrder = false;
       // True only when result itself was just validated, with no kernel operation on it since.
       let topologyChecked = false;
       let instances = 1;
@@ -189,6 +194,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           if (feature.operation !== 'new') {
             if (!feature.targetId) throw new CadError('missing-target', 'Join and cut need a target body.');
             const target = body(feature.targetId);
+            removesMaterial = feature.operation === 'cut';
             result = own(feature.operation === 'join' ? cadKernelBuilders.fuse(target, result)
               : cutCadKernelConfirmedMaterial(target, result, { toolConfirmed: sketched.checked }));
             topologyChecked = feature.operation === 'cut';
@@ -202,6 +208,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             const target = body(feature.targetId);
             instances = checkedInstances(1 + instancesOf(feature.targetId));
             const loft = own(buildCadLoftSolid(sections, feature.ruled));
+            removesMaterial = feature.operation === 'cut';
             result = own(feature.operation === 'join' ? cadKernelBuilders.fuse(target, loft) : cutCadKernelConfirmedMaterial(target, loft));
             topologyChecked = feature.operation === 'cut';
           } else result = own(buildCadLoftSolid(sections, feature.ruled));
@@ -214,6 +221,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
             const target = body(feature.targetId);
             instances = checkedInstances(1 + instancesOf(feature.targetId));
             const sweep = own(buildCadSweepSolid(inputs));
+            removesMaterial = feature.operation === 'cut';
             result = own(feature.operation === 'join' ? cadKernelBuilders.fuse(target, sweep) : cutCadKernelConfirmedMaterial(target, sweep));
             topologyChecked = feature.operation === 'cut';
           } else result = own(buildCadSweepSolid(inputs));
@@ -224,19 +232,20 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
           const prefix = new Map(document.features.slice(0, featureIndex).map(entry => [entry.id, entry]));
           const inputs = resolveCadPocketInputs(feature, prefix, document.parameters);
           instances = checkedInstances(inputs.regionCount + instancesOf(feature.targetId));
+          removesMaterial = true;
           result = own(buildCadPocketCut(target, inputs)); break;
         }
         case 'fillet': case 'chamfer': {
           const target = body(feature.targetId);
           instances = instancesOf(feature.targetId);
-          const topology = bodies.get(feature.targetId)?.topology;
+          const topology = entryOf(feature.targetId)?.topology;
           if (!topology) throw new CadError('missing-body', 'The selected target body is unavailable.');
           result = own(feature.selection ? applyCadEdgeOperation(target, topology.selectedEdges(feature.selection, document.parameters), feature.kind, number(feature.radius), feature.tangentPropagation === true)
             : feature.kind === 'fillet' ? cadKernelBuilders.filletAll(target, number(feature.radius)) : cadKernelBuilders.chamferAll(target, number(feature.radius)));
           break;
         }
         case 'shell': {
-          const target = body(feature.targetId); const topology = bodies.get(feature.targetId)?.topology;
+          const target = body(feature.targetId); const topology = entryOf(feature.targetId)?.topology;
           if (!topology) throw new CadError('missing-body', 'The shell target body is unavailable.');
           instances = instancesOf(feature.targetId);
           result = own(applyCadShell(target, topology.selectedFace(feature.opening, document.parameters), number(feature.thickness)));
@@ -250,12 +259,15 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
         case 'boolean': {
           const target = body(feature.targetId); const tool = body(feature.toolId);
           instances = checkedInstances(instancesOf(feature.targetId) + instancesOf(feature.toolId));
+          removesMaterial = feature.operation !== 'union';
           result = own(feature.operation === 'union' ? cadKernelBuilders.fuse(target, tool) : feature.operation === 'cut' ? cutCadKernelConfirmedMaterial(target, tool) : cadKernelBuilders.common(target, tool));
           topologyChecked = feature.operation === 'cut';
           break;
         }
         case 'transform': {
           instances = instancesOf(feature.sourceId);
+          // A moved copy lists its solids in its source's order.
+          sameSolidOrder = true;
           result = own(body(feature.sourceId).clone());
           for (let axis = 0; axis < 3; axis++) {
             const angle = evaluateCadAngle(feature.rotation[axis], document.parameters);
@@ -303,11 +315,18 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       const measured = validateSolid(result, topologyChecked);
       const topology = new CadKernelTopology(result);
       try {
-        const mesh = shapeMesh(result, feature, topology, measured);
-        for (const id of cadConsumedBodyIds(feature, document)) { visible.delete(id); bodies.get(id)?.topology.dispose(); bodies.delete(id); }
-        bodies.set(feature.id, { shape: result, feature, mesh, instances, topology });
+        const key = lineage.keyFor(feature, document);
+        // Every kind the switch builds makes or changes a body, so this cannot happen; it adds no diagnostic code of its own.
+        if (key === undefined) throw new Error('The feature made no body.');
+        const mesh = shapeMesh(result, feature, key, topology, measured);
+        const made = result, previous = bodies.get(key);
+        // The lineage settles the body's pieces before it changes, so a failure here leaves it and the built bodies as they were.
+        const change = lineage.apply(feature, document, { solids: measured.solidCount, removesMaterial, sameSolidOrder,
+          origins: state => cadKernelSolidOrigins(bodies.get(state.key)!.shape, made) })!;
+        for (const consumed of change.consumed) { bodies.get(consumed)?.topology.dispose(); bodies.delete(consumed); }
+        previous?.topology.dispose();
+        bodies.set(key, { shape: result, feature, mesh, instances, topology });
       } catch (error) { topology.dispose(); throw error; }
-      visible.add(feature.id);
       releaseTransientShapes();
     } catch (error) {
       releaseTransientShapes();
@@ -318,12 +337,13 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
     }
   }
   let disposed = false;
+  const built = lineage.bodies().filter(state => bodies.has(state.key));
   return {
-    result: { buildId, meshes: [...visible].flatMap(id => { const found = bodies.get(id); return found ? [found.mesh] : []; }), diagnostics, durationMs: performance.now() - started },
+    result: { buildId, meshes: built.map(state => bodies.get(state.key)!.mesh), diagnostics, bodies: built, bodyIssues: lineage.issues(), durationMs: performance.now() - started },
     export(format) {
       if (disposed) throw new Error('CAD model has been disposed.');
       if (diagnostics.length) throw new CadError('invalid-export', 'Fix the feature diagnostics before exporting. The retained preview is not the requested model.');
-      const active = [...visible].flatMap(id => { const found = bodies.get(id); return found ? [found] : []; });
+      const active = built.map(state => bodies.get(state.key)!);
       if (!active.length) throw new CadError('empty-export', 'Create a valid solid before exporting.');
       if (format === 'step') return exportCadKernelStep(active.map(({ shape, feature }) => ({ shape, name: feature.name })));
       const oc = getOC(), compound = new Compound(new oc.TopoDS_Compound());
@@ -345,7 +365,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       const parsed = parseCadTopologyInspectRequest(request);
       if (disposed || parsed.expectedBuildId !== buildId) throw new CadError('STALE_BUILD', 'The topology snapshot is stale. Rebuild the current document and select again.');
       body(parsed.bodyId);
-      const topology = bodies.get(parsed.bodyId)?.topology;
+      const topology = entryOf(parsed.bodyId)?.topology;
       if (!topology) throw new CadError('missing-body', 'The topology body is unavailable.');
       return topology.inspect(parsed, buildId);
     },
@@ -354,7 +374,7 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       if (disposed || parsed.expectedBuildId !== buildId) throw new CadError('STALE_BUILD', 'The topology snapshot is stale. Rebuild the current document and select again.');
       if (diagnostics.length) throw new CadError('invalid-selection', 'Fix the feature diagnostics before applying a topology selection.');
       body(parsed.bodyId);
-      const topology = bodies.get(parsed.bodyId)?.topology;
+      const topology = entryOf(parsed.bodyId)?.topology;
       if (!topology) throw new CadError('missing-body', 'The selected topology body is unavailable.');
       return topology.resolvePicks(parsed, buildId, parameters);
     },
