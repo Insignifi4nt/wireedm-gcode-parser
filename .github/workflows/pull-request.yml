@@ -52,37 +52,9 @@ jobs:
       - run: npm run post:conformance -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-post.json
       - run: npm run machine-package:validate -- tests/fixtures/machine-packages/robofil-100-v2/cristian-robofil-100-v2.wireedm-package
 
-  unit:
-    name: Unit tests (${{ matrix.shard }}/3)
+  build:
+    name: Production build
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        # Two shards made the slower one the longest job in the run (about 5.5 minutes).
-        # Keep /3 in the name and command in step.
-        shard: [1, 2, 3]
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - run: npm ci
-      # Keep simultaneous jsdom/native-kernel suites within the hosted runner's CPU budget.
-      - run: npm test -- --run --maxWorkers=2 --shard=${{ matrix.shard }}/3
-
-  build-and-browser:
-    name: Production build and browser journeys (${{ matrix.shard }}/11)
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        # Playwright splits the ~190 journeys by count and the slower CAD ones sort first.
-        # Eleven shards keep each near 3 minutes and, with the other jobs (19 in all), stay under
-        # the free hosted-runner limit of 20 concurrent jobs. Keep /11 in the name and command in step.
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -95,12 +67,105 @@ jobs:
         with:
           path: .cache/third-party-sources
           key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json') }}
+      # Type checks every project, then bundles, builds and checks the documentation and third-party sources.
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      # A broken change stops each shard after a few failures instead of retrying every journey to its timeout.
+
+  unit:
+    name: Unit tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --run --maxWorkers=3 --shard=${{ matrix.shard }}/4 --reporter=default --reporter=json --outputFile.json=test-results/unit-shard-${{ matrix.shard }}.json
+      - name: Keep the shard's file timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-timings-${{ matrix.shard }}
+          path: test-results/unit-shard-${{ matrix.shard }}.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  browser-host:
+    name: Browser journeys, cached browser (${{ matrix.shard }}/11)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Cache pinned third-party source archives
+        uses: actions/cache@v4
+        with:
+          path: .cache/third-party-sources
+          key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json') }}
+      - id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright's Chromium headless shell
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-headless-shell
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: npm run build:bundle
       - run: npm run test:e2e -- --workers=2 --max-failures=5 --shard=${{ matrix.shard }}/11
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
+          PWTEST_SHARD_WEIGHTS: '15:12:19:19:21:14:16:27:30:24:39'
+      - name: Preserve browser failure reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-test-report-${{ matrix.shard }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  browser-container:
+    name: Browser journeys, Playwright image (${{ matrix.shard }}/11)
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Cache pinned third-party source archives
+        uses: actions/cache@v4
+        with:
+          path: .cache/third-party-sources
+          key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json') }}
+      - run: npm run build:bundle
+      - run: npm run test:e2e -- --workers=2 --max-failures=5 --shard=${{ matrix.shard }}/11
+        env:
+          PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
+          PWTEST_SHARD_WEIGHTS: '15:12:19:19:21:14:16:27:30:24:39'
       - name: Preserve browser failure reports
         if: failure()
         uses: actions/upload-artifact@v7
@@ -127,8 +192,15 @@ jobs:
         with:
           path: .cache/third-party-sources
           key: third-party-sources-${{ hashFiles('docs/thirdparty/*-sources.json') }}
-      - run: npm run build
+      - id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright's Firefox
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-firefox
       - run: npx playwright install --with-deps firefox
+      - run: npm run build:bundle
       - run: npx playwright test --config=playwright.storage.config.ts --workers=1 --max-failures=3
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
@@ -159,7 +231,7 @@ jobs:
       - run: npm run solver:check
 
   verify:
-    needs: [naming, contracts, unit, native-solver, build-and-browser, storage-firefox]
+    needs: [naming, contracts, build, unit, native-solver, browser-host, browser-container, storage-firefox]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -167,14 +239,18 @@ jobs:
         env:
           NAMING_RESULT: ${{ needs.naming.result }}
           CONTRACTS_RESULT: ${{ needs.contracts.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           NATIVE_SOLVER_RESULT: ${{ needs.native-solver.result }}
-          BROWSER_RESULT: ${{ needs.build-and-browser.result }}
+          BROWSER_HOST_RESULT: ${{ needs.browser-host.result }}
+          BROWSER_CONTAINER_RESULT: ${{ needs.browser-container.result }}
           FIREFOX_RESULT: ${{ needs.storage-firefox.result }}
         run: |
           test "$NAMING_RESULT" = success
           test "$CONTRACTS_RESULT" = success
+          test "$BUILD_RESULT" = success
           test "$UNIT_RESULT" = success
           test "$NATIVE_SOLVER_RESULT" = success
-          test "$BROWSER_RESULT" = success
+          test "$BROWSER_HOST_RESULT" = success
+          test "$BROWSER_CONTAINER_RESULT" = success
           test "$FIREFOX_RESULT" = success
