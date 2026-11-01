@@ -264,8 +264,8 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
   it('mirror two lines kept horizontal or vertical about H, V, a free construction line or a fixed oblique line, refusing directions no mirror keeps by name', async () => {
     // Every mix of nothing, Horizontal and Vertical on A and on B, about the axes, a free construction line drawn near V, and a line
     // fixed at 120°, V turned 30°. A mirror about a fixed line sends a direction θ to twice the line's less θ, so the lines' directions
-    // agree with it or the mirror would collapse them; a free line turns to agree with any two, starting turned to the nearer direction
-    // that does. The mirror keeps what Horizontal or Vertical on one line adds to the other, so it takes exactly the freedom they leave
+    // agree with it or the mirror would collapse them; a free line turns to agree with any two, starting from the direction that moves
+    // the sketch least. The mirror keeps what Horizontal or Vertical on one line adds to the other, so it takes exactly the freedom they leave
     // and none is redundant. Then, with the relations removed, the lines stay where they are, still mirrored, with the mirror's own freedom.
     const solver = await loadCadSketchTestNativeSolver();
     type Held = 'none' | 'horizontal' | 'vertical';
@@ -323,28 +323,34 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     expect([applied, refused]).toEqual([4 * 9 - 8, 8]);
   });
 
-  it('turn a free mirror to the nearer direction that the lines\' directions leave it, counter-clockwise on a tie, and mirror from there', async () => {
+  it('turn a free mirror to the direction its lines leave it that moves the sketch least, counter-clockwise on a tie, and mirror from there', async () => {
     // The review's sketch, already valid: A level from (10, 5) to (25, 5), B upright from (-10, 5) to (-10, 20), and a free construction
     // line drawn near V, and the same with A upright and B level. One line level and the other upright mirror only about a line at 45°
-    // or 135°: drawn tilted left of V it turns to 135°, tilted right to 45°, and exactly upright, 45° from both, counter-clockwise to
-    // 135°. Lines kept perpendicular, or parallel, by a relation leave the mirror two directions about A's, 45° apart or along and
-    // square to A. Each mirror holds four of the free lines' freedoms, A stays where it is and the mirror turns about its middle.
+    // or 135° through the mirror's middle, with B's ends paired either way: each start puts B on A's image and the mirror's ends on the
+    // line, and the one that moves them least, summed squared, is taken however the mirror leans. Lines kept perpendicular, or parallel,
+    // by a relation leave the mirror two directions about A's, a quarter turn apart. Where two starts move the sketch alike, as A level
+    // above B upright about V does at 45° with B's ends straight and at 135° crossed, the mirror turns counter-clockwise. Each mirror
+    // holds four of the free lines' freedoms, A stays where it is and the mirror turns about its middle.
     const solver = await loadCadSketchTestNativeSolver();
     const sketch = (points: Readonly<Record<string, Place>>, drawn: readonly [Place, Place], relations: readonly unknown[]) => ({
       points: [...Object.entries({ ...points, m1: drawn[0], m2: drawn[1] }).map(([id, position]) => ({ id, position }))],
       entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }], relations });
     const level = { a1: [10, 5], a2: [25, 5], b1: [-10, 5], b2: [-10, 20] } as const, upright = { a1: [10, 5], a2: [10, 20], b1: [-10, 5], b2: [-25, 5] } as const;
+    const above = { a1: [-5, 20], a2: [5, 20], b1: [0, -5], b2: [0, 5] } as const;
     const square = (id: string, kind: string, pointIds: readonly [string, string]) => ({ id, kind, pointIds });
+    const levelUpright = [square('h', 'horizontal', ['a1', 'a2']), square('v', 'vertical', ['b1', 'b2'])], uprightLevel = [square('v', 'vertical', ['a1', 'a2']), square('h', 'horizontal', ['b1', 'b2'])];
     const [left, right, plumb] = [[[.5, -60], [-.5, 60]], [[-.5, -60], [.5, 60]], [[0, -60], [0, 60]]] as const;
-    const cases: readonly (readonly [string, Readonly<Record<string, Place>>, readonly [Place, Place], readonly unknown[], number, number])[] = [
-      ['A level, B upright, drawn left of V', level, left, [square('h', 'horizontal', ['a1', 'a2']), square('v', 'vertical', ['b1', 'b2'])], 135, 6],
-      ['A upright, B level, drawn left of V', upright, left, [square('v', 'vertical', ['a1', 'a2']), square('h', 'horizontal', ['b1', 'b2'])], 135, 6],
-      ['A level, B upright, drawn right of V', level, right, [square('h', 'horizontal', ['a1', 'a2']), square('v', 'vertical', ['b1', 'b2'])], 45, 6],
-      ['A upright, B level, drawn on V', upright, plumb, [square('v', 'vertical', ['a1', 'a2']), square('h', 'horizontal', ['b1', 'b2'])], 135, 6],
-      ['A perpendicular to B', level, left, [{ id: 'p', kind: 'perpendicular', lineIds: ['A', 'B'] }], 135, 7],
-      ['A parallel to B at 45°', { a1: [10, 5], a2: [25, 20], b1: [-10, -5], b2: [-25, -20] }, left, [{ id: 'p', kind: 'parallel', lineIds: ['A', 'B'] }], 135, 7]
+    type Case = readonly [string, Readonly<Record<string, Place>>, readonly [Place, Place], readonly unknown[], number, number, Place, Place];
+    const cases: readonly Case[] = [
+      ['A level, B upright, drawn left of V', level, left, levelUpright, 45, 6, [5, 10], [5, 25]],
+      ['A level, B upright, drawn right of V', level, right, levelUpright, 45, 6, [5, 10], [5, 25]],
+      ['A upright, B level, drawn left of V', upright, left, uprightLevel, 135, 6, [-5, -10], [-20, -10]],
+      ['A upright, B level, drawn on V', upright, plumb, uprightLevel, 135, 6, [-5, -10], [-20, -10]],
+      ['A perpendicular to B', level, left, [{ id: 'p', kind: 'perpendicular', lineIds: ['A', 'B'] }], 45, 7, [5, 10], [5, 25]],
+      ['A parallel to B at 45°', { a1: [10, 5], a2: [25, 20], b1: [-10, -5], b2: [-25, -20] }, left, [{ id: 'p', kind: 'parallel', lineIds: ['A', 'B'] }], 135, 7, [-5, -10], [-20, -25]],
+      ['A level above B upright, drawn on V', above, plumb, levelUpright, 135, 6, [-20, -5], [-20, 5]]
     ];
-    for (const [where, points, drawn, relations, direction, freedom] of cases) {
+    for (const [where, points, drawn, relations, direction, freedom, b1, b2] of cases) {
       const raw = sketch(points, drawn, relations), graph = parseCadSketchGraph(raw);
       expect(offer(graph, ['A', 'B', 'mirror']), where).toMatchObject({ state: 'available', relations: [{ kind: 'symmetric', curveIds: ['A', 'B'], lineId: 'mirror' }] });
       const { result } = attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...raw, relations: [...relations, mirrored('construction')] }), parameters: {}, analyseDefinition: true }, solver);
@@ -353,15 +359,185 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       const at = positions(result.graph), [m1, m2] = [at.get('m1')!, at.get('m2')!];
       expect(((Math.atan2(m2.y - m1.y, m2.x - m1.x) * 180 / Math.PI) % 180 + 180) % 180, where).toBeCloseTo(direction, 9);
       expect(Math.hypot((m1.x + m2.x) / 2 - (drawn[0][0] + drawn[1][0]) / 2, (m1.y + m2.y) / 2 - (drawn[0][1] + drawn[1][1]) / 2), where).toBeLessThan(1e-9);
-      for (const id of ['a1', 'a2']) expect(Math.hypot(at.get(id)!.x - points[id][0], at.get(id)!.y - points[id][1]), `${where}: ${id} stays`).toBeLessThan(1e-9);
-      // B's ends are A's images, paired by where they start about the turned mirror.
-      const dx = m2.x - m1.x, dy = m2.y - m1.y, images = ['a1', 'a2'].map(id => {
-        const { x, y } = at.get(id)!, along = ((x - m1.x) * dx + (y - m1.y) * dy) / (dx * dx + dy * dy);
-        return { x: 2 * (m1.x + along * dx) - x, y: 2 * (m1.y + along * dy) - y };
-      });
-      for (const id of ['b1', 'b2']) expect(Math.min(...images.map(image => Math.hypot(image.x - at.get(id)!.x, image.y - at.get(id)!.y))), `${where}: ${id} on an image`).toBeLessThan(1e-7);
+      for (const [id, place] of [['a1', points.a1], ['a2', points.a2], ['b1', b1], ['b2', b2]] as const)
+        expect(Math.hypot(at.get(id)!.x - place[0], at.get(id)!.y - place[1]), `${where}: ${id}`).toBeLessThan(1e-7);
       expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
     }
+  });
+
+  it('keep the pairs relations already mirror about the line, fit the mirror to held ends, and turn it about an end held through Coincident', async () => {
+    // The review's three sketches, about a free construction line drawn near V. A point Symmetric already mirrors a1 onto b1, so the
+    // curves' mirror keeps that pairing; one mirroring a1 onto b2 instead, stored anyway as a file may, turns B over to keep it; and
+    // with A level above B upright, which alone turns the mirror counter-clockwise to 135° with B's ends crossed, a point Symmetric of
+    // a1 and b1 keeps them straight at 45°. The pairing the point Symmetric holds is never changed: only its two directions are starts,
+    // and the first solves. All four ends held, by Fix or by their expressions, leave the mirror only their perpendicular bisector,
+    // y = x, along which it still slides and stretches. A mirror whose start a Coincident holds at (0.5, -60) turns about that start,
+    // and A, which nothing holds, stays where it is.
+    const native = await loadCadSketchTestNativeSolver();
+    let solves = 0;
+    const solver = { ...native, solve: (...args: Parameters<typeof native.solve>) => { solves++; return native.solve(...args); } };
+    const at = (graph: CadSketchGraph, id: string) => positions(graph).get(id)!;
+    const sketch = (points: Readonly<Record<string, Place | readonly [string, string]>>, relations: readonly unknown[]) => parseCadSketchGraph({
+      points: Object.entries(points).map(([id, position]) => ({ id, position })),
+      entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }], relations: [...relations, mirrored('construction')] });
+    const levelUpright = [{ id: 'h', kind: 'horizontal', pointIds: ['a1', 'a2'] }, { id: 'v', kind: 'vertical', pointIds: ['b1', 'b2'] }];
+    const pair = (pointIds: readonly [string, string]) => ({ id: 's', kind: 'symmetric', pointIds, lineId: 'mirror' });
+    const apart = { a1: [10, 5], a2: [25, 5], b1: [-10, 5], b2: [-10, 20] } as const, above = { a1: [-5, 20], a2: [5, 20], b1: [0, -5], b2: [0, 5] } as const;
+    const plumb = { m1: [0, -60], m2: [0, 60] } as const;
+    const solved = (graph: CadSketchGraph, where: string, freedom: number, starts?: number) => {
+      if (starts !== undefined) expect(compileCadSketchEquations({ graph, parameters: {} }).startChoices, where).toEqual([{ relationId: 'mirrored', count: starts }]);
+      solves = 0;
+      const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
+      if (result.kind !== 'solved') throw new Error(`${where}: ${result.message}`);
+      if (starts !== undefined) expect(solves, where).toBe(1);
+      expect(result.diagnostics, where).toMatchObject({ degreesOfFreedom: freedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
+      const [m1, m2] = [at(result.graph, 'm1'), at(result.graph, 'm2')];
+      expect(((Math.atan2(m2.y - m1.y, m2.x - m1.x) * 180 / Math.PI) % 180 + 180) % 180, where).toBeCloseTo(45, 9);
+      return result.graph;
+    };
+    const near = (graph: CadSketchGraph, places: Readonly<Record<string, Place>>, where: string) => {
+      for (const [id, [x, y]] of Object.entries(places)) expect(Math.hypot(at(graph, id).x - x, at(graph, id).y - y), `${where}: ${id}`).toBeLessThan(1e-7);
+    };
+    near(solved(sketch({ ...apart, ...plumb }, [...levelUpright, pair(['a1', 'b1'])]), 'a1 onto b1', 6, 2), { ...apart, b1: [5, 10], b2: [5, 25] }, 'a1 onto b1');
+    near(solved(sketch({ ...apart, ...plumb }, [...levelUpright, pair(['a1', 'b2'])]), 'a1 onto b2', 6, 2), { ...apart, b1: [5, 25], b2: [5, 10] }, 'a1 onto b2');
+    near(solved(sketch({ ...above, ...plumb }, [...levelUpright, pair(['a1', 'b1'])]), 'above, a1 onto b1', 6, 2), { ...above, b1: [20, -5], b2: [20, 5] }, 'above, a1 onto b1');
+
+    const ends = { a1: [10, 5], a2: [25, 5], b1: [5, 10], b2: [5, 25] } as const;
+    for (const how of ['fix', 'expression'] as const) {
+      const points = how === 'fix' ? ends : Object.fromEntries(Object.entries(ends).map(([id, place]) => [id, place.map(String) as unknown as readonly [string, string]]));
+      const holds = how === 'fix' ? Object.entries(ends).map(([id, position]) => ({ id: `fix-${id}`, kind: 'fixed-point', pointId: id, position })) : [];
+      const graph = solved(sketch({ ...points, ...plumb }, holds), `four ends held by ${how}`, 2);
+      near(graph, ends, `four ends held by ${how}`);
+      for (const id of ['m1', 'm2']) expect(Math.abs(at(graph, id).x - at(graph, id).y), `four ends held by ${how}: ${id} on y = x`).toBeLessThan(1e-7);
+    }
+
+    const pinned = solved(sketch({ ...apart, m1: [.5, -60], m2: [-.5, 60], pin: ['0.5', '-60'] }, [...levelUpright, { id: 'c', kind: 'coincident', pointIds: ['m1', 'pin'] }]), 'a start held through Coincident', 4);
+    near(pinned, { a1: apart.a1, a2: apart.a2, m1: [.5, -60], pin: [.5, -60], b1: [65.5, -50.5], b2: [65.5, -35.5] }, 'a start held through Coincident');
+  });
+
+  it('solve from the next start where the least moved one can meet the mirror only by collapsing the curves', async () => {
+    // Lines sharing an end that Fix holds, kept parallel, mirror about a line through that end, along them or square to them. Along
+    // them moves the sketch least, laying B over A, but the solve meets that only by collapsing both, so the next start, square to
+    // them, solves with B folded out beyond the shared end: two native solves.
+    const native = await loadCadSketchTestNativeSolver();
+    let solves = 0;
+    const solver = { ...native, solve: (...args: Parameters<typeof native.solve>) => { solves++; return native.solve(...args); } };
+    const graph = parseCadSketchGraph({
+      points: Object.entries({ a1: [9.5, -5], a2: [11, 2.5], b1: [-.5, 17], b2: [-8.5, 14], m1: [1, -60], m2: [2, 60] }).map(([id, position]) => ({ id, position })),
+      entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }],
+      relations: [{ id: 'p', kind: 'parallel', lineIds: ['A', 'B'] }, { id: 'fix', kind: 'fixed-point', pointId: 'a1', position: [9.5, -5] },
+        { id: 'shared', kind: 'coincident', pointIds: ['a1', 'b1'] }, mirrored('construction')] });
+    expect(compileCadSketchEquations({ graph, parameters: {} }).startChoices).toEqual([{ relationId: 'mirrored', count: 2 }]);
+    const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
+    if (result.kind !== 'solved') throw new Error(result.message);
+    expect(solves).toBe(2);
+    expect(result.diagnostics).toMatchObject({ degreesOfFreedom: 4, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+    const at = positions(result.graph), [m1, m2] = [at.get('m1')!, at.get('m2')!];
+    for (const [id, [x, y]] of [['a1', [9.5, -5]], ['a2', [11, 2.5]], ['b1', [9.5, -5]], ['b2', [8, -12.5]]] as const) expect(Math.hypot(at.get(id)!.x - x, at.get(id)!.y - y), id).toBeLessThan(1e-7);
+    expect(Math.abs((m2.x - m1.x) * 1.5 + (m2.y - m1.y) * 7.5) / Math.hypot(m2.x - m1.x, m2.y - m1.y)).toBeLessThan(1e-7);
+    expect(checkCadSketchGraph(result.graph, {})).toEqual([]);
+  });
+
+  it('mirror about a free line from held points without moving them, or refuse naming what holds them, alike for Fix, expressions, Coincident and fixed distances', async () => {
+    // Lines already mirrored about y = x and lines apart with B upright left of V, each alone and kept level and upright, arcs mirrored
+    // about y = x and circles apart, about a free construction line drawn on V, with each set of their points and the mirror's start held
+    // four ways: by Fix, by their expressions, by Coincident with an expression-fixed point, and by fixed X and Y distances. Each solves
+    // with nothing held moved, or is refused naming the relations that hold it, and the four holds give one answer. Both ends of a line
+    // held make Horizontal or Vertical redundant; held points that leave the mirror no line conflict with it, naming the holds, which
+    // expressions are not, and the relations keeping the lines' directions where those decide it.
+    const solver = await loadCadSketchTestNativeSolver();
+    type Hold = 'fix' | 'expression' | 'coincident' | 'distances';
+    const HOLDS: readonly Hold[] = ['fix', 'expression', 'coincident', 'distances'];
+    const swap = ([x, y]: Place): Place => [y, x], [c1, s1, e1] = [[20, 10], polar([20, 10], 5, 15), polar([20, 10], 5, 105)] as const;
+    const levelUpright = [{ id: 'h', kind: 'horizontal', pointIds: ['a1', 'a2'] }, { id: 'v', kind: 'vertical', pointIds: ['b1', 'b2'] }];
+    const lineSets = [[], ['a1'], ['b1'], ['a1', 'a2'], ['a1', 'b1'], ['a1', 'b2'], ['a1', 'a2', 'b1', 'b2'], ['m1'], ['m1', 'a1'], ['m1', 'a1', 'b1']];
+    const lines = [line('A', 'a1', 'a2'), line('B', 'b1', 'b2')], mirroredLines = { a1: [10, 5], a2: [25, 5], b1: [5, 10], b2: [5, 25] } as const;
+    const apartLines = { a1: [10, 5], a2: [25, 5], b1: [-10, 5], b2: [-10, 20] } as const;
+    const scenes: readonly { name: string; points: Readonly<Record<string, Place>>; entities: readonly unknown[]; relations: readonly unknown[]; sets: readonly (readonly string[])[] }[] = [
+      { name: 'lines mirrored about y = x', points: mirroredLines, entities: lines, relations: [], sets: lineSets },
+      { name: 'lines mirrored about y = x, level and upright', points: mirroredLines, entities: lines, relations: levelUpright, sets: lineSets },
+      { name: 'lines apart', points: apartLines, entities: lines, relations: [], sets: lineSets },
+      { name: 'lines apart, level and upright', points: apartLines, entities: lines, relations: levelUpright, sets: lineSets },
+      { name: 'arcs mirrored about y = x', points: { c1, s1, e1, c2: swap(c1), s2: swap(e1), e2: swap(s1) }, entities: [arc('A', 'c1', 's1', 'e1', 'ccw'), arc('B', 'c2', 's2', 'e2', 'ccw')],
+        relations: [], sets: [[], ['c1'], ['c1', 'c2'], ['s1', 'e2'], ['c1', 's1'], ['m1'], ['m1', 'c1'], ['m1', 'c1', 'c2']] },
+      { name: 'circles apart', points: { k1: [15, 8], k2: [-10, -12] }, entities: [circle('A', 'k1'), circle('B', 'k2')], relations: [], sets: [[], ['k1'], ['k1', 'k2'], ['m1'], ['m1', 'k1'], ['m1', 'k1', 'k2']] }
+    ];
+    const refused: Record<string, string> = {};
+    let configurations = 0;
+    for (const { name, points: drawn, entities, relations: kept, sets } of scenes) for (const held of sets) {
+      const where = `${name} holding ${held.length ? held.join(' ') : 'nothing'}`, answers = new Set<string>();
+      for (const how of HOLDS) {
+        const points: { id: string; position: readonly (number | string)[] }[] = [], holds: { id: string }[] = [];
+        for (const [id, place] of Object.entries({ ...drawn, m1: [0, -60], m2: [0, 60] } as Record<string, Place>)) {
+          const hold = held.includes(id);
+          points.push({ id, position: hold && how === 'expression' ? place.map(String) : place });
+          if (!hold) continue;
+          if (how === 'fix') holds.push({ id: `fix-${id}`, kind: 'fixed-point', pointId: id, position: place } as { id: string });
+          if (how === 'coincident') { points.push({ id: `pin-${id}`, position: place.map(String) }); holds.push({ id: `on-${id}`, kind: 'coincident', pointIds: [id, `pin-${id}`] } as { id: string }); }
+          if (how === 'distances') holds.push(...(['x', 'y'] as const).map((axis, index) => ({ id: `${axis}-${id}`, kind: 'fixed-axis', pointId: id, axis, value: place[index] })));
+        }
+        const graph = parseCadSketchGraph({ points, entities: [...entities, { ...line('mirror', 'm1', 'm2'), construction: true }], relations: [...holds, ...kept, mirrored('construction')] });
+        const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver), holdIds = holds.map(hold => hold.id);
+        if (result.kind === 'solved') {
+          const before = positions(graph), after = positions(result.graph);
+          const moved = [...before].filter(([id, { x, y }]) => (held.includes(id) || id.startsWith('pin-')) && Math.hypot(after.get(id)!.x - x, after.get(id)!.y - y) > 1e-9).map(([id]) => id);
+          expect(moved, `${where} by ${how}`).toEqual([]);
+          expect(checkCadSketchGraph(result.graph, {}), `${where} by ${how}`).toEqual([]);
+          answers.add(`solved with ${result.diagnostics.degreesOfFreedom} free`);
+        } else {
+          const { conflictingIds, redundantIds, partiallyRedundantIds } = result.diagnostics, named = conflictingIds.filter(id => !holdIds.includes(id));
+          expect(conflictingIds.filter(id => holdIds.includes(id)), `${where} by ${how}`).toEqual(result.reason === 'conflicting' ? holdIds : []);
+          expect(named.length + redundantIds.length + partiallyRedundantIds.length, `${where} by ${how}`).toBeGreaterThan(0);
+          answers.add([result.reason, named.length ? `conflicting ${named.join(' ')}` : '', redundantIds.length ? `redundant ${redundantIds.join(' ')}` : '',
+            partiallyRedundantIds.length ? `partly redundant ${partiallyRedundantIds.join(' ')}` : ''].filter(Boolean).join(', '));
+        }
+        configurations++;
+      }
+      expect([...answers], where).toHaveLength(1);
+      const [answer] = answers;
+      if (!answer.startsWith('solved')) refused[where] = answer;
+    }
+    expect(configurations).toBe((4 * 10 + 8 + 6) * 4);
+    expect(refused).toEqual({
+      'lines mirrored about y = x, level and upright holding a1 a2': 'redundant, redundant h',
+      'lines mirrored about y = x, level and upright holding a1 a2 b1 b2': 'redundant, redundant h v',
+      'lines mirrored about y = x, level and upright holding m1 a1 b1': 'conflicting, conflicting mirrored',
+      'lines apart holding a1 a2 b1 b2': 'conflicting, conflicting mirrored',
+      'lines apart, level and upright holding a1 a2': 'redundant, redundant h',
+      'lines apart, level and upright holding a1 a2 b1 b2': 'conflicting, conflicting mirrored, redundant h v',
+      'lines apart, level and upright holding m1 a1 b1': 'conflicting, conflicting h v mirrored',
+      'arcs mirrored about y = x holding m1 c1 c2': 'conflicting, conflicting mirrored',
+      'circles apart holding m1 k1 k2': 'conflicting, conflicting mirrored'
+    });
+  });
+
+  it('search for a start only where a mirror is not met already, and never retry a drag from another start', async () => {
+    // The level and upright lines mirrored about a free line at 45°: compiled again, or with A's end or the mirror's dragged, the mirror
+    // already holds, so it offers no starts and moves nothing before the solve; and a drag of the sketch before it was mirrored makes
+    // one native solve whatever it answers, as the further starts are for storing a relation.
+    const native = await loadCadSketchTestNativeSolver();
+    let solves = 0;
+    const solver = { ...native, solve: (...args: Parameters<typeof native.solve>) => { solves++; return native.solve(...args); } };
+    const stored = parseCadSketchGraph({
+      points: Object.entries({ a1: [10, 5], a2: [25, 5], b1: [-10, 5], b2: [-10, 20], m1: [.5, -60], m2: [-.5, 60] }).map(([id, position]) => ({ id, position })),
+      entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }],
+      relations: [{ id: 'h', kind: 'horizontal', pointIds: ['a1', 'a2'] }, { id: 'v', kind: 'vertical', pointIds: ['b1', 'b2'] }, mirrored('construction')] });
+    expect(compileCadSketchEquations({ graph: stored, parameters: {} }).startChoices).toEqual([{ relationId: 'mirrored', count: 4 }]);
+    const first = attemptCadSketchNativeSolve({ graph: stored, parameters: {}, analyseDefinition: true }, solver).result;
+    if (first.kind !== 'solved') throw new Error(first.message);
+    const at = positions(first.graph);
+    for (const drag of [undefined, { pointId: 'a2', position: [30, 5] as const }, { pointId: 'm2', position: [50, 45] as const }]) {
+      const where = drag ? `dragging ${drag.pointId}` : 'compiled again', model = compileCadSketchEquations({ graph: first.graph, parameters: {}, drag });
+      expect(model.startChoices, where).toEqual([]);
+      for (const [id, index] of model.pointParameters) if (at.has(id)) expect([model.values[index], model.values[index + 1]], `${where}: ${id}`).toEqual([at.get(id)!.x, at.get(id)!.y]);
+      solves = 0;
+      expect(attemptCadSketchNativeSolve({ graph: first.graph, parameters: {}, drag }, solver).result.kind, where).toBe('solved');
+      expect(solves, where).toBe(1);
+    }
+    solves = 0;
+    attemptCadSketchNativeSolve({ graph: stored, parameters: {}, drag: { pointId: 'a2', position: [30, 5] } }, solver);
+    expect(solves).toBe(1);
   });
 
   it('refuse a mirror that could only be met by collapsing the curves, with the reason, and never store the collapse', async () => {

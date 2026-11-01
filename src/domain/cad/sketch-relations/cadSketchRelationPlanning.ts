@@ -67,6 +67,8 @@ export interface CadSketchRelationPlanning extends CadSketchRelationPlanner {
   holdingTraced(pointId: string, axis: Axis): CadSketchCoordinateHold;
   /** How the relations and fixed ends that keep line directions force a mirror line for two lines; see `CadSketchMirrorTurn`. */
   mirrorTurn(firstLineId: string, secondLineId: string, mirrorId: string): CadSketchMirrorTurn | undefined;
+  /** The direction, in radians modulo a half turn, that value-free relations and fixed ends keep a line or axis in; undefined where they keep none. */
+  lineAngle(lineId: string): number | undefined;
 }
 
 /**
@@ -554,7 +556,7 @@ export function cadSketchRelationPlanner(graph: CadSketchGraph): CadSketchRelati
   };
 
   const planner: CadSketchRelationPlanning = {
-    graph, point: id => cadSketchVirtualPoint(id) ?? points.get(id), entity, identity, joint, sameJoints, traced, holding, holdingTraced, mirrorTurn,
+    graph, point: id => cadSketchVirtualPoint(id) ?? points.get(id), entity, identity, joint, sameJoints, traced, holding, holdingTraced, mirrorTurn, lineAngle: lineId => lineDirections().angle(lineId),
     // Other relations can already keep a pair level or upright, through a chain of them or both points on one axis.
     align: (kind, pair) => {
       const kept = canonical({ kind, pointIds: pair });

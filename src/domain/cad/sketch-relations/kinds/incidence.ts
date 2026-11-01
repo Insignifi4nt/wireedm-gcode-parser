@@ -3,11 +3,9 @@ import type { CadSketchGraphEntity, CadSketchGraphPoint } from '../../cadSketchG
 import { assertCadSketchMidpointIdentities, resolveCadSketchMidpointOperands } from '../../cadSketchMidpointRelations';
 import { assertCadSketchPointOnLineIdentities, checkCadSketchPointOnLineRelation, resolveCadSketchPointOnLineOperands } from '../../cadSketchPointOnLineRelations';
 import { assertCadSketchPointOnCurveIdentities, checkCadSketchPointOnCurveRelation, resolveCadSketchPointOnCurveOperands } from '../../cadSketchPointOnCurveRelations';
-import { assertCadSketchCurveSymmetry, assertCadSketchSymmetryIdentities, cadSketchMirrorImage, cadSketchMirrorIndex, cadSketchMirrorPairs, cadSketchPointsReflect,
-  checkCadSketchSymmetricRelation, isCadSketchCurveSymmetry, resolveCadSketchCurveSymmetryOperands, resolveCadSketchSymmetryOperands, type CadSketchMirroredCurve } from '../../cadSketchSymmetryRelations';
-import { cadSketchLineDirection } from '../../cadSketchLineRelations';
-import type { Point2 } from '@/domain/path-intel/types';
-import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
+import { assertCadSketchCurveSymmetry, assertCadSketchSymmetryIdentities, cadSketchMirrorIndex, checkCadSketchSymmetricRelation, isCadSketchCurveSymmetry,
+  resolveCadSketchCurveSymmetryOperands, resolveCadSketchSymmetryOperands, type CadSketchMirroredCurve } from '../../cadSketchSymmetryRelations';
+import { startCadSketchMirror } from '../../sketch-solver/cadSketchMirrorStarts';
 import { checkCadSketchTangentJoint, resolveCadSketchTangentJoint } from '../../cadSketchTangentRelations';
 import { checkCadSketchMidpoint, checkCadSketchPointPair } from '../cadSketchRelationChecks';
 import { CAD_SKETCH_CURVE_SYMMETRY_OPERANDS, CAD_SKETCH_MIDPOINT_OPERANDS, CAD_SKETCH_POINT_ON_CURVE_OPERANDS, CAD_SKETCH_POINT_ON_LINE_OPERANDS, CAD_SKETCH_SYMMETRY_OPERANDS,
@@ -107,58 +105,21 @@ type CurveSymmetry = Extract<CadSketchRelationOf<'symmetric'>, { readonly curveI
  * `yields`), so what the curves' own structure, fixed values or other relations already keep of it, such as the second arc's radius
  * or two level lines' level ends, is solved but never reported as redundant. Two lines lower to four equations, arcs to six and
  * circles to three, fewer where they share points; arcs remove one freedom fewer than their equations, as the second arc's radius follows.
- * A pair that does not reflect yet starts the second curve's point at the first's image, or the first's at the second's where the
- * second cannot move, so a new mirror moves the second curve onto the first rather than both toward some other solution. A free
- * mirror line that the lines' directions force to turn starts turned first (see `turnedMirror`), and the pairs start about it.
+ * Which way two lines pair, and where the solve sets out, `startCadSketchMirror` decides; each pair is recorded, so a mirror lowered
+ * later about the same line keeps it.
  */
 function lowerCurveSymmetry(relation: CurveSymmetry, context: CadSketchLoweringContext) {
   const { curves, line } = resolveCadSketchCurveSymmetryOperands(context.graph, relation), identity = (pointId: string) => context.identity(pointId);
   context.direct(line.startPointId, line.endPointId, 'A symmetry axis has no numeric endpoints.');
   const support = context.support(line), ends = new Set(isCadSketchVirtualAxisId(line.id) ? [] : [line.startPointId, line.endPointId].map(identity));
-  const at = turnedMirror(curves, line, context) ?? context.starts, axis = cadSketchLineDirection(line, at)!;
-  for (const { pointIds: [p, q], self } of cadSketchMirrorPairs(curves, line, identity, at)) {
+  for (const { pointIds: [p, q], self } of startCadSketchMirror(curves, line, context)) {
+    context.paired(line.id, p, q);
     if (self) { if (!ends.has(identity(p))) context.onSupport(p, support); continue; }
-    const from = at.get(p), to = at.get(q);
-    if (from && to && !cadSketchPointsReflect(from, to, axis) && !context.start(q, cadSketchMirrorImage(from, axis))) context.start(p, cadSketchMirrorImage(to, axis));
     const operands = [...context.point(p), ...context.point(q), ...support];
     context.emit('symmetric-midpoint', operands); context.emit('symmetric-perpendicular', operands);
   }
   const [a, b] = curves;
   if (a.kind === 'circle' && b.kind === 'circle') context.equalSizes(context.size(a), context.size(b));
-}
-/**
- * Where a free mirror line starts when the directions other relations or fixed ends keep two lines in force it to turn (the
- * planner's `mirrorTurn`): from the start positions, with its ends seeded there. Of the two directions that map one line's
- * direction onto the other's, a quarter turn apart, it takes the one nearer its own, turning counter-clockwise when both are 45°
- * away within the angular accuracy. It turns about an end that cannot move, Fix holds or the lines share, the start before the
- * end, or else about its middle. Nothing where nothing forces it, it lies within the angular accuracy already, or the end that
- * would move cannot.
- */
-function turnedMirror(curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCurve], line: Line, context: CadSketchLoweringContext): ReadonlyMap<string, Point2> | undefined {
-  const [a, b] = curves;
-  if (a.kind !== 'line' || b.kind !== 'line' || isCadSketchVirtualAxisId(line.id)) return undefined;
-  const forced = context.mirrorTurn(a.id, b.id, line.id), from = context.starts.get(line.startPointId), to = context.starts.get(line.endPointId);
-  const first = [context.starts.get(a.startPointId), context.starts.get(a.endPointId)];
-  if (!forced || !from || !to || forced.fromFirst && (!first[0] || !first[1])) return undefined;
-  const doubled = forced.doubled + (forced.fromFirst ? 2 * Math.atan2(first[1]!.y - first[0]!.y, first[1]!.x - first[0]!.x) : 0);
-  // The turn onto each direction, within a quarter turn either way.
-  const current = Math.atan2(to.y - from.y, to.x - from.x), wrap = (angle: number) => ((angle + Math.PI / 2) % Math.PI + Math.PI) % Math.PI - Math.PI / 2;
-  const [one, other] = [doubled / 2, doubled / 2 + Math.PI / 2].map(target => wrap(target - current));
-  const tie = Math.abs(Math.abs(one) - Math.abs(other)) <= CAD_PRECISION.angularAccuracyRad;
-  const turn = tie ? Math.max(one, other) : Math.abs(one) < Math.abs(other) ? one : other;
-  if (Math.abs(turn) <= CAD_PRECISION.angularAccuracyRad) return undefined;
-  const shared = new Set([a.startPointId, a.endPointId].map(id => context.identity(id)).filter(id => [b.startPointId, b.endPointId].some(other => context.identity(other) === id)));
-  const pinned = (pointId: string) => !context.movable(pointId) || context.graph.relations.some(relation => relation.kind === 'fixed-point' && context.identity(relation.pointId) === context.identity(pointId));
-  const held = (pointId: string) => pinned(pointId) || shared.has(context.identity(pointId));
-  const pivot = held(line.startPointId) ? from : held(line.endPointId) ? to : { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
-  const [cos, sin] = [Math.cos(turn), Math.sin(turn)], turned = new Map(context.starts);
-  for (const [pointId, point] of [[line.startPointId, from], [line.endPointId, to]] as const) {
-    if (point === pivot) continue;
-    const x = point.x - pivot.x, y = point.y - pivot.y, place = { x: pivot.x + x * cos - y * sin, y: pivot.y + x * sin + y * cos };
-    if (!context.start(pointId, place)) return undefined;
-    turned.set(pointId, place);
-  }
-  return turned;
 }
 const symmetricPointsMeaning = 'Keeps two point positions reflected about the infinite supporting line of the named axis. It does not fix that axis, join points or equalize circle radii.';
 export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
@@ -195,6 +156,7 @@ export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
     context.direct(line.startPointId, line.endPointId, 'A symmetry axis has no numeric endpoints.');
     const operands = [...context.point(relation.pointIds[0]), ...context.point(relation.pointIds[1]), ...context.support(line)];
     context.together(() => { context.emit('symmetric-midpoint', operands); context.emit('symmetric-perpendicular', operands); });
+    context.paired(line.id, relation.pointIds[0], relation.pointIds[1]);
   },
   check: (graph, relation, points, parameters) => checkCadSketchSymmetricRelation(graph, relation, points, parameters),
   meaningOf: relation => isCadSketchCurveSymmetry(relation) ? 'Keeps two lines, two arcs or two circles reflected about the infinite supporting line of the named axis, '

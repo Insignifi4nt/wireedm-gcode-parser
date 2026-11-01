@@ -72,12 +72,27 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     clock.next('mapping');
     const attempt = settle(input, model, solution, check);
     if (attempt.result.kind === 'solved' || input.drag) return attempt;
+    // A relation that offers several starts, as a mirror does its other directions and pairings, ordered least moved first, tries each
+    // after the first in turn, one relation at a time. Only an answer at its most certain replaces the first.
+    for (const { relationId, count } of model.startChoices) for (let index = 1; index < count; index++) {
+      let other: CadSketchCompiledSketch;
+      try { other = clock.during('parseCompile', () => compileCadSketchEquations({ ...input, startChoices: { [relationId]: index } })); } catch { continue; }
+      const retried = settle(input, other, clock.during('nativeCall', () => solver.solve(other, options)), check);
+      if (retried.result.kind === 'solved' && !retried.reason) return retried;
+    }
     // A point held on a curve that starts on its center has no radial direction to move along, and an arc centre that starts along the
     // line it is held square to has no side to turn to, so a failed solve tries again from starts one radius out, then from starts
     // turned square. Only an answer at its most certain replaces it.
     for (const values of [...centerStarts(model), ...squareStarts(model)]) {
       const seeded = { ...model, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded, options)), check);
       if (retried.result.kind === 'solved' && !retried.reason) return retried;
+    }
+    // A relation the lowering found no solve can meet, such as a mirror that held points and directions leave no line, conflicts with
+    // what keeps them, where the solve itself named nothing: a solve can still meet such relations by collapsing the curves.
+    const { result } = attempt;
+    if (model.unmet.length && result.kind === 'rejected' && result.reason !== 'conflicting' && result.reason !== 'redundant') {
+      const conflictingIds = input.graph.relations.map(relation => relation.id).filter(id => model.unmet.some(unmet => unmet.relationId === id || unmet.relationIds.includes(id)));
+      return answer({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics: { ...noDiagnostics('failed'), conflictingIds } });
     }
     return attempt;
   } finally { clock.stop(); }
