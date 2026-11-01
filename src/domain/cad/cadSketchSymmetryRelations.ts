@@ -159,23 +159,34 @@ export function cadSketchMirrorImage(point: Point2, axis: Axis): Point2 {
 export const CAD_SKETCH_MIRROR_COLLAPSE = 'Symmetric could only be met from here by collapsing the mirrored curves. Move the curves or the mirror line nearer to a mirror image first.';
 /**
  * The curve Symmetrics, in graph order, whose curves or mirror line a solution collapses: a line or arc whose ends meet, or a radius
- * no longer valid, as the graph checks of the solved graph `after` report (`issues`); or a mirrored curve whose size, a line's length or
- * an arc's or circle's radius, falls below `mirrorCollapseRelative` of its size in `before`, the graph the solve set out from, or
- * below `minimumLengthMm`, whichever is larger, which the graph checks accept. A size that cannot be read is not compared. Empty for a
- * sketch with no curve Symmetric, which reads nothing else.
+ * no longer valid, as the graph checks of the solved graph `graph` report (`issues`). Those checks refuse any length or radius of at
+ * most `minimumLengthMm`. Empty for a sketch with no curve Symmetric.
  */
-export function cadSketchMirrorCollapses(before: CadSketchGraph, after: CadSketchGraph, issues: readonly CadSketchGraphIssue[],
-  parameters: Readonly<Record<string, number>>): readonly string[] {
-  const mirrors = after.relations.filter((relation): relation is CadSketchSymmetricCurvesRelation => relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation));
-  if (!mirrors.length) return [];
+export function cadSketchMirrorCollapses(graph: CadSketchGraph, issues: readonly CadSketchGraphIssue[]): readonly string[] {
+  const mirrors = curveMirrors(graph);
+  if (!mirrors.length || !issues.length) return [];
   const collapsed = new Set(issues.filter(issue => issue.source.kind === 'entity' && (issue.code === 'degenerate-entity' || issue.code === 'invalid-radius')).map(issue => issue.source.id));
+  return mirrors.filter(relation => [...relation.curveIds, relation.lineId].some(id => collapsed.has(id))).map(relation => relation.id);
+}
+/**
+ * The curve Symmetrics, in graph order, that a solution keeps by shrinking a mirrored curve: one whose size, a line's length or an
+ * arc's or circle's radius, in the solved graph `after` falls below `mirrorCollapseRelative` of its size in `before`, the graph the
+ * solve set out from. Such a solution passes every check, so it is not refused; a solve ranks it below one that shrinks no mirrored
+ * curve, and keeps it only where no start it tries finds one. A size that cannot be read is not compared. Empty for a sketch with no
+ * curve Symmetric, which reads nothing else.
+ */
+export function cadSketchMirrorShrinks(before: CadSketchGraph, after: CadSketchGraph, parameters: Readonly<Record<string, number>>): readonly string[] {
+  const mirrors = curveMirrors(after);
+  if (!mirrors.length) return [];
   const [was, now] = [curveSizes(before, parameters), curveSizes(after, parameters)];
   const shrunk = (id: string) => {
     const [from, to] = [was(id), now(id)];
-    return from !== undefined && to !== undefined && to < Math.max(CAD_PRECISION.mirrorCollapseRelative * from, CAD_PRECISION.minimumLengthMm);
+    return from !== undefined && to !== undefined && to < CAD_PRECISION.mirrorCollapseRelative * from;
   };
-  return mirrors.filter(relation => [...relation.curveIds, relation.lineId].some(id => collapsed.has(id)) || relation.curveIds.some(shrunk)).map(relation => relation.id);
+  return mirrors.filter(relation => relation.curveIds.some(shrunk)).map(relation => relation.id);
 }
+const curveMirrors = (graph: CadSketchGraph) =>
+  graph.relations.filter((relation): relation is CadSketchSymmetricCurvesRelation => relation.kind === 'symmetric' && isCadSketchCurveSymmetry(relation));
 /** A line's length or an arc's or circle's radius in `graph`, by edge id; undefined where it cannot be read. */
 function curveSizes(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>) {
   const points = new Map(graph.points.map(point => [point.id, point])), entities = new Map(graph.entities.map(entity => [entity.id, entity]));

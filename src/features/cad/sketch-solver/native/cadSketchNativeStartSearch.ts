@@ -82,10 +82,11 @@ export function cadSketchStartCombinations(component: CadSketchStartComponent, c
 /**
  * The components, by their place in `components`, that a solution of `model` leaves failing: those holding a relation or edge the
  * diagnosis labels conflicting or redundant, a point, edge or relation the graph checks of the solved graph (`issues`) report, or a
- * relation in `collapsedIds`, the curve Symmetrics the solution collapses. Failures outside every component name none.
+ * relation in `shrunkIds`, the curve Symmetrics the solution keeps only by shrinking a mirrored curve (see `cadSketchMirrorShrinks`),
+ * which a start search ranks below one that does not. Failures outside every component name none.
  */
 export function cadSketchFailingComponents(graph: CadSketchGraph, model: CadSketchCompiledSketch, solution: CadSketchNativeSolution,
-  issues: readonly CadSketchGraphIssue[], components: readonly CadSketchStartComponent[], collapsedIds: readonly string[] = []): ReadonlySet<number> {
+  issues: readonly CadSketchGraphIssue[], components: readonly CadSketchStartComponent[], shrunkIds: readonly string[] = []): ReadonlySet<number> {
   const { root, of } = reach(model), owner = new Map<number, number>(), failing = new Set<number>();
   components.forEach((component, at) => { for (const { relationId } of component.choices) { const found = of(relationId); if (found !== undefined) owner.set(found, at); } });
   const blame = (found: number | undefined) => { const at = found === undefined ? undefined : owner.get(found); if (at !== undefined) failing.add(at); };
@@ -96,7 +97,7 @@ export function cadSketchFailingComponents(graph: CadSketchGraph, model: CadSket
     const ids = cadSketchEquationDiagnostics(model, diagnosis.labels);
     for (const id of [...ids.conflictingIds, ...ids.redundantIds, ...ids.partiallyRedundantIds]) blame(of(id));
   }
-  for (const id of collapsedIds) blame(of(id));
+  for (const id of shrunkIds) blame(of(id));
   for (const { source } of issues) {
     if (source.kind === 'point') { point(source.id); continue; }
     blame(of(source.id));
