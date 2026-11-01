@@ -34,6 +34,7 @@ import {
   summarizeUpidManualDecisions,
   type UpidManualDecisionKind
 } from './manualDecisions';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export { upidManualDecisionKinds } from './manualDecisions';
 export type { UpidManualDecisionKind } from './manualDecisions';
@@ -484,7 +485,7 @@ export function readUpidEndpointTopologyRows(document: PathPlanningDocument): Up
     })
     .sort((first, second) => {
       const gapSort = second.maxPairDistance - first.maxPairDistance;
-      return Math.abs(gapSort) > 1e-12 ? gapSort : first.clusterId.localeCompare(second.clusterId);
+      return Math.abs(gapSort) > CAD_PRECISION.camTieMm ? gapSort : first.clusterId.localeCompare(second.clusterId);
     });
 
   const ambiguousRows = document.diagnostics

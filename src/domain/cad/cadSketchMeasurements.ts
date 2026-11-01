@@ -3,6 +3,7 @@ import { checkCadSketchGraph } from './cadSketchGraph';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
 import { createArcSegment } from '@/domain/path-intel/segments';
+import { CAD_SKETCH_VIRTUAL_LABELS, cadSketchAxisNormal, cadSketchVirtualAxis, cadSketchVirtualPoint } from './sketch-relations/cadSketchVirtualElements';
 
 export type CadSketchEntityMeasurement =
   | { readonly kind: 'line'; readonly lengthMm: number; readonly deltaMm: readonly [number, number] }
@@ -18,8 +19,9 @@ export function createCadSketchMeasurementReader(graph: CadSketchGraph, paramete
     if (!value) throw new CadError('missing-sketch-point', 'The measured point is no longer available.');
     return value;
   };
+  // The origin is measured from as any point is.
   const point = (id: string): readonly [number, number] => {
-    const source = sourcePoint(id);
+    const source = cadSketchVirtualPoint(id) ?? sourcePoint(id);
     return [evaluateCadScalar(source.position[0], parameters), evaluateCadScalar(source.position[1], parameters)];
   };
   const betweenPoints = (firstId: string, secondId: string) => {
@@ -27,7 +29,8 @@ export function createCadSketchMeasurementReader(graph: CadSketchGraph, paramete
     return { distanceMm: Math.hypot(...deltaMm), deltaMm };
   };
   const entity = (id: string): CadSketchEntityMeasurement => {
-    const source = entities.get(id);
+    const source = entities.get(id), axis = cadSketchVirtualAxis(id);
+    if (axis) throw new CadError('unsupported-sketch-operand', `The ${CAD_SKETCH_VIRTUAL_LABELS[axis.id]} is infinite, so it has no length.`);
     if (!source) throw new CadError('missing-sketch-entity', 'The measured edge is no longer available.');
     const pointIds = source.kind === 'line' ? [source.startPointId, source.endPointId]
       : source.kind === 'arc' ? [source.centerPointId, source.startPointId, source.endPointId] : [source.centerPointId];
@@ -47,8 +50,13 @@ export function createCadSketchMeasurementReader(graph: CadSketchGraph, paramete
       center: coordinate(source.centerPointId), start: coordinate(source.startPointId), end: coordinate(source.endPointId), clockwise: source.direction === 'cw' });
     return { kind: 'arc', radiusMm: arc.radius, sweepDegrees: arc.sweepRadians * 180 / Math.PI, lengthMm: arc.length };
   };
-  /** Distance from a point to a line's infinite support, positive to the left of its start to its end. */
+  /**
+   * Distance from a point to a line's infinite support, positive to the left of its start to its end. An axis runs from the origin
+   * along +X or +Y, so the distance from the H axis is y and from the V axis -x.
+   */
   const pointToLine = (pointId: string, lineId: string) => {
+    const axis = cadSketchVirtualAxis(lineId);
+    if (axis) { const [px, py] = point(pointId); return { signedMm: cadSketchAxisNormal(axis.id) === 'y' ? py : -px }; }
     const line = entities.get(lineId);
     if (line?.kind !== 'line') throw new CadError('missing-sketch-entity', 'The measured line is no longer available.');
     entity(lineId);

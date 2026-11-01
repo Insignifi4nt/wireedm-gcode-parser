@@ -7,6 +7,7 @@ import { operationMaterialRole } from './materialRoles';
 import type {
   ResolvedSimulationSettings, SimulationDiagnostic, SimulationPiece, SimulationPieceSnapshot, SimulationStep
 } from './types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 const GRAVITY_MM_PER_SECOND_SQUARED = 9810;
 interface CutRange { start: number; end: number }
@@ -26,9 +27,9 @@ export function compileReleasedPieces(
   const candidates = document.plan.operations.filter((operation) => activeIds.has(operation.id) && operation.closed && operation.segmentRefs.length > 0);
   for (const operation of candidates) {
     const polygon = approximatePath(operation.segmentRefs, segments, Math.PI / 90).map((point) => ({ ...point }));
-    if (polygon.length < 3 || distance(polygon[0], polygon.at(-1)!) > Math.max(1e-8, document.options.coincidenceEpsilon)) continue;
+    if (polygon.length < 3 || distance(polygon[0], polygon.at(-1)!) > Math.max(CAD_PRECISION.simulationContactMm, document.options.coincidenceEpsilon)) continue;
     polygon.pop();
-    if (polygonArea(polygon) <= 1e-12) continue;
+    if (polygonArea(polygon) <= CAD_PRECISION.simulationDegenerateAreaMm2) continue;
     let stockClearance = Infinity;
     for (const ref of operation.segmentRefs) {
       const bounds = segments.get(ref.segmentId)!.bounds;
@@ -36,12 +37,12 @@ export function compileReleasedPieces(
       stockClearance = Math.min(stockClearance, bounds.minX - stock.originX, stock.originX + stock.width - bounds.maxX,
         bounds.minY - stock.originY, stock.originY + stock.depth - bounds.maxY);
     }
-    if (stockClearance < -1e-8) {
+    if (stockClearance < -CAD_PRECISION.simulationContactMm) {
       diagnostics.push({ code: 'SIMULATION_BOUNDARY_OUTSIDE_STOCK', severity: 'warning', operationId: operation.id,
         message: `${operation.displayName} extends outside the rough stock. Its released shape cannot be represented by this simulation.` });
       continue;
     }
-    if (stockClearance <= 1e-8) {
+    if (stockClearance <= CAD_PRECISION.simulationContactMm) {
       diagnostics.push({ code: 'SIMULATION_MATERIAL_TOPOLOGY_UNSUPPORTED', severity: 'warning', operationId: operation.id,
         message: `${operation.displayName} touches the rough-stock edge. Edge-connected cutouts require a material boundary reconstruction that this preview does not support; its material removal and released piece are omitted. The wire path remains visible.` });
       continue;
@@ -126,7 +127,7 @@ export function compileReleasedPieces(
     if (enclosingRemoval <= piece.releaseSeconds) {
       diagnostics.push({ code: 'SIMULATION_CUT_AFTER_MATERIAL_REMOVAL', severity: 'warning', operationId: piece.operationId,
         message: 'An enclosing waste piece was removed before this boundary finished. Its still-attached material is no longer present, so a new release is not predicted. Previously separated parts remain independent.' });
-    } else if (settings.retention === 'fall' && bottomAtCompletion < lowerWire - 1e-8) {
+    } else if (settings.retention === 'fall' && bottomAtCompletion < lowerWire - CAD_PRECISION.simulationContactMm) {
       diagnostics.push({ code: 'SIMULATION_CUT_BELOW_WIRE', severity: 'warning', operationId: piece.operationId,
         message: 'An enclosing piece has already fallen partly below the vertical wire before this boundary finishes. A new through-cut release is not predicted.' });
     } else {

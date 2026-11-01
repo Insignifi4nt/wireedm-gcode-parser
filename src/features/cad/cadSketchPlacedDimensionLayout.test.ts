@@ -18,7 +18,8 @@ import { isCadSketchDimensionRelation } from './cadSketchDimensionSelection';
 const scale = .1;
 const point = (id: string): CadSketchDimensionOperand => ({ kind: 'point', id });
 const entity = (id: string): CadSketchDimensionOperand => ({ kind: 'entity', id });
-const datum = (id: 'origin' | 'x-axis' | 'y-axis'): CadSketchDimensionOperand => ({ kind: 'datum', id });
+/** The origin is a point and the axes are lines, named by their reserved ids. */
+const origin = point('@origin'), hAxis = entity('@h'), vAxis = entity('@v');
 /** What a dimension draws, apart from its relation, with numbers rounded so the same marks reached by other arithmetic compare equal. */
 const marks = (layout: object) => {
   const { line, arc, label, labelAngle, arrows, extensions } = layout as CadSketchGraphDimensionLayout & { readonly arc?: unknown };
@@ -94,8 +95,8 @@ describe('a dimension placed where the preview drew it', () => {
     ['a point to line distance', [point('o'), entity('bottom')], { x: 95, y: 30 }, false],
     ['a reference point to line distance', [point('o'), entity('bottom')], { x: 60, y: 22 }, true],
     ['the distance between parallel lines', [entity('bottom'), entity('top')], { x: 30, y: 15 }, false],
-    ['two distances from the axes', [datum('origin'), point('c')], { x: 20, y: 10 }, false],
-    ['a distance from an axis', [datum('y-axis'), point('c')], { x: 25, y: 40 }, false],
+    ['a distance from the origin', [origin, point('c')], { x: 20, y: 10 }, false],
+    ['a distance from an axis', [vAxis, point('c')], { x: 25, y: 40 }, false],
     ['an arc radius', [entity('bend')], { x: 0, y: 80 }, false],
     ['a circle diameter inside the circle', [entity('hole')], { x: 81, y: 41 }, false],
     ['a reference diameter outside the circle', [entity('hole')], { x: 60, y: 60 }, true],
@@ -170,16 +171,16 @@ describe('a click that moves or reuses a dimension the sketch holds', () => {
     // A line held from the X axis at one end, which Horizontal keeps measuring the line.
     const end = withRelations(graph, [{ id: 'held', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: 5 }]);
     for (const pointer of [{ x: 30, y: -10 }, { x: 60, y: 2 }, { x: 5, y: 3 }]) {
-      const placed = click(end, [datum('x-axis'), entity('bottom')], pointer);
+      const placed = click(end, [hAxis, entity('bottom')], pointer);
       expect(placed.candidate).toMatchObject({ state: 'available', reuses: 'held' });
       expect(placed.preview).toHaveLength(1); expect(placed.stored).toEqual(placed.preview);
     }
-    // A point that keeps its X from the origin, which the click gives its Y too: both are drawn as stored.
+    // A point that keeps its X: the horizontal distance from the origin is that X, drawn where it is stored on either side.
     const position = withRelations(graph, [{ id: 'x', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 50 }]);
-    for (const pointer of [{ x: 20, y: 10 }, { x: 45, y: 20 }]) {
-      const placed = click(position, [datum('origin'), point('c')], pointer);
-      expect(placed.candidate).toMatchObject({ state: 'available', reuses: 'x' });
-      expect(placed.preview).toHaveLength(2); expect(placed.stored).toEqual(placed.preview);
+    for (const pointer of [{ x: 25, y: -10 }, { x: 25, y: 35 }]) {
+      const placed = click(position, [origin, point('c')], pointer);
+      expect(placed.candidate).toMatchObject({ form: 'horizontal', state: 'existing', relationIds: ['x'] });
+      expect(placed.preview).toHaveLength(1); expect(placed.stored).toEqual(placed.preview);
     }
   });
 
@@ -211,7 +212,7 @@ describe('a click that moves or reuses a dimension the sketch holds', () => {
 
   it('keeps a dimension clicked again where it already is as it is, so the click edits nothing', () => {
     for (const [operands, pointer] of [[[point('a'), point('c')], { x: 20, y: 20 }], [[point('o'), entity('bottom')], { x: 95, y: 30 }], [[entity('bottom'), entity('slant')], { x: 80, y: 9 }],
-      [[entity('hole')], { x: 60, y: 60 }], [[datum('origin'), point('c')], { x: 20, y: 10 }]] as const) {
+      [[entity('hole')], { x: 60, y: 60 }], [[origin, point('c')], { x: 20, y: 10 }]] as const) {
       const first = click(sketch(), operands, pointer), again = click(first.next, operands, pointer, { form: first.candidate.form });
       expect(again.candidate.state).toBe('existing'); expect(again.relations.length).toBeGreaterThan(0);
       for (const [index, relation] of again.relations.entries()) expect(relation).toBe(again.batch.moved[index]);
@@ -233,20 +234,13 @@ describe('dimensions one click places', () => {
     // A line whose ends are both held from the X axis: a click with the axis selects both distances and moves them to the pointer.
     const held = parseCadSketchGraph({ points: [{ id: 'p', position: [0, 10] }, { id: 'q', position: [40, 10] }], entities: [{ id: 'line', kind: 'line', startPointId: 'p', endPointId: 'q', construction: false }],
       relations: [{ id: 'hp', kind: 'fixed-axis', pointId: 'p', axis: 'y', value: 10 }, { id: 'hq', kind: 'fixed-axis', pointId: 'q', axis: 'y', value: 10 }] });
-    const ends = click(held, [datum('x-axis'), entity('line')], { x: 48.9, y: 5 });
+    const ends = click(held, [hAxis, entity('line')], { x: 48.9, y: 5 });
     expect(ends.candidate).toMatchObject({ state: 'existing', relationIds: ['hp', 'hq'] });
     expect(ends.preview).toHaveLength(2); expect(ends.stored).toEqual(ends.preview);
     // The first runs through the pointer; the second steps out beyond it, clear of its text and line.
     const [first, second] = ends.drawn;
     expect(first.line![0][0]).toBeCloseTo(48.9, 9); expect(second.line![0][0]).toBeGreaterThan(48.9 + cadSketchGraphDimensionLabel(10, 'distance').height * scale);
     expect(apart(first, second)).toBe(true);
-    // A point's X and Y from the origin, which would be drawn over each other with the pointer there.
-    const origin = click(sketch(), [datum('origin'), point('c')], { x: 25, y: 11.4 });
-    expect(origin.preview).toHaveLength(2); expect(origin.stored).toEqual(origin.preview);
-    expect(origin.drawn[0].line![0][1]).toBeCloseTo(11.4, 9); expect(apart(origin.drawn[0], origin.drawn[1])).toBe(true);
-    // Clear of each other, both run through the pointer.
-    const clear = click(sketch(), [datum('origin'), point('c')], { x: 20, y: 10 });
-    expect(clear.drawn.map(layout => layout.kind === 'angle' ? null : layout.line[0])).toEqual([[0, expect.closeTo(10, 9)], [expect.closeTo(20, 9), 0]]);
   });
 });
 

@@ -1,5 +1,6 @@
 import { canonicalGCodeCommand, gcodeCommandDefinition } from './gcodeCommands';
 import type { GCodeInspectionOptions } from './gcodeInspectionTypes';
+import { CAD_PRECISION, cadRoundoff } from '../precision/cadPrecision';
 
 export type GCodeMotionCommand = 'G0' | 'G1' | 'G2' | 'G3';
 
@@ -51,8 +52,7 @@ export interface GCodeBlockResult {
 
 const NUMBER_SOURCE = '[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[Ee][-+]?\\d+)?';
 const WORD_PATTERN = new RegExp(`([A-Z])\\s*(${NUMBER_SOURCE})`, 'gi');
-const POSITION_EPSILON = 1e-12;
-const SWEEP_RESOLUTION = Number.EPSILON * Math.PI * 4;
+const SWEEP_RESOLUTION = cadRoundoff(4, Math.PI);
 
 export function createGCodeInterpreterState(profile: GCodeInterpreterState['profile'] = 'neutral', defaults: GCodeInspectionOptions['defaults'] = {}): GCodeInterpreterState {
   if (defaults.initialPosition && ![defaults.initialPosition.x, defaults.initialPosition.y].every(Number.isFinite)) {
@@ -507,7 +507,7 @@ function resolveRadiusCenter(
     issues.push(errorIssue(lineNumber, 'Arc chord must be finite.'));
     return null;
   }
-  if (chord <= POSITION_EPSILON) {
+  if (chord <= CAD_PRECISION.gcodeArcChordMm) {
     issues.push(errorIssue(lineNumber, 'R arcs require distinct start and end points.'));
     return null;
   }

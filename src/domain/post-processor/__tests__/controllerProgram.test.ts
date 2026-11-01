@@ -56,31 +56,7 @@ describe('controller linear motion audit', () => {
 });
 
 describe('controller rounding allowance', () => {
-  // Exact binary quanta and coordinates make every difference below exact, so each case sits a known
-  // number of ulps from its boundary. One ulp of a value in [512, 1024) mm is 2^-43 mm.
-  const quantum = 2 ** -10;
-  const ulp1000 = 2 ** -43;
-
-  it.each([
-    { name: 'within', ulps: 7, accepted: true },
-    { name: 'beyond', ulps: 9, accepted: false }
-  ])('scales the endpoint roundoff with the coordinate: $name 4 ulps of 1000 mm', ({ ulps, accepted }) => {
-    // Four ulps of 1000 mm are 7.8 ulps of the value 1000 itself.
-    const end = { x: 1000 + quantum / 2 + ulps * ulp1000, y: 0 };
-    expect(auditRoundedLinearPath({ x: 0, y: 0 }, { x: 1000, y: 0 }, [{ x: 0, y: 0 }, end], quantum))
-      .toEqual(accepted ? [] : [expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })]);
-  });
-
-  it.each([
-    { name: 'within', ulps: 24, accepted: true },
-    { name: 'beyond', ulps: 40, accepted: false }
-  ])('scales the line-deviation roundoff with the coordinates: $name 32 ulps of 1000 mm', ({ ulps, accepted }) => {
-    const split = { x: 500, y: quantum / 2 + ulps * Number.EPSILON * 1000 };
-    expect(auditRoundedLinearPath(
-      { x: 0, y: 0 }, { x: 1000, y: 0 }, [{ x: 0, y: 0 }, split, { x: 1000, y: 0 }], quantum
-    )).toEqual(accepted ? [] : [expect.objectContaining({ code: 'POST_AUDIT_MOTION_MISMATCH' })]);
-  });
-
+  // The roundoff thresholds themselves are pinned in controllerProgram.boundaries.test.ts.
   it.each([
     { planned: 8.0015, emitted: 8.002, accepted: true },
     { planned: 8.0015, emitted: 8.001, accepted: true },

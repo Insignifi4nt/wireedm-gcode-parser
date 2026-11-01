@@ -15,6 +15,7 @@ import { signedDxfArcSweepRadians } from '@/domain/dxf/arcSweep';
 import type { DxfEntity } from '@/domain/dxf/types';
 import type { ArcPathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
+import { CAD_PRECISION, cadRoundoff } from '@/domain/precision/cadPrecision';
 
 const strict = { additionalProperties: false };
 export const CadSketchOffsetSourceSchema = Type.Union([
@@ -68,7 +69,7 @@ function checkPoint(point: Point2): void {
 }
 function targetRadius(radius: number, distance: number): number {
   const result = radius + distance;
-  if (result <= 1e-7 || result > 1e6 || !Number.isFinite(result)) return fail('The offset collapses a circular support or exceeds the supported radius.');
+  if (result <= CAD_PRECISION.minimumLengthMm || result > CAD_PRECISION.modelExtentMm || !Number.isFinite(result)) return fail('The offset collapses a circular support or exceeds the supported radius.');
   if (result === radius) return fail('The nonzero offset is too small to represent at this radius.');
   return result;
 }
@@ -76,12 +77,12 @@ function joint(previous: Edge, current: Edge, distance: number): Point2 {
   const a = tangent(previous, true), b = tangent(current), determinant = cross(a, b), dot = a.x * b.x + a.y * b.y;
   const rounding = cadPathClosureTolerance([...supports(previous), ...supports(current)]);
   if (previous.kind !== 'line' || current.kind !== 'line') {
-    if (dot <= 0 || Math.abs(determinant) > 1e-12 || Math.abs(determinant) * Math.max(previous.length, current.length) > rounding)
+    if (dot <= 0 || Math.abs(determinant) > CAD_PRECISION.angularAccuracyRad || Math.abs(determinant) * Math.max(previous.length, current.length) > rounding)
       return fail('Offset supports smooth circular joints only; sharp line/arc or arc/arc corners need an explicit join policy.');
     return shifted(previous.end, a, distance);
   }
   const first = shifted(previous.end, a, distance), second = shifted(current.start, b, distance);
-  if (Math.abs(determinant) <= 32 * Number.EPSILON) {
+  if (Math.abs(determinant) <= cadRoundoff(32)) {
     if (dot <= 0) return fail('Offset cannot choose an overlapping or reversing line joint.');
     return first;
   }
@@ -90,10 +91,10 @@ function joint(previous: Edge, current: Edge, distance: number): Point2 {
 }
 function checkOffsetEdge(source: Edge, result: Edge, distance: number): void {
   const rounding = cadPathClosureTolerance([...supports(source), ...supports(result)]);
-  if (result.length <= 1e-7) return fail('The offset collapses an edge.');
+  if (result.length <= CAD_PRECISION.minimumLengthMm) return fail('The offset collapses an edge.');
   if (source.kind === 'line' && result.kind === 'line') {
     const a = tangent(source), b = tangent(result), q = Math.abs(cross(a, b));
-    if (a.x * b.x + a.y * b.y <= 0 || q > 1e-12 || q * Math.max(source.length, result.length) > rounding)
+    if (a.x * b.x + a.y * b.y <= 0 || q > CAD_PRECISION.angularAccuracyRad || q * Math.max(source.length, result.length) > rounding)
       return fail('The offset cannot preserve the line direction and corner branch.');
     for (const point of [result.start, result.end]) {
       const normalDistance = a.y * (point.x - source.start.x) - a.x * (point.y - source.start.y);
@@ -107,7 +108,7 @@ function checkOffsetEdge(source: Edge, result: Edge, distance: number): void {
     // An authored half-turn has no strict major/minor side. Its atan2
     // reconstruction still obeys the unchanged angular and physical gates.
     if (sourceSide !== 0 && sourceSide !== Math.sign(Math.abs(result.sweepRadians) - Math.PI)
-      || angleError > 1e-12 || angleError * Math.max(source.radius, radius) > rounding
+      || angleError > CAD_PRECISION.angularAccuracyRad || angleError * Math.max(source.radius, radius) > rounding
       || [result.start, result.end].some(point => Math.abs(Math.hypot(point.x - source.center.x, point.y - source.center.y) - radius) > rounding))
       return fail('The offset cannot preserve the circular support, shared joints and signed arc branch.');
   }

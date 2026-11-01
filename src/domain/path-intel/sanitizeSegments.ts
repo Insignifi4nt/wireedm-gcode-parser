@@ -21,6 +21,7 @@ import type {
   SegmentBuildResult,
   SegmentSourceRef
 } from './types';
+import { cadRoundoff } from '../precision/cadPrecision';
 
 interface IndexedSegment {
   index: number;
@@ -173,7 +174,7 @@ export function pathSegmentHasExecutableCircularGeometry(
 
   const fullTurn =
     Math.abs(Math.abs(segment.sweepRadians) - 2 * Math.PI) <=
-    64 * Number.EPSILON * 2 * Math.PI;
+    cadRoundoff(64, 2 * Math.PI);
   const endpointsCoincide =
     segment.start.x === segment.end.x && segment.start.y === segment.end.y;
   return !endpointsCoincide || fullTurn;
@@ -202,7 +203,7 @@ export function pathSegmentHasConsistentArcAngularGeometry(
   }
 
   const angularTolerance = Math.max(
-    128 * Number.EPSILON * fullTurn,
+    cadRoundoff(128, fullTurn),
     epsilon / segment.radius
   );
   const startFromPoint = normalizeAngle(
@@ -243,7 +244,7 @@ function radialPointMatchesRadius(
     (Math.abs(radialX) / radialDistance) * halfFloatingStep(point.x) +
     (Math.abs(radialY) / radialDistance) * halfFloatingStep(point.y);
   const arithmeticTolerance =
-    64 * Number.EPSILON * Math.max(1, radius, radialDistance);
+    cadRoundoff(64, Math.max(1, radius, radialDistance));
   const tolerance = Math.max(epsilon, representationTolerance, arithmeticTolerance);
   return Math.abs(radialDistance - radius) <= tolerance;
 }

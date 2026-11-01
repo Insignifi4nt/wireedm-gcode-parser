@@ -1,4 +1,4 @@
-import type { CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
+import { cadSketchSnapAxisId, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import type { SketchPoint } from './cadSketchInteraction';
 
 /** Pixel-sized inference graphics stay upright inside the sketch's Y-up frame. */
@@ -8,7 +8,7 @@ export function CadSketchSnapHint({ candidate, center, scaleX, scaleY, label, at
   const target = candidate.target;
   const id = 'pointId' in target ? target.pointId : 'entityId' in target ? target.entityId : target.kind === 'profile-position'
     ? `${target.profileId}/${target.location.kind}${'boundaryIndex' in target.location ? `/${target.location.boundaryIndex}` : ''}`
-    : target.kind === 'on-axis' ? `${target.axis}-axis` : target.kind === 'intersection' ? candidate.entityIds.concat(target.axes.map(axis => `${axis}-axis`)).join('/') : target.kind;
+    : target.kind === 'on-axis' ? cadSketchSnapAxisId(target.axis) : target.kind === 'intersection' ? candidate.entityIds.concat(target.axes.map(cadSketchSnapAxisId)).join('/') : target.kind;
   const kind = target.kind === 'profile-position' ? target.location.kind === 'arc-center' ? 'center' : target.location.kind : target.kind;
   // Guides run from each source point to the hint, in the hint's pixel frame (Y down).
   const guides = target.kind === 'aligned' || target.kind === 'on-entity' || target.kind === 'on-axis' ? [target.horizontal, target.vertical].flatMap(source => source

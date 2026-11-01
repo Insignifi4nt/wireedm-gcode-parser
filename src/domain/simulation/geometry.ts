@@ -1,6 +1,7 @@
 import type { WireEdmExecutionEvent } from '@/domain/execution-plan/executionPlan';
 import { circularRadialDistance, rotateCircularPoint, signedRadialAngle } from '@/domain/path-intel/circularGeometry';
 import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export type SimulationMotion = Extract<WireEdmExecutionEvent, { kind: 'motion' }>;
 const TURN = Math.PI * 2;
@@ -77,7 +78,7 @@ export function distanceToPolygon(point: Point2, polygon: readonly Point2[]): nu
 }
 
 /** Points this close to an edge count as inside. */
-export const POINT_IN_POLYGON_BOUNDARY_TOLERANCE = 1e-8;
+export const POINT_IN_POLYGON_BOUNDARY_TOLERANCE = CAD_PRECISION.simulationContactMm;
 
 /** Boundary is included; collision consumers apply their own kerf clearance. */
 export function pointInPolygon(point: Point2, polygon: readonly Point2[]): boolean {
@@ -117,7 +118,7 @@ export function polygonCrossings(start: Point2, end: Point2, polygon: readonly P
     const ex = b.x - a.x;
     const ey = b.y - a.y;
     const determinant = dx * ey - dy * ex;
-    if (Math.abs(determinant) < 1e-12) continue;
+    if (Math.abs(determinant) < CAD_PRECISION.simulationDegenerateAreaMm2) continue;
     const ax = a.x - start.x;
     const ay = a.y - start.y;
     const t = (ax * ey - ay * ex) / determinant;

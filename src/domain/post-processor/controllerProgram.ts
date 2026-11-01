@@ -5,6 +5,12 @@ import type {
 } from '@/domain/execution-plan/executionPlan';
 import type { Point2 } from '@/domain/path-intel/types';
 import { circularRadialDistance, signedRadialAngle } from '@/domain/path-intel/circularGeometry';
+import {
+  cadOutputDerivedRoundoff,
+  cadOutputFitting,
+  cadOutputPointRoundoff,
+  cadRoundoff
+} from '@/domain/precision/cadPrecision';
 
 export interface ControllerMotionTrace {
   readonly motion: 'linear' | 'circular';
@@ -168,37 +174,10 @@ export function auditControllerProgram(
   return diagnostics;
 }
 
-
-/**
- * Floating-point allowance of the motion audit, in units in the last place (ulps).
- *
- * A post writes each coordinate as decimal text, and the runtime parses that text back into a double.
- * The audit compares those doubles with the planned doubles, either directly or through distances,
- * lengths and angles derived from them. Each arithmetic step may round by half an ulp of the values
- * it handles, so the allowance is a count of ulps of the largest magnitude a comparison reads. A fixed
- * guard cannot replace it: half an ulp of a coordinate exceeds `Number.EPSILON` from 8 mm upwards.
- * Magnitudes are floored at 1 mm, as the backward-travel check below does, so no allowance falls
- * below the former fixed guard.
- *
- * Point comparisons (endpoints and arc centres) round when the emitted decimal is parsed, in the
- * quantum's own double and in the difference: 1/2 ulp each. An incremental arc centre adds the post's
- * centre-minus-start, its parse and the runtime's start-plus-offset, at most 3/2 ulps of the larger of
- * the centre and the start. That is at most 3 ulps; 4 keeps a margin.
- */
-const OUTPUT_POINT_ROUNDOFF_ULPS = 4;
-/**
- * Derived comparisons chain more steps per value: parsing, subtraction, normalising a direction
- * (a hypot and a division), products and sums. Counting them gives at most 13 ulps for the distance
- * from a planned line, 17 for the radial distance from a planned arc, 12 per term of a path length
- * and 35 per term of an arc sweep, whose magnitude includes a full turn's arc length. 32 per term
- * covers each case with a margin. Lengths and sweeps sum the planned value and each emitted motion,
- * so their allowance scales with that number of terms.
- */
-const OUTPUT_DERIVED_ROUNDOFF_ULPS = 32;
-
-function outputRoundoffMm(ulps: number, magnitude: number) {
-  return ulps * Number.EPSILON * Math.max(1, magnitude);
-}
+// Each comparison allows the post's rounding (half a quantum per axis), the plan's endpoint tolerance,
+// and floating-point roundoff that grows with the largest magnitude it reads. The roundoff counts live
+// in the precision policy: `outputPointRoundoffUlps` for endpoints and centres, and
+// `outputDerivedRoundoffUlps` per summed term for line distances, radial distances, lengths and sweeps.
 
 interface LinearAllowance {
   readonly sourceToleranceMm: number;
@@ -234,11 +213,11 @@ function sameMotionSequence(
     : 0;
   // Non-finite input fails closed instead of widening every allowance to infinity.
   if (!Number.isFinite(pointMagnitude) || !Number.isFinite(centerMagnitude)) return false;
-  const fallbackPointMm = Math.max(
-    sourceToleranceMm,
-    eventQuantum / Math.SQRT2 +
-      outputRoundoffMm(OUTPUT_POINT_ROUNDOFF_ULPS, Math.max(pointMagnitude, centerMagnitude))
-  );
+  // Output fitting widens point, length and arc sweep allowances to the post's rounding when a motion
+  // carries no per-axis rounding; each comparison passes the roundoff of the values it reads.
+  const fallbackPointMm = cadOutputFitting(
+    sourceToleranceMm, eventQuantum, cadOutputPointRoundoff(Math.max(pointMagnitude, centerMagnitude))
+  ).pointMm;
   if (
     !sameRoundedPoint(motions[0].start, expectedStart, sourceToleranceMm, motions[0].rounding?.startX, motions[0].rounding?.startY, fallbackPointMm) ||
     !sameRoundedPoint(motions.at(-1)!.end, expectedEnd, sourceToleranceMm, motions.at(-1)!.rounding?.endX, motions.at(-1)!.rounding?.endY, fallbackPointMm) ||
@@ -260,10 +239,11 @@ function sameMotionSequence(
   if (!Number.isFinite(radius) || radius <= 0) return false;
   // The radial distance is formed from the point and the planned start directly, so its roundoff
   // scales with their coordinates and not with a distant centre.
-  const radialRoundoffMm = outputRoundoffMm(OUTPUT_DERIVED_ROUNDOFF_ULPS, pointMagnitude);
+  const radialRoundoffMm = cadOutputDerivedRoundoff(pointMagnitude);
+  const radialFallbackMm = cadOutputFitting(sourceToleranceMm, eventQuantum, radialRoundoffMm).lengthMm;
   const radialAllowance = (quantumX: number | undefined, quantumY: number | undefined) => (
     quantumX === undefined || quantumY === undefined
-      ? Math.max(sourceToleranceMm, eventQuantum * Math.SQRT2 + radialRoundoffMm)
+      ? radialFallbackMm
       : sourceToleranceMm + Math.hypot(quantumX, quantumY) / 2 + radialRoundoffMm
   );
   if (motions.some((motion) => (
@@ -291,9 +271,8 @@ function sameMotionSequence(
   ), 0);
   // An arc length's roundoff scales with the coordinates and with a full turn's arc length, once for
   // the planned sweep and once for each emitted motion.
-  const sweepRoundoffMm = outputRoundoffMm(
-    OUTPUT_DERIVED_ROUNDOFF_ULPS * (motions.length + 1),
-    Math.max(pointMagnitude, centerMagnitude) + 2 * Math.PI * radius
+  const sweepRoundoffMm = cadOutputDerivedRoundoff(
+    Math.max(pointMagnitude, centerMagnitude) + 2 * Math.PI * radius, motions.length + 1
   );
   // To first order, rounding moves an arc length by each endpoint's displacement plus up to twice the
   // centre's. Doubling every term keeps the bound conservative while displacements are small against
@@ -304,7 +283,7 @@ function sameMotionSequence(
       Math.hypot(motion.rounding!.endX, motion.rounding!.endY) / 2 +
       Math.hypot(motion.rounding!.centerX, motion.rounding!.centerY) / 2
     ), 0) + sweepRoundoffMm
-    : Math.max(sourceToleranceMm, eventQuantum * 4 + sweepRoundoffMm);
+    : cadOutputFitting(sourceToleranceMm, eventQuantum, sweepRoundoffMm).arcSweepMm;
   return radius * Math.abs(expectedSweep - emittedSweep) <= sweepAllowanceMm;
 }
 
@@ -322,9 +301,8 @@ function sameLinearPath(
   if (expectedLength > 0 && emittedLength === 0) return false;
   const directionX = expectedLength === 0 ? 0 : (end.x - start.x) / expectedLength;
   const directionY = expectedLength === 0 ? 0 : (end.y - start.y) / expectedLength;
-  const lengthRoundoffMm = outputRoundoffMm(
-    OUTPUT_DERIVED_ROUNDOFF_ULPS * (motions.length + 1),
-    Math.max(pointMagnitude, expectedLength, emittedLength)
+  const lengthRoundoffMm = cadOutputDerivedRoundoff(
+    Math.max(pointMagnitude, expectedLength, emittedLength), motions.length + 1
   );
   if (motions.every((motion) => motion.rounding)) {
     const range = roundedLengthRange(motions, start, end, directionX, directionY);
@@ -332,9 +310,10 @@ function sameLinearPath(
       emittedLength - expectedLength > range.longerMm + sourceToleranceMm + lengthRoundoffMm ||
       expectedLength - emittedLength > range.shorterMm + sourceToleranceMm + lengthRoundoffMm
     ) return false;
-  } else if (Math.abs(expectedLength - emittedLength) > Math.max(
-    sourceToleranceMm, fallbackQuantumMm * Math.SQRT2 + lengthRoundoffMm
-  )) return false;
+  } else if (
+    Math.abs(expectedLength - emittedLength) >
+      cadOutputFitting(sourceToleranceMm, fallbackQuantumMm, lengthRoundoffMm).lengthMm
+  ) return false;
   if (expectedLength === 0) {
     return motions.every((motion) => (
       sameRoundedPoint(motion.start, start, sourceToleranceMm,
@@ -343,12 +322,12 @@ function sameLinearPath(
         motion.rounding?.endX, motion.rounding?.endY, fallbackPointMm)
     ));
   }
-  const lineRoundoffMm = outputRoundoffMm(OUTPUT_DERIVED_ROUNDOFF_ULPS, pointMagnitude);
-  const fallbackLineMm = Math.max(sourceToleranceMm, fallbackQuantumMm / Math.SQRT2 + lineRoundoffMm);
+  const lineRoundoffMm = cadOutputDerivedRoundoff(pointMagnitude);
+  const fallbackLineMm = cadOutputFitting(sourceToleranceMm, fallbackQuantumMm, lineRoundoffMm).pointMm;
   // Positional tolerance permits rounding, but must not authorize backwards travel.
-  const roundoff = Number.EPSILON * Math.max(
+  const roundoff = cadRoundoff(8, Math.max(
     1, expectedLength, Math.abs(start.x), Math.abs(start.y), Math.abs(end.x), Math.abs(end.y)
-  ) * 8;
+  ));
   let previousProgress = -Infinity;
   for (const motion of motions) {
     for (const [point, quantumX, quantumY] of [
@@ -443,10 +422,8 @@ function sameRoundedPoint(
   const residualX = Math.max(0, Math.abs(first.x - second.x) - quantumX / 2);
   const residualY = Math.max(0, Math.abs(first.y - second.y) - quantumY / 2);
   const roundoffMm = Math.hypot(
-    outputRoundoffMm(OUTPUT_POINT_ROUNDOFF_ULPS,
-      Math.max(Math.abs(first.x), Math.abs(second.x), quantumX, Math.abs(reference?.x ?? 0))),
-    outputRoundoffMm(OUTPUT_POINT_ROUNDOFF_ULPS,
-      Math.max(Math.abs(first.y), Math.abs(second.y), quantumY, Math.abs(reference?.y ?? 0)))
+    cadOutputPointRoundoff(Math.max(Math.abs(first.x), Math.abs(second.x), quantumX, Math.abs(reference?.x ?? 0))),
+    cadOutputPointRoundoff(Math.max(Math.abs(first.y), Math.abs(second.y), quantumY, Math.abs(reference?.y ?? 0)))
   );
   return Math.hypot(residualX, residualY) <= sourceToleranceMm + roundoffMm;
 }

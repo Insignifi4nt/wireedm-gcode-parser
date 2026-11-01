@@ -102,7 +102,7 @@ test('places each dimension where the pointer puts it, falls back to a reference
   await placed({ id: expect.any(String), kind: 'axis-distance', axis: 'y', pointIds: ['a', 'o'], value: 10, annotation: at(20) });
 
   // A point and an axis, then Enter, hold the point at its distance from that axis, a plain Distance, drawn through the pointer left at (40, 15).
-  await pick('[data-cad-sketch-point="c"]'); await pick('[data-cad-sketch-datum="x-axis"]');
+  await pick('[data-cad-sketch-point="c"]'); await pick('[data-cad-sketch-fixed="@h"]');
   await expect(canvas).toHaveAccessibleDescription(/^Distance · Click or press Enter to place/);
   await page.keyboard.press('Enter');
   await placed({ id: expect.any(String), kind: 'fixed-axis', pointId: 'c', axis: 'y', value: 30, annotation: at(-25) });

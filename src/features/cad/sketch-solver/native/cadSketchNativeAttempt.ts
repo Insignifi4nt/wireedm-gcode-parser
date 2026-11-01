@@ -5,6 +5,7 @@ import { compileCadSketchEquations, type CadSketchCompiledSketch } from '../../.
 import { applyCadSketchEquationSolution, cadSketchEquationResidual, type CadSketchEquationModel } from '../../../../domain/cad/sketch-solver/cadSketchEquationModel';
 import { cadSketchEquationDefinition, cadSketchEquationDiagnostics } from './cadSketchNativeProtocol';
 import type { CadSketchNativeDiagnosis, CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketchNativeSolver';
+import { CAD_PRECISION, cadRoundoff } from '../../../../domain/precision/cadPrecision';
 
 /**
  * Why native's answer is less than certain, or what it rejected: an input it refused to compile, a
@@ -70,9 +71,10 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     clock.next('mapping');
     const attempt = settle(input, model, solution, check);
     if (attempt.result.kind === 'solved' || input.drag) return attempt;
-    // A point held on a curve that starts on its center has no radial direction to move along, so a
-    // failed solve tries again from starts one radius out. Only an answer at its most certain replaces it.
-    for (const values of centerStarts(model)) {
+    // A point held on a curve that starts on its center has no radial direction to move along, and an arc centre that starts along the
+    // line it is held square to has no side to turn to, so a failed solve tries again from starts one radius out, then from starts
+    // turned square. Only an answer at its most certain replaces it.
+    for (const values of [...centerStarts(model), ...squareStarts(model)]) {
       const seeded = { ...model, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded, options)), check);
       if (retried.result.kind === 'solved' && !retried.reason) return retried;
     }
@@ -89,26 +91,53 @@ function settle(input: CadSketchSolveInput, model: CadSketchEquationModel, solut
   return solution.drag ? { ...attempt, drag: solution.drag } : attempt;
 }
 
+const DIRECTIONS: readonly (readonly [number, number])[] = [[1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2]];
 /**
- * Start values that move each point a relation holds on a full circle, sitting on that circle's
- * center, one radius out, using only that point's own free coordinates. Each point offers along X, along Y and diagonally
- * where its free coordinates allow. Start k gives the i-th such point its offer k + i, wrapping, so
- * points with different free axes move together and points on one center start apart. Nothing else
- * moves, and none are offered when no such point exists.
+ * Start values that move each point a relation holds on a full circle, sitting on that circle's center, one radius out, using only
+ * that point's own free coordinates. A point that cannot move, such as the origin, moves its center the other way instead, using
+ * the center's free coordinates. Each offers along X, along Y and diagonally where its free coordinates allow. Start k gives the
+ * i-th such hold its offer k + i, wrapping, so holds with different free axes move together and points on one center start apart.
+ * Nothing else moves, and none are offered when no such hold exists.
  */
 function centerStarts(model: CadSketchCompiledSketch): readonly (readonly number[])[] {
-  const { values, fixed } = model, centered = new Map<number, { readonly reach: number; readonly offers: readonly (readonly number[])[] }>();
-  for (const { point: x, centre: center, size } of model.radialHolds) {
-    if (centered.has(x)) continue;
+  const { values, fixed } = model;
+  const centered = new Map<number, { readonly reach: number; readonly offers: readonly (readonly number[])[]; readonly moved: readonly [number, number]; readonly sense: 1 | -1 }>();
+  const free = (moved: readonly [number, number]) => DIRECTIONS.filter(direction => direction.every((step, axis) => step === 0 || !fixed[moved[axis]]));
+  for (const { point, centre: center, size } of model.radialHolds) {
+    const own = free(point), moved = own.length ? point : center;
+    if (centered.has(moved[0])) continue;
     const reach = size.kind === 'span' ? Math.hypot(values[size.span[2]] - values[size.span[0]], values[size.span[3]] - values[size.span[1]]) : values[size.index];
-    if (!(reach > 0) || Math.hypot(values[x] - values[center], values[x + 1] - values[center + 1]) > 1e-12 * Math.max(1, reach)) continue;
-    const offers = [[1, 0], [0, 1], [Math.SQRT1_2, Math.SQRT1_2]].filter(direction => direction.every((step, axis) => step === 0 || !fixed[x + axis]));
-    if (offers.length) centered.set(x, { reach, offers });
+    if (!(reach > 0) || Math.hypot(values[point[0]] - values[center[0]], values[point[1]] - values[center[1]]) > CAD_PRECISION.solverCollapsedStartRelative * Math.max(1, reach)) continue;
+    const offers = own.length ? own : free(center);
+    if (offers.length) centered.set(moved[0], { reach, offers, moved, sense: own.length ? 1 : -1 });
   }
-  const rounds = Math.max(0, ...[...centered.values()].map(point => point.offers.length));
+  const rounds = Math.max(0, ...[...centered.values()].map(hold => hold.offers.length));
   return Array.from({ length: rounds }, (_, round) => {
     const seeded = [...values];
-    [...centered].forEach(([x, { reach, offers }], index) => offers[(round + index) % offers.length].forEach((step, axis) => { seeded[x + axis] += step * reach; }));
+    [...centered.values()].forEach(({ reach, offers, moved, sense }, index) => offers[(round + index) % offers.length].forEach((step, axis) => { seeded[moved[axis]] += sense * step * reach; }));
+    return seeded;
+  });
+}
+
+/**
+ * Start values that turn each arm held square to a support, and starting along it, a quarter turn about its pivot at its own length:
+ * to the left of the support, then to the right, where the arm's free coordinates allow. Start k gives the i-th such arm its offer
+ * k + i, wrapping. Nothing else moves, and none are offered when no arm starts along its support.
+ */
+function squareStarts(model: CadSketchCompiledSketch): readonly (readonly number[])[] {
+  const { values, fixed } = model, turned: { readonly arm: readonly [number, number]; readonly offers: readonly (readonly number[])[] }[] = [];
+  for (const { pivot, arm, toward } of model.squareHolds) {
+    const [px, py] = [values[pivot[0]], values[pivot[1]]], [ax, ay] = [values[arm[0]] - px, values[arm[1]] - py], [dx, dy] = [values[toward[0]] - px, values[toward[1]] - py];
+    const reach = Math.hypot(ax, ay), length = Math.hypot(dx, dy);
+    if (!(reach > 0) || !(length > 0) || Math.abs(ax * dy - ay * dx) > CAD_PRECISION.solverAlongSupportStartRelative * reach * length) continue;
+    const offers = ([1, -1] as const).map(side => [px - side * dy / length * reach, py + side * dx / length * reach])
+      .filter(start => start.every((value, axis) => value === values[arm[axis]] || !fixed[arm[axis]]));
+    if (offers.length) turned.push({ arm, offers });
+  }
+  const rounds = Math.max(0, ...turned.map(hold => hold.offers.length));
+  return Array.from({ length: rounds }, (_, round) => {
+    const seeded = [...values];
+    turned.forEach(({ arm, offers }, index) => offers[(round + index) % offers.length].forEach((value, axis) => { seeded[arm[axis]] = value; }));
     return seeded;
   });
 }
@@ -159,14 +188,14 @@ function judge(input: CadSketchSolveInput, model: CadSketchEquationModel, soluti
 function answer(result: CadSketchSolveResult): CadSketchNativeAttempt { return { result, movedGroups: 0, keptGroups: 0 }; }
 
 /** The native solver's absolute tolerance for a driver, in each equation's mm or radians. */
-const DRIVER_TOLERANCE = 1e-10;
+const DRIVER_TOLERANCE = CAD_PRECISION.solverResidualMm;
 
 /**
  * A value that moved by at most the driver tolerance, or about one ulp of its start where that is
  * larger, may have moved only by polishing: sketches saved before 0.0.757, when PlaneGCS could
  * answer, can hold residuals of about 1e-12 mm that native polishes away.
  */
-const polished = (start: number, value: number) => Math.abs(value - start) <= Math.max(DRIVER_TOLERANCE, 2 * Number.EPSILON * Math.abs(start));
+const polished = (start: number, value: number) => Math.abs(value - start) <= Math.max(DRIVER_TOLERANCE, cadRoundoff(2, Math.abs(start)));
 
 /**
  * The solved graph. Native polishing moves values by ulps even where the start already met every
@@ -235,8 +264,8 @@ function shortDecimals(model: CadSketchEquationModel, values: readonly number[],
   }
   const snapped = values.map((value, index) => {
     if (model.fixed[index] || kept(index) || Object.is(value, model.values[index])) return value;
-    const short = Math.abs(value) <= 8 * Number.EPSILON * (Number.isFinite(scale[index]) ? scale[index] : 1) ? 0 : Number(value.toPrecision(12));
-    return short === value || short !== 0 && Math.abs(short - value) > 8 * Number.EPSILON * Math.abs(value) || Math.abs(short - value) > DRIVER_TOLERANCE ? value : short;
+    const short = Math.abs(value) <= cadRoundoff(8, Number.isFinite(scale[index]) ? scale[index] : 1) ? 0 : Number(value.toPrecision(12));
+    return short === value || short !== 0 && Math.abs(short - value) > cadRoundoff(8, Math.abs(value)) || Math.abs(short - value) > DRIVER_TOLERANCE ? value : short;
   });
   // Each pass undoes at least one snap, so this ends.
   for (let worse = true; worse;) {

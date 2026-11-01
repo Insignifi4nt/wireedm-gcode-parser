@@ -11,6 +11,7 @@ import type {
   Point2
 } from './types';
 import { resolvePathPlanningOptions } from './segments';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 interface EndpointSample {
   ref: EndpointRef;
@@ -353,7 +354,7 @@ function ambiguousEndpointDiagnostic(
 
 function hasNearestTie(candidates: NearCandidate[]) {
   if (candidates.length < 2) return false;
-  return Math.abs(candidates[0].distance - candidates[1].distance) <= 1e-12;
+  return Math.abs(candidates[0].distance - candidates[1].distance) <= CAD_PRECISION.camTieMm;
 }
 
 function centroid(points: Point2[]): Point2 {

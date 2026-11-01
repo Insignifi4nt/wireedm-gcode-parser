@@ -1,5 +1,6 @@
 import { orientedArcSweep, orientedSegmentEnd, orientedSegmentStart, pointsEqual } from './segments';
 import type { PathOperation, PathSegment } from './types';
+import { cadRoundoff } from '../precision/cadPrecision';
 
 /** A complete, continuous circle, including a circle represented by split arcs. */
 export function circularOperationSource({ operation, segments, epsilon }: {
@@ -25,6 +26,6 @@ export function circularOperationSource({ operation, segments, epsilon }: {
     if (!Number.isFinite(segmentSweep) || (sweep !== 0 && Math.sign(sweep) !== Math.sign(segmentSweep))) return null;
     sweep += segmentSweep;
   }
-  if (Math.abs(Math.abs(sweep) - Math.PI * 2) > Math.max(Number.EPSILON * 64, epsilon / first.radius)) return null;
+  if (Math.abs(Math.abs(sweep) - Math.PI * 2) > Math.max(cadRoundoff(64), epsilon / first.radius)) return null;
   return { center: { ...first.center }, radius: first.radius, segmentId: first.id };
 }

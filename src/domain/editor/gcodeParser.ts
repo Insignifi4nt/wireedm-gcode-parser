@@ -15,8 +15,9 @@ import type {
 import { isRecognizedGCodeSetup } from './gcodeCommands';
 import { splitGCodeLines } from './gcodeLines';
 import type { GCodeInspectionOptions } from './gcodeInspectionTypes';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
-const POSITION_EPSILON = 1e-9;
+const POSITION_EPSILON = CAD_PRECISION.gcodePositionMm;
 
 interface ParserState {
   hasUndeclaredCoordinates: boolean;

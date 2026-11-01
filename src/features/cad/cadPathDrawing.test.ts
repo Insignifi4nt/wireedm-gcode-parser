@@ -105,8 +105,8 @@ describe('pending mixed path drawing', () => {
     expect(JSON.stringify(draft)).toBe(before);
     draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 0], pick: { kind: 'on-line', point: [10, 0], lineId: 'edge', relationId: 'on-edge' } });
     draft = updateCadPathDraft(draft, { kind: 'mode', mode: 'arc' });
-    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], pick: { kind: 'datum', point: [10, 10], datum: 'origin', relationIds: [] } });
-    expect(cadPathDraftPicks(draft).map(pick => pick.kind)).toEqual(['on-line', 'datum']);
+    draft = updateCadPathDraft(draft, { kind: 'point', point: [10, 10], pick: { kind: 'fixed', point: [10, 10], targetId: '@origin', relationIds: [] } });
+    expect(cadPathDraftPicks(draft).map(pick => pick.kind)).toEqual(['on-line', 'fixed']);
     const released = releaseCadPathDraftPicks(draft);
     expect(cadPathDraftPicks(released)).toEqual([]); expect(JSON.stringify(released)).not.toContain('Pick');
     expect(released).toMatchObject({ kind: 'arc-through', start: [0, 0], end: [10, 10], segments: [{ kind: 'line', start: [0, 0], end: [10, 0] }] });

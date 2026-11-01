@@ -6,10 +6,11 @@ import { CadError } from './cadError';
 import { isCadImportData } from './cadImportData';
 import { CadPlaneSchema } from './cadPrimitives';
 import { nextDown, nextUp } from '../path-intel/segments';
+import { CAD_PRECISION, cadRoundoff } from '../precision/cadPrecision';
 
-export const CAD_POCKET_NATIVE_PRECISION = 1e-7;
-export const CAD_POCKET_CAP_MARGIN_FLOOR_MM = 1e-6;
-export const MAX_CAD_POCKET_REQUIRED_SPAN_MM = 1e6;
+export const CAD_POCKET_NATIVE_PRECISION = CAD_PRECISION.kernelConfusionMm;
+export const CAD_POCKET_CAP_MARGIN_FLOOR_MM = CAD_PRECISION.pocketCapMarginFloorMm;
+export const MAX_CAD_POCKET_REQUIRED_SPAN_MM = CAD_PRECISION.modelExtentMm;
 export const CAD_POCKET_CAP_RESERVE_FRACTION = 1 / 8;
 export const CadPocketDirectionSchema = Type.Union([Type.Literal('positive'), Type.Literal('negative'), Type.Literal('both')]);
 export type CadPocketDirection = 'positive' | 'negative' | 'both';
@@ -68,7 +69,7 @@ export function resolveCadPocketExtent(input: CadPocketExtentInput): CadPocketEx
     ...targetBounds.max.map(Math.abs),
     direction === 'both' ? 0 : Math.abs(offsetMm),
   );
-  const arithmetic = 64 * Number.EPSILON * scale;
+  const arithmetic = cadRoundoff(64, scale);
   const precision = Math.max(CAD_POCKET_NATIVE_PRECISION, nativeToleranceMm, arithmetic);
   const margin = Math.max(CAD_POCKET_CAP_MARGIN_FLOOR_MM, 4 * nativeToleranceMm + arithmetic);
   const requiredSpan = direction === 'positive' ? maxN - offsetMm : direction === 'negative' ? offsetMm - minN : maxN - minN;

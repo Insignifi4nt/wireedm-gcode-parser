@@ -1,6 +1,7 @@
 import { getOC, measureArea, measureVolume, type Shape3D } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
+import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
 
 type MaterialOperation = 'Pocket' | 'Cut';
 type MaterialContext = 'target' | 'tool' | 'common' | 'result';
@@ -51,7 +52,7 @@ export function cadKernelSolidEvidence(shape: Shape3D, context: MaterialContext,
     }
     for (const solid of solids) {
       const componentVolume = measureVolume(solid);
-      if (!Number.isFinite(componentVolume) || componentVolume <= (context === 'common' ? 0 : 1e-9)) {
+      if (!Number.isFinite(componentVolume) || componentVolume <= (context === 'common' ? 0 : CAD_PRECISION.kernelMinimumVolumeMm3)) {
         throw new CadError(`unsupported-${prefix}-precision`, `${operation} material volume cannot be confirmed at the supported precision.`);
       }
       const shells = new oc.TopExp_Explorer(solid.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
@@ -71,7 +72,7 @@ export function cadKernelSolidEvidence(shape: Shape3D, context: MaterialContext,
         // Reuse Pocket's existing safety evidence and solid-volume floor.
         // Check every cutting component before Common can omit it.
         if ((context === 'common' || context === 'target' || context === 'tool' && operation === 'Cut')
-          && componentVolume <= Math.max(1e-9, 4 * componentTolerance * componentArea)) {
+          && componentVolume <= Math.max(CAD_PRECISION.kernelMinimumVolumeMm3, 4 * componentTolerance * componentArea)) {
           throw new CadError(context === 'target' ? `unsupported-${prefix}-target` : `unsupported-${prefix}-removal`, context === 'target'
             ? 'A target component is too thin to resolve reliably at native precision. Repair the target or choose another body.'
             : context === 'tool' ? 'A cutting component is too thin to resolve at native precision. Enlarge its material width or revise its holes.'

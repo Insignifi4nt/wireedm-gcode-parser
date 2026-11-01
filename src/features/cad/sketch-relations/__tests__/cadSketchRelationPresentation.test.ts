@@ -18,12 +18,12 @@ describe('sketch relation presentation', () => {
     expect([...drawn].sort()).toEqual(Object.keys(CAD_SKETCH_RELATION_ICONS).sort());
   });
 
-  it('read only a Coincident between centres as Concentric, and draw only a datum Coincident while it holds an axis', () => {
+  it('read only a Coincident between centres as Concentric, and draw a held coordinate only while it keeps a point on an axis', () => {
     const centred = CAD_SKETCH_RELATION_KINDS.filter(kind => CAD_SKETCH_RELATION_PRESENTATION[kind].centred);
-    const datumOnly = CAD_SKETCH_RELATION_KINDS.filter(kind => CAD_SKETCH_RELATION_PRESENTATION[kind].datumOnly);
+    const onAxisOnly = CAD_SKETCH_RELATION_KINDS.filter(kind => CAD_SKETCH_RELATION_PRESENTATION[kind].onAxisOnly);
     expect(centred).toEqual(['coincident']);
     expect(CAD_SKETCH_RELATION_PRESENTATION.coincident.centred).toEqual({ glyph: 'concentric', anchor: 'curves' });
-    expect(datumOnly).toEqual(['fixed-axis']);
+    expect(onAxisOnly).toEqual(['fixed-axis']);
   });
 
   it('draw no glyph for dimensions, patterns, linked references and corners', () => {

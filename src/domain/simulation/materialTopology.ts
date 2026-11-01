@@ -1,11 +1,12 @@
 import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 interface Polygon { readonly id: string; readonly polygon: readonly Point2[] }
 interface Edge {
   readonly polygon: Polygon; readonly index: number; readonly a: Point2; readonly b: Point2;
   readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number;
 }
-const EPSILON = 1e-8;
+const EPSILON = CAD_PRECISION.simulationContactMm;
 
 /** Exact source curves may be disjoint while their rendering chords cross. Never extrude those rings. */
 export function unsupportedMaterialPolygons(polygons: readonly Polygon[]): { ids: ReadonlySet<string>; budgetExceeded: boolean } {
