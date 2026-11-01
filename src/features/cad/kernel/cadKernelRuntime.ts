@@ -1,4 +1,5 @@
 import { CadError } from '../../../domain/cad/cadError';
+import { cadFeatureActive } from '../../../domain/cad/features/cadFeatureActivity';
 import { cadFeatureProducesBody, parseCadDocument } from '../../../domain/cad/cadSchema';
 import { parseCadSectionRequest } from '../../../domain/cad/cadSection';
 import { parseCadTopologyInspectRequest, parseCadTopologyResolvePicksRequest } from '../../../domain/cad/cadTopology';
@@ -39,7 +40,7 @@ export function createCadKernelRuntime(initialize: () => Promise<void>) {
           if (!cached || cached.key !== key || cached.model.result.buildId !== selection.expectedBuildId) throw new CadError('STALE_BUILD', 'The displayed exact model is no longer cached. Rebuild and select again.');
           return { id: request.id, kind: 'topology-resolved', result: cached.model.resolveTopologyPicks(selection, document.parameters) };
         }
-        if (document.features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature))) await initialize();
+        if (document.features.some(feature => cadFeatureActive(feature, document) && cadFeatureProducesBody(feature))) await initialize();
         // Document/profile labels, parameter organization, dimension intent and
         // where dimensions are drawn have no native effect. Feature names remain
         // part of the key for mesh and STEP labels; validation and inspection use

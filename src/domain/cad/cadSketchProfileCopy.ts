@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { Value } from '@sinclair/typebox/value';
 import type { CadSketchFeature } from './cadDocument';
 import { CadIdentifierSchema, CadLabelSchema, CadNumberSchema, CadSketchPlaneSchema } from './cadPrimitives';
@@ -66,7 +67,7 @@ export function prepareCadSketchProfileCopy({ sketch, parameters, ...request }: 
 }): CadSketchProfileCopyPreparation {
   if (!isCadImportData(request) || !Value.Check(CadSketchProfileCopyRequestSchema, request))
     return invalid('Copy requires a source profile, a new sketch identity and name, and an identifier prefix of at most 64 characters.');
-  if (sketch.kind !== 'sketch' || sketch.id !== request.sourceSketchId || sketch.suppressed || request.newSketchId === sketch.id)
+  if (sketch.kind !== 'sketch' || sketch.id !== request.sourceSketchId || !cadFeatureActive(sketch, { parameters }) || request.newSketchId === sketch.id)
     return invalid('Choose an active source sketch and a distinct new sketch identity.');
   const profiles = sketch.profiles.filter(profile => profile.id === request.profileId), profile = profiles[0];
   if (profiles.length !== 1 || !profile) return invalid('The selected source profile no longer exists uniquely. Select it again.');

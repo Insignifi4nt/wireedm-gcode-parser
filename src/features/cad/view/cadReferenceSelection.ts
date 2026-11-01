@@ -1,4 +1,5 @@
 import type { CadDatumPlaneFeature, CadFeature, CadPlane, CadSketchFeature, CadSketchPlane } from '@/domain/cad/cadDocument';
+import { cadFeatureActive, type CadFeatureScope } from '@/domain/cad/features/cadFeatureActivity';
 import { CAD_DATUM_NATIVE_PLACEMENT_PRECISION_MM, CAD_DATUM_ORTHONORMAL_RESIDUAL, prepareCadDatumFrames, resolveCadSketchPlacement } from '@/domain/cad/cadDatumPlanes';
 
 /**
@@ -36,10 +37,10 @@ export function cadReferenceSelectionName(selection: CadReferenceSelection, feat
   return selection.kind === 'plane' ? planeName(selection.plane, features) : selection.kind === 'axis' ? `the ${selection.axis.toUpperCase()} axis` : 'the origin point';
 }
 
-const activeDatum = (plane: CadSketchPlane, features: readonly CadFeature[]): CadDatumPlaneFeature | null => {
+const activeDatum = (plane: CadSketchPlane, scope: CadFeatureScope & { readonly features: readonly CadFeature[] }): CadDatumPlaneFeature | null => {
   if (typeof plane === 'string') return null;
-  const feature = features.find(entry => entry.id === plane.featureId);
-  return feature?.kind === 'datum-plane' && !feature.suppressed ? feature : null;
+  const feature = scope.features.find(entry => entry.id === plane.featureId);
+  return feature?.kind === 'datum-plane' && cadFeatureActive(feature, scope) ? feature : null;
 };
 
 /** A line through `point` along the unit `direction`, known to the frame's angular uncertainty. */
@@ -97,7 +98,7 @@ export function cadReferenceInput(selection: CadReferenceSelection | null, comma
   if (!selection) return NONE;
   const { features } = context;
   if (selection.kind === 'plane') {
-    const plane = selection.plane, datum = activeDatum(plane, features);
+    const plane = selection.plane, datum = activeDatum(plane, context);
     if (typeof plane !== 'string' && !datum) return Object.freeze({ kind: 'unavailable', reason: 'The selected datum plane is missing or suppressed.' });
     switch (command) {
       case 'sketch':

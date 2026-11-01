@@ -1,4 +1,5 @@
 import type { CadDocument, CadSketchPlane } from './cadDocument';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { CadError } from './cadError';
 import { parseCadDocument } from './cadSchema';
 import { prepareCadDocumentFrames } from './cadDocumentFrames';
@@ -23,7 +24,7 @@ export function inspectCadPlane(document: CadDocument, featureId: string): CadPl
   if (!feature || feature.kind !== 'datum-plane' && feature.kind !== 'sketch' && feature.kind !== 'curve') {
     throw new CadError('invalid-plane-reference', 'Choose an existing datum plane, Sketch or Curve to inspect.');
   }
-  if (feature.suppressed) throw new CadError('suppressed-plane-reference', 'Unsuppress this reference and its datum before inspecting its placement.');
+  if (!cadFeatureActive(feature, validated)) throw new CadError('suppressed-plane-reference', 'Unsuppress this reference and its datum before inspecting its placement.');
   const frames = prepareCadDocumentFrames(validated);
   if (feature.kind === 'datum-plane') {
     const frame = frames.get(feature.id);

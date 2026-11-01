@@ -1,4 +1,5 @@
-import type { CadFeature, CadPlane, CadProfile, CadSketchFeature, CadSketchPlane } from '@/domain/cad/cadDocument';
+import type { CadDocument, CadFeature, CadPlane, CadProfile, CadSketchFeature, CadSketchPlane } from '@/domain/cad/cadDocument';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import { inspectCadCurve, type CadBounds3 } from '@/domain/cad/cadCurve';
 import { prepareCadDatumFrames, resolveCadSketchPlacement, resolveCadWorldDatum, cadFramePointToWorld, cadPrincipalFrame, type CadDatumFrameLookup, type CadResolvedFrame,
   type CadResolvedPlacement } from '@/domain/cad/cadDatumPlanes';
@@ -93,12 +94,12 @@ let recentSketches = new Map<CadSketchFeature, PreparedSketchReferences>(), olde
 
 /** Prepare once per immutable accepted revision; scene size never changes curve resolution. */
 export function prepareCadViewportReferences(features: readonly CadFeature[], parameters: Readonly<Record<string, number>>): readonly CadViewportReference[] {
-  const frames = prepareCadDatumFrames(features, parameters);
-  const glyphs = features.flatMap(feature => feature.kind === 'datum-plane' && !feature.suppressed ? [cadDatumReference(feature, resolveCadWorldDatum(feature, parameters))] : []);
+  const frames = prepareCadDatumFrames(features, parameters), scope = { parameters };
+  const glyphs = features.flatMap(feature => feature.kind === 'datum-plane' && cadFeatureActive(feature, scope) ? [cadDatumReference(feature, resolveCadWorldDatum(feature, parameters))] : []);
   const kept = new Map<CadSketchFeature, PreparedSketchReferences>();
   // Every source is found before any is placed in the world, so an input that cannot be placed fails as it always has.
   const prepared = features.map((feature): PreparedSources => {
-    if (feature.suppressed) return { sources: [] };
+    if (!cadFeatureActive(feature, scope)) return { sources: [] };
     if (feature.kind === 'curve') {
       const result = inspectCadCurve(feature, parameters, frames);
       return { sources: result.eligible ? [{ referenceId: feature.id, featureId: feature.id, featureKind: 'curve', name: feature.name, construction: false,
@@ -187,23 +188,23 @@ function cadSourceReference(source: ReferenceSource): CadViewportReference {
 }
 
 /** Selection controls view-only source visibility; saved geometry is never rewritten. */
-export function selectCadViewportReferences(prepared: readonly CadViewportReference[], features: readonly CadFeature[], selectedId: string | null): readonly CadViewportReference[] {
-  const visibleSketches = new Set<string>(); const visibleDatums = new Set<string>(); const byId = new Map(features.map(feature => [feature.id, feature]));
+export function selectCadViewportReferences(prepared: readonly CadViewportReference[], document: Pick<CadDocument, 'features' | 'parameters'>, selectedId: string | null): readonly CadViewportReference[] {
+  const { features } = document, visibleSketches = new Set<string>(); const visibleDatums = new Set<string>(); const byId = new Map(features.map(feature => [feature.id, feature]));
   const selected = selectedId ? byId.get(selectedId) : undefined;
-  if (!features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature))) {
-    features.forEach(feature => { if (feature.kind === 'sketch' && !feature.suppressed) visibleSketches.add(feature.id); });
+  if (!features.some(feature => cadFeatureActive(feature, document) && cadFeatureProducesBody(feature))) {
+    features.forEach(feature => { if (feature.kind === 'sketch' && cadFeatureActive(feature, document)) visibleSketches.add(feature.id); });
   }
-  if (selected && !selected.suppressed) {
+  if (selected && cadFeatureActive(selected, document)) {
     const queue = [selected.id]; const visited = new Set<string>();
     while (queue.length) {
       const id = queue.pop(); if (!id || visited.has(id)) continue; visited.add(id);
-      const feature = byId.get(id); if (!feature || feature.suppressed) continue;
+      const feature = byId.get(id); if (!feature || !cadFeatureActive(feature, document)) continue;
       if (feature.kind === 'sketch') visibleSketches.add(feature.id);
       if (feature.kind === 'datum-plane') visibleDatums.add(feature.id);
       queue.push(...cadFeatureDependencies(feature));
     }
   }
-  if (!prepared.some(reference => reference.featureKind !== 'datum-plane') && !features.some(feature => !feature.suppressed && cadFeatureProducesBody(feature))) prepared.forEach(reference => { if (reference.featureId !== null) visibleDatums.add(reference.featureId); });
+  if (!prepared.some(reference => reference.featureKind !== 'datum-plane') && !features.some(feature => cadFeatureActive(feature, document) && cadFeatureProducesBody(feature))) prepared.forEach(reference => { if (reference.featureId !== null) visibleDatums.add(reference.featureId); });
   return Object.freeze(prepared.filter(reference => reference.featureKind === 'curve' || reference.featureKind === 'sketch' && visibleSketches.has(reference.featureId) || reference.featureKind === 'datum-plane' && visibleDatums.has(reference.featureId)));
 }
 

@@ -1,4 +1,5 @@
 import type { CadDocument, CadFeature, CadMesh } from '@/domain/cad/cadDocument';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import { cadFeatureDependencies } from '@/domain/cad/cadFeatureInputs';
 import { measureCadSketch } from '@/domain/cad/cadMeasurements';
 import { measureCadCurve } from '@/domain/cad/cadCurveMeasurements';
@@ -33,12 +34,12 @@ function solidRows(meshes: readonly CadMesh[]): CadPropertyRow[] {
 export function cadPropertySummary(document: CadDocument, target: CadPropertyTarget, meshes: readonly CadMesh[], planeLabel: (feature: Extract<CadFeature, { kind: 'sketch' | 'curve' }>) => string): readonly CadPropertyRow[] {
   if (target.kind === 'body') {
     const rows: CadPropertyRow[] = [{ label: 'Features', value: String(document.features.length) }];
-    const suppressed = document.features.filter(feature => feature.suppressed).length;
+    const suppressed = document.features.filter(feature => !cadFeatureActive(feature, document)).length;
     if (suppressed) rows.push({ label: 'Suppressed', value: String(suppressed) });
     return meshes.length ? [...rows, ...solidRows(meshes)] : [...rows, { label: 'Solid', value: 'None yet' }];
   }
   const feature = target.feature, rows: CadPropertyRow[] = [];
-  if (feature.suppressed) rows.push({ label: 'State', value: 'Suppressed' });
+  if (!cadFeatureActive(feature, document)) rows.push({ label: 'State', value: 'Suppressed' });
   const inputs = [...new Set(cadFeatureDependencies(feature))].map(id => document.features.find(entry => entry.id === id)?.name ?? id);
   if (inputs.length) rows.push({ label: inputs.length === 1 ? 'Input' : 'Inputs', value: inputs.join(', ') });
   if (feature.kind === 'sketch' || feature.kind === 'curve') {

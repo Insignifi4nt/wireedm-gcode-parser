@@ -1,4 +1,5 @@
 import { userFacingMessage } from '@/lib/userMessage';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -33,12 +34,12 @@ export interface CadDxfExportDialogProps {
 export function CadDxfExportDialog({ document: cadDocument, bodies, version, currentVersion, initialFeatureId,
   onClose, onExportSketch, onExportCurve, onInspectSection, onExportSection }: CadDxfExportDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null), pending = useRef<AbortController | null>(null);
-  const sketches = cadDocument.features.filter(feature => feature.kind === 'sketch' && !feature.suppressed);
-  const curves = cadDocument.features.filter(feature => feature.kind === 'curve' && !feature.suppressed);
+  const sketches = cadDocument.features.filter(feature => feature.kind === 'sketch' && cadFeatureActive(feature, cadDocument));
+  const curves = cadDocument.features.filter(feature => feature.kind === 'curve' && cadFeatureActive(feature, cadDocument));
   const initialFeature = cadDocument.features.find(feature => feature.id === initialFeatureId);
   const initialBody = bodies.find(body => body.featureId === initialFeatureId) ?? bodies[0];
-  const [kind, setKind] = useState<SourceKind>(initialFeature?.kind === 'curve' && !initialFeature.suppressed ? 'curve'
-    : initialFeature?.kind === 'sketch' && !initialFeature.suppressed ? 'sketch'
+  const [kind, setKind] = useState<SourceKind>(initialFeature?.kind === 'curve' && cadFeatureActive(initialFeature, cadDocument) ? 'curve'
+    : initialFeature?.kind === 'sketch' && cadFeatureActive(initialFeature, cadDocument) ? 'sketch'
       : initialBody ? 'section' : sketches.length ? 'sketch' : 'curve');
   const [sketchId, setSketchId] = useState(sketches.find(feature => feature.id === initialFeatureId)?.id ?? sketches[0]?.id ?? '');
   const [curveId, setCurveId] = useState(curves.find(feature => feature.id === initialFeatureId)?.id ?? curves[0]?.id ?? '');
@@ -63,7 +64,7 @@ export function CadDxfExportDialog({ document: cadDocument, bodies, version, cur
   const source = useMemo<{ entities: readonly DxfEntity[]; error: string | null }>(() => {
     try {
       if (kind === 'section') { evaluateCadScalar(offset, cadDocument.parameters); return { entities: [], error: null }; }
-      const feature = cadDocument.features.find(candidate => candidate.id === (kind === 'sketch' ? sketchId : curveId) && !candidate.suppressed);
+      const feature = cadDocument.features.find(candidate => candidate.id === (kind === 'sketch' ? sketchId : curveId) && cadFeatureActive(candidate, cadDocument));
       const entities = feature?.kind === 'sketch' && kind === 'sketch' ? cadSketchToEntities(feature, cadDocument.parameters)
         : feature?.kind === 'curve' && kind === 'curve' ? resolveCadCurveGeometry(feature, cadDocument.parameters).entities : [];
       return { entities, error: entities.length ? null : 'Choose a source with exportable geometry.' };

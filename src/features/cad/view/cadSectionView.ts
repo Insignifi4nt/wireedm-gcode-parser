@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { CadFeature } from '@/domain/cad/cadDocument';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
+import type { CadDocument, CadFeature } from '@/domain/cad/cadDocument';
 import { cadPrincipalFrame, resolveCadWorldDatum, type CadResolvedFrame } from '@/domain/cad/cadDatumPlanes';
 import type { CadSectionPlane } from './cadViewState';
 
@@ -9,16 +10,16 @@ import type { CadSectionPlane } from './cadViewState';
  */
 
 /** Whether the plane is still there to cut by: an origin plane always is, a datum plane while it exists and is not suppressed. */
-export function cadSectionPlaneAvailable(plane: CadSectionPlane, features: readonly CadFeature[]): boolean {
+export function cadSectionPlaneAvailable(plane: CadSectionPlane, document: Pick<CadDocument, 'features' | 'parameters'>): boolean {
   if (typeof plane === 'string') return true;
-  return features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && !feature.suppressed);
+  return document.features.some(feature => feature.id === plane.featureId && feature.kind === 'datum-plane' && cadFeatureActive(feature, document));
 }
 
 /** Where the section plane lies in the world, or `null` when it no longer resolves. */
 export function resolveCadSectionFrame(plane: CadSectionPlane, features: readonly CadFeature[], parameters: Readonly<Record<string, number>>): CadResolvedFrame | null {
   if (typeof plane === 'string') return cadPrincipalFrame(plane);
   const feature = features.find(entry => entry.id === plane.featureId);
-  if (feature?.kind !== 'datum-plane' || feature.suppressed) return null;
+  if (feature?.kind !== 'datum-plane' || !cadFeatureActive(feature, { parameters })) return null;
   try { return resolveCadWorldDatum(feature, parameters); } catch { return null; }
 }
 

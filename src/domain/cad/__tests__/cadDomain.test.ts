@@ -120,7 +120,7 @@ describe('CAD dimensions and strict document boundaries', () => {
     errorCode(() => document([sketch([circle('a', 2)]), { ...extrude, suppressed: true }, first]), 'unavailable-body');
     const mirrored: CadFeature = { kind: 'mirror', id: 'mirror', name: 'Mirror', suppressed: false, sourceId: 'body', plane: 'XY' };
     const valid = document([sketch([circle('a', 2)]), extrude, mirrored, first]);
-    expect(cadVisibleBodyIds(valid.features)).toEqual(['mirror', 'pattern1']);
+    expect(cadVisibleBodyIds(valid.features, valid)).toEqual(['mirror', 'pattern1']);
   });
 });
 

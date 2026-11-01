@@ -1,74 +1,31 @@
 import { Type, type Static } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
-import type { CadDiagnostic, CadDocument, CadFeature, CadProfile, CadSketchFeature, CadSketchProfile } from './cadDocument';
+import type { CadDiagnostic, CadDocument, CadFeature, CadPoint3, CadProfile, CadScalar, CadSketchFeature, CadSketchProfile } from './cadDocument';
 import { CadError } from './cadError';
 import { evaluateCadScalar } from './cadExpression';
-import { CadPluginProfileSchema } from './plugins/cadPlugins';
 import { CadParameterGroupSchema, CadParameterMetadataSchema, CadParameterNameSchema, validateCadParameterMetadata } from './cadParameters';
 import { resolveCadSketchRegions, validateCadSketchGeometry } from './cadSketchGeometry';
-import { CadSketchRegionSelectionSchema, validateCadSketchRegionSelection } from './cadSketchRegionSelection';
-import { CadEdgeSelectionSchema, CadFaceQuerySchema, resolveCadEdgeSelection, validateCadShellOpening } from './cadTopology';
-import { CadSolidImportSourceSchema, parseCadSolidImportSource } from './cadImports';
-import { CadDxfImportSourceSchema, parseCadDxfImportSource } from './cadDxfSource';
 import { cadImportDataFields, isCadImportData } from './cadImportData';
-import { MAX_CAD_PATTERN_COUNT, MAX_CAD_PATTERN_INSTANCES, MIN_CAD_PATTERN_COUNT, resolveCadCircularPattern } from './cadPatterns';
-import { MAX_CAD_LOFT_SECTIONS, MIN_CAD_LOFT_SECTIONS, resolveCadLoftSections } from './cadLoft';
-import { CadCurveFeatureSchema, resolveCadCurveGeometry } from './cadCurve';
-import { CadSweepFeatureSchema, resolveCadSweepInputs } from './cadSweep';
-import { CadPocketFeatureSchema, resolveCadPocketInputs } from './cadPocket';
-import { CadFeatureBaseSchemaFields, CadIdentifierSchema, CadLabelSchema, CadNumberSchema, CadPathSegmentSchema, CadPlaneSchema, CadPoint2Schema, CadScalarSchema, CadSketchPlaneSchema } from './cadPrimitives';
-import { CadDatumPlaneFeatureSchema, resolveCadWorldDatum, resolveCadSketchPlacement, resolveCadExtrudeRevolvePlacement, type CadResolvedFrame } from './cadDatumPlanes';
+import { MAX_CAD_PATTERN_INSTANCES } from './cadPatterns';
+import { CadLabelSchema, CadNumberSchema } from './cadPrimitives';
+import type { CadResolvedFrame } from './cadDatumPlanes';
 import { cadConsumedBodyIds, cadFeatureInputs, cadFeatureProducesBody } from './cadFeatureInputs';
-import { CadSketchDimensionConstraintSchema, validateCadSketchConstraints } from './cadSketchConstraints';
-import { CadSketchGraphSchema, assertNoReservedCadSketchIds, cadSketchGraphWithPlacements, parseCadSketchGraph, type CadSketchGraph } from './cadSketchGraph';
-import { assertCadSketchExternalReferences } from './cadSketchExternalReferences';
+import { validateCadSketchConstraints } from './cadSketchConstraints';
+import { assertNoReservedCadSketchIds, cadSketchGraphWithPlacements } from './cadSketchGraph';
 import { sameCadSketchGeometryParameters } from './cadSketchParameterReads';
-import { CAD_PRECISION } from '../precision/cadPrecision';
+import { cadFeatureActive } from './features/cadFeatureActivity';
+import type { CadFeatureCheckContext, CadFeatureScalar, CadFeatureTrait } from './features/cadFeatureDefinitionTypes';
+import { cadFeatureDefinition, cadFeatureLayout, cadFeatureScalar, cadFeatureScalarAccepts, cadFeatureSchemaUnion, findCadFeatureDefinition } from './features/cadFeatureRegistry';
+import { CadSketchProfileSchema } from './features/kinds/references';
 export { cadConsumedBodyIds, cadFeatureDependencies, cadFeatureInputs, cadFeatureProducesBody, cadVisibleBodyIds, type CadBodyFeature } from './cadFeatureInputs';
 export { CadPathSegmentSchema } from './cadPrimitives';
+export { CadProfileSchema, CadSketchFeatureSchema, CadSketchProfileSchema } from './features/kinds/references';
 
 const strict = { additionalProperties: false };
-const identifier = CadIdentifierSchema;
 const label = CadLabelSchema;
 const number = CadNumberSchema;
-const scalar = CadScalarSchema;
-const plane = CadPlaneSchema;
-const point2 = CadPoint2Schema;
-const point3 = Type.Tuple([scalar, scalar, scalar]);
-const solidOperation = Type.Union([Type.Literal('new'), Type.Literal('join'), Type.Literal('cut')]);
-const base = CadFeatureBaseSchemaFields;
-export const CadProfileSchema = Type.Union([
-  CadPluginProfileSchema,
-  Type.Object({ kind: Type.Literal('rectangle'), x: scalar, y: scalar, width: scalar, height: scalar, cornerRadius: scalar }, strict),
-  Type.Object({ kind: Type.Literal('circle'), x: scalar, y: scalar, radius: scalar }, strict),
-  Type.Object({ kind: Type.Literal('polygon'), points: Type.Array(point2, { minItems: 3 }) }, strict),
-  Type.Object({ kind: Type.Literal('path'), segments: Type.Array(CadPathSegmentSchema, { minItems: 1 }) }, strict),
-  Type.Object({ kind: Type.Literal('slot'), x: scalar, y: scalar, length: scalar, width: scalar, angle: scalar }, strict)
-]);
-export const CadSketchProfileSchema = Type.Object({ id: identifier, name: label, construction: Type.Boolean(),
-  role: Type.Optional(Type.Union([Type.Literal('outer'), Type.Literal('hole')])), geometry: CadProfileSchema,
-  constraints: Type.Optional(Type.Array(CadSketchDimensionConstraintSchema, { maxItems: 6 })) }, strict);
-export const CadSketchFeatureSchema = Type.Object({ ...base, kind: Type.Literal('sketch'), plane: CadSketchPlaneSchema, offset: scalar,
-  profiles: Type.Array(CadSketchProfileSchema), source: Type.Optional(CadDxfImportSourceSchema), graph: Type.Optional(CadSketchGraphSchema) }, strict);
-export const CadFeatureSchema = Type.Union([
-  CadDatumPlaneFeatureSchema,
-  CadCurveFeatureSchema,
-  CadSweepFeatureSchema,
-  CadPocketFeatureSchema,
-  Type.Object({ ...base, kind: Type.Literal('imported'), source: CadSolidImportSourceSchema }, strict),
-  CadSketchFeatureSchema,
-  Type.Object({ ...base, kind: Type.Literal('extrude'), sketchId: identifier, regionSelection: Type.Optional(CadSketchRegionSelectionSchema), distance: scalar, symmetric: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
-  Type.Object({ ...base, kind: Type.Literal('revolve'), sketchId: identifier, angle: scalar, axis: Type.Union([Type.Literal('x'), Type.Literal('y')]), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
-  Type.Object({ ...base, kind: Type.Literal('loft'), sketchIds: Type.Array(identifier, { minItems: MIN_CAD_LOFT_SECTIONS, maxItems: MAX_CAD_LOFT_SECTIONS, uniqueItems: true }), ruled: Type.Boolean(), operation: solidOperation, targetId: Type.Union([identifier, Type.Null()]) }, strict),
-  Type.Object({ ...base, kind: Type.Union([Type.Literal('fillet'), Type.Literal('chamfer')]), targetId: identifier, radius: scalar,
-    selection: Type.Optional(Type.Union([CadEdgeSelectionSchema, Type.Null()])), tangentPropagation: Type.Optional(Type.Boolean()) }, strict),
-  Type.Object({ ...base, kind: Type.Literal('shell'), targetId: identifier, thickness: scalar, opening: CadFaceQuerySchema }, strict),
-  Type.Object({ ...base, kind: Type.Literal('boolean'), targetId: identifier, toolId: identifier, operation: Type.Union([Type.Literal('union'), Type.Literal('cut'), Type.Literal('intersect')]) }, strict),
-  Type.Object({ ...base, kind: Type.Literal('transform'), sourceId: identifier, translation: point3, rotation: point3 }, strict),
-  Type.Object({ ...base, kind: Type.Literal('linear-pattern'), sourceId: identifier, count: Type.Integer({ minimum: MIN_CAD_PATTERN_COUNT, maximum: MAX_CAD_PATTERN_COUNT }), spacing: point3 }, strict),
-  Type.Object({ ...base, kind: Type.Literal('circular-pattern'), sourceId: identifier, count: Type.Integer({ minimum: MIN_CAD_PATTERN_COUNT, maximum: MAX_CAD_PATTERN_COUNT }), axis: Type.Union([Type.Literal('x'), Type.Literal('y'), Type.Literal('z')]), center: point3, angle: scalar }, strict),
-  Type.Object({ ...base, kind: Type.Literal('mirror'), sourceId: identifier, plane }, strict)
-]);
+/** Every stored feature shape, from the kinds' definitions. */
+export const CadFeatureSchema = cadFeatureSchemaUnion();
 export const CadDocumentSchema = Type.Object({
   format: Type.Literal('wireedm-cad'), schemaVersion: Type.Union([Type.Literal(1), Type.Literal(2)]),
   id: Type.String({ pattern: '^[a-z0-9][a-z0-9_-]{0,95}$' }), name: label, units: Type.Literal('mm'),
@@ -117,10 +74,15 @@ export function cadDocumentsPlacedAlike(from: CadDocument, to: CadDocument, sket
 // The document schema with its features left to `CadFeatureSchema`, one by one.
 const CadDocumentEnvelopeSchema = { ...CadDocumentSchema, properties: { ...CadDocumentSchema.properties, features: Type.Array(Type.Unknown()) } };
 
+/** Whether `feature` matches `CadFeatureSchema`: the stored shape its kind names, as there is one per kind. */
+function matchesCadFeatureSchema(feature: unknown) {
+  const definition = typeof feature === 'object' && feature !== null ? findCadFeatureDefinition((feature as { readonly kind?: unknown }).kind) : undefined;
+  return definition !== undefined && Value.Check(definition.schema, feature);
+}
 /** Whether `value` matches `CadDocumentSchema`, taking its accepted features as matching. */
 function matchesCadDocumentSchema(value: unknown) {
   return Value.Check(CadDocumentEnvelopeSchema, value)
-    && (value as { features: readonly unknown[] }).features.every(feature => isAcceptedFeature(feature) || Value.Check(CadFeatureSchema, feature));
+    && (value as { features: readonly unknown[] }).features.every(feature => isAcceptedFeature(feature) || matchesCadFeatureSchema(feature));
 }
 
 /**
@@ -162,6 +124,16 @@ export function hasValidCadSketchGeometry(sketch: CadSketchFeature, parameters: 
   return Boolean(checked && sameCadSketchGeometryParameters(sketch, checked, parameters));
 }
 
+const storedField = (feature: CadFeature, field: string) => (feature as unknown as Readonly<Record<string, unknown>>)[field];
+/** Whether `feature` gives later features `trait`. */
+function gives(feature: CadFeature | undefined, trait: CadFeatureTrait) {
+  return feature !== undefined && cadFeatureDefinition(feature.kind).outputs.includes(trait);
+}
+/** Refuses a dimension of `size` outside its declared range. */
+function refuseOutOfRange(scalar: CadFeatureScalar, size: number) {
+  if (!cadFeatureScalarAccepts(scalar, size)) throw new CadError('invalid-dimension', scalar.refusal ?? 'Dimension is out of range.');
+}
+
 /** Strict boundary parser. Never rewrites IDs, geometry, units or saved expressions. */
 export function parseCadDocument(value: unknown): CadDocument {
   if (typeof value === 'object' && value !== null && acceptedDocuments.has(value as CadDocument)) return value as CadDocument;
@@ -189,152 +161,85 @@ export function parseCadDocument(value: unknown): CadDocument {
   }
   const previous = new Map<string, CadFeature>();
   const datumFrames = new Map<string, CadResolvedFrame>();
-  const datumLookup = Object.freeze({ get: (id: string) => datumFrames.get(id) });
   const visibleBodies = new Set<string>();
   const expandedInstances = new Map<string, number>();
   let instanceBudget = 0;
   // Kept only once the whole document is accepted, with every feature they name.
   const certificates: (() => void)[] = [];
-  const e = (value: number | string) => evaluateCadScalar(value, document.parameters);
+  const evaluate = (scalar: CadScalar) => evaluateCadScalar(scalar, document.parameters);
+  const context: { -readonly [Key in keyof CadFeatureCheckContext]: CadFeatureCheckContext[Key] } = {
+    document, active: false, previous, datums: Object.freeze({ get: (id: string) => datumFrames.get(id) }), value: evaluate,
+    scalar(feature, field) {
+      const scalar = cadFeatureScalar(feature.kind, field), result = evaluate(storedField(feature, field) as CadScalar);
+      refuseOutOfRange(scalar, scalar.magnitude ? Math.abs(result) : result);
+      return result;
+    },
+    vector(feature, field) {
+      const scalar = cadFeatureScalar(feature.kind, field), result = (storedField(feature, field) as CadPoint3).map(evaluate);
+      if (scalar.nonzero && result.every(component => Math.abs(component) <= (scalar.tolerance ?? 0))) throw new CadError('invalid-dimension', scalar.refusal ?? 'Dimension must be nonzero.');
+      for (const component of result) refuseOutOfRange(scalar, scalar.magnitude ? Math.abs(component) : component);
+      return result;
+    },
+    addDatumFrame(id, frame) { datumFrames.set(id, frame); },
+    checkSketchGeometry(sketch) {
+      const checked = validSketches.get(sketch);
+      if (!checked || !sameCadSketchGeometryParameters(sketch, checked, document.parameters)) {
+        validateCadSketchGeometry(sketch, document.parameters);
+        certificates.push(() => validSketches.set(sketch, document.parameters));
+      }
+    },
+    checkUsableSketch(feature, sketch, selection) {
+      // Only an active sketch with regions is kept, so the same sketch object is still active.
+      const usable = usableSketches.get(feature);
+      if (usable?.sketch !== geometrySource(sketch) || !sameCadSketchGeometryParameters(sketch, usable.parameters, document.parameters)) {
+        if (!cadFeatureActive(sketch, document) || !resolveCadSketchRegions(sketch, document.parameters, selection).length) throw new CadError('empty-sketch', `Feature "${feature.name}" needs an active nonempty sketch.`);
+        certificates.push(() => usableSketches.set(feature, { sketch: geometrySource(sketch), parameters: document.parameters }));
+      }
+    }
+  };
   for (const feature of document.features) {
     if (previous.has(feature.id)) throw new CadError('duplicate-id', `Duplicate feature ID "${feature.id}".`);
+    const definition = cadFeatureDefinition(feature.kind), layout = cadFeatureLayout(feature), active = cadFeatureActive(feature, document);
+    context.active = active;
     const inputs = cadFeatureInputs(feature);
     for (const id of inputs.datumIds) {
-      if (previous.get(id)?.kind !== 'datum-plane') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding datum plane "${id}".`);
+      if (!gives(previous.get(id), 'plane')) throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding datum plane "${id}".`);
     }
     for (const id of inputs.sketchIds) {
-      if (previous.get(id)?.kind !== 'sketch') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding sketch "${id}".`);
+      if (!gives(previous.get(id), 'sketch')) throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding sketch "${id}".`);
     }
     for (const id of inputs.curveIds) {
-      if (previous.get(id)?.kind !== 'curve') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding reference curve "${id}".`);
+      if (!gives(previous.get(id), 'curve')) throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding reference curve "${id}".`);
     }
     for (const id of inputs.bodyIds) {
       const referenced = previous.get(id);
       if (!referenced) throw new CadError('invalid-reference', `Feature "${feature.name}" references missing or later feature "${id}".`);
       if (!cadFeatureProducesBody(referenced)) throw new CadError('invalid-reference', `A solid operation cannot target ${referenced.kind === 'sketch' ? 'a sketch' : referenced.kind === 'curve' ? 'a reference curve' : 'a datum plane'}.`);
     }
-    const solidDependencies = inputs.bodyIds;
-    if (!feature.suppressed) for (const id of solidDependencies) {
+    if (active) for (const id of inputs.bodyIds) {
       if (!visibleBodies.has(id)) throw new CadError('unavailable-body', `Feature "${feature.name}" references suppressed or already consumed body "${id}". Select its current successor.`);
     }
-    const operandInstances = solidDependencies.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0);
-    if ((feature.kind === 'extrude' || feature.kind === 'pocket') && feature.regionSelection !== undefined) {
-      validateCadSketchRegionSelection(feature.regionSelection);
-      if (!Array.isArray(feature.regionSelection) && document.schemaVersion !== 2)
-        throw new CadError('unsupported-sketch-format', 'Graph cell area selections require CAD schema 2. Preserve the schema 1 original when saving an upgrade.');
+    const operandInstances = inputs.bodyIds.reduce((total, id) => total + (expandedInstances.get(id) ?? 1), 0);
+    for (const { name, field } of layout.checked) {
+      const held = storedField(feature, name);
+      if (held !== undefined && held !== null) field.check!(held, context);
     }
-    const pocket = feature.kind === 'pocket' && !feature.suppressed ? resolveCadPocketInputs(feature, previous, document.parameters) : null;
-    // New section generators add one operand before join/cut. Keep the existing
-    // Pad/Revolve preflight counts unchanged for saved-history compatibility.
-    let instances = feature.kind === 'curve' || feature.kind === 'datum-plane' ? 0 : feature.kind === 'pocket' ? operandInstances + (pocket?.regionCount ?? 1)
-      : feature.kind === 'loft' || feature.kind === 'sweep' ? operandInstances + 1 : operandInstances || 1;
-    if (feature.kind === 'linear-pattern' || feature.kind === 'circular-pattern') instances *= feature.count;
+    // Pad and Revolve count their sketch as no operand, as saved histories were budgeted that way.
+    let instances = definition.instances ? definition.instances(feature, operandInstances, context) : definition.body === 'none' ? 0 : operandInstances || 1;
+    for (const name of layout.repeats) instances *= storedField(feature, name) as number;
     if (instances > MAX_CAD_PATTERN_INSTANCES) throw new CadError('feature-limit', 'Nested pattern expansion exceeds 1000 solid instances.');
-    switch (feature.kind) {
-      case 'datum-plane': {
-        const resolved = resolveCadWorldDatum(feature, document.parameters);
-        if (!feature.suppressed) datumFrames.set(feature.id, resolved);
-        break;
-      }
-      case 'imported': parseCadSolidImportSource(feature.source); break;
-      case 'curve': {
-        resolveCadCurveGeometry(feature, document.parameters);
-        if (!feature.suppressed) resolveCadSketchPlacement(feature, document.parameters, datumLookup);
-        break;
-      }
-      case 'sketch': {
-        e(feature.offset);
-        if (feature.graph) {
-          if (document.schemaVersion !== 2) throw new CadError('unsupported-sketch-format', 'Stable sketch entities require CAD schema 2. Preserve the schema 1 original when saving an upgrade.');
-          // Keep the parser's accepted graph, so later parses of it are free. An accepted feature
-          // is frozen and holds its accepted graph already.
-          const graph = parseCadSketchGraph(feature.graph);
-          if (graph !== feature.graph) (feature as { graph: CadSketchGraph }).graph = graph;
-          assertCadSketchExternalReferences({ sketch: feature, parameters: document.parameters, previous });
-        }
-        if (feature.source) parseCadDxfImportSource(feature.source);
-        const ids = new Set<string>();
-        const dimensionIds = new Set<string>();
-        for (const profile of feature.profiles) {
-          if (ids.has(profile.id)) throw new CadError('duplicate-id', `Duplicate profile ID "${profile.id}" in sketch "${feature.name}".`);
-          ids.add(profile.id);
-          validateCadSketchConstraints(profile);
-          for (const constraint of profile.constraints ?? []) {
-            if (dimensionIds.has(constraint.id)) throw new CadError('duplicate-sketch-constraint', 'Sketch dimension IDs must be unique within their sketch.');
-            dimensionIds.add(constraint.id);
-          }
-        }
-        const checked = validSketches.get(feature);
-        if (!checked || !sameCadSketchGeometryParameters(feature, checked, document.parameters)) {
-          validateCadSketchGeometry(feature, document.parameters);
-          certificates.push(() => validSketches.set(feature, document.parameters));
-        }
-        if (!feature.suppressed) resolveCadSketchPlacement(feature, document.parameters, datumLookup);
-        break;
-      }
-      case 'extrude': case 'revolve': {
-        const sketch = previous.get(feature.sketchId);
-        if (sketch?.kind !== 'sketch') throw new CadError('invalid-reference', `Feature "${feature.name}" needs a preceding sketch.`);
-        if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
-        if (!feature.suppressed) {
-          // Only an active sketch with regions is kept, so the same sketch object is still active.
-          const usable = usableSketches.get(feature);
-          if (usable?.sketch !== geometrySource(sketch) || !sameCadSketchGeometryParameters(sketch, usable.parameters, document.parameters)) {
-            if (sketch.suppressed || !resolveCadSketchRegions(sketch, document.parameters,
-              feature.kind === 'extrude' ? feature.regionSelection : undefined).length) throw new CadError('empty-sketch', `Feature "${feature.name}" needs an active nonempty sketch.`);
-            certificates.push(() => usableSketches.set(feature, { sketch: geometrySource(sketch), parameters: document.parameters }));
-          }
-        }
-        if (feature.kind === 'extrude') {
-          const distance = e(feature.distance);
-          if (Math.abs(distance) <= CAD_PRECISION.minimumLengthMm || Math.abs(distance) > CAD_PRECISION.modelExtentMm) throw new CadError('invalid-dimension', 'Extrusion distance must be nonzero and within one million millimetres.');
-        } else {
-          const angle = e(feature.angle);
-          if (angle <= CAD_PRECISION.minimumAngleDeg || angle > 360) throw new CadError('invalid-dimension', 'Revolve angle must be greater than zero and at most 360 degrees.');
-        }
-        if (!feature.suppressed) resolveCadExtrudeRevolvePlacement(feature, sketch, document.parameters, datumLookup);
-        break;
-      }
-      case 'loft': {
-        if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
-        if (!feature.suppressed) resolveCadLoftSections(feature, previous, document.parameters, datumLookup);
-        break;
-      }
-      case 'sweep': {
-        if (feature.operation === 'new' && feature.targetId !== null || feature.operation !== 'new' && feature.targetId === null) throw new CadError('invalid-operation', 'New bodies have no target; join and cut require a target body.');
-        if (!feature.suppressed) resolveCadSweepInputs(feature, previous, document.parameters, datumLookup);
-        break;
-      }
-      case 'pocket': break; // Active region checks already supplied the operand budget.
-      case 'fillet': case 'chamfer': {
-        if (e(feature.radius) <= CAD_PRECISION.minimumLengthMm || e(feature.radius) > CAD_PRECISION.modelExtentMm) throw new CadError('invalid-dimension', 'Edge radius must be positive and within one million millimetres.');
-        if (feature.selection) resolveCadEdgeSelection(feature.selection, document.parameters);
-        break;
-      }
-      case 'shell': {
-        if (e(feature.thickness) <= CAD_PRECISION.minimumLengthMm || e(feature.thickness) > CAD_PRECISION.modelExtentMm) throw new CadError('invalid-dimension', 'Inward shell thickness must be positive and within one million millimetres.');
-        validateCadShellOpening(feature.opening, document.parameters);
-        break;
-      }
-      case 'boolean': if (feature.targetId === feature.toolId) throw new CadError('invalid-operation', 'Boolean target and tool must be different bodies.'); break;
-      case 'transform': feature.translation.forEach(e); feature.rotation.forEach(e); break;
-      case 'linear-pattern': {
-        const spacing = feature.spacing.map(e);
-        if (spacing.every(value => Math.abs(value) <= CAD_PRECISION.minimumLengthMm)) throw new CadError('invalid-dimension', 'Pattern spacing must be nonzero.');
-        break;
-      }
-      case 'circular-pattern': resolveCadCircularPattern(feature, document.parameters); break;
-      case 'mirror': break;
-      default: { const exhaustive: never = feature; throw exhaustive; }
+    for (const { name, meaning } of layout.conditioned) {
+      if ((storedField(feature, meaning.field) === meaning.absentWhen) !== (storedField(feature, name) === null)) throw new CadError('invalid-operation', meaning.refusal);
     }
-    if (feature.kind === 'linear-pattern' || feature.kind === 'circular-pattern') {
-      instanceBudget += feature.count;
+    definition.check?.(feature, context);
+    for (const name of layout.repeats) {
+      instanceBudget += storedField(feature, name) as number;
       if (instanceBudget > MAX_CAD_PATTERN_INSTANCES) throw new CadError('feature-limit', 'Document has too many pattern instances.');
     }
     previous.set(feature.id, feature);
     expandedInstances.set(feature.id, instances);
-    cadConsumedBodyIds(feature).forEach(id => visibleBodies.delete(id));
-    if (cadFeatureProducesBody(feature) && !feature.suppressed) visibleBodies.add(feature.id);
+    cadConsumedBodyIds(feature, document).forEach(id => visibleBodies.delete(id));
+    if (active && cadFeatureProducesBody(feature)) visibleBodies.add(feature.id);
   }
   // Detach from callers, then freeze the complete history so neither a caller's
   // edit payload nor a UI/tool snapshot can mutate an accepted revision later.

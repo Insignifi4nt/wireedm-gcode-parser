@@ -1,4 +1,5 @@
 import type { CadDocument, CadFeature, CadScalar } from '@/domain/cad/cadDocument';
+import { cadFeatureActive } from '@/domain/cad/features/cadFeatureActivity';
 import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
 import { cadEditsOnlyPlaceDimensions, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { parseCadDocument } from '@/domain/cad/cadSchema';
@@ -154,7 +155,7 @@ export class CadSketchEditDraft {
   inspectAreaRepairs(source: CadSketchEditDraftSource): CadSketchAreaRepairInspection | null {
     this.assertSource(source);
     const candidates = source.document.features.slice(this.sketchIndex + 1).filter((feature): feature is CadSketchAreaRepairFeature =>
-      (feature.kind === 'extrude' || feature.kind === 'pocket') && feature.sketchId === this.pin.sketchId && !feature.suppressed && feature.regionSelection !== undefined);
+      (feature.kind === 'extrude' || feature.kind === 'pocket') && feature.sketchId === this.pin.sketchId && cadFeatureActive(feature, source.document) && feature.regionSelection !== undefined);
     if (!candidates.length) return null;
     const snapshot = this.local.getSnapshot(), sketch = snapshot.document.features[this.sketchIndex];
     if (sketch.kind !== 'sketch') throw scopeError();

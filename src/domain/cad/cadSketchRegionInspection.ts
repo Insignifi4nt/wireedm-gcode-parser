@@ -1,4 +1,5 @@
 import type { CadDocument, CadProfile, CadSketchFeature } from './cadDocument';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import type { DxfPoint } from '../dxf/types';
 import { CadError } from './cadError';
 import { CadDocumentSchema, CadSketchFeatureSchema, isAcceptedCadSketchSource, parseCadDocument } from './cadSchema';
@@ -80,7 +81,7 @@ export function prepareCadSketchCells(sketch: CadSketchFeature, parameters: CadD
 
 /** One complete candidate preparation serves shading, hover, selection and union. */
 function resolveCells(sketch: CadSketchFeature, parameters: CadDocument['parameters']): CadPreparedSketchCells {
-  if (sketch.suppressed) throw new CadError('suppressed-sketch', `Sketch "${sketch.name}" is suppressed. Resume it before choosing its areas.`);
+  if (!cadFeatureActive(sketch, { parameters })) throw new CadError('suppressed-sketch', `Sketch "${sketch.name}" is suppressed. Resume it before choosing its areas.`);
   const contours = resolveCadSketchContours(sketch, parameters);
   const index = createCadSketchCellIndex(contours);
   const measurements = new Map<string, ReturnType<typeof measureCadResolvedProfile>>();
@@ -162,7 +163,7 @@ function activeSketch(document: CadDocument, sketchId: string, proposal?: CadSke
   const index = validated.features.findIndex(feature => feature.id === sketchId);
   const sketch = validated.features[index];
   if (sketch?.kind !== 'sketch') throw new CadError('missing-sketch', 'Choose an existing sketch to inspect its closed regions.');
-  if (sketch.suppressed) throw new CadError('suppressed-sketch', `Sketch "${sketch.name}" is suppressed. Resume it before choosing its areas.`);
+  if (!cadFeatureActive(sketch, validated)) throw new CadError('suppressed-sketch', `Sketch "${sketch.name}" is suppressed. Resume it before choosing its areas.`);
   if (proposal !== undefined) {
     validateCadSketchRegionProposal(proposal);
     if (proposal.sketch !== undefined && proposal.sketch.id !== sketchId)
@@ -192,7 +193,7 @@ function activeSketch(document: CadDocument, sketchId: string, proposal?: CadSke
     const candidate = parseCadDocument({ ...validated, schemaVersion: source.graph ? 2 : validated.schemaVersion, parameters, features: [...requiredDatums, source] });
     const effective = candidate.features[candidate.features.length - 1];
     if (effective.kind !== 'sketch') throw new CadError('invalid-region-proposal', 'The proposed source must remain a sketch.');
-    if (effective.suppressed) throw new CadError('suppressed-sketch', `Sketch "${effective.name}" is suppressed. Resume it before choosing its areas.`);
+    if (!cadFeatureActive(effective, candidate)) throw new CadError('suppressed-sketch', `Sketch "${effective.name}" is suppressed. Resume it before choosing its areas.`);
     return { sketch: effective, parameters: candidate.parameters };
   }
   return { sketch, parameters: validated.parameters };

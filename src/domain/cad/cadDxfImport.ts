@@ -1,4 +1,5 @@
 import { Type } from '@sinclair/typebox';
+import { cadFeatureSuppressionFlag } from './features/cadFeatureActivity';
 import { Value } from '@sinclair/typebox/value';
 import { dxfUnitsFromInsunitsCode, parseDxf, splitDxfLines } from '@/domain/dxf/parseDxf';
 import type { DxfUnitDeclaration } from '@/domain/dxf/types';
@@ -49,7 +50,7 @@ export function parseCadDxfImportInput(value: unknown): CadDxfImportInput {
 export function isCadDxfImportResult(value: unknown): value is CadDxfImportResult {
   try {
     if (!isCadImportData(value) || !Value.Check(resultSchema, value) || value.sketch.kind !== 'sketch' || !value.sketch.source
-      || value.sketch.plane !== 'XY' || value.sketch.offset !== 0 || value.sketch.suppressed || value.contourCount !== value.sketch.profiles.length
+      || value.sketch.plane !== 'XY' || value.sketch.offset !== 0 || cadFeatureSuppressionFlag(value.sketch) || value.contourCount !== value.sketch.profiles.length
       || value.sketch.profiles.some(profile => profile.construction || profile.role !== undefined)) return false;
     const source = parseCadDxfImportSource(value.sketch.source);
     const declaration = value.unitDeclaration;

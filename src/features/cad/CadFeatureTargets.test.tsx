@@ -26,7 +26,7 @@ async function mount(document: CadDocument) {
   function Harness() {
     const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot); const feature = snapshot.document.features.at(-1);
     if (!feature) throw new Error('Feature missing');
-    return <CadFeatureEditor feature={feature} document={snapshot.document} isNew={false} currentBodyIds={cadVisibleBodyIds(snapshot.document.features)}
+    return <CadFeatureEditor feature={feature} document={snapshot.document} isNew={false} currentBodyIds={cadVisibleBodyIds(snapshot.document.features, snapshot.document)}
       onApply={(feature, parameters) => session.edit(cadFeatureCandidateEdits({ feature, parameters, isNew: false }), snapshot.version)} onCancel={vi.fn()} onPendingChange={session.setWorkflowOpen} />;
   }
   await act(async () => root.render(<Harness />)); return session;
@@ -65,12 +65,12 @@ describe('editing consumed feature inputs', () => {
     const updated = session.getSnapshot().document.features.at(-1); if (!updated) throw new Error('Updated feature missing');
     expect(updated).toMatchObject(kind === 'loft' ? { targetId: 'other' } : { sourceId: 'other' });
     await act(async () => session.edit([{ kind: 'update-feature', feature: { ...updated, suppressed: false } }]));
-    expect(cadVisibleBodyIds(session.getSnapshot().document.features)).toEqual(['result']);
+    expect(cadVisibleBodyIds(session.getSnapshot().document.features, session.getSnapshot().document)).toEqual(['result']);
   });
   it('preserves a pocket target from its preceding model state rather than final meshes', async () => {
     const session = await mount(part('pocket')); const before = session.getSnapshot();
     const target = [...container.querySelectorAll('select')].at(-1); expect(target?.value).toBe('pad'); expect(target?.querySelector('option[value="pad"]')).not.toBeNull();
-    expect(cadVisibleBodyIds(before.document.features)).toEqual(['result']);
+    expect(cadVisibleBodyIds(before.document.features, before.document)).toEqual(['result']);
     await editScalar('Length', 'step / 2'); await apply(); expect(session.getSnapshot().document.features.at(-1)).toMatchObject({ kind: 'extrude', targetId: 'pad', distance: 'step / 2' });
     await act(async () => session.undo()); expect(session.getSnapshot().document).toEqual(before.document);
   });

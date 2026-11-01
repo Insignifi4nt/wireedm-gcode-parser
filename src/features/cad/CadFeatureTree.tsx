@@ -1,4 +1,5 @@
 import { readableMessage } from '@/lib/userMessage';
+import { cadFeatureActive, cadFeatureSuppressionFlag } from '@/domain/cad/features/cadFeatureActivity';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
@@ -162,7 +163,7 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       const sketch = menuFeature, profile = menuProfile;
       menuItems.push({ label: 'Configure profile', onSelect: () => onSelectProfile(sketch, profile.id) },
         { label: 'Edit sketch', onSelect: () => onEditSketch(sketch) });
-      if (onCopyProfile && !sketch.suppressed) menuItems.push({ label: 'Copy outline to editable sketch', onSelect: () => onCopyProfile(sketch, profile.id) });
+      if (onCopyProfile && cadFeatureActive(sketch, document)) menuItems.push({ label: 'Copy outline to editable sketch', onSelect: () => onCopyProfile(sketch, profile.id) });
       if (onRename) menuItems.push({ label: 'Rename profile', onSelect: () => beginRename({ kind: 'profile', featureId: sketch.id, profileId: profile.id }) });
       if (onUpdateProfile) menuItems.push({ label: profile.construction ? 'Use as geometry' : 'Use as construction', onSelect: () => onUpdateProfile(sketch, { ...profile, construction: !profile.construction }) });
       if (onDeleteProfile) menuItems.push({ kind: 'separator' }, { label: 'Delete profile', danger: true, onSelect: () => onDeleteProfile(sketch, profile.id) });
@@ -172,7 +173,7 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
         : feature.kind === 'curve' ? { label: 'Edit curve', onSelect: () => onEditCurve(feature) }
           : { label: 'Edit feature', onSelect: () => (onConfigure ?? (entry => onSelect(entry.id)))(feature) });
       if (feature.kind === 'sketch' && onChangeSketchPlane) menuItems.push({ label: 'Change sketch plane', help: 'Click the new plane in the design area.', onSelect: () => onChangeSketchPlane(feature) });
-      if (feature.kind === 'datum-plane' && !feature.suppressed && onSectionView) menuItems.push({ label: 'Section view', help: 'Cut the model view by this plane.', onSelect: () => onSectionView({ kind: 'datum-plane', featureId: feature.id }) });
+      if (feature.kind === 'datum-plane' && cadFeatureActive(feature, document) && onSectionView) menuItems.push({ label: 'Section view', help: 'Cut the model view by this plane.', onSelect: () => onSectionView({ kind: 'datum-plane', featureId: feature.id }) });
       if (onRename) menuItems.push({ label: 'Rename feature', onSelect: () => beginRename({ kind: 'feature', featureId: feature.id }) });
       const inputs = cadFeatureDependencies(feature).flatMap(id => { const source = relationships.byId.get(id); return source ? [source] : []; });
       if (relationships.children.get(feature.id)?.length || relationships.shared.get(feature.id)?.length || feature.kind === 'sketch' && feature.profiles.length) {
@@ -181,14 +182,14 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       if (inputs.length) menuItems.push({ kind: 'separator' }, ...inputs.map(source => ({ label: `Select input · ${source.name}`, onSelect: () => onSelect(source.id) })));
       menuItems.push({ kind: 'separator' });
       if (onProperties) menuItems.push({ label: 'Properties', onSelect: () => onProperties(feature.id) });
-      if (onSuppress) menuItems.push({ label: feature.suppressed ? 'Resume feature' : 'Suppress feature', onSelect: () => onSuppress(feature, !feature.suppressed) });
+      if (onSuppress) menuItems.push({ label: cadFeatureSuppressionFlag(feature) ? 'Resume feature' : 'Suppress feature', onSelect: () => onSuppress(feature, !cadFeatureSuppressionFlag(feature)) });
       if (onDelete) menuItems.push({ label: 'Delete feature', danger: true, onSelect: () => onDelete(feature) });
     }
   }
   /** A sketch or curve this feature uses that lives under an earlier feature: a link, not a second copy. */
-  const sharedRow = (feature: CadFeature) => { const Icon = icons[feature.kind]; return <Button type="button" key={feature.id} className={`cad-tree-row cad-tree-shared${feature.suppressed ? ' is-suppressed' : ''}`}
+  const sharedRow = (feature: CadFeature) => { const Icon = icons[feature.kind]; return <Button type="button" key={feature.id} className={`cad-tree-row cad-tree-shared${!cadFeatureActive(feature, document) ? ' is-suppressed' : ''}`}
     disabled={selectionDisabled(feature.id)} aria-label={`Select shared ${feature.name}`} title={`${featureLabels[feature.kind]} · ${feature.name} · shared with ${relationships.owner.get(feature.id)?.name ?? 'an earlier feature'}`} onClick={() => onSelect(feature.id)}>
-    <Icon size={13} /><span className="cad-feature-name">{feature.name}</span><LinkIcon size={11} aria-hidden="true" />{feature.suppressed && <span className="cad-tree-muted">off</span>}
+    <Icon size={13} /><span className="cad-feature-name">{feature.name}</span><LinkIcon size={11} aria-hidden="true" />{!cadFeatureActive(feature, document) && <span className="cad-tree-muted">off</span>}
   </Button>; };
   const renderNode = (feature: CadFeature): ReactNode => {
     const Icon = icons[feature.kind], selected = selectedId === feature.id, position = relationships.position.get(feature.id) ?? 0;
@@ -204,13 +205,13 @@ export function CadFeatureTree({ document, diagnostics = [], selectedId, selecte
       <div className="cad-feature-history-row">
         {expandable ? <Button type="button" className="cad-feature-disclosure" disabled={locked || Boolean(renameCurrent)} aria-label={`${open ? 'Collapse' : 'Expand'} ${feature.name}`} aria-expanded={open} aria-controls={open ? detailsId : undefined} onClick={() => toggle(feature.id)}><ExpandRightIcon size={12} /></Button>
           : <span className="cad-feature-disclosure-placeholder" aria-hidden="true" />}
-        {renameCurrent?.target.kind === 'feature' && renameCurrent.target.featureId === feature.id ? renameEditor(feature) : <Button type="button" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${planeHovered ? ' is-hovered' : ''}${feature.suppressed ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)}
-          onPointerEnter={datumPlane && !feature.suppressed ? () => onHoverReferencePlane?.({ kind: 'datum-plane', featureId: feature.id }) : undefined} onPointerLeave={datumPlane ? () => onHoverReferencePlane?.(null) : undefined}
+        {renameCurrent?.target.kind === 'feature' && renameCurrent.target.featureId === feature.id ? renameEditor(feature) : <Button type="button" className={`cad-tree-row${profileSelected ? ' is-context' : selected ? ' is-selected' : ''}${planeHovered ? ' is-hovered' : ''}${!cadFeatureActive(feature, document) ? ' is-suppressed' : ''}${diagnostic ? ' has-error' : ''}`} disabled={selectionDisabled(feature.id)}
+          onPointerEnter={datumPlane && cadFeatureActive(feature, document) ? () => onHoverReferencePlane?.({ kind: 'datum-plane', featureId: feature.id }) : undefined} onPointerLeave={datumPlane ? () => onHoverReferencePlane?.(null) : undefined}
           aria-label={`Select ${feature.name} in history`} aria-pressed={selected && !profileSelected} title={`${featureLabels[feature.kind]} · ${feature.name}${diagnostic ? ` · ${readableMessage(diagnostic.message)}` : ''}`}
           onContextMenu={event => openMenu(event, feature.id)} onKeyDown={event => openMenu(event, feature.id)}
           onClick={() => onSelect(feature.id)} onDoubleClick={() => { if (selectionOnly) return; if (feature.kind === 'sketch') onEditSketch(feature); else if (feature.kind === 'curve') onEditCurve(feature); else onConfigure?.(feature); }}>
           <Icon size={14} /><span className="cad-feature-name">{feature.name}</span>
-          {diagnostic && <span className="cad-tree-error" aria-label={readableMessage(diagnostic.message)}><WarningIcon size={12} /></span>}{feature.suppressed && <span className="cad-tree-muted">off</span>}
+          {diagnostic && <span className="cad-tree-error" aria-label={readableMessage(diagnostic.message)}><WarningIcon size={12} /></span>}{!cadFeatureActive(feature, document) && <span className="cad-tree-muted">off</span>}
         </Button>}
       </div>
       {expandable && open && <div id={detailsId} className="cad-feature-details">

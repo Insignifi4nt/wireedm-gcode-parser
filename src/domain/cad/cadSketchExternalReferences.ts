@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { Value } from '@sinclair/typebox/value';
 import type { CadDocument, CadFeature, CadSketchFeature } from './cadDocument';
 import { CadIdentifierSchema } from './cadPrimitives';
@@ -82,7 +83,7 @@ function sourceFor({ sketch, parameters, previous }: Context, sourceSketchId: st
   const source = previous.get(sourceSketchId);
   if (source?.kind !== 'sketch' || source.id === sketch.id || !source.graph)
     return unavailable(`Sketch "${sketch.name}" needs an existing preceding graph sketch "${sourceSketchId}".`);
-  if (!sketch.suppressed && source.suppressed) return unavailable(`Sketch "${sketch.name}" references suppressed sketch "${source.name}". Resume it or detach the reference.`);
+  if (cadFeatureActive(sketch, { parameters }) && !cadFeatureActive(source, { parameters })) return unavailable(`Sketch "${sketch.name}" references suppressed sketch "${source.name}". Resume it or detach the reference.`);
   if (!Value.Equal(sketch.plane, source.plane)) return unavailable(`Sketch "${sketch.name}" must share its reference source's declared base plane or datum identity.`);
   // Shared base axes make normal-offset projection an exact local X/Y copy.
   evaluateCadScalar(sketch.offset, parameters); evaluateCadScalar(source.offset, parameters);
@@ -128,12 +129,12 @@ export function assertCadSketchExternalReferences(context: Context): void {
 }
 export function cadSketchReferenceSources(document: CadDocument, targetSketchId: string): readonly CadSketchFeature[] {
   const index = document.features.findIndex(feature => feature.id === targetSketchId), target = document.features[index];
-  if (target?.kind !== 'sketch' || target.suppressed) return Object.freeze([]);
-  return Object.freeze(document.features.slice(0, index).filter((feature): feature is CadSketchFeature => feature.kind === 'sketch' && !feature.suppressed
+  if (target?.kind !== 'sketch' || !cadFeatureActive(target, document)) return Object.freeze([]);
+  return Object.freeze(document.features.slice(0, index).filter((feature): feature is CadSketchFeature => feature.kind === 'sketch' && cadFeatureActive(feature, document)
     && Value.Equal(feature.plane, target.plane) && Boolean(feature.graph?.entities.some(entity => entity.kind === 'line' || entity.kind === 'circle'))));
 }
 export function prepareCadSketchUseEntity({ sketch, parameters, previous, ...request }: Context & CadSketchUseEntityRequest) {
-  if (!isCadImportData(request) || !Value.Check(CadSketchUseEntityRequestSchema, request) || request.sketchId !== sketch.id || sketch.suppressed)
+  if (!isCadImportData(request) || !Value.Check(CadSketchUseEntityRequestSchema, request) || request.sketchId !== sketch.id || !cadFeatureActive(sketch, { parameters }))
     return invalid('Use reference needs an active target sketch, a preceding graph entity and an identifier prefix of at most 64 characters.');
   const context = { sketch, parameters, previous }, source = sourceFor(context, request.sourceSketchId), entity = source.graph?.entities.find(entity => entity.id === request.sourceEntityId);
   if (!entity || entity.kind === 'arc') return unavailable('Choose a line or circle in the preceding source sketch.');

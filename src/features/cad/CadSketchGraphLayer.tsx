@@ -98,7 +98,7 @@ interface DragFrame {
   readonly pointerId: number; readonly element: SVGGElement;
   readonly clientX: number; readonly clientY: number; readonly step: number; readonly snap: boolean; readonly gridSnap: boolean;
   readonly scaleX: number; readonly scaleY: number;
-  cursor: SketchPoint; suppressed: boolean;
+  cursor: SketchPoint; snapSuppressed: boolean;
   moved: boolean;
   /** A press on an item that is already part of a multi-selection keeps the set for dragging; a plain click still selects the item alone. */
   readonly pick?: CadSketchGraphSelection;
@@ -243,7 +243,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   const updateDrag = useCallback((owned: Drag) => {
     if (!owned.moved) return;
     // Geometry targets follow Snap; grid nodes catch only when grid snapping is switched on.
-    const enabled = owned.snap && !owned.suppressed, grid = owned.gridSnap && !owned.suppressed, catchRadius = DRAG_GRID_CATCH_PIXELS * Math.max(owned.scaleX, owned.scaleY);
+    const enabled = owned.snap && !owned.snapSuppressed, grid = owned.gridSnap && !owned.snapSuppressed, catchRadius = DRAG_GRID_CATCH_PIXELS * Math.max(owned.scaleX, owned.scaleY);
     if (owned.kind === 'translate') {
       const raw: SketchPoint = [owned.cursor[0] - owned.anchor[0], owned.cursor[1] - owned.anchor[1]], normal = owned.normal;
       const distance = normal ? magnetSketchValue(raw[0] * normal[0] + raw[1] * normal[1], owned.step, grid, catchRadius) : 0;
@@ -278,7 +278,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     const modifier = (event: KeyboardEvent) => {
       const owned = drag.current;
       if (!owned || event.isComposing || (event.key !== 'Control' && event.key !== 'Meta')) return;
-      owned.suppressed = event.ctrlKey || event.metaKey;
+      owned.snapSuppressed = event.ctrlKey || event.metaKey;
       updateDrag(owned);
     };
     window.addEventListener('keydown', modifier); window.addEventListener('keyup', modifier);
@@ -352,7 +352,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     const origin = owned.kind === 'point' ? owned.point.position : owned.kind === 'translate' ? owned.anchor : [owned.circle.center[0] + owned.circle.radius, owned.circle.center[1]];
     owned.cursor = [origin[0] + (event.clientX - owned.clientX) * owned.scaleX,
       origin[1] - (event.clientY - owned.clientY) * owned.scaleY];
-    owned.suppressed = event.ctrlKey || event.metaKey;
+    owned.snapSuppressed = event.ctrlKey || event.metaKey;
     updateDrag(owned);
   };
   const endDrag = (event: PointerEvent<SVGGElement>) => {
@@ -423,7 +423,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   const startTranslate = (event: PointerEvent<SVGGElement>, selections: readonly CadSketchGraphSelection[], anchor: SketchPoint, normal: SketchPoint | null, pick?: CadSketchGraphSelection) => {
     callbacks.current.onPendingChange(true);
     drag.current = { kind: 'translate', selections, anchor, normal, translation: [0, 0], pick, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY,
-      step: gridStep, snap, gridSnap, scaleX, scaleY, cursor: anchor, suppressed: event.ctrlKey || event.metaKey, moved: false };
+      step: gridStep, snap, gridSnap, scaleX, scaleY, cursor: anchor, snapSuppressed: event.ctrlKey || event.metaKey, moved: false };
     setIntent({ kind: 'translate', selections, anchor, translation: [0, 0] });
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { cancel(); }
   };
@@ -485,7 +485,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
       if (event.shiftKey || !movable(original)) return; // A plain pick above replaces the old set with this point.
       callbacks.current.onPendingChange(true);
       drag.current = { kind: 'point', point: original, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY, step: gridStep, snap, gridSnap, scaleX, scaleY,
-        prepared, guides: lineNeighbours(prepared, original.id), cursor: original.position, suppressed: event.ctrlKey || event.metaKey, moved: false, translation: [0, 0], candidate: null };
+        prepared, guides: lineNeighbours(prepared, original.id), cursor: original.position, snapSuppressed: event.ctrlKey || event.metaKey, moved: false, translation: [0, 0], candidate: null };
       setIntent({ kind: 'point', point: original, translation: [0, 0], snap: null });
       try { event.currentTarget.setPointerCapture(event.pointerId); } catch { cancel(); }
     },
@@ -541,7 +541,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
         if (event.shiftKey) return;
         callbacks.current.onPendingChange(true);
         drag.current = { kind: 'radius', circle, pointerId: event.pointerId, element: event.currentTarget, clientX: event.clientX, clientY: event.clientY,
-          step: gridStep, snap, gridSnap, scaleX, scaleY, cursor: [circle.center[0] + circle.radius, circle.center[1]], suppressed: event.ctrlKey || event.metaKey, moved: false, radius: circle.radius };
+          step: gridStep, snap, gridSnap, scaleX, scaleY, cursor: [circle.center[0] + circle.radius, circle.center[1]], snapSuppressed: event.ctrlKey || event.metaKey, moved: false, radius: circle.radius };
         setIntent({ kind: 'radius', circle, radius: circle.radius });
         try { event.currentTarget.setPointerCapture(event.pointerId); } catch { cancel(); }
       }} onPointerMove={move} onPointerUp={endDrag}

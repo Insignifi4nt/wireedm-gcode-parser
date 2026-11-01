@@ -1,4 +1,5 @@
 import type { CadFeature, CadSketchFeature } from './cadDocument';
+import { cadFeatureActive } from './features/cadFeatureActivity';
 import { compileCadSketchGeometry } from './compileCadSketchGeometry';
 import { prepareCadSketchCells } from './cadSketchRegionInspection';
 
@@ -13,7 +14,7 @@ export function cadSketchSupportsThroughAll(sketch: CadSketchFeature): boolean {
 
 /** Opening Pad/Pocket may invite explicit areas; default-only consumers keep their existing eligibility. */
 export function cadSketchSourceAvailability(sketch: CadSketchFeature, purpose: CadSketchSourcePurpose, parameters: Readonly<Record<string, number>> = {}): CadSketchSourceAvailability {
-  const issue = sketch.suppressed ? 'suppressed' : purpose === 'pocket' && !cadSketchSupportsThroughAll(sketch)
+  const issue = !cadFeatureActive(sketch, { parameters }) ? 'suppressed' : purpose === 'pocket' && !cadSketchSupportsThroughAll(sketch)
     ? 'principal-plane-required' : cadSketchSourceIssue(sketch, purpose, parameters);
   if (issue === null) return { kind: 'default-material' };
   if (issue === 'no-material' && purpose !== 'revolve') {
@@ -25,7 +26,7 @@ export function cadSketchSourceAvailability(sketch: CadSketchFeature, purpose: C
 
 /** Accepted analytic sketch geometry is already closed and validated by the document boundary. */
 export function cadSketchSourceIssue(sketch: CadSketchFeature, purpose: CadSketchSourcePurpose, parameters: Readonly<Record<string, number>> = {}): CadSketchSourceIssue | null {
-  if (sketch.suppressed) return 'suppressed';
+  if (!cadFeatureActive(sketch, { parameters })) return 'suppressed';
   if (!sketch.profiles.some(profile => !profile.construction)) {
     try { if (!compileCadSketchGeometry(sketch, parameters).profiles.some(profile => !profile.construction)) return 'no-material'; }
     catch { return 'no-material'; }

@@ -1,8 +1,8 @@
 import { Kind, Type, TypeRegistry, type Static } from '@sinclair/typebox';
-import { CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
+import { CadFeatureBaseSchemaFields, CadIdentifierSchema } from '@/domain/cad/cadPrimitives';
 import { pageFields } from '@/features/webmcp/siteTools';
 import { CadEditSchema, type CadEdit } from '@/domain/cad/cadOperations';
-import { CadDocumentSchema, CadFeatureSchema } from '@/domain/cad/cadSchema';
+import { CadDocumentSchema } from '@/domain/cad/cadSchema';
 import { CadPluginPackageSchema } from '@/domain/cad/plugins/cadPlugins';
 
 export const CadToolSketchConstraintSectionSchema = Type.Union([Type.Literal('relations'), Type.Literal('points'), Type.Literal('entities')]);
@@ -16,11 +16,7 @@ export const CadToolSketchConstraintsQuerySchema = Type.Object({ expectedVersion
 // This avoids repeating every profile/topology/source definition in add, update
 // and import arguments on every agent connection.
 // The kind catalog belongs to cad_describe_features; execution still checks it.
-const featureBase = CadFeatureSchema.anyOf[0].properties;
-const featureEnvelope = Type.Object({
-  id: featureBase.id, name: featureBase.name, suppressed: featureBase.suppressed,
-  kind: Type.String()
-}, { additionalProperties: true });
+const featureEnvelope = Type.Object({ ...CadFeatureBaseSchemaFields, kind: Type.String() }, { additionalProperties: true });
 export const CadToolSketchEnvelope = Type.Object({ ...featureEnvelope.properties, kind: Type.Literal('sketch') },
   { additionalProperties: true, description: 'Full sketch: cad_describe_features(kind=sketch).' });
 
