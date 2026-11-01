@@ -22,7 +22,7 @@ export interface CadSketchCompiledSketch extends CadSketchEquationModel {
 /**
  * The scalar equations of a parsed solve input: each arc's own equation, then each relation's in graph order as its definition
  * lowers it, with the same operand order, source identities and fixed values as the PlaneGCS compilation had, which the frozen
- * PlaneGCS corpus checks. A drag target becomes two temporary value equations on the dragged point, last, as PlaneGCS's temporary
+ * PlaneGCS corpus checks. Relations that yield, which PlaneGCS never had, follow all the others. A drag target becomes two temporary value equations on the dragged point, last, as PlaneGCS's temporary
  * coordinates were.
  */
 export function compileCadSketchEquations(input: CadSketchEquationInput): CadSketchCompiledSketch {
@@ -42,7 +42,9 @@ export function compileCadSketchEquations(input: CadSketchEquationInput): CadSke
   }
   const lowering = new CadSketchLowering(graph, input.parameters, pointParameters, radiusParameters, numericPoints, fixed);
   for (const entity of graph.entities) lowering.structure(entity);
-  for (const relation of graph.relations) lowering.lower(relation);
+  lowering.lowerAll(graph.relations);
+  // A relation can start free points where it puts them, as a mirror puts a curve on the other's image; the solve sets out from there.
+  for (const { index, value } of lowering.seeds) values[index] = value;
   // The origin's and the axes' fixed values where an equation keeps them, and the free radius an arc's relation makes, follow every
   // point and radius.
   for (const made of lowering.made) { values.push(made.value); fixed.push(made.fixed); }

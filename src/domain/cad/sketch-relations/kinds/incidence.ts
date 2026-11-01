@@ -3,8 +3,9 @@ import type { CadSketchGraphEntity, CadSketchGraphPoint } from '../../cadSketchG
 import { assertCadSketchMidpointIdentities, resolveCadSketchMidpointOperands } from '../../cadSketchMidpointRelations';
 import { assertCadSketchPointOnLineIdentities, checkCadSketchPointOnLineRelation, resolveCadSketchPointOnLineOperands } from '../../cadSketchPointOnLineRelations';
 import { assertCadSketchPointOnCurveIdentities, checkCadSketchPointOnCurveRelation, resolveCadSketchPointOnCurveOperands } from '../../cadSketchPointOnCurveRelations';
-import { assertCadSketchCurveSymmetry, assertCadSketchSymmetryIdentities, cadSketchMirrorIndex, cadSketchMirrorPairs, checkCadSketchSymmetricRelation, isCadSketchCurveSymmetry,
-  resolveCadSketchCurveSymmetryOperands, resolveCadSketchSymmetryOperands, type CadSketchMirroredCurve } from '../../cadSketchSymmetryRelations';
+import { assertCadSketchCurveSymmetry, assertCadSketchSymmetryIdentities, cadSketchMirrorImage, cadSketchMirrorIndex, cadSketchMirrorPairs, cadSketchPointsReflect,
+  checkCadSketchSymmetricRelation, isCadSketchCurveSymmetry, resolveCadSketchCurveSymmetryOperands, resolveCadSketchSymmetryOperands, type CadSketchMirroredCurve } from '../../cadSketchSymmetryRelations';
+import { cadSketchLineDirection } from '../../cadSketchLineRelations';
 import { checkCadSketchTangentJoint, resolveCadSketchTangentJoint } from '../../cadSketchTangentRelations';
 import { checkCadSketchMidpoint, checkCadSketchPointPair } from '../cadSketchRelationChecks';
 import { CAD_SKETCH_CURVE_SYMMETRY_OPERANDS, CAD_SKETCH_MIDPOINT_OPERANDS, CAD_SKETCH_POINT_ON_CURVE_OPERANDS, CAD_SKETCH_POINT_ON_LINE_OPERANDS, CAD_SKETCH_SYMMETRY_OPERANDS,
@@ -98,41 +99,29 @@ export const pointOnCurve: CadSketchRelationDefinition<'point-on-curve'> = {
 const mirrored = { role: 'Point or curve', accepts: ['point', 'line', 'arc', 'circle'] } as const;
 type CurveSymmetry = Extract<CadSketchRelationOf<'symmetric'>, { readonly curveIds: unknown }>;
 /**
- * Mirrored curves as one constraint. Each pair of distinct points mirrors as two points do; a point both curves share lies on the
- * axis, and needs nothing where it is an end of the axis line. Circles keep one radius. Arcs' centres and one pair of ends mirroring
- * leave the other pair on one circle, so it needs one equation: the one that changes most as the pair moves around that circle, read
- * from the geometry before the edit. Two lines mirror in four equations, arcs in five and circles in three, fewer where they share points.
+ * Mirrored curves, every point pair whole: each pair of distinct points mirrors as two points do, a point both curves share lies on
+ * the axis and needs nothing where it is an end of the axis line, and circles keep one radius. With every pair whole no point has a
+ * second place to settle, as the other crossing of an arc's circle with a single equation would be. The relation yields (see
+ * `yields`), so what the curves' own structure, fixed values or other relations already keep of it, such as the second arc's radius
+ * or two level lines' level ends, is solved but never reported as redundant. Two lines lower to four equations, arcs to six and
+ * circles to three, fewer where they share points; arcs remove one freedom fewer than their equations, as the second arc's radius follows.
+ * A pair that does not reflect yet starts the second curve's point at the first's image, or the first's at the second's where the
+ * second cannot move, so a new mirror moves the second curve onto the first rather than both toward some other solution.
  */
 function lowerCurveSymmetry(relation: CurveSymmetry, context: CadSketchLoweringContext) {
   const { curves, line } = resolveCadSketchCurveSymmetryOperands(context.graph, relation), identity = (pointId: string) => context.identity(pointId);
   context.direct(line.startPointId, line.endPointId, 'A symmetry axis has no numeric endpoints.');
   const support = context.support(line), ends = new Set(isCadSketchVirtualAxisId(line.id) ? [] : [line.startPointId, line.endPointId].map(identity));
-  const pairs = cadSketchMirrorPairs(curves, line, identity, context.starts);
-  context.together(() => {
-    for (const { pointIds: [p, q], self, dependent } of pairs) {
-      if (self) { if (!dependent && !ends.has(identity(p))) context.onSupport(p, support); continue; }
-      const operands = [...context.point(p), ...context.point(q), ...support];
-      if (dependent) { context.emit(turnsAlong(curves, p, q, line, context.starts) ? 'symmetric-perpendicular' : 'symmetric-midpoint', operands); continue; }
-      context.emit('symmetric-midpoint', operands); context.emit('symmetric-perpendicular', operands);
-    }
-    const [a, b] = curves;
-    if (a.kind === 'circle' && b.kind === 'circle') context.equalSizes(context.size(a), context.size(b));
-  });
-}
-/**
- * Whether a dependent pair of arc ends, each moving around its arc's circle, changes its offset along the axis more than its midpoint's
- * offset across it: so whether the radii to them lie more across the axis than along it.
- */
-function turnsAlong(curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCurve], p: string, q: string, line: Line, starts: ReadonlyMap<string, { readonly x: number; readonly y: number }>) {
-  const from = starts.get(line.startPointId)!, to = starts.get(line.endPointId)!, dx = to.x - from.x, dy = to.y - from.y;
-  let across = 0, along = 0;
-  for (const [curve, id] of [[curves[0], p], [curves[1], q]] as const) {
-    const centre = curve.kind === 'line' ? undefined : starts.get(curve.centerPointId), point = starts.get(id);
-    if (!centre || !point) continue;
-    const x = point.x - centre.x, y = point.y - centre.y;
-    across += Math.abs(y * dx - x * dy); along += Math.abs(x * dx + y * dy);
+  const axis = cadSketchLineDirection(line, context.starts)!;
+  for (const { pointIds: [p, q], self } of cadSketchMirrorPairs(curves, line, identity, context.starts)) {
+    if (self) { if (!ends.has(identity(p))) context.onSupport(p, support); continue; }
+    const from = context.starts.get(p), to = context.starts.get(q);
+    if (from && to && !cadSketchPointsReflect(from, to, axis) && !context.start(q, cadSketchMirrorImage(from, axis))) context.start(p, cadSketchMirrorImage(to, axis));
+    const operands = [...context.point(p), ...context.point(q), ...support];
+    context.emit('symmetric-midpoint', operands); context.emit('symmetric-perpendicular', operands);
   }
-  return across >= along;
+  const [a, b] = curves;
+  if (a.kind === 'circle' && b.kind === 'circle') context.equalSizes(context.size(a), context.size(b));
 }
 const symmetricPointsMeaning = 'Keeps two point positions reflected about the infinite supporting line of the named axis. It does not fix that axis, join points or equalize circle radii.';
 export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
@@ -142,6 +131,7 @@ export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
   operands: relation => isCadSketchCurveSymmetry(relation) ? [...relation.curveIds, relation.lineId] : [...relation.pointIds, relation.lineId],
   withOperands: (relation, [first, second, lineId]) => isCadSketchCurveSymmetry(relation) ? { ...relation, curveIds: [first, second], lineId } : { ...relation, pointIds: [first, second], lineId },
   key: relation => `symmetric ${relation.lineId} ${sortedIds(isCadSketchCurveSymmetry(relation) ? relation.curveIds : relation.pointIds)}`,
+  yields: isCadSketchCurveSymmetry,
   validate: (graph, relation, [first, second, line]) => {
     if (isCadSketchCurveSymmetry(relation)) assertCadSketchCurveSymmetry(graph, first as CadSketchMirroredCurve, second as CadSketchMirroredCurve, line as Line);
     else assertCadSketchSymmetryIdentities(graph, first as CadSketchGraphPoint, second as CadSketchGraphPoint, line as Line);
@@ -161,7 +151,7 @@ export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
   offers: [{ signature: { slots: [mirrored, mirrored, { role: 'Axis line', accepts: ['line'] }], unordered: [[0, 1]] },
     plan: (planner, picks) => cadSketchMirrorIndex(picks.map(pick => pick.kind === 'point' ? planner.point(pick.id) : planner.entity(pick.id))) === 2
       ? planner.mirror([picks[0], picks[1]], planner.entity(picks[2].id) as Line) : null }],
-  // The pair's midpoint lies on the axis and the pair's span is square to it: one constraint of two equations.
+  // The pair's midpoint lies on the axis and the pair's span is square to it: one constraint of two equations. Curves mirror pair by pair.
   lower: (relation, context) => {
     if (isCadSketchCurveSymmetry(relation)) return lowerCurveSymmetry(relation, context);
     const { line } = resolveCadSketchSymmetryOperands(context.graph, relation);

@@ -164,6 +164,14 @@ export interface CadSketchRelationDefinition<K extends CadSketchRelationKind> {
    */
   readonly lower: (relation: CadSketchRelationOf<K>, context: CadSketchLoweringContext) => void;
   /**
+   * Whether the relation yields to the rest of the sketch: it holds whatever others do not already keep of it. Such a relation lowers
+   * after every relation that does not yield, in graph order, and each of its equations is a constraint of its own, so the solver sets
+   * one of its equations aside for any dependence the relation is part of. One set aside that agrees is solved but not redundant;
+   * one that disagrees still conflicts. Solving every equation leaves the relation whole, with no branch for a dropped equation to
+   * open, and the freedom left counts only what it adds.
+   */
+  readonly yields?: (relation: CadSketchRelationOf<K>) => boolean;
+  /**
    * Whether the numeric geometry meets the relation, in world millimetres and independently of the solver: `points` holds the
    * points whose coordinates are numeric and in range. An error it throws is reported as the relation's invalid expression.
    */

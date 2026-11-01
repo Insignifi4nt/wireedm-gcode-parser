@@ -47,11 +47,8 @@ export function assertCadSketchSymmetryIdentities(graph: CadSketchGraph, first: 
   return { points: [first, second] as const, line };
 }
 
-/**
- * Two points a mirror maps onto each other. A pair of one identity is `self`: that point lies on the mirror. A `dependent` pair needs
- * one equation, as the pairs before it already keep both its points one radius from mirrored centres.
- */
-export interface CadSketchMirrorPair { readonly pointIds: readonly [string, string]; readonly self: boolean; readonly dependent: boolean }
+/** Two points a mirror maps onto each other. A pair of one identity is `self`: that point lies on the mirror. */
+export interface CadSketchMirrorPair { readonly pointIds: readonly [string, string]; readonly self: boolean }
 
 const MIXED = 'Choose two points, two lines, two arcs or two circles to mirror.';
 const refuse = (message: string) => new CadError('invalid-sketch-symmetry', message);
@@ -61,18 +58,17 @@ const ordered = (pair: readonly [string, string]) => pair[0] < pair[1] ? `${pair
  * The point pairs two mirrored curves can take, which the relation does not store, read from identities alone: one pairing, or for lines
  * apart both, starts with starts first. Circles pair their centres. Arcs pair their centres, and their ends by direction: a mirror turns
  * an arc's sweep, so arcs of one direction pair each start with the other's end and arcs of opposite directions pair start with start.
- * Lines pair an end they share with itself. Every pairing reads the curves alike in either stored order. An arc's ends come self pairs
- * first, then by id, and the second is `dependent`.
+ * Lines pair an end they share with itself. Every pairing reads the curves alike in either stored order, so an arc's ends come self
+ * pairs first, then by id.
  */
 export function cadSketchMirrorPairings(curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCurve], identity: (pointId: string) => string): readonly (readonly CadSketchMirrorPair[])[] {
   const [a, b] = curves;
-  const pair = (pointIds: readonly [string, string], dependent = false): CadSketchMirrorPair => ({ pointIds, self: identity(pointIds[0]) === identity(pointIds[1]), dependent });
+  const pair = (pointIds: readonly [string, string]): CadSketchMirrorPair => ({ pointIds, self: identity(pointIds[0]) === identity(pointIds[1]) });
   if (a.kind === 'circle' && b.kind === 'circle') return [[pair([a.centerPointId, b.centerPointId])]];
   if (a.kind === 'arc' && b.kind === 'arc') {
     const ends = (a.direction === b.direction ? [[a.startPointId, b.endPointId], [a.endPointId, b.startPointId]] as const
       : [[a.startPointId, b.startPointId], [a.endPointId, b.endPointId]] as const).map(ids => pair(ids));
-    const [first, second] = [...ends].sort((p, q) => Number(q.self) - Number(p.self) || (ordered(p.pointIds) < ordered(q.pointIds) ? -1 : 1));
-    return [[pair([a.centerPointId, b.centerPointId]), first, { ...second, dependent: true }]];
+    return [[pair([a.centerPointId, b.centerPointId]), ...ends.sort((p, q) => Number(q.self) - Number(p.self) || (ordered(p.pointIds) < ordered(q.pointIds) ? -1 : 1))]];
   }
   if (a.kind !== 'line' || b.kind !== 'line') throw refuse(MIXED);
   const straight = [pair([a.startPointId, b.startPointId]), pair([a.endPointId, b.endPointId])];
@@ -142,11 +138,21 @@ export function assertCadSketchCurveSymmetry(graph: CadSketchGraph, first: CadSk
 
 const residualIssue = (relation: CadSketchSymmetricRelation, message: string, residualMm: number): CadSketchGraphIssue[] =>
   [{ source: { kind: 'relation', id: relation.id }, code: 'relation-residual', message, ...(Number.isFinite(residualMm) ? { residualMm } : {}) }];
+type Axis = NonNullable<ReturnType<typeof cadSketchLineDirection>>;
 /** How far two points are from reflecting in the axis: along it, and their midpoint across it, in world millimetres. */
-function reflectionResidual(first: Point2, second: Point2, axis: NonNullable<ReturnType<typeof cadSketchLineDirection>>) {
+function reflectionResidual(first: Point2, second: Point2, axis: Axis) {
   const tangent = (second.x - first.x) * axis.x + (second.y - first.y) * axis.y;
   const normal = ((first.x - axis.start.x) + (second.x - axis.start.x)) * -axis.y + ((first.y - axis.start.y) + (second.y - axis.start.y)) * axis.x;
   return Math.hypot(tangent, normal);
+}
+/** Whether two points reflect in the infinite line of the axis, within the driver tolerance at their scale, as the relation check asks. */
+export function cadSketchPointsReflect(first: Point2, second: Point2, axis: Axis): boolean {
+  return reflectionResidual(first, second, axis) <= cadSketchDriverTolerance([first, second, axis.start, axis.end]);
+}
+/** The mirror image of a point in the infinite line of the axis. */
+export function cadSketchMirrorImage(point: Point2, axis: Axis): Point2 {
+  const along = (point.x - axis.start.x) * axis.x + (point.y - axis.start.y) * axis.y;
+  return { x: 2 * (axis.start.x + along * axis.x) - point.x, y: 2 * (axis.start.y + along * axis.y) - point.y };
 }
 
 /** Reflection in the infinite line support; both components are physical world millimeters. */

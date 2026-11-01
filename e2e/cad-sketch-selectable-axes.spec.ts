@@ -103,7 +103,11 @@ async function removeSymmetric(page: Page) {
   await page.getByRole('button', { name: 'Constrain', exact: true }).click();
   const item = page.getByRole('menu', { name: 'Constraint tools', exact: true }).getByRole('menuitemcheckbox', { name: 'Symmetric', exact: true });
   await expect(item).toBeChecked(); await item.click();
-  await expect.poll(async () => (await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: 'axes' })).feature.graph.relations).toEqual([]);
+  // A version read just before the removal is accepted goes stale; such a read is retried, not failed.
+  await expect.poll(async () => {
+    const result = await rawCall(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: 'axes' });
+    return result.ok ? result.data.feature.graph.relations : 'stale';
+  }).toEqual([]);
   await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
 }
 
@@ -129,6 +133,42 @@ test('mirrors two lines about the V axis with Symmetric, then removes it', async
   const along = (p: string, q: string) => [0, 1].map(index => .7 * sketch.position(graph, p)[index] + .3 * sketch.position(graph, q)[index]) as [number, number];
   await sketch.clickAt(...along('b1', 'b2')); await sketch.clickAt(0, 14, true); await sketch.clickAt(...along('a1', 'a2'), true);
   await removeSymmetric(page);
+});
+
+test('draws two horizontal lines and mirrors them about the V axis with Symmetric, keeping both Horizontal relations', async ({ page }) => {
+  const sketch = await openSketch(page, { points: [], entities: [], relations: [] });
+  const settled = async (version: string) => {
+    await expect.poll(async () => (await context(page)).version).not.toBe(version);
+    await expect.poll(() => context(page)).toMatchObject({ workflowOpen: false });
+    return (await call(page, 'cad_get_feature', { expectedVersion: (await context(page)).version, featureId: 'axes' })).feature.graph as Graph;
+  };
+  // Each line drawn level is kept horizontal by the relation drawing creates; B lies higher and shorter than A's mirror image.
+  await page.getByRole('button', { name: 'Line', exact: true }).click(); await expect(page.getByRole('checkbox', { name: 'Create relations', exact: true })).toBeChecked();
+  let graph: Graph = { points: [], entities: [], relations: [] };
+  const drawn: [[number, number], [number, number]][] = [[[10, 12], [28, 12]], [[-24, 16], [-12, 16]]];
+  for (const [from, to] of drawn) {
+    const version = (await context(page)).version;
+    await sketch.clickAt(...from); await sketch.clickAt(...to); await page.keyboard.press('Escape');
+    graph = await settled(version);
+  }
+  await page.keyboard.press('Escape');
+  const lines = graph.entities as { id: string; startPointId: string; endPointId: string }[];
+  expect(lines).toHaveLength(2);
+  const horizontal = (graph.relations as { kind: string }[]).filter(relation => relation.kind === 'horizontal');
+  expect(horizontal).toHaveLength(2);
+  const [a, b] = lines, along = (line: typeof a) => [0, 1].map(index => .7 * sketch.position(graph, line.startPointId)[index] + .3 * sketch.position(graph, line.endPointId)[index]) as [number, number];
+  await sketch.clickAt(...along(a)); await sketch.clickAt(...along(b), true); await sketch.clickAt(0, 30, true);
+  expect(await sketch.selection()).toEqual([{ kind: 'entity', id: a.id }, { kind: 'entity', id: b.id }, { kind: 'entity', id: '@v' }]);
+  const version = (await context(page)).version;
+  await sketch.constrain('Symmetric');
+  const mirrored = await settled(version);
+  expect(mirrored.relations).toEqual([...graph.relations, { id: expect.any(String), kind: 'symmetric', curveIds: [a.id, b.id], lineId: '@v' }]);
+  // B's ends land on A's mirrored ends, both lines stay level, and the sketch reports no redundancy.
+  const ends = (line: typeof a) => [line.startPointId, line.endPointId].map(id => sketch.position(mirrored, id));
+  const images = ends(a).map(([x, y]) => [-x, y]).sort((p, q) => p[0] - q[0]), targets = ends(b).sort((p, q) => p[0] - q[0]);
+  for (const [index, [x, y]] of images.entries()) { expect(targets[index][0]).toBeCloseTo(x, 9); expect(targets[index][1]).toBeCloseTo(y, 9); }
+  expect(targets[0][1]).toBeCloseTo(targets[1][1], 9);
+  await expect(page.getByLabel('Sketch constraint status')).toHaveText('Under defined · 3 DOF');
 });
 
 test('mirrors two circles about a construction line with Symmetric, giving them one radius, then removes it', async ({ page }) => {

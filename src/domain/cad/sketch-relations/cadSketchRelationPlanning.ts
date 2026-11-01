@@ -1,20 +1,24 @@
 import type { CadScalar } from '../cadDocument';
 import { evaluateCadScalar } from '../cadExpression';
+import { cadSketchExternalReferenceComponents } from '../cadSketchExternalReferences';
 import { isAcceptedCadSketchGraph, type CadSketchGraph, type CadSketchGraphEntity, type CadSketchGraphPoint, type CadSketchGraphRelation } from '../cadSketchGraph';
 import { resolveCadSketchPointIdentities } from '../cadSketchGraphJoints';
 import { cadSketchEntityPointIds } from '../cadSketchGraphReferences';
 import { resolveCadSketchMidpointOperands } from '../cadSketchMidpointRelations';
 import { resolveCadSketchPointOnCurveOperands } from '../cadSketchPointOnCurveRelations';
 import { resolveCadSketchPointOnLineOperands } from '../cadSketchPointOnLineRelations';
+import { cadSketchDriverTolerance } from '../cadSketchPrecision';
 import { cadSketchMirrorPairings, cadSketchMirrorPairs, isCadSketchCurveSymmetry, resolveCadSketchCurveSymmetryOperands, resolveCadSketchSymmetryOperands,
   type CadSketchMirrorPair, type CadSketchMirroredCurve } from '../cadSketchSymmetryRelations';
 import { resolveCadSketchTangentJoint } from '../cadSketchTangentRelations';
 import { cadSketchCanonicalForm, type CadSketchCanonicalForm } from './cadSketchCanonicalForms';
 import { cadSketchCapabilityReason } from './cadSketchOperandSignatures';
-import { cadSketchRelationDefinition, cadSketchRelationsLike } from './cadSketchRelationRegistry';
+import { cadSketchRelationDefinition, cadSketchRelationKindName, cadSketchRelationsLike } from './cadSketchRelationRegistry';
 import type { CadSketchEdge, CadSketchRelationIntent, CadSketchRelationPlan, CadSketchRelationPlanner } from './cadSketchRelationTypes';
 import { CAD_SKETCH_H_AXIS, CAD_SKETCH_ORIGIN, CAD_SKETCH_ORIGIN_ID, CAD_SKETCH_V_AXIS, CadSketchPositions, cadSketchAxisNormal, cadSketchAxisOfNormal, cadSketchVirtualAxis,
-  cadSketchVirtualPoint, cadSketchVirtualSubject, isCadSketchVirtualAxisId, isCadSketchVirtualId, type CadSketchVirtualAxisId, type CadSketchVirtualId } from './cadSketchVirtualElements';
+  cadSketchVirtualPoint, cadSketchVirtualPosition, cadSketchVirtualSubject, isCadSketchVirtualAxisId, isCadSketchVirtualId, type CadSketchVirtualAxisId, type CadSketchVirtualId } from './cadSketchVirtualElements';
+import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 // The Constrain tool's planning of value-free relations, which the relation offers share: the identical-relation lookup, Coincident
 // identities, held coordinates, and what the value-free relations already imply. A relation on the origin or an axis that another kind
@@ -362,21 +366,129 @@ export function cadSketchRelationPlanner(graph: CadSketchGraph): CadSketchRelati
     const [p, q] = [identity(first), identity(second)];
     return a.has(p) && b.has(q) || a.has(q) && b.has(p);
   });
-  type Part = { readonly state: 'free' } | { readonly state: 'held'; readonly ids: readonly string[] } | { readonly state: 'missing'; readonly relations: readonly CadSketchRelationIntent[] }
-    | { readonly state: 'blocked'; readonly reason: string };
+  // Where a point stays whatever is solved: the origin and the axes' sample ends, or a point whose coordinates are expressions of
+  // numbers alone, that a linked reference owns, or that Fix holds at such values. Undefined where a parameter or nothing sets it.
+  let owned: ReturnType<typeof cadSketchExternalReferenceComponents> | undefined;
+  const constant = (value: CadScalar) => { try { return evaluateCadScalar(value, NO_PARAMETERS); } catch { return undefined; } };
+  const place = (position: readonly [CadScalar, CadScalar]) => {
+    const [x, y] = position.map(constant);
+    return x === undefined || y === undefined ? undefined : { x, y };
+  };
+  const fixedAt = (pointId: string): Point2 | undefined => {
+    const virtual = cadSketchVirtualPosition(pointId);
+    if (virtual) return virtual;
+    const joined = joint(pointId);
+    owned ??= cadSketchExternalReferenceComponents(graph);
+    for (const id of joined) {
+      const point = points.get(id);
+      if (point && (typeof point.position[0] === 'string' && typeof point.position[1] === 'string' || owned.pointIds.has(id))) return place(point.position);
+    }
+    const fix = graph.relations.find(relation => relation.kind === 'fixed-point' && joined.has(relation.pointId));
+    return fix?.kind === 'fixed-point' ? place(fix.position) : undefined;
+  };
+  // Each line's direction, in radians modulo a half turn, as value-free relations and fixed ends set it: Parallel, Collinear and
+  // Perpendicular join lines into classes a whole number of quarter turns apart, Horizontal, Vertical and the trace's directions join
+  // a class to the axes, and a line with fixed ends gives its class an angle.
+  let directions: { readonly turns: (lineId: string) => readonly [number, number] | undefined; readonly angle: (lineId: string) => number | undefined } | undefined;
+  const lineDirections = () => {
+    if (directions) return directions;
+    const lines = graph.entities.filter(isLine), ids = [...lines.map(line => line.id), CAD_SKETCH_H_AXIS.id, CAD_SKETCH_V_AXIS.id];
+    const index = new Map(ids.map((id, at) => [id, at])), parent = ids.map((_, at) => at), quarter = ids.map(() => 0);
+    const find = (node: number): readonly [number, number] => {
+      let root = node, turn = 0;
+      while (parent[root] !== root) { turn ^= quarter[root]; root = parent[root]; }
+      for (let at = node, own = turn; at !== root && parent[at] !== root;) { const up = parent[at], next = own ^ quarter[at]; parent[at] = root; quarter[at] = own; at = up; own = next; }
+      return [root, turn];
+    };
+    const join = (first: string, second: string, turn: number) => {
+      const [a, b] = [index.get(first), index.get(second)];
+      if (a === undefined || b === undefined) return;
+      const [p, pa] = find(a), [q, qb] = find(b);
+      if (p !== q) { parent[p] = q; quarter[p] = pa ^ qb ^ turn; }
+    };
+    const { direction } = traced();
+    join(CAD_SKETCH_V_AXIS.id, CAD_SKETCH_H_AXIS.id, 1);
+    for (const line of lines) { const kind = direction(line.id); if (kind) join(line.id, CAD_SKETCH_H_AXIS.id, kind === 'horizontal' ? 0 : 1); }
+    for (const relation of graph.relations) if (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear')
+      join(relation.lineIds[0], relation.lineIds[1], relation.kind === 'perpendicular' ? 1 : 0);
+    const angles = new Map<number, number>(), anchor = (id: string, angle: number) => {
+      const [root, turn] = find(index.get(id)!);
+      if (!angles.has(root)) angles.set(root, angle - turn * Math.PI / 2);
+    };
+    anchor(CAD_SKETCH_H_AXIS.id, 0);
+    for (const line of lines) {
+      const from = fixedAt(line.startPointId), to = fixedAt(line.endPointId);
+      if (from && to && (from.x !== to.x || from.y !== to.y)) anchor(line.id, Math.atan2(to.y - from.y, to.x - from.x));
+    }
+    const turns = (lineId: string) => { const at = index.get(lineId); return at === undefined ? undefined : find(at); };
+    directions = { turns, angle: lineId => {
+      const found = turns(lineId), base = found && angles.get(found[0]);
+      return found && base !== undefined ? base + found[1] * Math.PI / 2 : undefined;
+    } };
+    return directions;
+  };
+  /** Whether two angles give one direction, modulo a half turn. */
+  const sameDirection = (first: number, second: number) => {
+    const apart = ((first - second) % Math.PI + Math.PI) % Math.PI;
+    return Math.min(apart, Math.PI - apart) <= CAD_PRECISION.angularAccuracyRad;
+  };
   /**
-   * Two lines, arcs or circles mirrored as one Symmetric, unless other relations already keep some of it. Each pair of their points is
-   * kept by a Symmetric of the two points about this line, a shared point by a relation keeping it on the line, and mirrored circles'
-   * radii by Equal. Every part kept is applied. Some parts kept add relations for the rest, as the curves' Symmetric would repeat
-   * those; for arcs that would take a dependent pair alone, so they are refused instead. Lines apart pair by position, so a pairing
-   * that relations keep part of decides it.
+   * Why two lines cannot mirror about this line or axis, as the directions relations or fixed ends keep them: a mirror of one line's
+   * direction that misses the other's would collapse both. Directions known against the axes or fixed ends are compared; three lines
+   * of one class only by their quarter turns, as a mirror in that class keeps a line's quarter turn. Undefined where nothing refuses.
+   */
+  const directionConflict = (a: Extract<Entity, { kind: 'line' }>, b: Extract<Entity, { kind: 'line' }>, mirror: CadSketchEdge): string | undefined => {
+    const { turns, angle } = lineDirections(), [ta, tb, tm] = [a.id, b.id, mirror.id].map(angle);
+    const [ra, rb, rm] = [a.id, b.id, mirror.id].map(turns);
+    const misses = ta !== undefined && tb !== undefined && tm !== undefined ? !sameDirection(2 * tm - ta, tb)
+      : !!ra && !!rb && !!rm && ra[0] === rb[0] && rb[0] === rm[0] && ra[1] !== rb[1];
+    if (!misses) return undefined;
+    const on = (line: Extract<Entity, { kind: 'line' }>) => graph.relations.filter(relation => (relation.kind === 'horizontal' || relation.kind === 'vertical')
+      && sameJoints(relation.pointIds, [line.startPointId, line.endPointId]) || (relation.kind === 'parallel' || relation.kind === 'perpendicular' || relation.kind === 'collinear') && relation.lineIds.includes(line.id));
+    const relations = [...new Set([...on(a), ...on(b)])], names = [...new Set(relations.map(cadSketchRelationKindName))];
+    const subject = isCadSketchVirtualAxisId(mirror.id) ? cadSketchVirtualSubject(mirror.id) : 'this line';
+    if (!names.length) return `Other relations or fixed points keep these lines in directions that cannot mirror about ${subject}.`;
+    const listed = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`, one = relations.length === 1;
+    return `The ${listed} ${one ? 'relation keeps' : 'relations keep'} these lines in directions that cannot mirror about ${subject}. Remove ${one ? 'it' : 'one of them'} first.`;
+  };
+  /**
+   * An arc's or circle's radius where it stays whatever is solved: a radius or diameter of numbers alone, a constant expression, a
+   * linked circle, or an arc's fixed centre and end.
+   */
+  const fixedRadius = (curve: CadSketchMirroredCurve): number | undefined => {
+    for (const relation of graph.relations) if (relation.kind === 'radial-size' && relation.entityId === curve.id) {
+      const value = constant(relation.value);
+      if (value !== undefined) return relation.quantity === 'diameter' ? value / 2 : value;
+    }
+    if (curve.kind === 'circle') return typeof curve.radius === 'string' ? constant(curve.radius) : (owned ??= cadSketchExternalReferenceComponents(graph)).circleIds.has(curve.id) ? curve.radius : undefined;
+    if (curve.kind !== 'arc') return undefined;
+    const centre = fixedAt(curve.centerPointId), end = fixedAt(curve.startPointId) ?? fixedAt(curve.endPointId);
+    return centre && end ? Math.hypot(end.x - centre.x, end.y - centre.y) : undefined;
+  };
+  // Where each point is now, expressions of numbers alone included, for the pairing a new mirror of two lines takes.
+  let places: CadSketchPositions | undefined;
+  const placed = () => {
+    if (places) return places;
+    places = new CadSketchPositions();
+    for (const point of graph.points) { const at = place(point.position); if (at) places.set(point.id, at); }
+    return places;
+  };
+  type Part = { readonly state: 'free' | 'missing' } | { readonly state: 'held'; readonly ids: readonly string[] } | { readonly state: 'blocked'; readonly reason: string };
+  /**
+   * Two lines, arcs or circles mirrored as one Symmetric. Relations that keep the whole mirror already are applied: a Symmetric of
+   * each pair of their points about this line, a relation keeping a shared point on it, and for circles Equal. Otherwise the curves'
+   * Symmetric is added, which yields to whatever other relations keep of it, Equal and orientations included. It is refused where
+   * what they keep cannot mirror: a shared point held off the axis, directions that a mirror would collapse, fixed radii that
+   * differ, or point Symmetrics that pair two lines' ends otherwise than where they lie, which decides how a new mirror pairs them.
    */
   const mirrorCurves = (a: CadSketchMirroredCurve, b: CadSketchMirroredCurve, mirror: Extract<Entity, { kind: 'line' }> | CadSketchEdge): CadSketchRelationPlan => {
     const relation: CadSketchRelationIntent = { kind: 'symmetric', curveIds: [a.id, b.id], lineId: mirror.id }, same = cadSketchRelationsLike(graph, relation);
     if (same.length) return { state: 'applied', relationIds: same };
-    let pairings: readonly (readonly CadSketchMirrorPair[])[];
-    try { pairings = cadSketchMirrorPairings(resolveCadSketchCurveSymmetryOperands(graph, { curveIds: [a.id, b.id], lineId: mirror.id }).curves, identity); }
-    catch (cause) { return blocked(precise(cause, 'These curves cannot mirror each other.')); }
+    let pairings: readonly (readonly CadSketchMirrorPair[])[], curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCurve];
+    try {
+      curves = resolveCadSketchCurveSymmetryOperands(graph, { curveIds: [a.id, b.id], lineId: mirror.id }).curves;
+      pairings = cadSketchMirrorPairings(curves, identity);
+    } catch (cause) { return blocked(precise(cause, 'These curves cannot mirror each other.')); }
     const line = mirror as Extract<Entity, { kind: 'line' }>, axis = isCadSketchVirtualAxisId(line.id) ? line.id : undefined;
     const ends = new Set(axis ? [] : [line.startPointId, line.endPointId].map(identity));
     const pairPart = ({ pointIds: [p, q], self }: CadSketchMirrorPair): Part => {
@@ -385,17 +497,17 @@ export function cadSketchRelationPlanner(graph: CadSketchGraph): CadSketchRelati
         // On an axis, a point keeps the coordinate across it at 0, as Coincident with the axis plans it.
         const across = cadSketchAxisNormal(axis), hold = holdingTraced(p, across);
         if (hold.away) return { state: 'blocked', reason: heldAway('A point these curves share', hold, across, cadSketchVirtualSubject(axis)) };
-        return hold.held ? { state: 'held', ids: hold.ids } : { state: 'missing', relations: [zeroAxis(p, across)] };
+        return hold.held ? { state: 'held', ids: hold.ids } : { state: 'missing' };
       }
       if (self) {
         const joined = joint(p), ids = matching(stored => (stored.kind === 'point-on-line' || stored.kind === 'midpoint') && stored.lineId === line.id && joined.has(stored.pointId));
-        return ids.length ? { state: 'held', ids } : { state: 'missing', relations: [{ kind: 'point-on-line', pointId: p, lineId: line.id }] };
+        return ids.length ? { state: 'held', ids } : { state: 'missing' };
       }
       const ids = matching(stored => stored.kind === 'symmetric' && !isCadSketchCurveSymmetry(stored) && stored.lineId === line.id && sameJoints(stored.pointIds, [p, q]));
-      return ids.length ? { state: 'held', ids } : { state: 'missing', relations: [{ kind: 'symmetric', pointIds: [p, q], lineId: line.id }] };
+      return ids.length ? { state: 'held', ids } : { state: 'missing' };
     };
-    const radius: CadSketchRelationIntent = { kind: 'equal-radius', curveIds: [a.id, b.id] }, equalIds = cadSketchRelationsLike(graph, radius);
-    const parts = pairings.map(pairing => [...pairing.map(pairPart), ...a.kind === 'circle' ? [equalIds.length ? { state: 'held', ids: equalIds } as const : { state: 'missing', relations: [radius] } as const] : []]
+    const equalIds = cadSketchRelationsLike(graph, { kind: 'equal-radius', curveIds: [a.id, b.id] });
+    const parts = pairings.map(pairing => [...pairing.map(pairPart), ...a.kind === 'circle' ? [equalIds.length ? { state: 'held', ids: equalIds } as const : { state: 'missing' } as const] : []]
       .filter(part => part.state !== 'free'));
     const keeping = parts.filter(list => list.some(part => part.state === 'held'));
     if (keeping.length > 1) return blocked(`Other relations already mirror these ${a.kind}s in two ways. Remove them first.`);
@@ -403,11 +515,21 @@ export function cadSketchRelationPlanner(graph: CadSketchGraph): CadSketchRelati
     const ids = new Set(list.flatMap(part => part.state === 'held' ? part.ids : []));
     if (list.every(part => part.state === 'held')) return held(`These ${a.kind}s already mirror each other.`, graph.relations.filter(stored => ids.has(stored.id)).map(stored => stored.id));
     if (refused?.state === 'blocked') return blocked(refused.reason);
-    if (keeping.length) return a.kind === 'arc' ? blocked('Other relations already mirror part of these arcs. Remove them first.')
-      : available(list.flatMap(part => part.state === 'missing' ? part.relations : []));
-    // Mirrored lines keep one length and mirrored arcs one radius, so Equal between them would be kept twice.
-    const equal = a.kind === 'line' ? cadSketchRelationsLike(graph, { kind: 'equal-length', lineIds: [a.id, b.id] }) : a.kind === 'arc' ? equalIds : [];
-    if (equal.length) return blocked(`These ${a.kind}s already keep one ${a.kind === 'line' ? 'length' : 'radius'}, which mirroring keeps too. Remove Equal first.`);
+    if (a.kind === 'line' && b.kind === 'line') {
+      const reason = directionConflict(a, b, mirror);
+      if (reason) return blocked(reason);
+    } else {
+      const [first, second] = [fixedRadius(a), fixedRadius(b)];
+      if (first !== undefined && second !== undefined && Math.abs(first - second) > cadSketchDriverTolerance([{ x: first, y: second }]))
+        return blocked(`These ${a.kind}s have fixed radii that differ, so they cannot mirror each other.`);
+    }
+    // A new mirror of two lines pairs their ends by where they lie, so point Symmetrics that pair them the other way would conflict.
+    if (keeping.length && pairings.length > 1) {
+      let lying: readonly CadSketchMirrorPair[] | undefined;
+      try { lying = cadSketchMirrorPairs(curves, line, identity, placed()); } catch { lying = undefined; }
+      const kept = pairings[parts.indexOf(keeping[0])];
+      if (lying && lying[0].pointIds.join(' ') !== kept[0].pointIds.join(' ')) return blocked('Symmetric already pairs these lines’ ends the other way round from where they lie. Remove it first.');
+    }
     return available([relation]);
   };
 

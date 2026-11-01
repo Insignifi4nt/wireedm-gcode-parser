@@ -35,14 +35,15 @@ export const CAD_SKETCH_EQUATION_REDUNDANT = 1, CAD_SKETCH_EQUATION_CONFLICTING 
  * Source identities of the constraints that equation `labels` make conflicting, redundant or
  * partially redundant (redundant through some but not all of its equations), each in compiled
  * order and listed once, as the PlaneGCS runtime reported them. A source whose constraints are
- * labelled apart, as a fixed point's two axes, is only conflicting when any of them conflicts.
+ * labelled apart, as a fixed point's two axes, is only conflicting when any of them conflicts. An equation that yields is never
+ * redundant: what it repeats is kept already, so only a conflict through it counts.
  */
 export function cadSketchEquationDiagnostics(model: CadSketchEquationModel, labels: readonly number[]) {
   const conflicting = new Set<string>(), redundant = new Set<string>(), partiallyRedundant = new Set<string>();
   for (let start = 0; start < model.equations.length;) {
     let end = start + 1;
     while (end < model.equations.length && model.equations[end].tag === model.equations[start].tag) end++;
-    const bits = labels.slice(start, end), sourceId = model.equations[start].sourceId;
+    const bits = labels.slice(start, end).map((bit, index) => model.equations[start + index].yields ? bit & ~CAD_SKETCH_EQUATION_REDUNDANT : bit), sourceId = model.equations[start].sourceId;
     if (bits.some(bit => bit & CAD_SKETCH_EQUATION_CONFLICTING)) conflicting.add(sourceId);
     else if (bits.every(bit => bit & CAD_SKETCH_EQUATION_REDUNDANT)) redundant.add(sourceId);
     else if (bits.some(bit => bit & CAD_SKETCH_EQUATION_REDUNDANT)) partiallyRedundant.add(sourceId);

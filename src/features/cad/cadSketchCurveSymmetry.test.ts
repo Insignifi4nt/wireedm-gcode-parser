@@ -37,7 +37,8 @@ const image = ([x, y]: Place): Place => [-x, y];
 
 /**
  * Curve A and its mirror B about x = 0, the point pairs the mirror maps, A's points a hold may fix, and the equations and freedom the
- * relation gives with the mirror fixed.
+ * relation gives with the mirror fixed. Arcs lower one equation more than the freedom they take: B's own equal radii follow from the
+ * mirror, so one equation of the pair is always kept already.
  */
 interface Scene {
   readonly kind: 'line' | 'arc' | 'circle';
@@ -60,16 +61,16 @@ const SCENES: Readonly<Record<string, Scene>> = {
   // A mirror turns an arc's sweep, so B running the same way starts at the mirror of A's end. Arc ends sit off their centres' level and
   // plumb, so no radius starts along a coordinate and the definition analysis is certain about every point.
   arcs: { kind: 'arc', points: { c1: [20, 10], s1: polar([20, 10], 5, 15), e1: polar([20, 10], 5, 105), c2: [-20, 10], s2: image(polar([20, 10], 5, 105)), e2: image(polar([20, 10], 5, 15)) },
-    entities: [arc('A', 'c1', 's1', 'e1', 'ccw'), arc('B', 'c2', 's2', 'e2', 'ccw')], pairs: [['c1', 'c2'], ['s1', 'e2'], ['e1', 's2']], own: ['c1', 's1', 'e1'], equations: 5, freedom: 5 },
+    entities: [arc('A', 'c1', 's1', 'e1', 'ccw'), arc('B', 'c2', 's2', 'e2', 'ccw')], pairs: [['c1', 'c2'], ['s1', 'e2'], ['e1', 's2']], own: ['c1', 's1', 'e1'], equations: 6, freedom: 5 },
   'arcs running opposite ways': { kind: 'arc', points: { c1: [20, 10], s1: polar([20, 10], 5, 15), e1: polar([20, 10], 5, 105), c2: [-20, 10], s2: image(polar([20, 10], 5, 15)), e2: image(polar([20, 10], 5, 105)) },
-    entities: [arc('A', 'c1', 's1', 'e1', 'ccw'), arc('B', 'c2', 's2', 'e2', 'cw')], pairs: [['c1', 'c2'], ['s1', 's2'], ['e1', 'e2']], own: ['c1', 's1', 'e1'], equations: 5, freedom: 5 },
+    entities: [arc('A', 'c1', 's1', 'e1', 'ccw'), arc('B', 'c2', 's2', 'e2', 'cw')], pairs: [['c1', 'c2'], ['s1', 's2'], ['e1', 'e2']], own: ['c1', 's1', 'e1'], equations: 6, freedom: 5 },
   'arcs sharing an end': { kind: 'arc', points: { c1: [8, 6], s1: polar([8, 6], 10, 25), o: [0, 0], c2: [-8, 6], e2: image(polar([8, 6], 10, 25)) },
-    entities: [arc('A', 'c1', 's1', 'o', 'ccw'), arc('B', 'c2', 'o', 'e2', 'ccw')], pairs: [['c1', 'c2'], ['s1', 'e2'], ['o', 'o']], own: ['c1', 's1', 'o'], equations: 4, freedom: 4 },
+    entities: [arc('A', 'c1', 's1', 'o', 'ccw'), arc('B', 'c2', 'o', 'e2', 'ccw')], pairs: [['c1', 'c2'], ['s1', 'e2'], ['o', 'o']], own: ['c1', 's1', 'o'], equations: 5, freedom: 4 },
   'arcs sharing a center': { kind: 'arc', points: { z: [0, -5], s1: polar([0, -5], 10, 10), e1: polar([0, -5], 10, 70), s2: image(polar([0, -5], 10, 70)), e2: image(polar([0, -5], 10, 10)) },
-    entities: [arc('A', 'z', 's1', 'e1', 'ccw'), arc('B', 'z', 's2', 'e2', 'ccw')], pairs: [['z', 'z'], ['s1', 'e2'], ['e1', 's2']], own: ['z', 's1', 'e1'], equations: 4, freedom: 4 },
+    entities: [arc('A', 'z', 's1', 'e1', 'ccw'), arc('B', 'z', 's2', 'e2', 'ccw')], pairs: [['z', 'z'], ['s1', 'e2'], ['e1', 's2']], own: ['z', 's1', 'e1'], equations: 5, freedom: 4 },
   // A lens: the arcs share both ends, on the mirror.
   'arcs sharing both ends': { kind: 'arc', points: { c1: [-6, 2], s: [0, 12], e: [0, -8], c2: [6, 2] },
-    entities: [arc('A', 'c1', 'e', 's', 'ccw'), arc('B', 'c2', 's', 'e', 'ccw')], pairs: [['c1', 'c2'], ['e', 'e'], ['s', 's']], own: ['c1', 'e', 's'], equations: 3, freedom: 3 },
+    entities: [arc('A', 'c1', 'e', 's', 'ccw'), arc('B', 'c2', 's', 'e', 'ccw')], pairs: [['c1', 'c2'], ['e', 'e'], ['s', 's']], own: ['c1', 'e', 's'], equations: 4, freedom: 3 },
   circles: { kind: 'circle', points: { k1: [15, 8], k2: [-15, 8] }, entities: [circle('A', 'k1'), circle('B', 'k2')], pairs: [['k1', 'k2']], own: ['k1'], equations: 3, freedom: 3 }
 };
 
@@ -148,13 +149,13 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     }
     // Arcs pair by direction alone, so their pairing needs no geometry; the end pair after the first is the one their centres imply.
     const arcs = (scene: Scene) => scene.entities as readonly CadSketchMirroredCurve[] as readonly [CadSketchMirroredCurve, CadSketchMirroredCurve];
-    expect(cadSketchMirrorPairings(arcs(SCENES.arcs), identity)).toEqual([[{ pointIds: ['c1', 'c2'], self: false, dependent: false },
-      { pointIds: ['e1', 's2'], self: false, dependent: false }, { pointIds: ['s1', 'e2'], self: false, dependent: true }]]);
-    expect(cadSketchMirrorPairings(arcs(SCENES['arcs running opposite ways']), identity)).toEqual([[{ pointIds: ['c1', 'c2'], self: false, dependent: false },
-      { pointIds: ['e1', 'e2'], self: false, dependent: false }, { pointIds: ['s1', 's2'], self: false, dependent: true }]]);
-    // An end on the mirror comes first, so the dependent pair is never the one that keeps the shared end on it.
-    expect(cadSketchMirrorPairings(arcs(SCENES['arcs sharing an end']), identity)[0].map(pair => [pair.pointIds.join(' '), pair.self, pair.dependent]))
-      .toEqual([['c1 c2', false, false], ['o o', true, false], ['s1 e2', false, true]]);
+    expect(cadSketchMirrorPairings(arcs(SCENES.arcs), identity)).toEqual([[{ pointIds: ['c1', 'c2'], self: false },
+      { pointIds: ['e1', 's2'], self: false }, { pointIds: ['s1', 'e2'], self: false }]]);
+    expect(cadSketchMirrorPairings(arcs(SCENES['arcs running opposite ways']), identity)).toEqual([[{ pointIds: ['c1', 'c2'], self: false },
+      { pointIds: ['e1', 'e2'], self: false }, { pointIds: ['s1', 's2'], self: false }]]);
+    // An end on the mirror pairs with itself and comes first.
+    expect(cadSketchMirrorPairings(arcs(SCENES['arcs sharing an end']), identity)[0].map(pair => [pair.pointIds.join(' '), pair.self]))
+      .toEqual([['c1 c2', false], ['o o', true], ['s1 e2', false]]);
     // Lines apart can pair either way until the geometry says which.
     expect(cadSketchMirrorPairings(arcs(SCENES.lines), identity).map(pairing => pairing.map(pair => pair.pointIds.join(' ')))).toEqual([['a1 b1', 'a2 b2'], ['a1 b2', 'a2 b1']]);
     // Lines that pair almost as near either way keep start with start unless crossing is nearer by more than the tie. B straddles the
@@ -164,12 +165,17 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     expect([tie(0), tie(2e-10), tie(3e-10), tie(.25)]).toEqual([['a1 b1', 'a2 b2'], ['a1 b1', 'a2 b2'], ['a1 b2', 'a2 b1'], ['a1 b2', 'a2 b1']]);
   });
 
-  it('lower each mirror as one constraint, one equation for each freedom it holds, a circle\'s radius among them', () => {
+  it('lower each mirror whole, every equation a constraint of its own that yields and follows every other relation, a circle\'s radius among them', () => {
     for (const [name, scene] of Object.entries(SCENES)) for (const mirror of MIRRORS) {
-      const graph = graphOf(scene, mirror, { relations: [mirrored(mirror)] }), model = compileCadSketchEquations({ graph, parameters: {} });
+      // An Equal stored after the mirror still lowers before it.
+      const equal = scene.kind === 'line' ? { id: 'same', kind: 'equal-length', lineIds: ['A', 'B'] } : { id: 'same', kind: 'equal-radius', curveIds: ['A', 'B'] };
+      const graph = graphOf(scene, mirror, { relations: [mirrored(mirror), equal] }), model = compileCadSketchEquations({ graph, parameters: {} });
       const own = model.equations.filter(equation => equation.sourceId === 'mirrored'), where = `${name} about ${mirror}`;
       expect(own, where).toHaveLength(scene.equations);
-      expect(new Set(own.map(equation => equation.tag)).size, where).toBe(1);
+      expect(new Set(own.map(equation => equation.tag)).size, where).toBe(scene.equations);
+      expect(own.every(equation => equation.yields), where).toBe(true);
+      expect(model.equations.slice(-scene.equations), where).toEqual(own);
+      expect(model.equations.some(equation => equation.sourceId !== 'mirrored' && equation.yields), where).toBe(false);
       const radii = [...model.radiusParameters.values()];
       expect(own.some(equation => equation.operands.length === 2 && radii.includes(equation.operands[0]) && radii.includes(equation.operands[1])), where).toBe(scene.kind === 'circle');
     }
@@ -204,16 +210,30 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
 
   it('give a mirror about H, V, a construction line or a line one answer: freedom, redundancy and conflicts, whichever points are fixed or held', async () => {
     // Every scene, with each of A's points free, fixed by expressions or held by Fix, alone, beside an Equal the mirror already keeps, or
-    // with B's first point held 1 mm along the mirror from its image, and a circle's radius free or fixed. The mirror lines are fixed by
+    // with B's first point held 0.5 mm along the mirror from its image; lines also square to the mirror, one or both, and circles' and
+    // arcs' radii fixed alike on A, on B or on both, alone or beside Equal. Square to an axis is stored as Horizontal or Vertical. The mirror lines are fixed by
     // expressions, so they add no freedom of their own, and the answers agree in everything but the positions. A conflict planted farther
-    // off is met at a stall, whose blame the solver documents as a suspicion: 3 mm away, 5 of these conflicts are certified about one
-    // mirror and left failed about another, about V and H too. Across the mirror, a turned mirror's rows let the solver name another
-    // conflict witness, as valid, than about an axis.
+    // off is met at a stall, whose blame the solver documents as a suspicion: 1 mm away, the lens with its centre held collapses its ends
+    // and is certified about the turned mirrors but left failed about V. Across the mirror, a turned mirror's rows let the solver name
+    // another conflict witness, as valid, than about an axis.
+    type Extra = 'none' | 'equal' | 'away' | 'square' | 'squares';
+    type Sized = 'none' | 'A' | 'B' | 'both';
     const solver = await loadCadSketchTestNativeSolver();
-    const solve = (scene: Scene, mirror: Mirror, held: Readonly<Record<string, 'expression' | 'fix'>>, extra: 'none' | 'equal' | 'away', radius: boolean) => {
+    const solve = (scene: Scene, mirror: Mirror, held: Readonly<Record<string, 'expression' | 'fix'>>, extra: Extra, sized: Sized) => {
       const first = scene.pairs.find(pair => pair[0] !== pair[1])!, equal = scene.kind === 'line' ? { id: 'same', kind: 'equal-length', lineIds: ['A', 'B'] } : { id: 'same', kind: 'equal-radius', curveIds: ['A', 'B'] };
-      const away = { id: 'away', kind: 'fixed-point', pointId: first[1], position: placed(mirror, [scene.points[first[1]][0], scene.points[first[1]][1] + 1]) };
-      const graph = graphOf(scene, mirror, { held, radii: radius ? { A: '4' } : {}, relations: [mirrored(mirror), ...extra === 'equal' ? [equal] : extra === 'away' ? [away] : []] });
+      const away = { id: 'away', kind: 'fixed-point', pointId: first[1], position: placed(mirror, [scene.points[first[1]][0], scene.points[first[1]][1] + .5]) };
+      const square = (id: string) => {
+        const ends = scene.entities.find(entity => entity.id === id) as ReturnType<typeof line>;
+        return mirror === '@v' || mirror === '@h' ? { id: `square-${id}`, kind: mirror === '@v' ? 'horizontal' : 'vertical', pointIds: [ends.startPointId, ends.endPointId] }
+          : { id: `square-${id}`, kind: 'perpendicular', lineIds: [id, 'mirror'] };
+      };
+      const sizedIds = sized === 'none' ? [] : sized === 'both' ? ['A', 'B'] : [sized];
+      const radii = scene.kind === 'circle' ? Object.fromEntries(sizedIds.map(id => [id, '4'])) : {};
+      // An arc's radius as drawn, so the radii fixed agree.
+      const own = scene.entities[0] as ReturnType<typeof arc>, radius = () => Math.hypot(...[0, 1].map(axis => scene.points[own.startPointId][axis] - scene.points[own.centerPointId][axis]) as [number, number]);
+      const sizes = scene.kind === 'arc' ? sizedIds.map(id => ({ id: `size-${id}`, kind: 'radial-size', entityId: id, quantity: 'radius', value: radius() })) : [];
+      const extras = { none: [], equal: [equal], away: [away], square: [square('A')], squares: [square('A'), square('B')] }[extra];
+      const graph = graphOf(scene, mirror, { held, radii, relations: [mirrored(mirror), ...extras, ...sizes] });
       const { result, reason } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
       // The mirror line and its ends are defined by their expressions, where an axis is not listed.
       const definition = result.diagnostics.definition && Object.fromEntries(Object.entries(result.diagnostics.definition)
@@ -228,15 +248,231 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
           const how = Math.floor(code / 3 ** index) % 3;
           return how === 0 ? [] : [[id, how === 1 ? 'expression' : 'fix'] as const];
         }));
-        for (const extra of ['none', 'equal', 'away'] as const) for (const radius of scene.kind === 'circle' ? [false, true] : [false]) {
-          const answer = solve(scene, '@v', held, extra, radius);
-          for (const mirror of MIRRORS.slice(1)) expect(solve(scene, mirror, held, extra, radius), JSON.stringify({ name, mirror, held, extra, radius })).toEqual(answer);
+        const extras: readonly Extra[] = scene.kind === 'line' ? ['none', 'equal', 'away', 'square', 'squares'] : ['none', 'equal', 'away'];
+        for (const extra of extras) for (const sized of scene.kind === 'line' || extra === 'away' ? ['none'] as const : ['none', 'A', 'B', 'both'] as const) {
+          const answer = solve(scene, '@v', held, extra, sized);
+          for (const mirror of MIRRORS.slice(1)) expect(solve(scene, mirror, held, extra, sized), JSON.stringify({ name, mirror, held, extra, sized })).toEqual(answer);
           seen.add(answer.kind); configurations++;
         }
       }
     }
-    expect(configurations).toBe(3 * 27 + 5 * 81 + 18);
-    expect(seen).toEqual(new Set(['solved', 'redundant', 'conflicting']));
+    expect(configurations).toBe(3 * 9 * 5 + 5 * 27 * 9 + 3 * 9);
+    // A failed solve is the lens whose ends collapse at the stall.
+    expect(seen).toEqual(new Set(['solved', 'redundant', 'conflicting', 'failed']));
+  });
+
+  it('mirror two lines kept horizontal or vertical about H, V, a free construction line or a fixed oblique line, refusing directions no mirror keeps by name', async () => {
+    // Every mix of nothing, Horizontal and Vertical on A and on B, about the axes, a free construction line drawn near V, and a line
+    // fixed at 120°, V turned 30°. A mirror about a fixed line sends a direction θ to twice the line's less θ, so the lines' directions
+    // agree with it or the mirror would collapse them; a free line turns to agree with any two. The mirror keeps what Horizontal or
+    // Vertical on one line adds to the other, so it takes exactly the freedom they leave and none is redundant. Then, with the relations
+    // removed, the lines stay where they are, still mirrored, with the mirror's own freedom.
+    const solver = await loadCadSketchTestNativeSolver();
+    type Held = 'none' | 'horizontal' | 'vertical';
+    type Mirrored = '@v' | '@h' | 'free' | 'oblique';
+    const HELD: readonly Held[] = ['none', 'horizontal', 'vertical'], ANGLE: Readonly<Record<Mirrored, number | undefined>> = { '@v': 90, '@h': 0, free: undefined, oblique: 120 };
+    const SUBJECT: Readonly<Record<Mirrored, string>> = { '@v': 'the V axis', '@h': 'the H axis', free: 'this line', oblique: 'this line' };
+    const build = (mirror: Mirrored, onA: Held, onB: Held, drawn: readonly [Place, Place] = [[.5, -60], [-.5, 60]]) => {
+      const turn = (p: Place): Place => mirror === '@h' ? [-p[1], p[0]] : mirror === 'oblique' ? placed('line', p) : p;
+      const axis = mirror === 'free' ? [{ id: 'm1', position: drawn[0] }, { id: 'm2', position: drawn[1] }]
+        : mirror === 'oblique' ? [{ id: 'm1', position: placed('line', [0, -60]).map(String) }, { id: 'm2', position: placed('line', [0, 60]).map(String) }] : [];
+      const hold = (id: string, pointIds: readonly [string, string], how: Held) => how === 'none' ? [] : [{ id, kind: how, pointIds }];
+      return {
+        points: [...Object.entries(SCENES.lines.points).map(([id, p]) => ({ id, position: turn(p) })), ...axis],
+        entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), ...axis.length ? [{ ...line('mirror', 'm1', 'm2'), construction: mirror === 'free' }] : []],
+        relations: [...hold('onA', ['a1', 'a2'], onA), ...hold('onB', ['b1', 'b2'], onB)]
+      };
+    };
+    const reflects = (graph: CadSketchGraph, mirror: Mirrored) => {
+      const at = positions(graph), [m1, m2] = mirror === '@v' || mirror === '@h' ? [{ x: 0, y: 0 }, mirror === '@v' ? { x: 0, y: 1 } : { x: 1, y: 0 }] : [at.get('m1')!, at.get('m2')!];
+      return [['a1', 'b1'], ['a2', 'b2']].every(([p, q]) => {
+        const { x, y } = at.get(p)!, dx = m2.x - m1.x, dy = m2.y - m1.y, along = ((x - m1.x) * dx + (y - m1.y) * dy) / (dx * dx + dy * dy), target = at.get(q)!;
+        return Math.hypot(2 * (m1.x + along * dx) - x - target.x, 2 * (m1.y + along * dy) - y - target.y) < 1e-7;
+      });
+    };
+    const angle = (how: Held) => how === 'horizontal' ? 0 : 90, name = (how: Held) => how === 'horizontal' ? 'Horizontal' : 'Vertical';
+    let applied = 0, refused = 0, unreached = 0;
+    for (const mirror of ['@v', '@h', 'free', 'oblique'] as const) for (const onA of HELD) for (const onB of HELD) {
+      const where = `${onA} A, ${onB} B about ${mirror}`, raw = build(mirror, onA, onB), graph = parseCadSketchGraph(raw);
+      const lineId = mirror === '@v' || mirror === '@h' ? mirror : 'mirror', relation = { kind: 'symmetric', curveIds: ['A', 'B'], lineId };
+      const known = ANGLE[mirror], kept = (onA === 'none' ? 0 : 1) + (onB === 'none' ? 0 : 1);
+      const agrees = known === undefined || onA === 'none' || onB === 'none' || ((2 * known - angle(onA) - angle(onB)) % 180 + 180) % 180 === 0;
+      const solve = (relations: readonly unknown[]) => attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...raw, relations }), parameters: {}, analyseDefinition: true }, solver).result;
+      if (!agrees) {
+        const names = [...new Set([onA, onB].map(name))].join(' and ');
+        const reason = `The ${names} relations keep these lines in directions that cannot mirror about ${SUBJECT[mirror]}. Remove one of them first.`;
+        expect(offer(graph, ['A', 'B', lineId]), where).toMatchObject({ state: 'blocked', reason, relations: [] });
+        expect(step(graph, 'symmetric', ['A', 'B', lineId]), where).toEqual({ status: 'invalid', reason });
+        // Stored anyway, the mirror never solves.
+        expect(solve([...raw.relations, mirrored(mirror === 'free' ? 'construction' : mirror === 'oblique' ? 'line' : mirror)]).kind, where).not.toBe('solved');
+        refused++; continue;
+      }
+      expect(offer(graph, ['A', 'B', lineId]), where).toMatchObject({ state: 'available', relations: [relation] });
+      const freedom = mirror === 'free' ? 8 - kept : 4 - Math.min(kept, 1), result = solve([...raw.relations, { id: 'mirrored', ...relation }]);
+      if (result.kind !== 'solved') {
+        // A free mirror drawn near V has to turn 45° for one line level and the other upright, and the solver meets the lines collapsed
+        // first, which the graph check refuses: rejected, never solved elsewhere. Drawn near the bisector, it solves; see below.
+        expect(mirror === 'free' && kept === 2 && onA !== onB, `${where}: ${result.message}`).toBe(true);
+        unreached++; continue;
+      }
+      expect(result.diagnostics, where).toMatchObject({ degreesOfFreedom: freedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      expect(reflects(result.graph, mirror), where).toBe(true);
+      expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
+      const released = attemptCadSketchNativeSolve({ graph: { ...result.graph, relations: result.graph.relations.filter(stored => stored.id === 'mirrored') }, parameters: {}, analyseDefinition: true }, solver).result;
+      if (released.kind !== 'solved') throw new Error(`${where} released: ${released.message}`);
+      expect(released.diagnostics.degreesOfFreedom, where).toBe(mirror === 'free' ? 8 : 4);
+      expect(reflects(released.graph, mirror), where).toBe(true);
+      expect([...positions(released.graph)].every(([id, { x, y }]) => Math.hypot(x - positions(result.graph).get(id)!.x, y - positions(result.graph).get(id)!.y) < 1e-9), where).toBe(true);
+      applied++;
+    }
+    expect([applied, refused, unreached]).toEqual([4 * 9 - 10, 8, 2]);
+    for (const [onA, onB] of [['horizontal', 'vertical'], ['vertical', 'horizontal']] as const) {
+      const raw = build('free', onA, onB, [[-40, -42], [42, 40]]);
+      const { result } = attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...raw, relations: [...raw.relations, mirrored('construction')] }), parameters: {}, analyseDefinition: true }, solver);
+      if (result.kind !== 'solved') throw new Error(`${onA} A, ${onB} B about a free line near the bisector: ${result.message}`);
+      expect(result.diagnostics).toMatchObject({ degreesOfFreedom: 6, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      expect(reflects(result.graph, 'free')).toBe(true);
+    }
+  });
+
+  it('mirror two lines beside Parallel, Perpendicular or Collinear, Equal, a point mirror or a hold on an axis, refusing only what cannot mirror', async () => {
+    // Each case lists what A and B keep, the mirror, and the freedom the mirror leaves, or why it is refused. A refused mirror is a
+    // construction line, which is the mirror whichever way the lines are picked; among three ordinary lines, another may mirror the rest.
+    const solver = await loadCadSketchTestNativeSolver();
+    const relation = (id: string, kind: string, lineIds: readonly [string, string]) => ({ id, kind, lineIds });
+    const zero = (id: string, pointId: string, axis: 'x' | 'y') => ({ id, kind: 'fixed-axis', pointId, axis, value: 0 });
+    const free = { points: [{ id: 'm1', position: [.5, -60] }, { id: 'm2', position: [-.5, 60] }], entities: [{ ...line('mirror', 'm1', 'm2'), construction: true }] };
+    type Case = { readonly scene: Scene; readonly mirror: Mirror | 'free'; readonly relations: readonly unknown[]; readonly moved?: Options['moved']; readonly freedom?: number; readonly reason?: string };
+    // Lines parallel or collinear across V turn level or upright; drawn at 45° they would start where neither is nearer, a stationary point.
+    const shallow = { a2: [25, 9], b2: [-25, 9] } as const;
+    const cases: Readonly<Record<string, Case>> = {
+      'A parallel to a fixed line': { scene: SCENES.lines, mirror: 'line', relations: [relation('p', 'parallel', ['A', 'mirror'])], freedom: 3 },
+      'both perpendicular to a fixed line': { scene: SCENES.lines, mirror: 'line', relations: [relation('p', 'perpendicular', ['A', 'mirror']), relation('q', 'perpendicular', ['mirror', 'B'])], freedom: 3 },
+      'both parallel to a free line': { scene: SCENES.lines, mirror: 'free', relations: [relation('p', 'parallel', ['A', 'mirror']), relation('q', 'parallel', ['B', 'mirror'])], freedom: 7 },
+      'the lines parallel, about V': { scene: SCENES.lines, mirror: '@v', relations: [relation('p', 'parallel', ['A', 'B'])], moved: shallow, freedom: 3 },
+      'the lines collinear, about V': { scene: SCENES.lines, mirror: '@v', relations: [relation('c', 'collinear', ['A', 'B'])], moved: shallow, freedom: 3 },
+      'equal lines about V': { scene: SCENES.lines, mirror: '@v', relations: [{ id: 'e', kind: 'equal-length', lineIds: ['A', 'B'] }], freedom: 4 },
+      'a point mirror about H': { scene: SCENES.lines, mirror: '@h', relations: [{ id: 's', kind: 'symmetric', pointIds: ['a2', 'b2'], lineId: '@h' }], freedom: 4 },
+      'A on the H axis, about V': { scene: SCENES.lines, mirror: '@v', relations: [zero('y1', 'a1', 'y'), zero('y2', 'a2', 'y')], freedom: 2 },
+      'both on the H axis, about V': { scene: SCENES.lines, mirror: '@v', relations: [zero('y1', 'a1', 'y'), zero('y2', 'a2', 'y'), zero('y3', 'b1', 'y'), zero('y4', 'b2', 'y')], freedom: 2 },
+      'a shared end held on V': { scene: SCENES['lines sharing an end'], mirror: '@v', relations: [zero('x', 'v', 'x')], freedom: 3 },
+      'a shared end on a line': { scene: SCENES['lines sharing an end'], mirror: 'line', relations: [{ id: 'on', kind: 'point-on-line', pointId: 'v', lineId: 'mirror' }], freedom: 3 },
+      'A parallel and B perpendicular to a fixed construction line': { scene: SCENES.lines, mirror: 'construction', relations: [relation('p', 'parallel', ['A', 'mirror']), relation('q', 'perpendicular', ['B', 'mirror'])],
+        reason: 'The Parallel and Perpendicular relations keep these lines in directions that cannot mirror about this line. Remove one of them first.' },
+      'A parallel and B perpendicular to a free line': { scene: SCENES.lines, mirror: 'free', relations: [relation('p', 'parallel', ['A', 'mirror']), relation('q', 'perpendicular', ['B', 'mirror'])],
+        reason: 'The Parallel and Perpendicular relations keep these lines in directions that cannot mirror about this line. Remove one of them first.' },
+      'A fixed level and B horizontal, about a fixed construction line': { scene: SCENES.lines, mirror: 'construction', relations: [{ id: 'f1', kind: 'fixed-point', pointId: 'a1', position: [0, 0] },
+        { id: 'f2', kind: 'fixed-point', pointId: 'a2', position: [9, 0] }, { id: 'h', kind: 'horizontal', pointIds: ['b1', 'b2'] }],
+        reason: 'The Horizontal relation keeps these lines in directions that cannot mirror about this line. Remove it first.' },
+      'A horizontal through B parallel to it, about a fixed construction line': { scene: SCENES.lines, mirror: 'construction', relations: [{ id: 'h', kind: 'horizontal', pointIds: ['a1', 'a2'] }, relation('p', 'parallel', ['B', 'A'])],
+        reason: 'The Horizontal and Parallel relations keep these lines in directions that cannot mirror about this line. Remove one of them first.' }
+    };
+    for (const [where, { scene, mirror, relations, moved, freedom, reason }] of Object.entries(cases)) {
+      const raw = rawScene(scene, mirror === 'free' ? '@v' : mirror, { relations, moved });
+      const sketch = mirror === 'free' ? { ...raw, points: [...raw.points, ...free.points], entities: [...raw.entities, ...free.entities] } : raw;
+      const lineId = mirror === 'free' ? 'mirror' : lineOf(mirror), graph = parseCadSketchGraph(sketch), stored = { id: 'mirrored', kind: 'symmetric', curveIds: ['A', 'B'], lineId };
+      const { result } = attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...sketch, relations: [...sketch.relations, stored] }), parameters: {}, analyseDefinition: true }, solver);
+      if (reason) {
+        expect(offer(graph, ['A', 'B', lineId]), where).toMatchObject({ state: 'blocked', reason });
+        expect(result.kind, where).not.toBe('solved');
+        continue;
+      }
+      expect(offer(graph, ['A', 'B', lineId]), where).toMatchObject({ state: 'available', relations: [{ kind: 'symmetric', curveIds: ['A', 'B'], lineId }] });
+      if (result.kind !== 'solved') throw new Error(`${where}: ${result.message}`);
+      expect(result.diagnostics, where).toMatchObject({ degreesOfFreedom: freedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
+    }
+  });
+
+  it('mirror circles and arcs whose radii are fixed alike on either or both, and refuse fixed radii that differ', async () => {
+    // A circle's radius fixed by an expression or a radius of numbers alone, or an arc's by a radius, on A, on B or on both. The mirror
+    // keeps what one fixed radius gives the other, so a radius fixed on both takes nothing more; radii fixed apart conflict and are
+    // refused before they are stored.
+    const solver = await loadCadSketchTestNativeSolver();
+    const size = (id: string, entityId: string, value: number | string, quantity: 'radius' | 'diameter' = 'radius') => ({ id, kind: 'radial-size', entityId, quantity, value });
+    type Case = { readonly scene: Scene; readonly radii?: Readonly<Record<string, number | string>>; readonly relations?: readonly unknown[]; readonly freedom?: number };
+    const cases: Readonly<Record<string, Case>> = {
+      'circle A by expression': { scene: SCENES.circles, radii: { A: '4' }, freedom: 2 },
+      'circle B by expression': { scene: SCENES.circles, radii: { B: '4' }, freedom: 2 },
+      'both circles by expression': { scene: SCENES.circles, radii: { A: '4', B: '2 * 2' }, freedom: 2 },
+      'circle A by expression and B by diameter': { scene: SCENES.circles, radii: { A: '4' }, relations: [size('d', 'B', 8, 'diameter')], freedom: 2 },
+      'both circles by radius': { scene: SCENES.circles, relations: [size('r1', 'A', 4), size('r2', 'B', '4')], freedom: 2 },
+      'arc A by radius': { scene: SCENES.arcs, relations: [size('r1', 'A', 5)], freedom: 4 },
+      'arc B by radius': { scene: SCENES.arcs, relations: [size('r2', 'B', 5)], freedom: 4 },
+      'both arcs by radius': { scene: SCENES.arcs, relations: [size('r1', 'A', 5), size('r2', 'B', 5)], freedom: 4 },
+      'both arcs fixed at two points': { scene: SCENES.arcs, relations: ['c1', 's1', 'c2', 's2'].map(id => ({ id: `fix-${id}`, kind: 'fixed-point', pointId: id, position: placed('construction', SCENES.arcs.points[id]) })), freedom: 0 },
+      'circles by expression apart': { scene: SCENES.circles, radii: { A: '4', B: '5' } },
+      'circles by expression and radius apart': { scene: SCENES.circles, radii: { A: '4' }, relations: [size('r2', 'B', 5)] },
+      'arcs by radius apart': { scene: SCENES.arcs, relations: [size('r1', 'A', 5), size('r2', 'B', 6)] },
+      'arcs fixed and by radius apart': { scene: SCENES.arcs, relations: [size('r2', 'B', 6), ...['c1', 's1'].map(id => ({ id: `fix-${id}`, kind: 'fixed-point', pointId: id, position: placed('construction', SCENES.arcs.points[id]) }))] }
+    };
+    for (const [where, { scene, radii, relations, freedom }] of Object.entries(cases)) {
+      const raw = rawScene(scene, 'construction', { radii, relations }), graph = parseCadSketchGraph(raw);
+      const { result } = attemptCadSketchNativeSolve({ graph: parseCadSketchGraph({ ...raw, relations: [...raw.relations, mirrored('construction')] }), parameters: {}, analyseDefinition: true }, solver);
+      if (freedom === undefined) {
+        expect(offer(graph, ['A', 'B', 'mirror']), where).toMatchObject({ state: 'blocked', reason: `These ${scene.kind}s have fixed radii that differ, so they cannot mirror each other.` });
+        // Stored anyway, the mirror never solves: the solver blames it, or stalls where the radii pull the arcs apart.
+        expect(result.kind, where).toBe('rejected');
+        if (scene.kind === 'circle') expect(result.diagnostics.conflictingIds, where).toContain('mirrored');
+        continue;
+      }
+      expect(offer(graph, ['A', 'B', 'mirror']), where).toMatchObject({ state: 'available', relations: [{ kind: 'symmetric', curveIds: ['A', 'B'], lineId: 'mirror' }] });
+      if (result.kind !== 'solved') throw new Error(`${where}: ${result.message}`);
+      expect(result.diagnostics, where).toMatchObject({ degreesOfFreedom: freedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
+    }
+  });
+
+  it('mirror arcs onto the true image from any start, moving the second onto the first, and never solve onto another branch', async () => {
+    // The review's arcs about V: A from (25, 10) to (20, 15) about (20, 10), B from (-20, 15) to (-15, 10) about (-20, 10), both
+    // counterclockwise. B starts on the image of A's end, so it ends on A's side of its own centre, where one equation of each end pair
+    // used to let it stay. The mirror moves B onto A's image and leaves A where it is.
+    const solver = await loadCadSketchTestNativeSolver();
+    const A = { c1: [20, 10], s1: [25, 10], e1: [20, 15] } as const;
+    const arcs = (b: { readonly centre: Place; readonly start: Place; readonly end: Place; readonly direction: 'ccw' | 'cw' }): Scene => ({
+      kind: 'arc', points: { ...A, c2: b.centre, s2: b.start, e2: b.end }, entities: [arc('A', 'c1', 's1', 'e1', 'ccw'), arc('B', 'c2', 's2', 'e2', b.direction)],
+      pairs: b.direction === 'ccw' ? [['c1', 'c2'], ['s1', 'e2'], ['e1', 's2']] : [['c1', 'c2'], ['s1', 's2'], ['e1', 'e2']], own: ['c1', 's1', 'e1'], equations: 6, freedom: 5 });
+    const run = (scene: Scene, mirror: Mirror, options: Options) => {
+      const graph = graphOf(scene, mirror, { ...options, relations: [mirrored(mirror), ...options.relations ?? []] });
+      return { graph, result: attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: false }, solver).result };
+    };
+    const repro = arcs({ centre: [-20, 10], start: [-20, 15], end: [-15, 10], direction: 'ccw' }), { result } = run(repro, '@v', {});
+    if (result.kind !== 'solved') throw new Error(result.message);
+    expect(Object.fromEntries([...positions(result.graph)].map(([id, { x, y }]) => [id, [+x.toFixed(9), +y.toFixed(9)]])))
+      .toEqual({ c1: [20, 10], s1: [25, 10], e1: [20, 15], c2: [-20, 10], s2: [-20, 15], e2: [-25, 10] });
+    // B's centre and start fixed elsewhere and A free: A's centre and end move onto their images, its start stays on its circle and B's
+    // end follows it.
+    const held = run(repro, '@v', { held: { c2: 'expression', s2: 'expression' }, moved: { c2: [-22, 11], s2: [-22, 16], e2: [-27, 11] } });
+    if (held.result.kind !== 'solved') throw new Error(held.result.message);
+    const moved = positions(held.result.graph), at = (id: string) => [+moved.get(id)!.x.toFixed(9), +moved.get(id)!.y.toFixed(9)];
+    expect([at('c1'), at('e1'), at('e2')]).toEqual([[22, 11], [22, 16], [-at('s1')[0], at('s1')[1]]]);
+    expect(Math.hypot(at('s1')[0] - 22, at('s1')[1] - 11)).toBeCloseTo(5, 9);
+
+    // Around it: B's centre, radius, ends and direction swept, A free or its centre and start fixed by expressions or held by Fix, alone or
+    // resized by a radius on A or B, about V and a fixed line at 120°. A solve lands on the true mirror or fails; A held stays, and a
+    // radius A held cannot take fails.
+    const counts = { solved: 0, failed: 0 };
+    for (const mirror of ['@v', 'line'] as const) for (const centre of [[-20, 10], [-16, 13]] as const) for (const radius of [3, 6]) for (const start of [0, 100, 190, 280])
+      for (const sweep of [60, 200]) for (const direction of ['ccw', 'cw'] as const) for (const hold of ['free', 'expression', 'fix'] as const) for (const resize of ['none', 'A', 'B'] as const) {
+        const scene = arcs({ centre, start: polar(centre, radius, start), end: polar(centre, radius, direction === 'ccw' ? start + sweep : start - sweep), direction });
+        const options: Options = { held: hold === 'free' ? {} : { c1: hold, s1: hold }, relations: resize === 'none' ? [] : [{ id: 'size', kind: 'radial-size', entityId: resize, quantity: 'radius', value: 7 }] };
+        const where = JSON.stringify({ mirror, centre, radius, start, sweep, direction, hold, resize }), { graph, result } = run(scene, mirror, options);
+        const reachable = hold === 'free' || resize === 'none';
+        if (result.kind !== 'solved') {
+          expect(reachable, `${where}: ${result.message}`).toBe(false);
+          counts.failed++; continue;
+        }
+        expect(reachable, where).toBe(true);
+        const at = positions(result.graph), [m1, m2] = mirror === '@v' ? [{ x: 0, y: 0 }, { x: 0, y: 1 }] : [at.get('m1')!, at.get('m2')!];
+        for (const [p, q] of scene.pairs) {
+          const { x, y } = at.get(p)!, dx = m2.x - m1.x, dy = m2.y - m1.y, along = ((x - m1.x) * dx + (y - m1.y) * dy) / (dx * dx + dy * dy), target = at.get(q)!;
+          expect(Math.hypot(2 * (m1.x + along * dx) - x - target.x, 2 * (m1.y + along * dy) - y - target.y), `${where}: ${p} onto ${q}`).toBeLessThan(1e-7);
+        }
+        if (resize === 'none') for (const id of scene.own) expect(Math.hypot(at.get(id)!.x - positions(graph).get(id)!.x, at.get(id)!.y - positions(graph).get(id)!.y), `${where}: ${id} stays`).toBeLessThan(1e-9);
+        expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
+        counts.solved++;
+      }
+    expect(counts).toEqual({ solved: 2 * 2 * 2 * 4 * 2 * 2 * 5, failed: 2 * 2 * 2 * 4 * 2 * 2 * 4 });
   });
 
   it('refuse two kinds, an axis among the mirrored curves, and pairs a mirror cannot map, with the reason', () => {
@@ -309,21 +545,43 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     const both = graphOf(SCENES.lines, 'construction', { relations: [pair('p2', ['b2', 'a2']), pair('p1', ['a1', 'b1'])] });
     expect(offer(both, ['A', 'B', 'mirror'])).toMatchObject({ state: 'applied', relationIds: ['p2', 'p1'] });
     expect(choice(both, ['A', 'B', 'mirror'])).toEqual({ tool: 'symmetric', state: 'applied', relationIds: ['p2', 'p1'] });
-    // One of them holds half the mirror: the other completes it.
-    const half = graphOf(SCENES.lines, 'construction', { relations: [pair('p1', ['a1', 'b1'])] });
-    expect(offer(half, ['A', 'B', 'mirror'])).toMatchObject({ state: 'available', relations: [{ kind: 'symmetric', pointIds: ['a2', 'b2'], lineId: 'mirror' }] });
-    // A circle's radius held by Equal: the mirror adds its centres.
-    const sized = graphOf(SCENES.circles, 'construction', { relations: [{ id: 'same', kind: 'equal-radius', curveIds: ['A', 'B'] }] });
-    expect(offer(sized, ['A', 'B', 'mirror'])).toMatchObject({ state: 'available', relations: [{ kind: 'symmetric', pointIds: ['k1', 'k2'], lineId: 'mirror' }] });
-    const centred = graphOf(SCENES.circles, 'construction', { relations: [pair('c', ['k1', 'k2'])] });
-    expect(offer(centred, ['A', 'B', 'mirror'])).toMatchObject({ state: 'available', relations: [{ kind: 'equal-radius', curveIds: ['A', 'B'] }] });
     const whole = graphOf(SCENES.circles, 'construction', { relations: [pair('c', ['k1', 'k2']), { id: 'same', kind: 'equal-radius', curveIds: ['B', 'A'] }] });
     expect(offer(whole, ['B', 'A', 'mirror'])).toMatchObject({ state: 'applied', relationIds: ['c', 'same'] });
-    // An arc's mirror is one relation, so part of it held another way is refused, and so is an Equal the mirror would repeat.
-    const arcs = graphOf(SCENES.arcs, 'construction', { relations: [pair('c', ['c1', 'c2'])] });
-    expect(offer(arcs, ['A', 'B', 'mirror'])).toMatchObject({ state: 'blocked', reason: 'Other relations already mirror part of these arcs. Remove them first.' });
-    const equal = graphOf(SCENES.lines, 'construction', { relations: [{ id: 'same', kind: 'equal-length', lineIds: ['A', 'B'] }] });
-    expect(offer(equal, ['A', 'B', 'mirror'])).toMatchObject({ state: 'blocked', reason: expect.stringMatching(/Remove Equal first\.$/) });
+  });
+
+  it('add the curves\' Symmetric where other relations keep part of the mirror, which it yields to, and solve to the whole mirror with the freedom left', async () => {
+    // Half a line mirror, a circle's radius or centres, part of an arc mirror, an Equal the mirror keeps too, a shared end already on
+    // the mirror, and point mirrors beside an Equal: each is completed by the curves' Symmetric, which solves without redundancy.
+    const solver = await loadCadSketchTestNativeSolver();
+    const pair = (id: string, pointIds: readonly [string, string]) => ({ id, kind: 'symmetric', pointIds, lineId: 'mirror' });
+    const equalLength = { id: 'same', kind: 'equal-length', lineIds: ['A', 'B'] }, equalRadius = { id: 'same', kind: 'equal-radius', curveIds: ['A', 'B'] };
+    const cases: readonly (readonly [string, Scene, readonly unknown[]])[] = [
+      ['half a line mirror', SCENES.lines, [pair('p1', ['a1', 'b1'])]],
+      ['half a line mirror running the other way', SCENES['lines running opposite ways'], [pair('p2', ['a2', 'b2'])]],
+      ['equal lines', SCENES.lines, [equalLength]],
+      ['half a line mirror and equal lines', SCENES.lines, [pair('p1', ['a1', 'b1']), equalLength]],
+      ['a shared end on the mirror', SCENES['lines sharing an end'], [{ id: 'on', kind: 'point-on-line', pointId: 'v', lineId: 'mirror' }]],
+      ['equal circles', SCENES.circles, [equalRadius]],
+      ['mirrored centres', SCENES.circles, [pair('c', ['k1', 'k2'])]],
+      ['mirrored arc centres', SCENES.arcs, [pair('c', ['c1', 'c2'])]],
+      ['mirrored arc ends and equal arcs', SCENES.arcs, [pair('e', ['e1', 's2']), equalRadius]],
+      ['equal arcs', SCENES['arcs sharing an end'], [equalRadius]],
+      ['a shared arc end on the mirror', SCENES['arcs sharing an end'], [{ id: 'on', kind: 'point-on-line', pointId: 'o', lineId: 'mirror' }]]
+    ];
+    for (const [name, scene, relations] of cases) {
+      const graph = graphOf(scene, 'construction', { relations }), order = ['A', 'B', 'mirror'];
+      const relation = { kind: 'symmetric', curveIds: ['A', 'B'], lineId: 'mirror' };
+      expect(offer(graph, order), name).toMatchObject({ state: 'available', relations: [relation] });
+      expect(step(graph, 'symmetric', order), name).toEqual({ status: 'ready', relations: [{ id: 'new', ...relation }] });
+      const { result } = attemptCadSketchNativeSolve({ graph: graphOf(scene, 'construction', { relations: [...relations, mirrored('construction')] }), parameters: {}, analyseDefinition: true }, solver);
+      if (result.kind !== 'solved') throw new Error(`${name}: ${result.message}`);
+      expect(result.diagnostics, name).toMatchObject({ degreesOfFreedom: scene.freedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+    }
+    // An Equal between curves that mirror stays refused, as the mirror keeps it.
+    expect(offer(graphOf(SCENES.lines, 'construction', { relations: [mirrored('construction')] }), ['A', 'B'], 'equal-length')).toMatchObject({ state: 'blocked' });
+    // Point mirrors that pair two lines' ends the other way round from where they lie are refused, as a new mirror pairs them by place.
+    const crossed = graphOf(SCENES.lines, '@v', { relations: [{ id: 'x', kind: 'symmetric', pointIds: ['a1', 'b2'], lineId: '@v' }] });
+    expect(offer(crossed, ['A', 'B', '@v'])).toMatchObject({ state: 'blocked', reason: 'Symmetric already pairs these lines’ ends the other way round from where they lie. Remove it first.' });
   });
 
   it('leave with a trim of either mirrored curve, and refuse a split or an extension while it names the curve', () => {

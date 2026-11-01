@@ -73,6 +73,11 @@ export interface CadSketchLoweringContext {
   offset(axis: 0 | 1, fromPointId: string, toPointId: string, offset?: number): void;
   /** Along one axis, the point's coordinate is `value`. */
   hold(pointId: string, axis: 0 | 1, value: number): void;
+  /**
+   * Starts the point's free coordinates at `position` instead of where the point is, so the solve sets out from where the relation
+   * puts it; false when neither coordinate can move. A later start of the same coordinate replaces an earlier one.
+   */
+  start(pointId: string, position: Point2): boolean;
   /** The point lies on the infinite line through the support. */
   onSupport(pointId: string, support: CadSketchSupportParameters): void;
   /**
@@ -187,8 +192,12 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   readonly equations: CadSketchEquation[] = [];
   readonly radialHolds: CadSketchRadialHold[] = [];
   readonly squareHolds: CadSketchSquareHold[] = [];
+  /** Start values for free point parameters, which the compiler puts in place of the points' own before solving, in order. */
+  readonly seeds: { readonly index: number; readonly value: number }[] = [];
   private tags = 0;
   private sharedTag: number | undefined;
+  /** The relation lowering now yields: each equation is a constraint of its own, marked as yielding. */
+  private yielding = false;
   private relation: CadSketchGraphRelation | undefined;
   private sourceId = '';
   private entities: Map<string, CadSketchGraphEntity> | undefined;
@@ -222,23 +231,34 @@ export class CadSketchLowering implements CadSketchLoweringContext {
    * leaves none of its equations, radial holds or tags behind.
    */
   lower(relation: CadSketchGraphRelation) {
-    this.relation = relation; this.sourceId = relation.id;
-    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.made.length;
-    try { cadSketchRelationDefinition(relation).lower(relation, this); }
-    catch (error) { this.restore(equations, radialHolds, squareHolds, tags, made); throw error; }
+    const definition = cadSketchRelationDefinition(relation);
+    this.relation = relation; this.sourceId = relation.id; this.yielding = definition.yields?.(relation as never) === true;
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, seeds = this.seeds.length, tags = this.tags, made = this.made.length;
+    try { definition.lower(relation, this); }
+    catch (error) { this.restore(equations, radialHolds, squareHolds, seeds, tags, made); throw error; }
+    finally { this.yielding = false; }
+  }
+  /**
+   * Every relation in graph order, those that yield after all the others (see the definitions' `yields`): each then yields to the
+   * relations before it, and those that yield to each other in the order the graph stores them.
+   */
+  lowerAll(relations: readonly CadSketchGraphRelation[]) {
+    const yields = (relation: CadSketchGraphRelation) => cadSketchRelationDefinition(relation).yields?.(relation as never) === true;
+    for (const relation of relations) if (!yields(relation)) this.lower(relation);
+    for (const relation of relations) if (yields(relation)) this.lower(relation);
   }
   /** The equations an edge keeps by itself, under its own id, whole or not at all. */
   structure(entity: CadSketchGraphEntity) {
     const structure = capability(STRUCTURES, entity);
     if (!structure) return;
     this.relation = undefined; this.sourceId = entity.id;
-    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.made.length;
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, seeds = this.seeds.length, tags = this.tags, made = this.made.length;
     try { structure(this, entity); }
-    catch (error) { this.restore(equations, radialHolds, squareHolds, tags, made); throw error; }
+    catch (error) { this.restore(equations, radialHolds, squareHolds, seeds, tags, made); throw error; }
   }
   /** Drops what was emitted since the counts were taken, and gives back the tags it took. */
-  private restore(equations: number, radialHolds: number, squareHolds: number, tags: number, made: number) {
-    this.equations.length = equations; this.radialHolds.length = radialHolds; this.squareHolds.length = squareHolds; this.tags = tags; this.sharedTag = undefined;
+  private restore(equations: number, radialHolds: number, squareHolds: number, seeds: number, tags: number, made: number) {
+    this.equations.length = equations; this.radialHolds.length = radialHolds; this.squareHolds.length = squareHolds; this.seeds.length = seeds; this.tags = tags; this.sharedTag = undefined;
     if (this.made.length === made) return;
     this.made.length = made;
     for (const [sentinel, index] of this.sentinels) if (index >= this.parameterCount + made) this.sentinels.delete(sentinel);
@@ -312,7 +332,8 @@ export class CadSketchLowering implements CadSketchLoweringContext {
       if (specialized) [kind, operands, value] = specialized;
       operands = operands.map(operand => operand < 0 ? this.sentinelParameter(operand) : operand);
     }
-    this.equations.push({ kind, operands, value, sourceId: this.sourceId, tag: this.sharedTag ?? this.tags++ });
+    if (this.yielding) this.equations.push({ kind, operands, value, sourceId: this.sourceId, tag: this.tags++, yields: true });
+    else this.equations.push({ kind, operands, value, sourceId: this.sourceId, tag: this.sharedTag ?? this.tags++ });
   }
   /** The parameter a fixed value of the origin or an axis became, made the first time an equation keeps it. */
   private sentinelParameter(sentinel: number): number {
@@ -330,6 +351,13 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   }
   hold(pointId: string, axis: 0 | 1, value: number) {
     this.emit('value', [this.point(pointId)[axis]], value);
+  }
+  start(pointId: string, position: Point2): boolean {
+    const x = this.pointParameters.get(pointId);
+    if (x === undefined) return false;
+    const free = ([[x, position.x], [x + 1, position.y]] as const).filter(([index]) => !this.fixed[index]);
+    for (const [index, value] of free) this.seeds.push({ index, value });
+    return free.length > 0;
   }
   onSupport(pointId: string, support: CadSketchSupportParameters) {
     this.emit('point-on-line', [...this.point(pointId), ...support]);
