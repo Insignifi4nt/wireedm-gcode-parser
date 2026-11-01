@@ -76,7 +76,10 @@ export const CadSketchGraphSchema = Type.Object({
     Type.Object({ id, kind: Type.Literal('tangent-joint'), endpoints: Type.Tuple([tangentEndpoint, tangentEndpoint]) }, strict),
     // An arc or circle touching an axis, on either side of it.
     Type.Object({ id, kind: Type.Literal('tangent'), curveIds: refPair }, strict),
+    // Two points, or two lines, arcs or circles, mirrored about a line or an axis. Mirrored curves store no pairing of their points:
+    // it is read from their ends' identities, the arcs' directions and the geometry before an edit.
     Type.Object({ id, kind: Type.Literal('symmetric'), pointIds: refPair, lineId: ref }, strict),
+    Type.Object({ id, kind: Type.Literal('symmetric'), curveIds: refPair, lineId: ref }, strict),
     Type.Object({ id, kind: Type.Literal('equal-length'), lineIds: refPair }, strict),
     Type.Object({ id, kind: Type.Literal('equal-radius'), curveIds: refPair }, strict),
     Type.Object({ id, kind: Type.Literal('line-angle'), rays: Type.Tuple([angleRay, angleRay]), sense: Type.Union([Type.Literal('cw'), Type.Literal('ccw')]), value: CadScalarSchema, ...annotations.angle }, strict),
@@ -107,6 +110,8 @@ export type CadSketchAngleRelation = Extract<CadSketchGraphRelation, { kind: 'li
 export type CadSketchAxisDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'axis-distance' }>;
 export type CadSketchMidpointRelation = Extract<CadSketchGraphRelation, { kind: 'midpoint' }>;
 export type CadSketchSymmetricRelation = Extract<CadSketchGraphRelation, { kind: 'symmetric' }>;
+export type CadSketchSymmetricPointsRelation = Extract<CadSketchSymmetricRelation, { pointIds: unknown }>;
+export type CadSketchSymmetricCurvesRelation = Extract<CadSketchSymmetricRelation, { curveIds: unknown }>;
 export type CadSketchPointOnLineRelation = Extract<CadSketchGraphRelation, { kind: 'point-on-line' }>;
 export type CadSketchPointOnCurveRelation = Extract<CadSketchGraphRelation, { kind: 'point-on-curve' }>;
 export type CadSketchPointLineDistanceRelation = Extract<CadSketchGraphRelation, { kind: 'point-line-distance' }>;

@@ -2,10 +2,13 @@ import { CadError } from '../cadError';
 import { evaluateCadScalar } from '../cadExpression';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '../cadSketchGraph';
 import type { CadSketchEdge } from '../sketch-relations/cadSketchRelationTypes';
-import { CAD_SKETCH_ORIGIN_ID, cadSketchVirtualAxis, type CadSketchVirtualAxis } from '../sketch-relations/cadSketchVirtualElements';
+import { CAD_SKETCH_H_AXIS_ID, CAD_SKETCH_ORIGIN_ID, CAD_SKETCH_V_AXIS_ID, cadSketchVirtualAxis, cadSketchVirtualPosition, type CadSketchVirtualAxis }
+  from '../sketch-relations/cadSketchVirtualElements';
+import { resolveCadSketchPointIdentities } from '../cadSketchGraphJoints';
 import { cadSketchLineDirection } from '../cadSketchLineRelations';
 import type { Point2 } from '../../path-intel/types';
 import { cadSketchRelationDefinition } from '../sketch-relations/cadSketchRelationRegistry';
+import { cadSketchRelationPlanner, type CadSketchMirrorTurn } from '../sketch-relations/cadSketchRelationPlanning';
 import type { CadSketchEquation, CadSketchEquationKind, CadSketchPointParameters, CadSketchSizeParameters, CadSketchSupportParameters } from './cadSketchEquationModel';
 
 /**
@@ -15,6 +18,16 @@ import type { CadSketchEquation, CadSketchEquationKind, CadSketchPointParameters
 export interface CadSketchRadialHold { readonly point: CadSketchPointParameters; readonly centre: CadSketchPointParameters; readonly size: CadSketchSizeParameters }
 /** An arm from a pivot held square to the support from that pivot toward another point: the x and y parameters of the three points. */
 export interface CadSketchSquareHold { readonly pivot: CadSketchPointParameters; readonly arm: CadSketchPointParameters; readonly toward: CadSketchPointParameters }
+
+/** The coordinates of a point that stay put whatever is solved, with the values they stay at; a coordinate left out can move. */
+export interface CadSketchPointHold { readonly x?: number; readonly y?: number }
+/**
+ * A relation that offers more than one start to solve from, ordered first to last, with how far each moves the sketch, in square
+ * millimetres: a failed solve tries the others (see `attemptCadSketchNativeSolve`).
+ */
+export interface CadSketchStartChoice { readonly relationId: string; readonly costs: readonly number[] }
+/** A relation that no solve can meet, whatever moves, and the other relations that keep what refuses it. */
+export interface CadSketchUnmet { readonly relationId: string; readonly relationIds: readonly string[] }
 
 /** What a relation's lowering reads from an operand. */
 export type CadSketchLoweringCapability = 'point' | 'edge' | 'support' | 'centre' | 'size' | 'value';
@@ -34,6 +47,10 @@ export class CadSketchLoweringRefusal extends CadError {
  */
 export interface CadSketchLoweringContext {
   readonly graph: CadSketchGraph;
+  /** Each point's position before the edit, the origin's and the axes' sample ends' included: a branch read from it keeps the geometry it was made on. */
+  readonly starts: ReadonlyMap<string, Point2>;
+  /** The point's Coincident identity: points that Coincident joins share one. */
+  identity(pointId: string): string;
   /** A point's x and y parameters. */
   point(pointId: string): CadSketchPointParameters;
   /** The support from one point toward another. */
@@ -68,6 +85,33 @@ export interface CadSketchLoweringContext {
   offset(axis: 0 | 1, fromPointId: string, toPointId: string, offset?: number): void;
   /** Along one axis, the point's coordinate is `value`. */
   hold(pointId: string, axis: 0 | 1, value: number): void;
+  /**
+   * Starts the free coordinates of the point, and of every point Coincident joins to it, at `position` instead of where they are, so
+   * the solve sets out from where the relation puts them; false when no such coordinate can move. A later start of the same coordinate
+   * replaces an earlier one.
+   */
+  start(pointId: string, position: Point2): boolean;
+  /**
+   * What holds the point in place across its Coincident identity: coordinates written as expressions or owned by a linked reference,
+   * Fix, a fixed X or Y distance, a point on the H or V axis, and the origin and the axes' sample ends.
+   */
+  held(pointId: string): CadSketchPointHold;
+  /** Which of `count` starts a relation sets out from, ordered first to last by that relation: 0 unless a retry asks for another. */
+  startChoice(relationId: string, count: number): number;
+  /**
+   * Records that the current relation offers one start for each movement in `costs`, ordered first to last, of which a failed solve
+   * tries others, and returns the one it sets out from (see `startChoice`). One start or none records nothing.
+   */
+  choose(costs: readonly number[]): number;
+  /**
+   * Records that no solve can meet the current relation, whatever moves, as what `relationIds` keep refuses it: a solve that fails
+   * without naming relations names these instead.
+   */
+  unmet(relationIds: readonly string[]): void;
+  /** How the relations and fixed ends that keep line directions force a mirror line for two lines, as the shared planner reads them. */
+  mirrorTurn(firstLineId: string, secondLineId: string, mirrorId: string): CadSketchMirrorTurn | undefined;
+  /** The direction, modulo a half turn, that value-free relations and fixed ends keep a line or axis in, as the shared planner reads it. */
+  lineAngle(lineId: string): number | undefined;
   /** The point lies on the infinite line through the support. */
   onSupport(pointId: string, support: CadSketchSupportParameters): void;
   /**
@@ -182,12 +226,25 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   readonly equations: CadSketchEquation[] = [];
   readonly radialHolds: CadSketchRadialHold[] = [];
   readonly squareHolds: CadSketchSquareHold[] = [];
+  /** Start values for free point parameters, which the compiler puts in place of the points' own before solving, in order. */
+  readonly seeds: { readonly index: number; readonly value: number }[] = [];
+  /** The relations that offered more than one start, in the order they were lowered. */
+  readonly startChoices: CadSketchStartChoice[] = [];
+  /** The relations no solve can meet, in the order they were lowered. */
+  readonly unmetRelations: CadSketchUnmet[] = [];
+  private members: Map<string, string[]> | undefined;
+  private readonly holds = new Map<string, CadSketchPointHold>();
+  /** The relations in id order, which holds are read in, so the order the graph stores them never decides one. */
+  private byId: readonly CadSketchGraphRelation[] | undefined;
   private tags = 0;
   private sharedTag: number | undefined;
+  /** The relation lowering now yields: each equation is a constraint of its own, marked as yielding. */
+  private yielding = false;
   private relation: CadSketchGraphRelation | undefined;
   private sourceId = '';
   private entities: Map<string, CadSketchGraphEntity> | undefined;
   private relations: Map<string, CadSketchGraphRelation> | undefined;
+  private identities: ((pointId: string) => string) | undefined;
   /**
    * The values made after the point and radius parameters, in the order they were made: the fixed values the origin and the axes
    * became, and the free radius an arc's relation makes.
@@ -201,36 +258,56 @@ export class CadSketchLowering implements CadSketchLoweringContext {
 
   /**
    * `numericPoints` gives the origin and the axes' sample ends too, as `CadSketchPositions` does. `fixed` says, for each point and
-   * radius parameter, whether it is fixed.
+   * radius parameter, whether it is fixed. `chosen` names the start a relation sets out from, by relation id, where a retry asks for
+   * one other than its first.
    */
   constructor(readonly graph: CadSketchGraph, private readonly parameters: Readonly<Record<string, number>>,
     private readonly pointParameters: ReadonlyMap<string, number>, readonly radiusParameters: ReadonlyMap<string, number>,
-    private readonly numericPoints: ReadonlyMap<string, Point2>, private readonly fixed: readonly boolean[]) {
+    private readonly numericPoints: ReadonlyMap<string, Point2>, private readonly fixed: readonly boolean[],
+    private readonly chosen: Readonly<Record<string, number>> = {}) {
     this.parameterCount = fixed.length;
   }
+  get starts(): ReadonlyMap<string, Point2> { return this.numericPoints; }
+  identity(pointId: string): string { return (this.identities ??= resolveCadSketchPointIdentities(this.graph))(pointId); }
 
   /**
    * Lowers one relation through its definition, whole or not at all: a relation whose lowering throws, a refusal or any other error,
    * leaves none of its equations, radial holds or tags behind.
    */
   lower(relation: CadSketchGraphRelation) {
-    this.relation = relation; this.sourceId = relation.id;
-    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.made.length;
-    try { cadSketchRelationDefinition(relation).lower(relation, this); }
-    catch (error) { this.restore(equations, radialHolds, squareHolds, tags, made); throw error; }
+    const definition = cadSketchRelationDefinition(relation);
+    this.relation = relation; this.sourceId = relation.id; this.yielding = definition.yields?.(relation as never) === true;
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, seeds = this.seeds.length, tags = this.tags, made = this.made.length;
+    const choices = this.startChoices.length, unmet = this.unmetRelations.length;
+    try { definition.lower(relation, this); }
+    catch (error) {
+      this.restore(equations, radialHolds, squareHolds, seeds, tags, made);
+      this.startChoices.length = choices; this.unmetRelations.length = unmet;
+      throw error;
+    }
+    finally { this.yielding = false; }
+  }
+  /**
+   * Every relation in graph order, those that yield after all the others (see the definitions' `yields`): each then yields to the
+   * relations before it, and those that yield to each other in the order the graph stores them.
+   */
+  lowerAll(relations: readonly CadSketchGraphRelation[]) {
+    const yields = (relation: CadSketchGraphRelation) => cadSketchRelationDefinition(relation).yields?.(relation as never) === true;
+    for (const relation of relations) if (!yields(relation)) this.lower(relation);
+    for (const relation of relations) if (yields(relation)) this.lower(relation);
   }
   /** The equations an edge keeps by itself, under its own id, whole or not at all. */
   structure(entity: CadSketchGraphEntity) {
     const structure = capability(STRUCTURES, entity);
     if (!structure) return;
     this.relation = undefined; this.sourceId = entity.id;
-    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, tags = this.tags, made = this.made.length;
+    const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, seeds = this.seeds.length, tags = this.tags, made = this.made.length;
     try { structure(this, entity); }
-    catch (error) { this.restore(equations, radialHolds, squareHolds, tags, made); throw error; }
+    catch (error) { this.restore(equations, radialHolds, squareHolds, seeds, tags, made); throw error; }
   }
   /** Drops what was emitted since the counts were taken, and gives back the tags it took. */
-  private restore(equations: number, radialHolds: number, squareHolds: number, tags: number, made: number) {
-    this.equations.length = equations; this.radialHolds.length = radialHolds; this.squareHolds.length = squareHolds; this.tags = tags; this.sharedTag = undefined;
+  private restore(equations: number, radialHolds: number, squareHolds: number, seeds: number, tags: number, made: number) {
+    this.equations.length = equations; this.radialHolds.length = radialHolds; this.squareHolds.length = squareHolds; this.seeds.length = seeds; this.tags = tags; this.sharedTag = undefined;
     if (this.made.length === made) return;
     this.made.length = made;
     for (const [sentinel, index] of this.sentinels) if (index >= this.parameterCount + made) this.sentinels.delete(sentinel);
@@ -304,7 +381,8 @@ export class CadSketchLowering implements CadSketchLoweringContext {
       if (specialized) [kind, operands, value] = specialized;
       operands = operands.map(operand => operand < 0 ? this.sentinelParameter(operand) : operand);
     }
-    this.equations.push({ kind, operands, value, sourceId: this.sourceId, tag: this.sharedTag ?? this.tags++ });
+    if (this.yielding) this.equations.push({ kind, operands, value, sourceId: this.sourceId, tag: this.tags++, yields: true });
+    else this.equations.push({ kind, operands, value, sourceId: this.sourceId, tag: this.sharedTag ?? this.tags++ });
   }
   /** The parameter a fixed value of the origin or an axis became, made the first time an equation keeps it. */
   private sentinelParameter(sentinel: number): number {
@@ -322,6 +400,72 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   }
   hold(pointId: string, axis: 0 | 1, value: number) {
     this.emit('value', [this.point(pointId)[axis]], value);
+  }
+  start(pointId: string, position: Point2): boolean {
+    let seeded = false;
+    for (const member of this.membersOf(pointId)) {
+      const x = this.pointParameters.get(member);
+      if (x === undefined) continue;
+      for (const [index, value] of [[x, position.x], [x + 1, position.y]] as const) if (!this.fixed[index]) { this.seeds.push({ index, value }); seeded = true; }
+    }
+    return seeded;
+  }
+  /** The stored points of the point's Coincident identity. */
+  private membersOf(pointId: string): readonly string[] {
+    if (!this.members) {
+      this.members = new Map();
+      for (const point of this.graph.points) {
+        const root = this.identity(point.id), list = this.members.get(root);
+        if (list) list.push(point.id); else this.members.set(root, [point.id]);
+      }
+    }
+    return this.members.get(this.identity(pointId)) ?? [];
+  }
+  held(pointId: string): CadSketchPointHold {
+    const root = this.identity(pointId), known = this.holds.get(root);
+    if (known) return known;
+    const virtual = cadSketchVirtualPosition(root);
+    let x = virtual?.x, y = virtual?.y;
+    for (const member of this.membersOf(root)) {
+      const index = this.pointParameters.get(member), at = this.numericPoints.get(member);
+      if (index === undefined || !at) continue;
+      if (this.fixed[index]) x ??= at.x;
+      if (this.fixed[index + 1]) y ??= at.y;
+    }
+    this.byId ??= [...this.graph.relations].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0);
+    for (const relation of this.byId) {
+      if (relation.kind === 'point-on-line' && this.identity(relation.pointId) === root) {
+        if (relation.lineId === CAD_SKETCH_H_AXIS_ID) y ??= 0;
+        else if (relation.lineId === CAD_SKETCH_V_AXIS_ID) x ??= 0;
+      }
+      if (relation.kind !== 'fixed-point' && relation.kind !== 'fixed-axis' || this.identity(relation.pointId) !== root) continue;
+      try {
+        if (relation.kind === 'fixed-point') { x ??= this.value(relation.id, 'position.0'); y ??= this.value(relation.id, 'position.1'); }
+        else if (relation.axis === 'x') x ??= this.value(relation.id, 'value');
+        else y ??= this.value(relation.id, 'value');
+      } catch { /* A value that cannot be read holds nothing here; its own relation refuses it. */ }
+    }
+    const hold: CadSketchPointHold = { ...x === undefined ? {} : { x }, ...y === undefined ? {} : { y } };
+    this.holds.set(root, hold);
+    return hold;
+  }
+  startChoice(relationId: string, count: number): number {
+    const index = this.chosen[relationId] ?? 0;
+    return Number.isInteger(index) && index >= 0 && index < count ? index : 0;
+  }
+  choose(costs: readonly number[]): number {
+    if (costs.length < 2) return 0;
+    this.startChoices.push({ relationId: this.sourceId, costs });
+    return this.startChoice(this.sourceId, costs.length);
+  }
+  unmet(relationIds: readonly string[]) {
+    this.unmetRelations.push({ relationId: this.sourceId, relationIds });
+  }
+  mirrorTurn(firstLineId: string, secondLineId: string, mirrorId: string): CadSketchMirrorTurn | undefined {
+    return cadSketchRelationPlanner(this.graph).mirrorTurn(firstLineId, secondLineId, mirrorId);
+  }
+  lineAngle(lineId: string): number | undefined {
+    return cadSketchRelationPlanner(this.graph).lineAngle(lineId);
   }
   onSupport(pointId: string, support: CadSketchSupportParameters) {
     this.emit('point-on-line', [...this.point(pointId), ...support]);

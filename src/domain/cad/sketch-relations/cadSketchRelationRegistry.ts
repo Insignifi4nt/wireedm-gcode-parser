@@ -100,6 +100,11 @@ export function cadSketchRelationKindName(relation: CadSketchGraphRelation): str
   const definition = cadSketchRelationDefinition(relation);
   return definition.nameOf ? definition.nameOf(relation) : definition.name;
 }
+/** What an inspection says this relation holds: a Symmetric of curves says what it does to their ends. */
+export function cadSketchRelationMeaning(relation: CadSketchGraphRelation): string {
+  const definition = cadSketchRelationDefinition(relation);
+  return definition.meaningOf ? definition.meaningOf(relation) : definition.agent.meaning;
+}
 /** The operand labels of a relation's description: its point and edge slots, unless the kind names them its own way. */
 export function cadSketchRelationMentions(relation: CadSketchGraphRelation, names: CadSketchOperandNames): readonly string[] {
   const definition = cadSketchRelationDefinition(relation);

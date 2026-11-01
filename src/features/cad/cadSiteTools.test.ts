@@ -80,6 +80,27 @@ describe('CAD tool argument boundary and discovery', () => {
     expect(await read.execute({ expectedVersion: session.getSnapshot().version, featureId: 'sketch' })).toMatchObject({ ok: true, data: { feature: { graph: { relations: [{ ...width, annotation }] } } } });
   });
 
+  it('returns the warnings an accepted edit\'s sketch solves gave, at most eight with their count, and none where there were none', async () => {
+    const session = new CadSession(parseCadDocument({ ...createCadDocument(), schemaVersion: 2 }));
+    const warning = (at: number) => ({ code: 'mirror-shrank', relationId: `mirror-${at}`, curves: [{ entityId: 'copy', beforeMm: 10, afterMm: 1e-6 }],
+      message: 'Symmetric shrank Line 2 from 10.000 mm to 0.000001 mm. Check the mirror and its relations.', sketchId: 'sketch', sketchName: 'Sketch' });
+    let given: readonly ReturnType<typeof warning>[] = [];
+    const controller = { session, isOpen: () => true, isBusy: () => false, buildState: 'idle', buildVersion: null, build: null,
+      edit: (edits: Parameters<CadSession['edit']>[0], version: string | undefined, _fromAgent: boolean, _signal: AbortSignal | undefined, warned?: (warnings: readonly unknown[]) => void) => {
+        const accepted = session.edit(edits, version); warned?.(given); return accepted;
+      } } as unknown as CadController;
+    const edit = cadSiteTools(() => controller).find(tool => tool.name === 'cad_edit_document');
+    if (!edit) throw new Error('Edit tool missing.');
+    const rename = (name: string) => edit.execute({ expectedVersion: session.getSnapshot().version, edits: [{ kind: 'rename-document', name }] });
+    const quiet = await rename('Quiet');
+    expect(quiet).toMatchObject({ ok: true });
+    expect(quiet).not.toHaveProperty('data.sketchWarnings');
+    given = [warning(1)];
+    expect(await rename('One')).toMatchObject({ ok: true, data: { name: 'One', sketchWarnings: { items: [warning(1)], count: 1, omittedCount: 0 } } });
+    given = Array.from({ length: 10 }, (_, at) => warning(at));
+    expect(await rename('Many')).toMatchObject({ ok: true, data: { sketchWarnings: { items: given.slice(0, 8), count: 10, omittedCount: 2 } } });
+  });
+
   it('discovers the document-level profile copy edit and rejects caller geometry before controller access', async () => {
     const controller = vi.fn<() => CadController>(() => { throw new Error('Malformed profile copy reached controller.'); });
     const tools = cadSiteTools(controller), edit = tools.find(tool => tool.name === 'cad_edit_document');

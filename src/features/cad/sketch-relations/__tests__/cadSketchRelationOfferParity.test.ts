@@ -39,10 +39,11 @@ function rule(kind: CadSketchRelationKind, types: readonly Type[]): { readonly t
     case 'midpoint': return pointAnd(type => type === 'line') ? { tool: 'midpoint', parts: whole(n) } : null;
     case 'horizontal': case 'vertical': return n >= 1 && all(type => type === 'line') ? { tool: kind, parts: each(n) } : n === 2 && all(type => type === 'point') ? { tool: kind, parts: whole(n) } : null;
     case 'parallel': case 'perpendicular': return n >= 2 && all(type => type === 'line') ? { tool: kind, parts: chain(n) } : null;
-    case 'equal-length': return n >= 2 && all(type => type === 'line') ? { tool: 'equal', parts: chain(n) } : null;
+    case 'equal-length': return n >= 2 && all(type => type === 'line') ? { tool: 'equal', parts: chain(n) }
+      : n === 2 && count(type => type === 'line') === 1 && count(round) === 1 ? { tool: 'equal', parts: whole(n) } : null;
     case 'equal-radius': return n >= 2 && all(round) ? { tool: 'equal', parts: chain(n) } : null;
     case 'tangent-joint': return n === 2 && count(type => type === 'line') === 1 && count(type => type === 'arc') === 1 ? { tool: 'tangent', parts: whole(n) } : null;
-    case 'symmetric': return n === 3 && count(type => type === 'line') === 1 && count(type => type === 'point' || type === 'circle') === 2 ? { tool: 'symmetric', parts: whole(n) } : null;
+    case 'symmetric': return n === 3 && count(type => type === 'line') >= 1 ? { tool: 'symmetric', parts: whole(n) } : null;
     case 'fixed-point': return n >= 1 && all(type => type === 'point') ? { tool: 'fix', parts: each(n) } : null;
     default: return null;
   }
@@ -157,10 +158,10 @@ describe('sketch relation offers against the Constrain tool', () => {
     if (process.env.OFFER_PARITY_TALLY) console.log(JSON.stringify({ graphs, selections: picked, compared, precise, tally: Object.fromEntries([...tally].sort()) }, null, 1));
     expect(graphs).toBe(baseline.length + corpus.length);
     expect(compared).toBeGreaterThan(50_000);
-    // Each kind the tool creates is met available, applied and blocked, and expanded selections are compared part by part. The tool
-    // refuses Equal only for picks it never takes, a line with an arc or circle, so Equal is never blocked.
+    // Each kind the tool creates is met available, applied and blocked, and expanded selections are compared part by part. Equal is
+    // refused only for a line with an arc or circle, which the offers list under Equal length, so Equal radius is never blocked.
     for (const kind of TOOL_KINDS) for (const state of ['available', 'applied', 'blocked']) {
-      if (state !== 'blocked' || kind !== 'equal-length' && kind !== 'equal-radius') expect(tally.get(`${kind} ${state}`) ?? 0, `${kind} ${state}`).toBeGreaterThan(0);
+      if (state !== 'blocked' || kind !== 'equal-radius') expect(tally.get(`${kind} ${state}`) ?? 0, `${kind} ${state}`).toBeGreaterThan(0);
     }
     expect(tally.get('parts several')).toBeGreaterThan(5_000);
   }, 600_000);
@@ -169,8 +170,10 @@ describe('sketch relation offers against the Constrain tool', () => {
   // alone, so one centre picked twice, as two arcs or circles on it or a point with its own circle, matched any Coincident joining that
   // centre to another point, or any Symmetric mirroring it about the same line. It reported Concentric or Symmetric applied, naming that
   // relation, and Remove deleted it. Neither relation holds what was asked, so both the tool and the offers now refuse with the reason.
+  // Two circles about a line now mirror as circles, so two on one centre are refused as circles that share it.
   it('never name a relation of a centre two picks share, the one answer that changed: every such case in the recorded sketches and the corpus', () => {
     const center = 'These already share a center.', mirror = 'Symmetric points and axis endpoints need four distinct declared identities.';
+    const shared = 'These circles share a center, so they cannot mirror each other.';
     const concentric: number[] = [], symmetric: number[] = [];
     for (const [at, source] of [...baseline, ...corpus].entries()) {
       const graph = parseCadSketchGraph(source), rounds = graph.entities.filter(entity => entity.kind === 'arc' || entity.kind === 'circle');
@@ -185,13 +188,13 @@ describe('sketch relation offers against the Constrain tool', () => {
         expect(named(cadSketchConstraintChoices(graph, picks, () => 'new')).filter(id => before.includes(id)), where).toEqual([]);
         if (!concentric.includes(at)) concentric.push(at);
       }
-      for (const relation of graph.relations) if (relation.kind === 'symmetric') for (const centre of relation.pointIds) {
+      for (const relation of graph.relations) if (relation.kind === 'symmetric' && 'pointIds' in relation) for (const centre of relation.pointIds) {
         // What the tool named before: this Symmetric, for its point with a circle centred on it, or two such circles, about its line.
         const circles = graph.entities.filter(entity => entity.kind === 'circle' && entity.centerPointId === centre).map(entity => E(entity.id));
         for (const picks of [...circles.map(circle => [P(centre), circle, E(relation.lineId)]), ...circles.length > 1 ? [[circles[0], circles[1], E(relation.lineId)]] : []]) {
-          const where = `${picks.map(pick => pick.id).join(', ')} in graph ${at}`;
-          expect(cadSketchConstraintChoices(graph, picks, () => 'new'), where).toEqual([{ tool: 'symmetric', state: 'blocked', reason: mirror }]);
-          expect(cadSketchRelationOffers(graph, picks).find(offer => offer.kind === 'symmetric'), where).toMatchObject({ state: 'blocked', reason: mirror, relationIds: [] });
+          const where = `${picks.map(pick => pick.id).join(', ')} in graph ${at}`, reason = picks[0].kind === 'point' ? mirror : shared;
+          expect(cadSketchConstraintChoices(graph, picks, () => 'new'), where).toEqual([{ tool: 'symmetric', state: 'blocked', reason }]);
+          expect(cadSketchRelationOffers(graph, picks).find(offer => offer.kind === 'symmetric'), where).toMatchObject({ state: 'blocked', reason, relationIds: [] });
           if (!symmetric.includes(at)) symmetric.push(at);
         }
       }

@@ -87,6 +87,20 @@ describe('relation glyph layout', () => {
     expect(layoutCadSketchRelationGlyphs(graph, {})[4].label).toBe('Tangent: Line 3 at Point 2 and Arc 1 at Point 2');
   });
 
+  it('marks Symmetric curves on both curves and on the line they mirror about, and on the curves alone about an axis', () => {
+    const graph: CadSketchGraph = {
+      points: [{ id: 'a', position: [5, 0] }, { id: 'b', position: [15, 10] }, { id: 'c', position: [-5, 0] }, { id: 'd', position: [-15, 10] },
+        { id: 'm', position: [0, -5] }, { id: 'n', position: [0, 15] }, { id: 'k', position: [10, 20] }, { id: 'l', position: [-10, 20] }],
+      entities: [line('right', 'a', 'b'), line('left', 'c', 'd'), { ...line('axis', 'm', 'n'), construction: true },
+        { id: 'ring', kind: 'circle', construction: false, centerPointId: 'k', radius: 2 }, { id: 'hole', kind: 'circle', construction: false, centerPointId: 'l', radius: 2 }],
+      relations: [{ id: 'lines', kind: 'symmetric', curveIds: ['right', 'left'], lineId: 'axis' }, { id: 'rounds', kind: 'symmetric', curveIds: ['ring', 'hole'], lineId: '@v' }] };
+    expect(summary(graph)).toEqual([
+      { relationIds: ['lines'], operand: 'entity:right', kind: 'symmetric' }, { relationIds: ['lines'], operand: 'entity:left', kind: 'symmetric' },
+      { relationIds: ['lines'], operand: 'entity:axis', kind: 'symmetric' },
+      { relationIds: ['rounds'], operand: 'entity:ring', kind: 'symmetric' }, { relationIds: ['rounds'], operand: 'entity:hole', kind: 'symmetric' }]);
+    expect(layoutCadSketchRelationGlyphs(graph, {})[0].label).toBe('Symmetric curves: Line 4 and Line 3 and Line 1');
+  });
+
   it('marks Point on curve on its point and on the circle or arc, where the curve\'s own glyphs sit', () => {
     const graph: CadSketchGraph = {
       points: [{ id: 'o', position: [0, 0] }, { id: 'p', position: [3, 4] }, { id: 'q', position: [20, 0] }],

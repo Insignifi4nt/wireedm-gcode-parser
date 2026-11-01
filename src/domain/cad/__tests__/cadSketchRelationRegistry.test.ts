@@ -34,14 +34,16 @@ const examples: { readonly [K in CadSketchRelationKind]: CadSketchRelationOf<K> 
   'fillet-corner': { id: 'r24', kind: 'fillet-corner', pointId: 'p2', lineIds: ['l1', 'l2'], arcId: 'a9', value: 1 },
   'chamfer-corner': { id: 'r25', kind: 'chamfer-corner', pointId: 'p2', lineIds: ['l1', 'l2'], chamferId: 'l8', values: [1, '2 * t'] }
 };
-// A reference dimension's operands depend on what it measures.
+// A reference dimension's operands depend on what it measures, and a symmetric's on whether it mirrors points or curves.
 const references: readonly CadSketchGraphRelation[] = [
   { id: 'q1', kind: 'reference-dimension', measurement: { kind: 'line-length', entityId: 'l1' } },
   { id: 'q2', kind: 'reference-dimension', measurement: { kind: 'point-line-distance', pointId: 'p1', lineId: 'l1' }, annotation: { kind: 'linear', offset: 2, along: 0.5 } },
-  { id: 'q3', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'c1', quantity: 'radius' } }
+  { id: 'q3', kind: 'reference-dimension', measurement: { kind: 'radial-size', entityId: 'c1', quantity: 'radius' } },
+  { id: 'q4', kind: 'symmetric', curveIds: ['a1', 'a2'], lineId: 'l3' }
 ];
 const all = [...Object.values(examples) as CadSketchGraphRelation[], ...references];
-const schemaKinds = CadSketchGraphSchema.properties.relations.items.anyOf.map(relation => relation.properties.kind.const);
+// A kind with several stored shapes, such as Symmetric, appears once for each.
+const schemaKinds = [...new Set(CadSketchGraphSchema.properties.relations.items.anyOf.map(relation => relation.properties.kind.const))];
 const operandsOf = (relation: CadSketchGraphRelation) => cadSketchRelationDefinition(relation).operands(relation);
 const withOperands = (relation: CadSketchGraphRelation, ids: readonly string[]) => cadSketchRelationDefinition(relation).withOperands(relation, ids);
 /** The stored ids with each unordered group reversed, an `end` slot after a grouped slot moving with it. */

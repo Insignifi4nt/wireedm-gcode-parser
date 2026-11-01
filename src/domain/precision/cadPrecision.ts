@@ -30,6 +30,25 @@ const roles = {
   solverCollapsedStartRelative: 1e-12,
   /** An arm held square to a support starts along it when the sine between them is below this, and the solver offers it quarter-turn starts. */
   solverAlongSupportStartRelative: 1e-12,
+  /**
+   * Two lines mirrored about a line pair their ends crossed, start with end, only when that leaves their summed squared gaps to each
+   * other's mirror images smaller than pairing start with start by more than this fraction; nearer ties keep start with start. Two
+   * starts of a curve mirror whose summed squared movements differ by at most this fraction of the larger tie too, and the one that
+   * turns the mirror counter-clockwise more goes first, then start with start. So do two combinations of the starts of mirrors whose
+   * parameters connect, by their summed movements, and the one that keeps the earlier relation's earlier start goes first.
+   */
+  mirrorPairingTieRelative: 1e-9,
+  /**
+   * A solution that keeps a curve Symmetric by leaving a mirrored curve's size, a line's length or an arc's or circle's radius, below
+   * this fraction of its size before the solve ranks below one that does not: the solve tries its other starts for one, and keeps the
+   * first such solution only where none is found. It refuses nothing; only the graph checks' `minimumLengthMm` refuses a size. A solver
+   * that meets a mirror from a poor start can collapse curves until its tolerances are met, leaving a size the sketch never asked for:
+   * the measured case, a 7.6 mm line solved to 2.6e-6 mm where another start keeps it, is 3.4e-7 of its size, 29 times below. A resize a
+   * dimension asks for shrinks the curve from every start alike, so it is kept however small, and the extra starts cost only solves; a
+   * start that leaves a 100 mm line more than 1 µm long, the resolution of a three-decimal post, is not passed over at all. Only a solve of a
+   * sketch with a curve Symmetric reads it, so no other sketch changes.
+   */
+  mirrorCollapseRelative: 1e-5,
   /** Cross product of two line directions, in square millimetres, at or below which legacy profile checks treat lines as parallel. */
   parallelCrossFloorMm2: 1e-14,
   /** Smallest size a pointer-drawn sketch shape accepts: circle radius, rectangle side, slot width or distinct arc centre. */
