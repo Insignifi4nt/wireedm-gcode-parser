@@ -1,7 +1,7 @@
-import { cast, getOC, isShape3D, measureVolume, Plane, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
+import { cast, getOC, isShape3D, measureVolume, type Drawing, type Shape3D, type SimplePoint, type Sketch } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { CAD_LOFT_NATIVE_PRECISION, type resolveCadLoftSections } from '../../../domain/cad/cadLoft';
-import { cadKernelPlaneBasis } from './cadKernelPlane';
+import { CadKernelPlane, cadKernelPlaneBasis } from './cadKernelPlane';
 import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
 import { cadKernelDisposeOwned, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
 import type { CadResolvedFrame } from '../../../domain/cad/cadDatumPlanes';
@@ -62,7 +62,7 @@ export function buildCadLoftSolid(resolved: ReturnType<typeof resolveCadLoftSect
   if (!first || !last) throw new CadError('loft-sections', 'A loft needs at least two ordered sketch sections.');
   const oc = getOC();
   const builder = new oc.BRepOffsetAPI_ThruSections(true, ruled, CAD_LOFT_NATIVE_PRECISION);
-  const planes: Plane[] = []; const drawings: Drawing[] = []; const sketches: Sketch[] = [];
+  const planes: CadKernelPlane[] = []; const drawings: Drawing[] = []; const sketches: Sketch[] = [];
   let shape: Shape3D | undefined;
   try {
     builder.CheckCompatibility(true);
@@ -73,7 +73,7 @@ export function buildCadLoftSolid(resolved: ReturnType<typeof resolveCadLoftSect
       const origin: SimplePoint = resolved.legacyPrincipalPlane === null
         ? [section.tangentialOffsetMm[0], section.tangentialOffsetMm[1], section.stationMm]
         : [basis.normal[0] * section.offset, basis.normal[1] * section.offset, basis.normal[2] * section.offset];
-      const plane = new Plane(origin, basis.u, basis.normal); planes.push(plane);
+      const plane = new CadKernelPlane(origin, basis.u, basis.normal); planes.push(plane);
       const drawing = cadKernelProfileDrawing(section.geometry, drawings);
       const sketch = cadKernelSketchOnPlane(drawing, plane); sketches.push(sketch);
       builder.AddWire(sketch.wire.wrapped);

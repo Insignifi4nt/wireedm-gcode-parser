@@ -2,12 +2,14 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, getOC, measureVolume, setOC, Sketch, type Shape3D, type Wire } from 'replicad';
+import { getOC, measureVolume, setOC, Sketch, type Shape3D, type Wire } from 'replicad';
 import type { CadDocument, CadFeature, CadPlane, CadProfile, CadSketchFeature } from '../../../domain/cad/cadDocument';
 import { resolveCadLoftSections } from '../../../domain/cad/cadLoft';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
 import { prepareCadSolidImport } from './cadKernelImport';
 import { buildCadLoftSolid } from './cadKernelLoft';
+import { cadKernelBuilders } from './cadKernelBuilders';
+import { watchCadKernelBuilders } from './__tests__/cadKernelBuilderWatch';
 import { buildCadKernelModel, type CadKernelModel } from './cadKernelModel';
 
 beforeAll(async () => {
@@ -176,14 +178,16 @@ describe('native closed multi-section lofts', () => {
   });
   it('releases a completed loft if its target Boolean fails and keeps the original native target usable', () => {
     let generated: Shape3D | undefined; let target: Shape3D | undefined;
-    const fail = vi.spyOn(_3DShape.prototype, 'fuse').mockImplementation(function(this: Shape3D, other) { target = this; generated = other; throw new Error('Interrupted loft join'); });
+    const native = cadKernelBuilders.fuse, watch = watchCadKernelBuilders({ kinds: ['fuse'], call: 1, error: new Error('Interrupted loft join') });
+    const fail = vi.spyOn(cadKernelBuilders, 'fuse').mockImplementation((left, other) => { target = left; generated = other; return native(left, other); });
     try {
       built([...block, sketch('lower', 0), sketch('upper', 20), loft({ operation: 'join', targetId: 'block' })], model => {
         expect(model.result.diagnostics[0].message).toBe('Interrupted loft join'); expect(model.result.meshes[0].featureId).toBe('block');
         if (!generated || !target) throw new Error('Expected native operands');
         const releasedLoft = generated;
         expect(() => releasedLoft.wrapped).toThrow(); expect(measureVolume(target)).toBeCloseTo(4000, 6);
+        expect(watch.failed).toHaveLength(1); expect(watch.outstanding()).toBe(0);
       });
-    } finally { fail.mockRestore(); }
+    } finally { fail.mockRestore(); watch.restore(); }
   });
 });

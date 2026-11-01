@@ -2,9 +2,11 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, measureVolume, setOC, type Shape3D } from 'replicad';
+import { measureVolume, setOC, type Shape3D } from 'replicad';
 import type { CadDocument, CadFeature } from '../../../domain/cad/cadDocument';
 import { parseCadDocument } from '../../../domain/cad/cadSchema';
+import { cadKernelBuilders } from './cadKernelBuilders';
+import { watchCadKernelBuilders } from './__tests__/cadKernelBuilderWatch';
 import { buildCadKernelModel, type CadKernelModel } from './cadKernelModel';
 
 beforeAll(async () => {
@@ -107,13 +109,14 @@ describe('exact native circular solid patterns', () => {
     built([...seed, circular()], next => { expect(next.result.diagnostics).toEqual([]); expect(next.result.meshes[0].volume).toBeCloseTo(8 * Math.PI, 6); });
   }, 30_000);
   it('releases native copies and intermediate unions if a later union fails while retaining the original seed', () => {
-    const original = _3DShape.prototype.fuse; const produced: Shape3D[] = []; const copies: Shape3D[] = [];
-    let unions = 0; let originalSeed: Shape3D | undefined;
-    const fuse = vi.spyOn(_3DShape.prototype, 'fuse').mockImplementation(function(this: Shape3D, other, options) {
+    const original = cadKernelBuilders.fuse; const produced: Shape3D[] = []; const copies: Shape3D[] = [];
+    let originalSeed: Shape3D | undefined;
+    // The third union's native builder fails inside its adapter.
+    const watch = watchCadKernelBuilders({ kinds: ['fuse'], call: 3, error: new Error('Interrupted native union') });
+    const fuse = vi.spyOn(cadKernelBuilders, 'fuse').mockImplementation((left, other) => {
       copies.push(other);
-      originalSeed ??= this;
-      if (++unions === 3) throw new Error('Interrupted native union');
-      const result = original.call(this, other, options); produced.push(result); return result;
+      originalSeed ??= left;
+      const result = original(left, other); produced.push(result); return result;
     });
     try {
       built([...seed, circular()], model => {
@@ -124,8 +127,9 @@ describe('exact native circular solid patterns', () => {
         expect(originalSeed.wrapped.IsNull()).toBe(false); expect(measureVolume(originalSeed)).toBeCloseTo(2 * Math.PI, 6);
         for (const shape of [...produced, ...copies]) expect(() => shape.wrapped).toThrow();
         expect(() => model.export('step')).toThrow('Fix the feature diagnostics');
+        expect(watch.failed).toHaveLength(1); expect(watch.builders.filter(item => item.kind === 'fuse')).toHaveLength(3); expect(watch.outstanding()).toBe(0);
       });
-    } finally { fuse.mockRestore(); }
+    } finally { fuse.mockRestore(); watch.restore(); }
     built([...seed, circular()], model => { expect(model.result.diagnostics).toEqual([]); expect(model.result.meshes[0].volume).toBeCloseTo(8 * Math.PI, 6); });
   });
 });

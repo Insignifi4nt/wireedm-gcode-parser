@@ -1,6 +1,7 @@
 import { getOC, measureArea, measureVolume, type Shape3D } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
+import { cadKernelBuilders } from './cadKernelBuilders';
 
 type MaterialOperation = 'Pocket' | 'Cut';
 type MaterialContext = 'target' | 'tool' | 'common' | 'result';
@@ -91,10 +92,10 @@ export function cadKernelSolidEvidence(shape: Shape3D, context: MaterialContext,
  */
 export function cutCadKernelConfirmedMaterial(target: Shape3D, tool: Shape3D, { toolConfirmed = false } = {}): Shape3D {
   cadKernelSolidEvidence(target, 'target', 'Cut'); if (!toolConfirmed) cadKernelSolidEvidence(tool, 'tool', 'Cut');
-  const common = target.intersect(tool);
+  const common = cadKernelBuilders.common(target, tool);
   try { cadKernelSolidEvidence(common, 'common', 'Cut'); }
   finally { cadKernelDisposeShape(common); }
-  const result = target.cut(tool);
+  const result = cadKernelBuilders.cut(target, tool);
   try { cadKernelSolidEvidence(result, 'result', 'Cut'); return result; }
   catch (error) { cadKernelDisposeShape(result); throw error; }
 }

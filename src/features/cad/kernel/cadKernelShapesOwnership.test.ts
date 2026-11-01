@@ -2,11 +2,13 @@
 import { readFile } from 'node:fs/promises';
 import { beforeAll, expect, it, vi } from 'vitest';
 import initOpenCascade from 'replicad-opencascadejs';
-import { _3DShape, Compound, getOC, makeBox, makeCompound, measureVolume, setOC, Shape, Solid, type Shape3D } from 'replicad';
+import { Compound, getOC, makeBox, makeCompound, measureVolume, setOC, Shape, Solid } from 'replicad';
 import type { TopoDS_Shape } from 'replicad-opencascadejs';
 import type { CadDocument, CadFeature } from '../../../domain/cad/cadDocument';
 import { buildCadKernelModel } from './cadKernelModel';
-import { cadKernelConsumeShape, cadKernelDisposeShape, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
+import { cadKernelDisposeShape, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
+import { cadKernelBuilders } from './cadKernelBuilders';
+import { watchCadKernelBuilders } from './__tests__/cadKernelBuilderWatch';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -34,18 +36,23 @@ it('releases independent wrapper copies and explored solids without nullifying t
 
 it('preserves the primary transform failure and borrowed source while cleaning a failed owned input', () => {
   const source = makeBox([0, 0, 0], [10, 20, 5]), owned = source.clone(), failure = new Error('Primary transform failure');
+  const watch = watchCadKernelBuilders({ kinds: ['transform'], call: 1, error: failure });
   try {
-    expect(() => cadKernelConsumeShape(owned, () => { throw failure; })).toThrow(failure);
-    expect(owned.isNull).toBe(true);
+    expect(() => cadKernelBuilders.translate(owned, [30, 40, 50])).toThrow(failure);
+    // The failed adapter released its builder and transformation, and left its borrowed input to its owner.
+    expect(watch.failed).toHaveLength(1); expect(watch.outstanding()).toBe(0);
+    expect(owned.isNull).toBe(false); expect(measureVolume(owned)).toBeCloseTo(1000, 8);
     expect(cadKernelIsValid(source)).toBe(true); expect(measureVolume(source)).toBeCloseTo(1000, 8);
     cadKernelDisposeShape(owned); cadKernelDisposeShape(owned);
-    expect(measureVolume(source)).toBeCloseTo(1000, 8);
-  } finally { cadKernelDisposeShape(owned); cadKernelDisposeShape(source); }
+    expect(() => owned.wrapped).toThrow(); expect(measureVolume(source)).toBeCloseTo(1000, 8);
+  } finally { watch.restore(); cadKernelDisposeShape(owned); cadKernelDisposeShape(source); }
 });
 
 it('retains independently placed compound material after repeated validation and solid traversal disposal', () => {
   const source = makeBox([0, 0, 0], [10, 20, 5]);
-  const moved = cadKernelConsumeShape(source.clone(), input => input.translate(30, 40, 50));
+  const copy = source.clone(), moved = cadKernelBuilders.translate(copy, [30, 40, 50]);
+  // The translated copy owns its own geometry once its input is released.
+  cadKernelDisposeShape(copy);
   const compound = makeCompound([source.clone(), moved]).asShape3D();
   try {
     for (let iteration = 0; iteration < 3; iteration++) {
@@ -72,9 +79,9 @@ it.each(['linear-pattern', 'circular-pattern', 'stl'] as const)('releases applic
     if (!(alias instanceof getOC().TopoDS_Shape)) throw new Error('Expected native shape alias');
     aliases.push(alias);
   };
-  const fuse = _3DShape.prototype.fuse;
-  const fused = vi.spyOn(_3DShape.prototype, 'fuse').mockImplementation(function(this: Shape3D, ...args: Parameters<typeof fuse>) {
-    capture(args[0]); return fuse.apply(this, args);
+  const fuse = cadKernelBuilders.fuse, watch = watchCadKernelBuilders();
+  const fused = vi.spyOn(cadKernelBuilders, 'fuse').mockImplementation((union, copy) => {
+    capture(copy); return fuse(union, copy);
   });
   const clone = Shape.prototype.clone, blobSTL = Shape.prototype.blobSTL;
   const cloned = vi.spyOn(Shape.prototype, 'clone').mockImplementation(function(this: typeof Shape.prototype) { const copy = clone.call(this); capture(copy); return copy; });
@@ -95,8 +102,9 @@ it.each(['linear-pattern', 'circular-pattern', 'stl'] as const)('releases applic
     } finally { model.dispose(); }
     expect(aliases.length).toBeGreaterThan(0);
     expect(aliases.every(alias => alias.IsNull())).toBe(true);
+    expect(watch.builders.length).toBe(kind === 'stl' ? 0 : 4); expect(watch.outstanding()).toBe(0);
   } finally {
-    fused.mockRestore(); cloned.mockRestore(); exported.mockRestore();
+    fused.mockRestore(); cloned.mockRestore(); exported.mockRestore(); watch.restore();
     for (const alias of aliases) { alias.Nullify(); alias.delete(); }
   }
 });

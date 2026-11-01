@@ -1,0 +1,466 @@
+{
+  "plate-40-voids": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "plate",
+        "volume": 188690.26644707646,
+        "solids": 1,
+        "faces": 86,
+        "edges": 252,
+        "bounds": [
+          0,
+          0,
+          0,
+          200,
+          100,
+          10
+        ],
+        "hash": "6b011ef7"
+      }
+    ]
+  },
+  "plate-40-cut-sketch": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "cut",
+        "volume": 188690.26644707617,
+        "solids": 1,
+        "faces": 46,
+        "edges": 132,
+        "bounds": [
+          0,
+          0,
+          0,
+          200,
+          100,
+          10
+        ],
+        "hash": "1a7cb2da"
+      }
+    ]
+  },
+  "plate-40-pattern": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "cut",
+        "volume": 188690.26644707617,
+        "solids": 1,
+        "faces": 46,
+        "edges": 132,
+        "bounds": [
+          0,
+          0,
+          0,
+          200,
+          100,
+          10
+        ],
+        "hash": "1a7cb2da"
+      }
+    ]
+  },
+  "shell-fillet": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "rounded",
+        "volume": 7136.640775661161,
+        "solids": 1,
+        "faces": 51,
+        "edges": 112,
+        "bounds": [
+          -1.1102230246251565e-16,
+          -1.1102230246251565e-16,
+          -1.1102230246251565e-16,
+          40,
+          30,
+          20
+        ],
+        "hash": "e7d4cabe"
+      }
+    ]
+  },
+  "box-chamfer-all": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "beveled",
+        "volume": 23825.33333333334,
+        "solids": 1,
+        "faces": 26,
+        "edges": 48,
+        "bounds": [
+          -3.3306690738754696e-16,
+          -5.551115123125783e-16,
+          -8.326672684688674e-17,
+          40,
+          30,
+          20
+        ],
+        "hash": "f7fc405b"
+      }
+    ]
+  },
+  "pattern-heavy": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "part",
+        "volume": 82460.52397142502,
+        "solids": 1,
+        "faces": 63,
+        "edges": 111,
+        "bounds": [
+          -50,
+          -50,
+          0,
+          50,
+          50,
+          18
+        ],
+        "hash": "dc9c17f7"
+      }
+    ]
+  },
+  "near-full-turn-pattern": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "pattern",
+        "volume": 12.56637061435918,
+        "solids": 2,
+        "faces": 6,
+        "edges": 6,
+        "bounds": [
+          -10.999999999996193,
+          -1,
+          0,
+          11,
+          1.0000087266462603,
+          2
+        ],
+        "hash": "817b4e0d"
+      }
+    ]
+  },
+  "revolve-mirror-transform": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "ring",
+        "volume": 14137.16694115407,
+        "solids": 1,
+        "faces": 6,
+        "edges": 12,
+        "bounds": [
+          -20,
+          -20,
+          0,
+          20,
+          20,
+          20
+        ],
+        "hash": "44161544"
+      },
+      {
+        "featureId": "placed",
+        "volume": 14137.166941154072,
+        "solids": 1,
+        "faces": 6,
+        "edges": 12,
+        "bounds": [
+          -15,
+          -20,
+          -20,
+          22.320508075688775,
+          20,
+          0
+        ],
+        "hash": "4f5cacaa"
+      },
+      {
+        "featureId": "mirrored_xz",
+        "volume": 14137.166941154072,
+        "solids": 1,
+        "faces": 6,
+        "edges": 12,
+        "bounds": [
+          -15,
+          -20,
+          -20,
+          22.320508075688775,
+          20,
+          0
+        ],
+        "hash": "fdf5895e"
+      },
+      {
+        "featureId": "mirrored_yz",
+        "volume": 14137.166941154072,
+        "solids": 1,
+        "faces": 6,
+        "edges": 12,
+        "bounds": [
+          -22.320508075688775,
+          -20,
+          -20,
+          15,
+          20,
+          0
+        ],
+        "hash": "6006feaa"
+      },
+      {
+        "featureId": "full",
+        "volume": 5105.088062083409,
+        "solids": 1,
+        "faces": 4,
+        "edges": 6,
+        "bounds": [
+          -35,
+          -35,
+          0,
+          35,
+          35,
+          5
+        ],
+        "hash": "8f4dadd5"
+      },
+      {
+        "featureId": "tilted",
+        "volume": 121.31557460569987,
+        "solids": 1,
+        "faces": 4,
+        "edges": 6,
+        "bounds": [
+          -5.519770533662346,
+          -10.877575978100694,
+          19.62692178198206,
+          2.52668692161691,
+          -2.3666151209204713,
+          25.555196809322428
+        ],
+        "hash": "2d7d7acd"
+      }
+    ]
+  },
+  "loft-sweep-pocket": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "bored",
+        "volume": 69088.79080767345,
+        "solids": 1,
+        "faces": 9,
+        "edges": 21,
+        "bounds": [
+          -30,
+          -30,
+          -1e-7,
+          30,
+          30,
+          20.0000001
+        ],
+        "hash": "c175a208"
+      }
+    ]
+  },
+  "datum-pad-revolve": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "plate",
+        "volume": 1268.601776313845,
+        "solids": 2,
+        "faces": 14,
+        "edges": 30,
+        "bounds": [
+          23.56932946718328,
+          -33.035841331454456,
+          16.350480227419066,
+          41.5453518266146,
+          -12.936166841155249,
+          35.598448979436604
+        ],
+        "hash": "3b2ce3d8"
+      },
+      {
+        "featureId": "ring",
+        "volume": 2552.5440310417134,
+        "solids": 1,
+        "faces": 6,
+        "edges": 12,
+        "bounds": [
+          18.61315960857145,
+          -48.447582456804,
+          -22.252278657118154,
+          50.55151624194438,
+          11.174835346612351,
+          33.62378458078362
+        ],
+        "hash": "5fb8d6eb"
+      }
+    ]
+  },
+  "bench-plate-hole-pattern-0": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "cut",
+        "volume": 58303.53996706153,
+        "solids": 1,
+        "faces": 12,
+        "edges": 30,
+        "bounds": [
+          0,
+          0,
+          0,
+          100,
+          60,
+          10
+        ],
+        "hash": "0b170c82"
+      }
+    ]
+  },
+  "bench-plate-hole-pattern-1": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "cut",
+        "volume": 70303.53996706153,
+        "solids": 1,
+        "faces": 12,
+        "edges": 30,
+        "bounds": [
+          0,
+          0,
+          0,
+          120,
+          60,
+          10
+        ],
+        "hash": "79fb6355"
+      }
+    ]
+  },
+  "bench-gear-and-plate-0": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "gear",
+        "volume": 22493.43335045167,
+        "solids": 1,
+        "faces": 866,
+        "edges": 2592,
+        "bounds": [
+          -30,
+          -29.704594155344243,
+          0,
+          30.000000000000004,
+          29.704594155344243,
+          10
+        ],
+        "hash": "f6488d93"
+      },
+      {
+        "featureId": "cut",
+        "volume": 58303.53996706153,
+        "solids": 1,
+        "faces": 12,
+        "edges": 30,
+        "bounds": [
+          200,
+          0,
+          0,
+          300,
+          60,
+          10
+        ],
+        "hash": "ccfcb7ca"
+      }
+    ]
+  },
+  "bench-gear-and-plate-1": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "gear",
+        "volume": 22493.43335045167,
+        "solids": 1,
+        "faces": 866,
+        "edges": 2592,
+        "bounds": [
+          -30,
+          -29.704594155344243,
+          0,
+          30.000000000000004,
+          29.704594155344243,
+          10
+        ],
+        "hash": "f6488d93"
+      },
+      {
+        "featureId": "cut",
+        "volume": 64303.53996706153,
+        "solids": 1,
+        "faces": 12,
+        "edges": 30,
+        "bounds": [
+          200,
+          0,
+          0,
+          310,
+          60,
+          10
+        ],
+        "hash": "caca04bc"
+      }
+    ]
+  },
+  "bench-box-fillet-all-edges-0": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "rounded",
+        "volume": 23701.687229558305,
+        "solids": 1,
+        "faces": 26,
+        "edges": 56,
+        "bounds": [
+          -4.440892098500626e-16,
+          -4.440892098500626e-16,
+          -4.440892098500626e-16,
+          40,
+          30,
+          20
+        ],
+        "hash": "4101fde3"
+      }
+    ]
+  },
+  "bench-box-fillet-all-edges-1": {
+    "diagnostics": [],
+    "bodies": [
+      {
+        "featureId": "rounded",
+        "volume": 23340.84937505542,
+        "solids": 1,
+        "faces": 26,
+        "edges": 56,
+        "bounds": [
+          -4.440892098500626e-16,
+          -4.440892098500626e-16,
+          -4.440892098500626e-16,
+          40,
+          30,
+          20
+        ],
+        "hash": "775d453c"
+      }
+    ]
+  }
+}

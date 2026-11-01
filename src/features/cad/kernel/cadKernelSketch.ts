@@ -1,12 +1,16 @@
-import { draw, drawCircle, drawRoundedRectangle, Edge, getOC, makeAx2, Sketch, Wire, type Drawing, type Plane } from 'replicad';
+import { draw, drawCircle, drawRoundedRectangle, Edge, Face, getOC, Sketch, Wire, type Drawing } from 'replicad';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadProfileToEntities, type ResolvedCadProfile } from '../../../domain/cad/cadSketchGeometry';
-import { cadKernelDisposeShape } from './cadKernelShapes';
+import type { CadKernelPlane } from './cadKernelPlane';
+import { cadKernelDisposeOwned, cadKernelDisposeShape } from './cadKernelShapes';
 
 /** Exact Blueprint plane conversion with deterministic native ownership.
- * Replicad 1.1's sketchOnPlane leaves its raw edge builders/3D handles alive. */
-export function cadKernelSketchOnPlane(drawing: Drawing, plane: Plane): Sketch {
-  const oc = getOC(), axis = makeAx2(plane.origin, plane.zDir, plane.xDir);
+ * Replicad 1.1's sketchOnPlane leaves its raw edge builders/3D handles alive. The axis and the
+ * sketch's default vectors are made from the plane's coordinates, with the values Replicad's
+ * makeAx2 and Sketch copy from its vectors, without the copies' leaked temporaries. */
+export function cadKernelSketchOnPlane(drawing: Drawing, plane: CadKernelPlane): Sketch {
+  const oc = getOC(), origin = plane.origin.toTuple(), normal = plane.zDir.toTuple(), xDirection = plane.xDir.toTuple();
+  const axis = cadKernelAx2(origin, normal, xDirection);
   const edges: Edge[] = [];
   try {
     for (const curve of drawing.blueprint.curves) {
@@ -22,13 +26,51 @@ export function cadKernelSketchOnPlane(drawing: Drawing, plane: Plane): Sketch {
       builder.Build();
       if (builder.Error() !== oc.BRepBuilderAPI_WireError.BRepBuilderAPI_WireDone) throw new CadError('invalid-profile', 'The exact profile edges could not form a connected wire.');
       const wire = new Wire(builder.Wire());
-      try { return new Sketch(wire, { defaultOrigin: plane.origin, defaultDirection: plane.zDir }); }
+      try { return new Sketch(wire, { defaultOrigin: origin, defaultDirection: normal }); }
       catch (error) { cadKernelDisposeShape(wire); throw error; }
     } finally { builder.delete(); }
   } finally {
     for (const edge of edges) cadKernelDisposeShape(edge);
     axis.delete();
   }
+}
+
+function cadKernelAx2(origin: readonly [number, number, number], normal: readonly [number, number, number], xDirection: readonly [number, number, number]) {
+  const oc = getOC(); const point = new oc.gp_Pnt(...origin);
+  try {
+    const direction = new oc.gp_Dir(...normal);
+    try {
+      const x = new oc.gp_Dir(...xDirection);
+      try { return new oc.gp_Ax2(point, direction, x); } finally { x.delete(); }
+    } finally { direction.delete(); }
+  } finally { point.delete(); }
+}
+
+/**
+ * The planar face of an outer wire and its holes, built as Replicad's Sketch.face and
+ * CompoundSketch.face build it. The caller owns the face; the sketches stay the caller's.
+ * Replicad leaves CompoundSketch's intermediate outer face to garbage collection.
+ */
+export function cadKernelSketchFace(sketches: readonly Sketch[]): Face {
+  const [outer, ...holes] = sketches;
+  if (!outer) throw new CadError('empty-sketch', 'A solid feature needs a closed non-construction profile.');
+  const oc = getOC(); const faceBuilder = new oc.BRepBuilderAPI_MakeFace(outer.wire.wrapped, false);
+  let face: Face;
+  try {
+    if (!faceBuilder.IsDone()) throw new Error('Failed to build the face. Your wire might be non planar.');
+    face = new Face(faceBuilder.Face());
+  } finally { faceBuilder.delete(); }
+  if (!holes.length) return face;
+  const owned: { delete(): void }[] = [face];
+  const own = <T extends { delete(): void }>(value: T): T => { owned.push(value); return value; };
+  try {
+    const maker = own(new oc.BRepBuilderAPI_MakeFace(face.wrapped));
+    for (const hole of holes) maker.Add(hole.wire.wrapped);
+    const built = own(maker.Face());
+    const fixer = own(new oc.ShapeFix_Face(built));
+    fixer.FixOrientation();
+    return new Face(fixer.Face());
+  } finally { for (const value of owned) cadKernelDisposeOwned(value); }
 }
 
 export function cadKernelProfileDrawing(profile: ResolvedCadProfile, drawings: Drawing[]): Drawing {

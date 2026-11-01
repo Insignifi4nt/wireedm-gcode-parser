@@ -1,7 +1,8 @@
 import { cast, getOC, isShape3D, type Shape3D } from 'replicad';
 import type { TopoDS_Shape } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
-import { cadKernelConsumeShape, cadKernelDisposeOwned, cadKernelFaces, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
+import { cadKernelDisposeOwned, cadKernelFaces, cadKernelIsValid, cadKernelSolids } from './cadKernelShapes';
+import { cadKernelBuilders } from './cadKernelBuilders';
 import { cadSolidImportBytes, parseCadSolidImportSource, type CadSolidImportResult, type CadSolidImportSource } from '../../../domain/cad/cadImports';
 import { CadKernelTopology } from './cadKernelTopology';
 import { assertCadStepLengthUnits } from './cadKernelStepUnits';
@@ -73,7 +74,7 @@ function readStl(path: string, bytes: Uint8Array, units: 'mm' | 'inch'): Shape3D
     const faces = cadKernelFaces(input);
     try { if (faces.length !== facets) throw new CadError('stl-incomplete', 'The STL reader omitted facets. Repair the source mesh before importing.'); }
     finally { for (const face of faces) cadKernelDisposeOwned(face); }
-    if (units === 'inch') input = cadKernelConsumeShape(input, shape => shape.scale(25.4).asShape3D());
+    if (units === 'inch') { const scaled = cadKernelBuilders.scale(input, 25.4); cadKernelDisposeOwned(input); input = scaled; }
     sewing.Add(input.wrapped); sewing.Perform();
     if (sewing.NbFreeEdges() || sewing.NbMultipleEdges()) throw new CadError('stl-open', 'STL import requires a watertight manifold mesh without open or multiply shared edges.');
     const sewn = sewing.SewedShape();
