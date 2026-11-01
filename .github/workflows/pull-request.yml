@@ -138,10 +138,12 @@ jobs:
           exit "$status"
       # A broken change stops each shard after a few failures instead of retrying every journey to its timeout.
       # Each weight is that shard's share of the journeys in Playwright's order, fitted to measured run times.
+      # Shard 10 ends with the large indexeddb-workbench job, as shard 11 of 12 did before, so it finishes with the other
+      # worker idle: beside export-heavy journeys it can miss the post runtime's 1 s deadline.
       - run: npm run test:e2e -- --workers=2 --max-failures=5 --shard=${{ matrix.shard }}/11
         env:
           PLAYWRIGHT_USE_EXISTING_BUILD: 'true'
-          PWTEST_SHARD_WEIGHTS: '15:14:18:16:21:16:17:26:30:28:35'
+          PWTEST_SHARD_WEIGHTS: '16:15:19:17:24:15:25:24:34:28:19'
       - name: Preserve browser failure reports
         if: failure()
         uses: actions/upload-artifact@v7
