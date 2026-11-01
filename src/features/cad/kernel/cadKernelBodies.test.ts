@@ -358,6 +358,9 @@ describe('kernel body parts are inherited only when continuity is certain', () =
         expect(cadBodyParts({ featureId: 'keep', previous: { key: 'imported' as CadBodyKey }, beforeSolids: 2, facts }))
           .toMatchObject({ pieces: ['imported/split(0)', 'imported/split(1)'], ambiguous: [['imported/split(0)', 'imported/split(1)']] });
       }
+      // Nor does a face two sources share prove either.
+      const twice = createCadKernelFaceSources();
+      try { twice.add(left); twice.add(left); expect(twice.trace(left)).toEqual([[]]); } finally { twice.dispose(); }
     } finally { faces.dispose(); for (const shape of [left, right, joined, slab, result]) cadKernelDisposeShape(shape); }
   });
 
