@@ -18,6 +18,22 @@ function items(count: number, seed = 7): ShardItem[] {
   return Array.from({ length: count }, (_, index) => ({ key: `src/file-${String(index).padStart(3, '0')}.test.ts`, weight: Math.round(next() ** 4 * 600) / 10 }));
 }
 
+async function weightRoot(seconds: Record<string, number>) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'wire-edm-shards-'));
+  roots.push(root);
+  await mkdir(path.join(root, 'scripts'));
+  await writeFile(path.join(root, unitShardWeightsPath), JSON.stringify({ overheadSeconds: 0.5, unlistedSeconds: 0.1, seconds }));
+  return root;
+}
+
+function spec(root: string, file: string, project: string, groupOrder = 0) {
+  return { moduleId: path.join(root, file), pool: 'forks', project: { name: project, config: { sequence: { groupOrder }, isolate: true } } } as unknown as TestSpecification;
+}
+
+function sequencer(root: string, index: number) {
+  return new WeightedShardSequencer({ config: { root, shard: { index, count: 3 } } } as unknown as Vitest);
+}
+
 function loads(entries: readonly ShardItem[], shards: readonly number[], count: number) {
   const totals = new Array<number>(count).fill(0);
   shards.forEach((shard, index) => { totals[shard] += entries[index].weight; });
@@ -113,20 +129,27 @@ describe('weighted unit shards', () => {
     expect(() => reportCheckoutRoot(['/home/runner/work/repo/repo/src/gone.test.ts'], isFile)).toThrow(/checkout/);
   });
 
-  it('gives Vitest disjoint shards covering every file, heaviest first within each', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'wire-edm-shards-'));
-    roots.push(root);
-    await mkdir(path.join(root, 'scripts'));
-    await writeFile(path.join(root, unitShardWeightsPath), JSON.stringify({ overheadSeconds: 0.5, unlistedSeconds: 0.1, seconds: { 'src/slow.test.ts': 40, 'src/medium.test.ts': 12, 'src/other.test.ts': 9 } }));
+  it('gives Vitest disjoint shards covering every file', async () => {
+    const root = await weightRoot({ 'src/slow.test.ts': 40, 'src/medium.test.ts': 12, 'src/other.test.ts': 9 });
     const files = ['src/slow.test.ts', 'src/medium.test.ts', 'src/other.test.ts', ...Array.from({ length: 30 }, (_, index) => `src/fast-${index}.test.ts`)];
-    const specs = files.map((file, index) => ({ moduleId: path.join(root, file), pool: 'forks', project: { name: index % 2 ? 'browser' : 'pure-domain' } }) as unknown as TestSpecification);
-    const sequencer = (index: number) => new WeightedShardSequencer({ config: { root, shard: { index, count: 3 } } } as unknown as Vitest);
-    const ids = (shard: readonly TestSpecification[]) => shard.map((spec) => spec.moduleId).sort();
-    const shards = await Promise.all([1, 2, 3].map((index) => sequencer(index).shard([...specs])));
+    const specs = files.map((file, index) => spec(root, file, index % 2 ? 'browser' : 'pure-domain'));
+    const ids = (shard: readonly TestSpecification[]) => shard.map((entry) => entry.moduleId).sort();
+    const shards = await Promise.all([1, 2, 3].map((index) => sequencer(root, index).shard([...specs])));
     expect(ids(shards.flat())).toEqual(ids(specs));
-    expect(shards.map((shard) => shard.some((spec) => spec.moduleId.endsWith('slow.test.ts')))).toEqual([true, false, false]);
-    expect(ids(await sequencer(2).shard([...specs].reverse()))).toEqual(ids(shards[1]));
-    const ordered = await sequencer(2).sort([...shards[1]].reverse());
-    expect(ordered[0].moduleId).toBe(path.join(root, 'src/medium.test.ts'));
+    expect(shards.map((shard) => shard.some((entry) => entry.moduleId.endsWith('slow.test.ts')))).toEqual([true, false, false]);
+    expect(ids(await sequencer(root, 2).shard([...specs].reverse()))).toEqual(ids(shards[1]));
+  });
+
+  it('runs a shard project by project as Vitest does, heaviest first within each', async () => {
+    const root = await weightRoot({ 'src/node-slow.test.ts': 30, 'src/dom-medium.test.ts': 12, 'src/dom-slow.test.ts': 20 });
+    const specs = [
+      spec(root, 'src/node-slow.test.ts', 'pure-domain'), spec(root, 'src/node-fast.test.ts', 'pure-domain'),
+      spec(root, 'src/dom-fast.test.ts', 'browser'), spec(root, 'src/dom-medium.test.ts', 'browser'), spec(root, 'src/dom-slow.test.ts', 'browser'),
+      spec(root, 'src/late.test.ts', 'browser', 1),
+    ];
+    const ordered = await sequencer(root, 1).sort([...specs].reverse());
+    expect(ordered.map((entry) => path.basename(entry.moduleId))).toEqual([
+      'dom-slow.test.ts', 'dom-medium.test.ts', 'dom-fast.test.ts', 'node-slow.test.ts', 'node-fast.test.ts', 'late.test.ts'
+    ]);
   });
 });

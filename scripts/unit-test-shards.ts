@@ -107,11 +107,15 @@ export class WeightedShardSequencer extends BaseSequencer {
     return files.filter((_, position) => shards[position] === index - 1);
   }
 
-  /** Within a shard, the heaviest files start first so none of them is left running alone at the end. */
+  /**
+   * Keeps Vitest's own grouping (group order, then project, isolated files first), so the Node-only suites and their
+   * timing checks still run after the jsdom and kernel suites rather than beside them. Within each group the heaviest
+   * files start first, so none of them is left running alone at the end.
+   */
   override async sort(files: TestSpecification[]): Promise<TestSpecification[]> {
     if (!this.ctx.config.shard) return super.sort(files);
     const keyed = files.map((spec) => ({ spec, key: this.key(spec), weight: this.weight(spec) }));
-    keyed.sort((a, b) => b.weight - a.weight || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    keyed.sort((a, b) => compareGroups(a.spec, b.spec) || b.weight - a.weight || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
     return keyed.map(({ spec }) => spec);
   }
 
@@ -123,6 +127,13 @@ export class WeightedShardSequencer extends BaseSequencer {
     this.weights ??= parseUnitShardWeights(readFileSync(path.join(this.ctx.config.root, unitShardWeightsPath), 'utf8'));
     return unitShardWeight(this.weights, relativePosix(this.ctx.config.root, spec.moduleId));
   }
+}
+
+/** The order Vitest's own sequencer gives files from different groups and projects. */
+function compareGroups(a: TestSpecification, b: TestSpecification) {
+  return a.project.config.sequence.groupOrder - b.project.config.sequence.groupOrder
+    || (a.project.name < b.project.name ? -1 : a.project.name > b.project.name ? 1 : 0)
+    || Number(!a.project.config.isolate) - Number(!b.project.config.isolate);
 }
 
 function relativePosix(root: string, file: string) {
