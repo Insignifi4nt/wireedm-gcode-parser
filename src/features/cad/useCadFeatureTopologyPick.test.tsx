@@ -5,6 +5,7 @@ import { createCadDocument } from '@/domain/cad/cadSchema';
 import type { CadFeatureInputSnapshot } from './cadFeatureInput';
 import type { CadFeatureTopologyPickCommand } from './cadFeatureReferencePicking';
 import type { CadTopologyResolvePicksResult } from '@/domain/cad/cadTopology';
+import type { CadTopologyAdjacency } from '@/domain/cad/cadTopologyAdjacency';
 import { useCadFeatureTopologyPick, type CadFeatureInputPicking } from './useCadFeatureTopologyPick';
 
 let root: Root, host: HTMLDivElement, picker: ReturnType<typeof useCadFeatureTopologyPick>;
@@ -19,7 +20,11 @@ async function mount() {
   const command: CadFeatureTopologyPickCommand = { kind: 'pick-topology', owner: 'form', expectedVersion: 'v1', label: 'Edges', purpose: 'fillet', request: { featureId: 'fillet', bodyId: 'pad' }, onSelect: vi.fn(), onCancel: vi.fn() };
   const result: CadTopologyResolvePicksResult = { purpose: 'fillet', bodyId: 'pad', buildId: 'input-build', selection: { expectedCount: 1, queries: [{ kind: 'edges', expectedCount: 1, predicates: [{ kind: 'line-endpoints', start: [0, 0, 0], end: [5, 0, 0] }] }] } };
   const resolution = deferred<CadTopologyResolvePicksResult>();
-  const operations = { build: vi.fn(async () => source), inspect: vi.fn<CadFeatureInputPicking['inspect']>(), resolve: vi.fn<CadFeatureInputPicking['resolve']>(() => resolution.promise), release: vi.fn() } satisfies CadFeatureInputPicking;
+  // Edges a and b run on in one straight line along the top face.
+  const adjacency: CadTopologyAdjacency = { bodyId: 'pad', buildId: 'input-build', edges: ['a', 'b'], edgeVertices: [0, 1, 1, 2], edgeTangents: [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0],
+    edgeFaces: [0, -1, 0, -1], edgeSmooth: [false, false], faces: ['top'], faceLoops: [[[0, 1]]] };
+  const operations = { build: vi.fn(async () => source), inspect: vi.fn<CadFeatureInputPicking['inspect']>(), resolve: vi.fn<CadFeatureInputPicking['resolve']>(() => resolution.promise), release: vi.fn(),
+    adjacency: vi.fn<NonNullable<CadFeatureInputPicking['adjacency']>>(async () => adjacency) } satisfies CadFeatureInputPicking;
   function Harness({ active, version }: { active: boolean; version: string }) { picker = useCadFeatureTopologyPick(active ? command : null, document, version, operations); return null; }
   const render = async (active = true, version = 'v1') => { await act(async () => root.render(<Harness {...{ active, version }} />)); };
   await render(); return { command, source, result, resolution, operations, render };
@@ -39,6 +44,23 @@ it('picks only exact input keys, retains installed meshes, and resolves the expl
   expect(h.operations.resolve).toHaveBeenCalledWith('input', { bodyId: 'pad', expectedBuildId: 'input-build', purpose: 'fillet', picks: [{ kind: 'edge', key: 'b' }] }, 'v1', expect.any(AbortSignal));
   await act(async () => { h.resolution.resolve(h.result); await pending; });
   expect(h.command.onSelect).toHaveBeenCalledExactlyOnceWith(h.result);
+});
+
+it('selects tangent chains and loops from the input adjacency, read once, adding them with Ctrl', async () => {
+  const h = await mount(), keys = () => picker.selection?.picks.map(pick => pick.key).sort();
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+  expect(keys()).toEqual(['a', 'b']);
+  await act(async () => picker.set('pad', [{ kind: 'edge', key: 'b' }]));
+  expect(keys()).toEqual(['b']);
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'loop', true, 'top'));
+  expect(keys()).toEqual(['a', 'b']);
+  expect(h.operations.adjacency).toHaveBeenCalledExactlyOnceWith('input', { bodyId: 'pad', expectedBuildId: 'input-build' }, 'v1', expect.any(AbortSignal));
+  // Faces are not what this input asks for, and a stale picker changes nothing.
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'face', key: 'top' } }, 'tangent', false, null));
+  expect(keys()).toEqual(['a', 'b']); expect(picker.error).toContain('Choose edges');
+  const previous = picker; await h.render(true, 'v2');
+  await act(async () => previous.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+  expect(picker.selection).toBeNull(); expect(h.operations.adjacency).toHaveBeenCalledOnce();
 });
 
 it('cancels an in-flight conversion and releases only its input without changing the feature', async () => {

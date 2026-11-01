@@ -12,6 +12,8 @@ import { CadKernelTopology } from './cadKernelTopology';
 import { createCadKernelRuntime } from './cadKernelRuntime';
 import { isCadKernelReply } from './cadKernelProtocol';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
+import { isCadTopologyAdjacency, type CadTopologyAdjacency } from '../../../domain/cad/cadTopologyAdjacency';
+import { cadTopologyEdgeChain, cadTopologyFaceLoop, cadTopologyTangentFaces } from '../../../domain/cad/selection/cadTopologySelection';
 
 beforeAll(async () => {
   const wasmBinary = await readFile(new URL('../../../../node_modules/replicad-opencascadejs/dist/replicad_single.wasm', import.meta.url));
@@ -336,6 +338,100 @@ describe('exact topology and selected mechanical features', () => {
   }, 60_000);
 });
 
+/** The three bodies the edge-treatment tests use: a box, a box with rounded corners, and a rounded plate with a bore. */
+function chainFixtures(): readonly { readonly name: string; readonly document: CadDocument }[] {
+  const original = boxDocument(), sketch = original.features[0];
+  if (sketch.kind !== 'sketch') throw new Error('Expected sketch');
+  const rounded = parseCadDocument({ ...original, features: [{ ...sketch, profiles: sketch.profiles.map(profile => ({ ...profile,
+    geometry: { kind: 'rectangle', x: 0, y: 0, width: 20, height: 10, cornerRadius: 2 } })) }, original.features[1]] });
+  const plate = parseCadDocument({ ...original, parameters: {}, features: [
+    { ...base('profile'), kind: 'sketch', plane: 'XY', offset: 0, profiles: [
+      { id: 'plate', name: 'Plate', construction: false, geometry: { kind: 'rectangle', x: 0, y: 0, width: 80, height: 50, cornerRadius: 3 } },
+      { id: 'bore', name: 'Bore', construction: false, geometry: { kind: 'circle', x: 40, y: 25, radius: 5 } }] },
+    { ...base('box'), kind: 'extrude', sketchId: 'profile', distance: 10, symmetric: false, operation: 'new', targetId: null }] });
+  return [{ name: 'box', document: parseCadDocument(original) }, { name: 'rounded box', document: rounded }, { name: 'plate with a bore', document: plate }];
+}
+const adjacencyOf = (model: CadKernelModel): CadTopologyAdjacency => model.topologyAdjacency({ bodyId: 'box', expectedBuildId: model.result.buildId });
+
+describe('topology adjacency for selection chains', () => {
+  it('reads how the edges and faces of each fixture meet', () => {
+    const [box, rounded, plate] = chainFixtures();
+    built(box.document, model => {
+      const adjacency = adjacencyOf(model), edges = page(model, 'edge'), faces = page(model, 'face');
+      expect(isCadTopologyAdjacency(adjacency)).toBe(true);
+      expect(adjacency).toMatchObject({ bodyId: 'box', buildId: model.result.buildId });
+      expect(new Set(adjacency.edges)).toEqual(new Set(edges.map(edge => edge.key)));
+      expect(new Set(adjacency.faces)).toEqual(new Set(faces.map(face => face.key)));
+      expect(new Set(adjacency.edgeVertices).size).toBe(8);
+      expect(adjacency.edgeSmooth.every(smooth => !smooth)).toBe(true);
+      expect(adjacency.faceLoops.map(loops => loops.map(loop => loop.length))).toEqual(Array(6).fill([4]));
+      for (const edge of adjacency.edges) expect(cadTopologyEdgeChain(adjacency, edge)).toMatchObject({ ids: [edge], closed: false, branches: [] });
+      for (const face of adjacency.faces) expect(cadTopologyTangentFaces(adjacency, face)).toEqual([face]);
+      // The same build answers from its cache with the same data.
+      expect(adjacencyOf(model)).toEqual(adjacency);
+      expect(() => model.topologyAdjacency({ bodyId: 'box', expectedBuildId: 'another-build' })).toThrow('snapshot is stale');
+    });
+    built(rounded.document, model => {
+      const adjacency = adjacencyOf(model), edges = page(model, 'edge');
+      const top = edges.filter(edge => edge.bounds.min[2] === 5 && edge.bounds.max[2] === 5).map(edge => edge.key);
+      expect(top).toHaveLength(8);
+      const chain = cadTopologyEdgeChain(adjacency, top[0]);
+      expect(chain.closed).toBe(true); expect(new Set(chain.ids)).toEqual(new Set(top));
+      // The vertical edges where the corner cylinders meet the side planes are smooth, so the side wall is one tangent run of eight faces.
+      const vertical = edges.filter(edge => edge.bounds.min[2] === 0 && edge.bounds.max[2] === 5).map(edge => adjacency.edges.indexOf(edge.key));
+      expect(vertical).toHaveLength(8); expect(vertical.every(index => adjacency.edgeSmooth[index])).toBe(true);
+      const side = page(model, 'face').find(face => face.kind === 'face' && face.surfaceType === 'plane' && Math.abs(face.normal[2]) < 1e-9);
+      if (!side) throw new Error('Missing side face');
+      expect(cadTopologyTangentFaces(adjacency, side.key)).toHaveLength(8);
+    });
+    built(plate.document, model => {
+      const adjacency = adjacencyOf(model), edges = page(model, 'edge');
+      const boreTop = edges.filter(edge => edge.kind === 'edge' && edge.curveType === 'circle' && Math.abs(edge.radius - 5) < 1e-7 && edge.bounds.min[2] === 10);
+      expect(boreTop).toHaveLength(2);
+      const chain = cadTopologyEdgeChain(adjacency, boreTop[0].key);
+      expect(chain.closed).toBe(true); expect(new Set(chain.ids)).toEqual(new Set(boreTop.map(edge => edge.key)));
+      const topFace = page(model, 'face').find(face => face.kind === 'face' && face.surfaceType === 'plane' && face.normal[2] === 1);
+      if (!topFace) throw new Error('Missing top face');
+      expect(adjacency.faceLoops[adjacency.faces.indexOf(topFace.key)]).toHaveLength(2);
+      expect(new Set(cadTopologyFaceLoop(adjacency, topFace.key, boreTop[0].key))).toEqual(new Set(boreTop.map(edge => edge.key)));
+    });
+  });
+  it.each(['fillet', 'chamfer'] as const)('chains every seed to exactly the edges native %s tangent propagation treats', kind => {
+    for (const { name, document } of chainFixtures()) {
+      const original = buildCadKernelModel(document);
+      try {
+        const adjacency = adjacencyOf(original), done = new Set<string>();
+        const seeds = adjacency.edges.filter((_, index) => !adjacency.edgeSmooth[index]);
+        expect(seeds.length, name).toBeGreaterThan(0);
+        for (const seed of seeds) {
+          const chain = cadTopologyEdgeChain(adjacency, seed);
+          expect(chain.branches, name).toEqual([]);
+          // Every member of a chain chains back to the same edges.
+          for (const member of chain.ids) expect(new Set(cadTopologyEdgeChain(adjacency, member).ids), name).toEqual(new Set(chain.ids));
+          const key = [...chain.ids].sort().join(' ');
+          if (done.has(key)) continue;
+          done.add(key);
+          const resolve = (keys: readonly string[]) => {
+            const result = original.resolveTopologyPicks({ bodyId: 'box', expectedBuildId: original.result.buildId, purpose: kind, picks: keys.map(edge => ({ kind: 'edge' as const, key: edge })) });
+            if (result.purpose === 'shell') throw new Error('Unexpected shell selector'); return result.selection;
+          };
+          let followed = 0, explicit = 0;
+          built(withFeatures(document, { ...base('followed'), kind, targetId: 'box', radius: .5, selection: resolve([seed]), tangentPropagation: true }), model => {
+            expect(model.result.diagnostics, name).toEqual([]); followed = model.result.meshes[0].volume;
+          });
+          // Strict treatment of the chain passes only when it holds every edge native propagation would add, and matches its volume only when it holds no others.
+          built(withFeatures(document, { ...base('chained'), kind, targetId: 'box', radius: .5, selection: resolve(chain.ids) }), model => {
+            expect(model.result.diagnostics, name).toEqual([]); explicit = model.result.meshes[0].volume;
+          });
+          expect(explicit, `${name}: ${chain.ids.length} edges`).toBeCloseTo(followed, 7);
+          expect(followed).toBeLessThan(original.result.meshes[0].volume);
+        }
+        expect(done.size, name).toBeGreaterThan(0);
+      } finally { original.dispose(); }
+    }
+  }, 60_000);
+});
+
 describe('native worker cache and snapshot lifetime', () => {
   it('does not initialize or rehydrate stale inspections and retains build IDs only on exact cache hits', async () => {
     let initializationCalls = 0;
@@ -353,6 +449,9 @@ describe('native worker cache and snapshot lifetime', () => {
       expect(await runtime.evaluate({ id: 5, kind: 'inspect-topology', document: { ...document, name: 'Changed' }, inspection: valid })).toMatchObject({ kind: 'error', code: 'STALE_BUILD' });
       expect(await runtime.evaluate({ id: 6, kind: 'export', document, format: 'step' })).toMatchObject({ kind: 'exported' });
       expect((await runtime.evaluate({ id: 7, kind: 'inspect-topology', document, inspection: valid })).kind).toBe('topology-inspected');
+      const adjacency = await runtime.evaluate({ id: 70, kind: 'inspect-adjacency', document, adjacency: { bodyId: 'box', expectedBuildId: first.result.buildId } });
+      expect(adjacency).toMatchObject({ kind: 'adjacency-inspected', result: { bodyId: 'box', buildId: first.result.buildId } }); expect(isCadKernelReply(adjacency)).toBe(true);
+      expect(await runtime.evaluate({ id: 71, kind: 'inspect-adjacency', document, adjacency: { bodyId: 'box', expectedBuildId: 'missing' } })).toMatchObject({ kind: 'error', code: 'STALE_BUILD' });
       runtime.dispose();
       expect(await runtime.evaluate({ id: 8, kind: 'inspect-topology', document, inspection: valid })).toMatchObject({ kind: 'error', code: 'STALE_BUILD' });
       const rebuilt = await runtime.evaluate({ id: 9, kind: 'build', document }); if (rebuilt.kind !== 'built') throw new Error('Expected build');

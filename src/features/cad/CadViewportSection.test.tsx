@@ -7,7 +7,7 @@ import { cadPrincipalFrame, type CadResolvedFrame } from '@/domain/cad/cadDatumP
 import { CadViewport, type CadViewportSection } from './CadViewport';
 import type { CadRenderedViewControls } from './cadViewportControls';
 import { cadOriginReferences, prepareCadViewportReferences, type CadViewportReference } from './cadViewportReferences';
-import type { CadSelectionFilter } from './view/cadSelectionFilter';
+import type { CadSelectionFilter } from '@/domain/cad/selection/cadSelectionFilter';
 
 const renderers = vi.hoisted((): { domElement: HTMLCanvasElement; render: ReturnType<typeof vi.fn<(scene: Scene, camera: Camera) => void>> }[] => []);
 vi.mock('@/features/editor/captureEditorPreview', () => ({ captureCanvas: vi.fn(() => ({ dataUrl: 'data:image/png;base64,AA==', width: 800, height: 600, source: '3d' })) }));

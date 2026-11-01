@@ -25,21 +25,28 @@ export function orthographicPixelSize(camera: THREE.OrthographicCamera, viewport
   return (camera.top - camera.bottom) / (camera.zoom * Math.max(1, viewportHeight));
 }
 
-/** The exact same bounded transition serves pointer picks and declarative viewport commands. */
-export function mergeTopologySelection(current: CadTopologyPickSet | null, incoming: CadTopologyPickSet, additive: boolean): CadTopologyPickSet {
-  if (incoming.picks.length === 0 || incoming.picks.length > 64) throw new Error('Select between 1 and 64 topology elements.');
+/** The most edges or faces one topology selection holds. */
+export const CAD_TOPOLOGY_SELECTION_LIMIT = 64;
+
+/**
+ * The exact same bounded transition serves pointer picks and declarative viewport commands. A selection holds edges or faces of one body.
+ * Additive toggles each incoming pick, as Ctrl + click does; `union` adds the picks a chain or box selects without removing any.
+ */
+export function mergeTopologySelection(current: CadTopologyPickSet | null, incoming: CadTopologyPickSet, additive: boolean | 'union'): CadTopologyPickSet {
+  if (incoming.picks.length === 0) throw new Error('Select at least one edge or face.');
+  if (incoming.picks.length > CAD_TOPOLOGY_SELECTION_LIMIT) throw new Error(`This selection has ${incoming.picks.length} elements. A topology selection holds at most ${CAD_TOPOLOGY_SELECTION_LIMIT}.`);
   const kind = incoming.picks[0].kind;
-  if (incoming.picks.some((pick) => pick.kind !== kind)) throw new Error('Select either edges or one face.');
-  if (kind === 'face' && incoming.picks.length !== 1) throw new Error('Select one face at a time.');
+  if (incoming.picks.some((pick) => pick.kind !== kind)) throw new Error('Select either edges or faces.');
   let picks = [...new Map(incoming.picks.map((pick) => [pick.key, pick])).values()];
-  if (additive && kind === 'edge' && current?.picks.some((pick) => pick.kind === 'edge')) {
-    if (current.documentVersion !== incoming.documentVersion || current.buildId !== incoming.buildId) throw new Error('The selected topology is stale. Select edges from the current build.');
-    if (current.bodyId !== incoming.bodyId) throw new Error('Select edges from one body for this operation.');
-    const toggled = new Map(current.picks.map((pick) => [pick.key, pick]));
-    for (const pick of picks) { if (toggled.has(pick.key)) toggled.delete(pick.key); else toggled.set(pick.key, pick); }
-    picks = [...toggled.values()];
+  if (additive && current?.picks.some((pick) => pick.kind === kind)) {
+    const noun = kind === 'edge' ? 'edges' : 'faces';
+    if (current.documentVersion !== incoming.documentVersion || current.buildId !== incoming.buildId) throw new Error(`The selected topology is stale. Select ${noun} from the current build.`);
+    if (current.bodyId !== incoming.bodyId) throw new Error(`Select ${noun} from one body for this operation.`);
+    const merged = new Map(current.picks.map((pick) => [pick.key, pick]));
+    for (const pick of picks) { if (additive !== 'union' && merged.has(pick.key)) merged.delete(pick.key); else merged.set(pick.key, pick); }
+    picks = [...merged.values()];
   }
-  if (picks.length > 64) throw new Error('A topology selection can contain at most 64 edges.');
+  if (picks.length > CAD_TOPOLOGY_SELECTION_LIMIT) throw new Error(`A topology selection holds at most ${CAD_TOPOLOGY_SELECTION_LIMIT} edges or faces.`);
   return Object.freeze({ ...incoming, picks: Object.freeze(picks.map((pick) => Object.freeze({ ...pick }))) });
 }
 
@@ -74,6 +81,31 @@ export function pickTopology({ mode, raycaster, bodies, edges, meshByObject, cam
     const group = mesh && typeof hit.faceIndex === 'number' ? topologyGroupAt(mesh.faceGroups, hit.faceIndex * 3) : null;
     return mesh && group ? { bodyId: mesh.featureId, pick: { kind: 'face', key: group.key } } : null;
   }
+  for (const hit of visibleEdgeHits({ raycaster, bodies, edges, meshByObject, camera, viewportHeight, clip })) return hit;
+  return null;
+}
+
+type PickInput = { raycaster: THREE.Raycaster; bodies: readonly THREE.Mesh[]; edges: readonly THREE.LineSegments[]; meshByObject: ReadonlyMap<THREE.Object3D, CadMesh>;
+  camera: THREE.OrthographicCamera; viewportHeight: number; clip?: THREE.Plane | null };
+
+/**
+ * Everything Select other steps through under the pointer, each once, in a stable order: the visible edges within reach, nearest the pointer
+ * first, as a click prefers them, then every face the ray passes through, nearest first, faces behind the front one included.
+ */
+export function topologyCandidates({ mode, ...input }: PickInput & { mode: 'auto' | 'edge' | 'face' }): CadTopologyHit[] {
+  const found: CadTopologyHit[] = [], seen = new Set<string>();
+  const add = (hit: CadTopologyHit) => { const key = `${hit.bodyId}\u0000${hit.pick.kind}\u0000${hit.pick.key}`; if (!seen.has(key)) { seen.add(key); found.push(hit); } };
+  if (mode !== 'face') for (const hit of visibleEdgeHits(input)) add(hit);
+  if (mode !== 'edge') for (const hit of input.raycaster.intersectObjects([...input.bodies], false)) {
+    const mesh = input.meshByObject.get(hit.object);
+    const group = mesh && typeof hit.faceIndex === 'number' ? topologyGroupAt(mesh.faceGroups, hit.faceIndex * 3) : null;
+    if (mesh && group) add({ bodyId: mesh.featureId, pick: { kind: 'face', key: group.key } });
+  }
+  return found;
+}
+
+/** The edges within six pixels of the pointer that no kept face hides, nearest the pointer first. */
+function* visibleEdgeHits({ raycaster, bodies, edges, meshByObject, camera, viewportHeight, clip = null }: PickInput): Generator<CadTopologyHit> {
   const pixelSize = orthographicPixelSize(camera, viewportHeight);
   const depthRay = new THREE.Raycaster();
   const candidates = cadKeptLineHits(raycaster, edges, clip, pixelSize * 6).sort((left, right) =>
@@ -91,7 +123,6 @@ export function pickTopology({ mode, raycaster, bodies, edges, meshByObject, cam
     const extent = Math.max(...mesh.bounds.max.map((value, index) => value - mesh.bounds.min[index]));
     const tolerance = Math.max(1e-7, extent * 2e-7); // Only floating-point preview precision, not a whole mesh tolerance.
     if (surface && surface.distance + tolerance < depthRay.ray.origin.distanceTo(hit.point)) continue;
-    return { bodyId: mesh.featureId, pick: { kind: 'edge', key: group.key } };
+    yield { bodyId: mesh.featureId, pick: { kind: 'edge', key: group.key } };
   }
-  return null;
 }

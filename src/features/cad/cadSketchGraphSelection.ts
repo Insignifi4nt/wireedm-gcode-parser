@@ -7,6 +7,7 @@ import { cadSketchZeroScalar } from '@/domain/cad/sketch-relations/cadSketchRela
 import type { CadContextMenuItem } from './CadContextMenu';
 import type { CadSketchDimensionPlan } from './cadSketchDimensionPlacement';
 import type { CadSketchPointerStore } from './CadSketchDimensionPreview';
+import { cadSelectionAccepts, setCadSelectionKind, type CadSelectionFilter } from '@/domain/cad/selection/cadSelectionFilter';
 
 export { CadSketchGraphSelectionSchema, CadSketchGraphSelectionSetSchema, cadSketchGraphSelectionSet } from '@/domain/cad/cadSketchGraphSelection';
 export type { CadSketchGraphSelection } from '@/domain/cad/cadSketchGraphSelection';
@@ -14,6 +15,24 @@ export { cadSketchZeroScalar };
 
 export const CadSketchGraphPickFilterSchema = Type.Union([Type.Literal('auto'), Type.Literal('points'), Type.Literal('edges')]);
 export type CadSketchGraphPickFilter = Static<typeof CadSketchGraphPickFilterSchema>;
+/** What a sketch pick reaches under the selection filter: `none` when both points and edges are filtered out. */
+export type CadSketchGraphPickScope = CadSketchGraphPickFilter | 'none';
+export const cadSketchPickScopeHasPoints = (scope: CadSketchGraphPickScope) => scope === 'auto' || scope === 'points';
+export const cadSketchPickScopeHasEdges = (scope: CadSketchGraphPickScope) => scope === 'auto' || scope === 'edges';
+
+/** The sketch geometry the shared selection filter lets a pick reach. */
+export function cadSketchPickScope(filter: CadSelectionFilter): CadSketchGraphPickScope {
+  const points = cadSelectionAccepts(filter, 'point'), edges = cadSelectionAccepts(filter, 'edge');
+  return points ? edges ? 'auto' : 'points' : edges ? 'edges' : 'none';
+}
+
+/**
+ * The shared filter with the kinds a sketch pick filter names: Auto takes points, edges and the axes; Points takes points and the origin;
+ * Edges takes edges and the axes. The other kinds keep their state.
+ */
+export function cadSelectionFilterForSketchPick(filter: CadSelectionFilter, pick: CadSketchGraphPickFilter): CadSelectionFilter {
+  return setCadSelectionKind(setCadSelectionKind(setCadSelectionKind(filter, 'point', pick !== 'edges'), 'edge', pick !== 'points'), 'axis', pick !== 'points');
+}
 
 /** A command borrows selection without enabling geometry edits or changing its frozen operands. */
 export interface CadSketchGeometryPick {

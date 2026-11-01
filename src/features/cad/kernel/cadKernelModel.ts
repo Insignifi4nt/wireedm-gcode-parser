@@ -9,6 +9,7 @@ import { resolveCadExtrudeRevolvePlacement, resolveCadWorldDatum, type CadDatumF
 import { cadKernelProfileDrawing, cadKernelSketchFace, cadKernelSketchOnPlane } from './cadKernelSketch';
 import { sectionCadKernelShape } from './cadKernelSection';
 import { CadKernelTopology } from './cadKernelTopology';
+import { parseCadTopologyAdjacencyRequest, type CadTopologyAdjacency, type CadTopologyAdjacencyRequest } from '../../../domain/cad/cadTopologyAdjacency';
 import { applyCadEdgeOperation, applyCadShell } from './cadKernelOperations';
 import { loadCadSolidImport } from './cadKernelImport';
 import { MAX_CAD_PATTERN_INSTANCES, resolveCadCircularPattern } from '../../../domain/cad/cadPatterns';
@@ -38,6 +39,7 @@ export interface CadKernelModel {
   section(request: CadSectionRequest, parameters?: CadDocument['parameters']): CadSectionResult;
   inspectTopology(request: CadTopologyInspectRequest): CadTopologyInspectResult;
   resolveTopologyPicks(request: CadTopologyResolvePicksRequest, parameters?: CadDocument['parameters']): CadTopologyResolvePicksResult;
+  topologyAdjacency(request: CadTopologyAdjacencyRequest): CadTopologyAdjacency;
   dispose(): void;
 }
 
@@ -348,6 +350,14 @@ export function buildCadKernelModel(document: CadDocument): CadKernelModel {
       const topology = bodies.get(parsed.bodyId)?.topology;
       if (!topology) throw new CadError('missing-body', 'The topology body is unavailable.');
       return topology.inspect(parsed, buildId);
+    },
+    topologyAdjacency(request) {
+      const parsed = parseCadTopologyAdjacencyRequest(request);
+      if (disposed || parsed.expectedBuildId !== buildId) throw new CadError('STALE_BUILD', 'The topology snapshot is stale. Rebuild the current document and select again.');
+      body(parsed.bodyId);
+      const topology = bodies.get(parsed.bodyId)?.topology;
+      if (!topology) throw new CadError('missing-body', 'The topology body is unavailable.');
+      return topology.adjacency(parsed.bodyId, buildId);
     },
     resolveTopologyPicks(request, parameters = document.parameters) {
       const parsed = parseCadTopologyResolvePicksRequest(request);

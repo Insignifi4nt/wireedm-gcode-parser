@@ -1,8 +1,9 @@
 import { Edge, Face, getOC, type Shape3D, type ShapeEdgeMesh, type ShapeMesh } from 'replicad';
-import type { gp_Dir, gp_Pnt } from 'replicad-opencascadejs';
+import type { gp_Dir, gp_Pnt, TopoDS_Shape } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadKernelDisposeShape, cadKernelScope } from './cadKernelShapes';
-import { cadKernelBounds, cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKernelFaceNormal } from './cadKernelQueries';
+import { cadKernelBounds, cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKernelCurveTangentAt, cadKernelFaceNormal } from './cadKernelQueries';
+import { MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS, type CadTopologyAdjacency } from '../../../domain/cad/cadTopologyAdjacency';
 import type { CadMeshTopologyGroup } from '../../../domain/cad/cadDocument';
 import {
   parseCadEdgeSelection, parseCadFaceQuery, resolveCadEdgeSelection, resolveCadFaceQuery,
@@ -117,6 +118,89 @@ function faceMatches(face: FaceDescriptor, predicate: ResolvedCadFacePredicate):
       && norm(cross(subtract(face.origin, predicate.origin), predicate.axis)) <= tolerance(...face.origin, ...predicate.origin);
     default: { const exhaustive: never = predicate; return exhaustive; }
   }
+}
+/**
+ * Vertices are shared native vertices, so edges meet exactly where the solid joins them. Each end of an edge takes the vertex nearest the
+ * curve's point there. Tangents are the curve's first derivatives at its ends, made unit. Faces meet smoothly along an edge when the kernel
+ * reads at least tangent continuity there within `kernelDirection`; a seam, inside one face, is smooth.
+ */
+function readAdjacency(entries: readonly Entry[]): Omit<CadTopologyAdjacency, 'bodyId' | 'buildId'> {
+  const oc = getOC();
+  const edges = entries.filter((entry): entry is Extract<Entry, { kind: 'edge' }> => entry.kind === 'edge');
+  const faces = entries.filter((entry): entry is Extract<Entry, { kind: 'face' }> => entry.kind === 'face');
+  if (edges.length + faces.length > MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS) throw new CadError('topology-too-large', 'This body has too many edges and faces to chain them.');
+  const edgeVertices: number[] = [], edgeTangents: number[] = [], edgeFaces: number[] = [], edgeSmooth: boolean[] = [];
+  const faceLoops: number[][][] = [];
+  return cadKernelScope(own => {
+    const edgeMap = own(new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher());
+    const vertexMap = own(new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher());
+    for (const entry of edges) edgeMap.Add(entry.shape.wrapped);
+    const explore = (shape: TopoDS_Shape, kind: 'TopAbs_VERTEX' | 'TopAbs_WIRE' | 'TopAbs_EDGE', visit: (raw: TopoDS_Shape) => void) => {
+      const explorer = new oc.TopExp_Explorer(shape, oc.TopAbs_ShapeEnum[kind], oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      try {
+        for (; explorer.More(); explorer.Next()) {
+          const raw = explorer.Current();
+          try { visit(raw); } finally { raw.Nullify(); raw.delete(); }
+        }
+      } finally { explorer.delete(); }
+    };
+    const unit = (vector: CadVector3) => {
+      const length = norm(vector);
+      return length > 0 && Number.isFinite(length) ? vector.map(value => value / length) : [0, 0, 0];
+    };
+    for (const entry of edges) {
+      let ends: [CadVector3, CadVector3] | null = null, tangents = [0, 0, 0, 0, 0, 0];
+      try {
+        const curve = entry.shape.curve;
+        try {
+          ends = [cadKernelCurveStart(curve.wrapped), cadKernelCurveEnd(curve.wrapped)];
+          tangents = [...unit(cadKernelCurveTangentAt(curve.wrapped, 0)), ...unit(cadKernelCurveTangentAt(curve.wrapped, 1))];
+        } finally { curve.delete(); }
+      } catch { /* A degenerate edge has no curve: no tangents, and its vertices still join it. */ }
+      const found: { index: number; point: CadVector3 }[] = [];
+      explore(entry.shape.wrapped, 'TopAbs_VERTEX', raw => {
+        const index = vertexMap.Add(raw);
+        if (found.some(vertex => vertex.index === index)) return;
+        const vertex = oc.TopoDS.Vertex(raw), point = oc.BRep_Tool.Pnt(vertex);
+        try { found.push({ index, point: tuple(point) }); } finally { point.delete(); vertex.delete(); }
+      });
+      const nearest = (target: CadVector3 | undefined) => {
+        let best = found[0];
+        if (target) for (const vertex of found) if (norm(subtract(vertex.point, target)) < norm(subtract(best.point, target))) best = vertex;
+        return best?.index ?? 0;
+      };
+      edgeVertices.push(nearest(ends?.[0]), nearest(ends?.[1]));
+      edgeTangents.push(...tangents);
+    }
+    const sides = edges.map((): number[] => []), seams = new Set<number>();
+    faces.forEach((entry, face) => {
+      const loops: number[][] = [];
+      explore(entry.shape.wrapped, 'TopAbs_WIRE', wire => {
+        const loop: number[] = [];
+        explore(wire, 'TopAbs_EDGE', raw => {
+          const edge = edgeMap.Add(raw) - 1;
+          if (edge >= edges.length) return;
+          // A seam runs through one face and appears in its loop once each way.
+          if (loop.includes(edge)) { seams.add(edge); return; }
+          loop.push(edge);
+          if (sides[edge].length < 2) sides[edge].push(face);
+        });
+        loops.push(loop);
+      });
+      faceLoops.push(loops);
+    });
+    edges.forEach((entry, edge) => {
+      const [first = -1, other = seams.has(edge) ? first : -1] = sides[edge];
+      edgeFaces.push(first, other);
+      if (seams.has(edge) && sides[edge].length === 1) { edgeSmooth.push(true); return; }
+      if (first < 0 || other < 0) { edgeSmooth.push(false); return; }
+      try {
+        const continuity = oc.BRepLib.ContinuityOfFaces(entry.shape.wrapped, faces[first].shape.wrapped, faces[other].shape.wrapped, CAD_PRECISION.kernelDirection);
+        edgeSmooth.push(continuity !== oc.GeomAbs_Shape.GeomAbs_C0);
+      } catch { edgeSmooth.push(false); }
+    });
+    return { edges: edges.map(entry => entry.key), edgeVertices, edgeTangents, edgeFaces, edgeSmooth, faces: faces.map(entry => entry.key), faceLoops };
+  });
 }
 function exactCount(actual: number, expected: number) {
   if (actual !== expected) throw new CadError(actual === 0 ? 'selection-empty' : 'selection-count-mismatch',
@@ -236,5 +320,11 @@ export class CadKernelTopology {
     this.selectedEdges(selection, parameters);
     return { bodyId: request.bodyId, buildId, purpose: request.purpose, selection };
   }
+  /** How this body's edges and faces meet, read on first request and kept with the build. */
+  adjacency(bodyId: string, buildId: string): CadTopologyAdjacency {
+    if (this.disposed) throw new CadError('STALE_BUILD', 'The topology snapshot has been disposed. Rebuild the current document.');
+    return { bodyId, buildId, ...(this.adjacencyData ??= readAdjacency([...this.entries.values()])) };
+  }
+  private adjacencyData?: Omit<CadTopologyAdjacency, 'bodyId' | 'buildId'>;
   dispose() { if (this.disposed) return; this.disposed = true; for (const entry of this.entries.values()) cadKernelDisposeShape(entry.shape); this.entries.clear(); this.indices.clear(); }
 }

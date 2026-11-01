@@ -23,6 +23,7 @@ function fixture() {
   const session = new CadSession(part), before = session.getSnapshot();
   let storage = createBrowserCacheAdapter(localStorage, { namespace: 'feature-input' });
   const kernel = { build: vi.fn(async (_document: CadDocument, _signal?: AbortSignal) => built()), dispose: vi.fn(),
+    topologyAdjacency: vi.fn(async () => ({ bodyId: 'pad', buildId: 'input-build', edges: [], edgeVertices: [], edgeTangents: [], edgeFaces: [], edgeSmooth: [], faces: [], faceLoops: [] })),
     inspectTopology: vi.fn(async (): Promise<CadTopologyInspectResult> => ({ bodyId: 'pad', buildId: 'input-build', descriptors: [], total: 0, nextOffset: null })),
     resolveTopologyPicks: vi.fn(async (_document: CadDocument, _request: CadTopologyResolvePicksRequest, _signal?: AbortSignal): Promise<CadTopologyResolvePicksResult> => ({ bodyId: 'pad', buildId: 'input-build', purpose: 'fillet', selection: {
       expectedCount: 1, queries: [{ kind: 'edges', expectedCount: 1, predicates: [{ kind: 'line-endpoints', start: [0, 0, 0], end: [20, 0, 0] }] }],

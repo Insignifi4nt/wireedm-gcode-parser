@@ -77,6 +77,20 @@ describe('CAD topology picking', () => {
     expect(() => mergeTopologySelection(maximum, first, true)).toThrow('at most 64');
     expect(Object.isFrozen(selected.picks)).toBe(true);
   });
+  it('adds a chain by union, keeps faces of one body together and replaces across kinds', () => {
+    type PickSet = Parameters<typeof mergeTopologySelection>[1];
+    const edges: PickSet = { documentVersion: 'v1', buildId: 'build1', bodyId: 'body', picks: [{ kind: 'edge', key: 'a' }, { kind: 'edge', key: 'b' }] };
+    const chain: PickSet = { ...edges, picks: [{ kind: 'edge', key: 'b' }, { kind: 'edge', key: 'c' }] };
+    // A union keeps the edge both share where a toggle would drop it.
+    expect(mergeTopologySelection(edges, chain, 'union').picks.map(pick => pick.key)).toEqual(['a', 'b', 'c']);
+    expect(mergeTopologySelection(edges, chain, true).picks.map(pick => pick.key)).toEqual(['a', 'c']);
+    const faces: PickSet = { ...edges, picks: [{ kind: 'face', key: 'top' }, { kind: 'face', key: 'side' }] };
+    expect(mergeTopologySelection(null, faces, false).picks).toHaveLength(2);
+    expect(mergeTopologySelection(faces, { ...faces, picks: [{ kind: 'face', key: 'top' }] }, true).picks.map(pick => pick.key)).toEqual(['side']);
+    expect(mergeTopologySelection(edges, faces, 'union').picks.map(pick => pick.kind)).toEqual(['face', 'face']);
+    expect(() => mergeTopologySelection(null, { ...faces, picks: [...faces.picks, { kind: 'edge', key: 'a' }] }, false)).toThrow('either edges or faces');
+    expect(() => mergeTopologySelection(null, { ...edges, picks: [] }, false)).toThrow('at least one');
+  });
   it('rejects a key from another build or body even when the document version is unchanged', () => {
     const data = scene();
     try {
