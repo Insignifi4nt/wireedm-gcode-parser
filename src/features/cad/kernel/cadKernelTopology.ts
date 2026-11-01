@@ -3,7 +3,7 @@ import type { gp_Dir, gp_Pnt, TopoDS_Shape } from 'replicad-opencascadejs';
 import { CadError } from '../../../domain/cad/cadError';
 import { cadKernelDisposeOwned, cadKernelDisposeShape, cadKernelScope } from './cadKernelShapes';
 import { cadKernelBounds, cadKernelCurveEnd, cadKernelCurvePointAt, cadKernelCurveStart, cadKernelFaceNormal } from './cadKernelQueries';
-import { MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS, type CadTopologyAdjacency, type CadTopologyTangentChain } from '../../../domain/cad/cadTopologyAdjacency';
+import { CadTangentContours, MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS, type CadTangentContour, type CadTopologyAdjacency, type CadTopologyTangentChain } from '../../../domain/cad/cadTopologyAdjacency';
 import type { CadMeshTopologyGroup } from '../../../domain/cad/cadDocument';
 import {
   parseCadEdgeSelection, parseCadFaceQuery, resolveCadEdgeSelection, resolveCadFaceQuery,
@@ -17,7 +17,6 @@ type EdgeDescriptor = Extract<CadTopologyDescriptor, { kind: 'edge' }>;
 type FaceDescriptor = Extract<CadTopologyDescriptor, { kind: 'face' }>;
 type Entry = { kind: 'edge'; key: string; shape: Edge; descriptor?: EdgeDescriptor }
   | { kind: 'face'; key: string; shape: Face; descriptor?: FaceDescriptor };
-type Chain = Pick<CadTopologyTangentChain, 'edges' | 'closed' | 'native'>;
 const dot = (a: CadVector3, b: CadVector3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const subtract = (a: CadVector3, b: CadVector3): CadVector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const cross = (a: CadVector3, b: CadVector3): CadVector3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -300,20 +299,26 @@ export class CadKernelTopology {
   private adjacencyData?: Omit<CadTopologyAdjacency, 'bodyId' | 'buildId'>;
   /**
    * The tangent chain of an edge as native fillet makes it: a builder on `shape`, this inventory's body, takes the edge alone, and the
-   * contour it builds is read back. Chamfer builds its contour the same way. Each edge's chain is kept for this build. Where the builder
-   * makes no contour, the chain is the edge alone and says so.
+   * contour it builds is read back. Chamfer builds its contour the same way. Each edge's chain is kept for this build, and edges whose
+   * chains are equal point to one stored contour; a chain longer than a selection holds is read again each time instead. Where the
+   * builder makes no contour, the chain is the edge alone and says so.
    */
   tangentChain(shape: Shape3D, bodyId: string, buildId: string, edgeKey: string): CadTopologyTangentChain {
     if (this.disposed) throw new CadError('STALE_BUILD', 'The topology snapshot has been disposed. Rebuild the current document.');
     const seed = this.entries.get(edgeKey);
     if (seed?.kind !== 'edge') throw new CadError('selection-missing', 'The edge is not in this build. Rebuild and select again.');
     let chain = this.chains.get(edgeKey);
-    if (!chain) { chain = this.readChain(shape, seed); this.chains.set(edgeKey, chain); }
-    return { bodyId, buildId, edgeKey, edges: [...chain.edges], closed: chain.closed, native: chain.native };
+    if (!chain) {
+      const read = this.readChain(shape, seed), stored = this.contours.share(read);
+      if (stored) this.chains.set(edgeKey, stored);
+      chain = stored ?? read;
+    }
+    return { bodyId, buildId, edgeKey, edges: chain.edges, closed: chain.closed, native: chain.native };
   }
-  private readonly chains = new Map<string, Chain>();
-  private readChain(shape: Shape3D, seed: Extract<Entry, { kind: 'edge' }>): Chain {
-    const oc = getOC(), lone: Chain = { edges: [seed.key], closed: false, native: false };
+  private readonly chains = new Map<string, CadTangentContour>();
+  private readonly contours = new CadTangentContours();
+  private readChain(shape: Shape3D, seed: Extract<Entry, { kind: 'edge' }>): CadTangentContour {
+    const oc = getOC(), lone: CadTangentContour = { edges: [seed.key], closed: false, native: false };
     return cadKernelScope(own => {
       const builder = own(new oc.BRepFilletAPI_MakeFillet(shape.wrapped, oc.ChFi3d_FilletShape.ChFi3d_Rational));
       // A free, degenerate or smooth edge makes no contour; an edge the builder refuses outright is treated the same way.
@@ -335,5 +340,5 @@ export class CadKernelTopology {
       return { edges: [...edges], closed: builder.Closed(contour), native: true };
     });
   }
-  dispose() { if (this.disposed) return; this.disposed = true; for (const entry of this.entries.values()) cadKernelDisposeShape(entry.shape); this.entries.clear(); this.indices.clear(); this.chains.clear(); }
+  dispose() { if (this.disposed) return; this.disposed = true; for (const entry of this.entries.values()) cadKernelDisposeShape(entry.shape); this.entries.clear(); this.indices.clear(); this.chains.clear(); this.contours.clear(); }
 }

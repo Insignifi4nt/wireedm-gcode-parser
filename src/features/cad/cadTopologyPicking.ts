@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { cadClipRaycaster, cadKeptLineHits } from './view/cadSectionView';
 import type { CadMesh, CadMeshTopologyGroup } from '@/domain/cad/cadDocument';
 import type { CadTopologyPick, CadTopologyPickSet } from '@/domain/cad/cadTopology';
+import { CadTangentContours, type CadTopologyTangentChain } from '@/domain/cad/cadTopologyAdjacency';
 
 /** `auto` picks an edge near the pointer, else the face under it; the others restrict picking to one kind. */
 export type CadPickMode = 'auto' | 'body' | 'face' | 'edge';
@@ -39,6 +40,34 @@ export function sharedCadTopologyRead<T>(reads: Map<string, Promise<T>>, key: st
   reads.set(key, started);
   started.catch(() => { if (reads.get(key) === started) reads.delete(key); });
   return started;
+}
+
+/**
+ * One build's tangent chain reads, by seed edge, each shared by every later caller. Equal chains keep one stored contour, and a chain
+ * longer than a selection holds is not kept. A read that fails, or whose chain a selection refused, is forgotten, so the next caller
+ * reads again.
+ */
+export class CadTangentChainReads {
+  private readonly reads = new Map<string, Promise<CadTopologyTangentChain>>();
+  private readonly keys = new WeakMap<Promise<CadTopologyTangentChain>, string>();
+  private readonly contours = new CadTangentContours();
+  read(key: string, start: () => Promise<CadTopologyTangentChain>): Promise<CadTopologyTangentChain> {
+    const kept = this.reads.get(key);
+    if (kept) return kept;
+    const started: Promise<CadTopologyTangentChain> = start().then(chain => {
+      const stored = this.contours.share(chain);
+      if (!stored) { this.forget(started); return chain; }
+      return { ...chain, edges: stored.edges };
+    });
+    this.reads.set(key, started); this.keys.set(started, key);
+    started.catch(() => this.forget(started));
+    return started;
+  }
+  /** Forgets a read while it is still the one kept for its edge. */
+  forget(read: Promise<CadTopologyTangentChain>) {
+    const key = this.keys.get(read);
+    if (key !== undefined && this.reads.get(key) === read) this.reads.delete(key);
+  }
 }
 
 /**

@@ -1,6 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { Value } from '@sinclair/typebox/value';
 import { CadError } from './cadError';
+import { MAX_CAD_TOPOLOGY_PICKS } from './cadTopology';
 
 /**
  * How one built body's edges and faces meet: the faces on either side of each edge and whether they meet without a crease, and each
@@ -88,4 +89,26 @@ export function isCadTopologyTangentChain(value: unknown): value is CadTopologyT
   if (!keyed(data.edges) || !data.edges.length || data.edges.length > MAX_CAD_TOPOLOGY_ADJACENCY_ELEMENTS || new Set(data.edges).size !== data.edges.length) return false;
   if (!data.edges.includes(data.edgeKey)) return false;
   return data.native || (data.edges.length === 1 && !data.closed);
+}
+
+/** What is kept of a tangent chain: its edges, whether they close, and whether the native builder made it. */
+export type CadTangentContour = Pick<CadTopologyTangentChain, 'edges' | 'closed' | 'native'>;
+
+/**
+ * The tangent contours kept for one build. Each seed's chain is still read on its own, since another edge of a contour can stop
+ * somewhere else; only chains that turn out equal, holding the same edges, closed the same way and made the same way, share one stored
+ * contour, the first one read. So a closed rim of n edges read from each of its n seeds keeps one list of n edges, not n lists. A chain
+ * longer than one topology selection holds is never kept, since no selection takes it.
+ */
+export class CadTangentContours {
+  private readonly kept = new Map<string, CadTangentContour>();
+  /** The stored contour equal to `contour`, which is stored if it is the first; null when it is too long to keep. */
+  share(contour: CadTangentContour): CadTangentContour | null {
+    if (contour.edges.length > MAX_CAD_TOPOLOGY_PICKS) return null;
+    const key = `${Number(contour.native)}${Number(contour.closed)}\u0000${[...contour.edges].sort().join('\u0000')}`;
+    let stored = this.kept.get(key);
+    if (!stored) { stored = Object.freeze({ edges: Object.freeze([...contour.edges]), closed: contour.closed, native: contour.native }); this.kept.set(key, stored); }
+    return stored;
+  }
+  clear() { this.kept.clear(); }
 }

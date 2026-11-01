@@ -1399,6 +1399,12 @@ describe('CAD sketch interaction', () => {
     await act(async () => replaceBuild({ ...build, buildId: 'build-4' }));
     await menu('pad', 'edge-1', 'Select loop'); await menu('pad', 'edge-1', 'Select tangent chain');
     expect(read).toHaveBeenCalledTimes(9); expect(readChain).toHaveBeenCalledTimes(3);
+    // A chain the selection refuses is not kept: Pad B's names an edge its mesh lacks, so the next chain on that edge reads again.
+    const refused = () => statusMessage.mock.calls.filter(([message, tone]) => tone === 'error' && String(message).includes('does not belong')).length;
+    await menu('pad-b', 'edge-b', 'Select tangent chain');
+    await act(async () => chains[3]({ ...chainOf('pad-b', 'edge-b', true, 'build-4'), edges: ['edge-b', 'edge-gone'] }));
+    expect(refused()).toBe(1);
+    await menu('pad-b', 'edge-b', 'Select tangent chain'); expect(readChain).toHaveBeenCalledTimes(5);
   });
   it('offers Select other over planes, with or without a body under the pointer', async () => {
     await mount(solidDocument(), { build: topologyBuild, buildState: 'ready' });

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { cadPathClosureTolerance } from '../cadAnalyticSegments';
 import { parseCadSketchGraph, type CadSketchGraph } from '../cadSketchGraph';
-import { isCadTopologyAdjacency, isCadTopologyTangentChain, type CadTopologyAdjacency, type CadTopologyTangentChain } from '../cadTopologyAdjacency';
+import { CadTangentContours, isCadTopologyAdjacency, isCadTopologyTangentChain, type CadTopologyAdjacency, type CadTopologyTangentChain } from '../cadTopologyAdjacency';
+import { MAX_CAD_TOPOLOGY_PICKS } from '../cadTopology';
 import { CAD_PRECISION } from '../../precision/cadPrecision';
 import { cadChainGraph, cadSelectionChain, type CadChainCurve } from '../selection/cadSelectionChain';
 import { cadSketchSelectionChain } from '../selection/cadSketchSelectionChain';
@@ -202,6 +203,19 @@ describe('solid chains', () => {
       { ...valid, edges: ['rim-0', 'rim-2'] }, { ...valid, edges: ['rim-0', 'rim-1', 'rim-1'] }, { ...valid, edges: [] }, { ...valid, native: 'yes' },
       { ...lone, edges: ['down-0', 'rim-0'] }, { ...lone, closed: true }, { ...valid, extra: true }, { ...valid, edgeKey: '' }, { ...valid, buildId: 7 },
     ]) expect(isCadTopologyTangentChain(broken)).toBe(false);
+  });
+  it('stores one contour for chains of the same edges, closed and made the same way, and none longer than a selection', () => {
+    const contours = new CadTangentContours(), first = { edges: ['rim-0', 'rim-1', 'rim-2'], closed: true, native: true }, stored = contours.share(first);
+    expect(stored).toEqual(first); expect(stored?.edges).not.toBe(first.edges); expect(Object.isFrozen(stored?.edges)).toBe(true);
+    // The same edges read from another seed, in that seed's order, point to the contour read first.
+    expect(contours.share({ edges: ['rim-1', 'rim-2', 'rim-0'], closed: true, native: true })).toBe(stored);
+    for (const other of [{ ...first, edges: ['rim-0', 'rim-1'] }, { ...first, closed: false }]) expect(contours.share(other)).not.toBe(stored);
+    const lone = contours.share({ edges: ['rim-0'], closed: false, native: true });
+    expect(contours.share({ edges: ['rim-0'], closed: false, native: false })).not.toBe(lone);
+    const longest = Array.from({ length: MAX_CAD_TOPOLOGY_PICKS }, (_, index) => `edge-${index}`);
+    expect(contours.share({ edges: longest, closed: true, native: true })?.edges).toEqual(longest);
+    expect(contours.share({ edges: [...longest, 'edge-past'], closed: true, native: true })).toBeNull();
+    contours.clear(); expect(contours.share(first)).not.toBe(stored);
   });
 });
 

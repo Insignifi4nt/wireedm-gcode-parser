@@ -375,6 +375,12 @@ function chainFixtures(): readonly { readonly name: string; readonly document: C
     { name: 'block and wedge', document: joined('union', extruded('stock', 'XY', 0, [[0, 0], [10, 0], [10, 10], [0, 10]], 5),
       extruded('tool', 'YZ', 10, [[0, 0], [10, 0], [10, 7], [0, 5]], 10)), radius: 0.1 }];
 }
+/** Runs `body` counting the native fillet builders made meanwhile. */
+function countingBuilders(body: (made: ReturnType<typeof vi.fn>) => void) {
+  const oc = getOC(), Builder = oc.BRepFilletAPI_MakeFillet, made = vi.fn();
+  oc.BRepFilletAPI_MakeFillet = function (...args: ConstructorParameters<typeof Builder>) { made(); return new Builder(...args); } as unknown as typeof Builder;
+  try { body(made); } finally { oc.BRepFilletAPI_MakeFillet = Builder; }
+}
 const adjacencyOf = (model: CadKernelModel): CadTopologyAdjacency => model.topologyAdjacency({ bodyId: 'box', expectedBuildId: model.result.buildId });
 const chainOf = (model: CadKernelModel, edgeKey: string): CadTopologyTangentChain => model.topologyTangentChain({ bodyId: 'box', expectedBuildId: model.result.buildId, edgeKey });
 /** The key of the edge running between two points, read from where its bounds lie. */
@@ -438,15 +444,13 @@ describe('topology adjacency and native tangent chains for selection chains', ()
     built(rounded.document, model => {
       const edges = page(model, 'edge'), top = edges.filter(edge => edge.bounds.min[2] === 5 && edge.bounds.max[2] === 5).map(edge => edge.key);
       expect(top).toHaveLength(8);
-      const oc = getOC(), Builder = oc.BRepFilletAPI_MakeFillet, made = vi.fn();
-      oc.BRepFilletAPI_MakeFillet = function (...args: ConstructorParameters<typeof Builder>) { made(); return new Builder(...args); } as unknown as typeof Builder;
-      try {
+      countingBuilders(made => {
         const chain = chainOf(model, top[0]);
         expect(chain).toMatchObject({ edgeKey: top[0], closed: true, native: true }); expect(new Set(chain.edges)).toEqual(new Set(top));
         // The build keeps each edge's chain: asked again, it answers without another builder. Another edge of the chain reads its own.
         expect(chainOf(model, top[0])).toEqual(chain); expect(made).toHaveBeenCalledOnce();
         expect(new Set(chainOf(model, top[1]).edges)).toEqual(new Set(top)); expect(made).toHaveBeenCalledTimes(2);
-      } finally { oc.BRepFilletAPI_MakeFillet = Builder; }
+      });
       // A smooth edge between a corner cylinder and a side plane gives the builder no contour.
       const smooth = edges.find(edge => edge.bounds.min[2] === 0 && edge.bounds.max[2] === 5);
       if (!smooth) throw new Error('Missing vertical edge');
@@ -483,6 +487,28 @@ describe('topology adjacency and native tangent chains for selection chains', ()
       expect(chainOf(model, seed)).toMatchObject({ edges: [seed], closed: false, native: true });
       expect(chainOf(model, edge([10, 0, 5], [20, 0, 5]))).toMatchObject({ edges: [edge([10, 0, 5], [20, 0, 5])], native: true });
     });
+  });
+  it('keeps one stored contour for equal chains read from every seed, and none for a chain longer than a selection holds', () => {
+    // A straight run, a quarter round of 32 facets each turning π/64 rad and another straight run, with square corners either end, so the
+    // top edges make one open chain of 34.
+    const facets = Array.from({ length: 31 }, (_, index) => { const angle = -Math.PI / 2 + (index + 1) * Math.PI / 64; return [20 + 10 * Math.cos(angle), 10 + 10 * Math.sin(angle)] as const; });
+    built(prism([[0, 0], [20, 0], ...facets, [30, 10], [30, 30], [0, 30]]), model => countingBuilders(made => {
+      const first = chainOf(model, edgeBetween(model)([0, 0, 5], [20, 0, 5]));
+      expect(first).toMatchObject({ closed: false, native: true }); expect(first.edges).toHaveLength(34); expect(Object.isFrozen(first.edges)).toBe(true);
+      // Every edge of the run still reads its own builder, and as its chain is the same, it points to the one stored contour.
+      for (const key of first.edges) expect(chainOf(model, key).edges).toBe(first.edges);
+      expect(made).toHaveBeenCalledTimes(34);
+    }));
+    // The top rim of a 128-sided prism, each side turning π/64 rad, is one closed chain of 128 edges. No selection holds it, so it is not
+    // kept: each read makes its own builder and list.
+    built(prism(Array.from({ length: 128 }, (_, index) => [10 * Math.cos(index * Math.PI / 64), 10 * Math.sin(index * Math.PI / 64)] as const)), model => countingBuilders(made => {
+      const seed = page(model, 'edge').find(edge => edge.bounds.min[2] === 5 && edge.bounds.max[2] === 5);
+      if (!seed) throw new Error('Missing top edge');
+      const chain = chainOf(model, seed.key);
+      expect(chain).toMatchObject({ closed: true, native: true }); expect(chain.edges).toHaveLength(128);
+      const again = chainOf(model, seed.key);
+      expect(again.edges).toEqual(chain.edges); expect(again.edges).not.toBe(chain.edges); expect(made).toHaveBeenCalledTimes(2);
+    }));
   });
   it.each(['fillet', 'chamfer'] as const)('chains every seed to exactly the edges native %s tangent propagation treats', kind => {
     const untreatable: Record<string, string[]> = {};

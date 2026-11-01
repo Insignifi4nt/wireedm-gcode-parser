@@ -86,7 +86,7 @@ import { createCadSketchCameraLink, sameCadSketchPlacementFrame, type CadSketchC
 import { cadSketchBackgroundReferences } from './view/cadSketchBackgroundStyle';
 import { CadContextMenu, type CadContextMenuItem } from './CadContextMenu';
 import { CadTopologyInspector, type CadInspectTopology } from './CadTopologyInspector';
-import { mergeTopologySelection, sharedCadTopologyRead, validateTopologySelection, type CadPickMode, type CadTopologyHit } from './cadTopologyPicking';
+import { CadTangentChainReads, mergeTopologySelection, sharedCadTopologyRead, validateTopologySelection, type CadPickMode, type CadTopologyHit } from './cadTopologyPicking';
 import type { SketchTool } from './cadSketchInteraction';
 import { CAD_KERNEL_THIRD_PARTY } from './kernel/cadKernelNotices';
 import { ToolError } from '@/features/webmcp/siteTools';
@@ -1346,7 +1346,7 @@ export function CadWorkbench(props: CadWorkbenchProps) {
   });
   // Each body's adjacency and each edge's tangent chain for the shown version and build, read on first use and dropped as soon as the
   // shown build or version changes or stops being ready.
-  const chainReads = useRef<{ readonly key: string; readonly adjacency: Map<string, Promise<CadTopologyAdjacency>>; readonly chains: Map<string, Promise<CadTopologyTangentChain>> } | null>(null);
+  const chainReads = useRef<{ readonly key: string; readonly adjacency: Map<string, Promise<CadTopologyAdjacency>>; readonly chains: CadTangentChainReads } | null>(null);
   const chainSource = topologyReady && build?.buildId ? `${props.documentVersion}\u0000${build.buildId}` : null;
   useEffect(() => { if (chainReads.current?.key !== chainSource) chainReads.current = null; }, [chainSource]);
   /** Selects the loop or tangent chain through an edge, or the tangent faces of a face; `additive` adds them without removing any. */
@@ -1356,12 +1356,13 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     const { buildId, documentVersion: version, ready } = topologySource.current, cancel = interactionState.current.cancel;
     if (interactionState.current.locked || !readAdjacency || !readChain || !buildId || !ready) return;
     const ticket = ++topologyRequest.current, key = `${version}\u0000${buildId}`, signal = new AbortController().signal;
-    if (chainReads.current?.key !== key) chainReads.current = { key, adjacency: new Map(), chains: new Map() };
+    if (chainReads.current?.key !== key) chainReads.current = { key, adjacency: new Map(), chains: new CadTangentChainReads() };
     const reads = chainReads.current;
+    let chainRead: Promise<CadTopologyTangentChain> | null = null;
     const readers = {
       adjacency: () => sharedCadTopologyRead(reads.adjacency, hit.bodyId, () => readAdjacency({ bodyId: hit.bodyId, expectedBuildId: buildId }, version, signal)),
-      tangentChain: (edgeKey: string) => sharedCadTopologyRead(reads.chains, `${hit.bodyId}\u0000${edgeKey}`,
-        () => readChain({ bodyId: hit.bodyId, expectedBuildId: buildId, edgeKey }, version, signal)),
+      tangentChain: (edgeKey: string) => (chainRead = reads.chains.read(`${hit.bodyId}\u0000${edgeKey}`,
+        () => readChain({ bodyId: hit.bodyId, expectedBuildId: buildId, edgeKey }, version, signal))),
     };
     // A later pick, clear or chain, a cancellation, a newer build or version, or a workflow begun since makes the chain stale: it is
     // dropped, and so is its failure, rather than applied over newer work.
@@ -1373,7 +1374,9 @@ export function CadWorkbench(props: CadWorkbenchProps) {
     try { found = await cadTopologyChainPicks(readers, hit.pick, gesture, faceKey); } catch (cause) { if (stale()) return; throw cause; }
     if (stale() || !found) return;
     const { kind, keys, note } = found;
-    latestSelectTopology.current({ documentVersion: version, buildId, bodyId: hit.bodyId, picks: keys.map(item => ({ kind, key: item })) }, additive ? 'union' : false);
+    // A chain the selection refuses is not kept: the next gesture reads it again.
+    try { latestSelectTopology.current({ documentVersion: version, buildId, bodyId: hit.bodyId, picks: keys.map(item => ({ kind, key: item })) }, additive ? 'union' : false); }
+    catch (cause) { if (chainRead) reads.chains.forget(chainRead); throw cause; }
     if (note) report?.(note, 'info');
   });
   const pickTopology = (hit: CadTopologyHit | null, additive: boolean) => run(() => {

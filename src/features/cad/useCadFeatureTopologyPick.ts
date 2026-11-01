@@ -7,7 +7,7 @@ import type { CadFeatureInputRequest, CadFeatureInputSnapshot } from './cadFeatu
 import type { CadTopologyAdjacency, CadTopologyAdjacencyRequest, CadTopologyTangentChain, CadTopologyTangentChainRequest } from '@/domain/cad/cadTopologyAdjacency';
 import type { CadFeatureTopologyPickCommand } from './cadFeatureReferencePicking';
 import type { CadInspectTopology } from './CadTopologyInspector';
-import { mergeTopologySelection, sharedCadTopologyRead, validateTopologySelection, type CadTopologyHit } from './cadTopologyPicking';
+import { CadTangentChainReads, mergeTopologySelection, sharedCadTopologyRead, validateTopologySelection, type CadTopologyHit } from './cadTopologyPicking';
 
 export interface CadFeatureInputPicking {
   build(request: CadFeatureInputRequest, version: string, signal: AbortSignal): Promise<CadFeatureInputSnapshot>;
@@ -69,7 +69,14 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
     const incoming: CadTopologyPickSet = { documentVersion: version, buildId: source.result.buildId, bodyId: source.bodyId, picks };
     validateTopologySelection(incoming, { documentVersion: version, buildId: source.result.buildId, meshes: source.result.meshes, ready: true });
     if (mode === 'face' && picks.length !== 1) throw new Error('Choose one opening face on the input body.');
-    setState(previous => previous?.command === command ? { ...previous, selection: mergeTopologySelection(previous.selection, incoming, mode === 'face' ? false : merge), error: null, notice } : previous);
+    // The selection refuses here, before the state changes, so the caller learns of it; the update refuses too should picks have changed.
+    const how = mode === 'face' ? false : merge;
+    mergeTopologySelection(current?.selection ?? null, incoming, how);
+    setState(previous => {
+      if (previous?.command !== command) return previous;
+      try { return { ...previous, selection: mergeTopologySelection(previous.selection, incoming, how), error: null, notice }; }
+      catch (cause) { return { ...previous, error: userFacingMessage(cause, 'Unable to select this geometry.'), notice: null }; }
+    });
   };
   const pick = (hit: CadTopologyHit | null, additive: boolean) => {
     if (!owns() || !source || current?.busy) return;
@@ -84,7 +91,7 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
     try { take(bodyId, picks, false); } catch (cause) { fail(cause); }
   };
   // The input body's adjacency and each edge's tangent chain, read once per input build when a chain first asks, and dropped with it.
-  const chainReads = useRef<{ readonly source: CadFeatureInputSnapshot; readonly adjacency: Map<string, Promise<CadTopologyAdjacency>>; readonly chains: Map<string, Promise<CadTopologyTangentChain>> } | null>(null);
+  const chainReads = useRef<{ readonly source: CadFeatureInputSnapshot; readonly adjacency: Map<string, Promise<CadTopologyAdjacency>>; readonly chains: CadTangentChainReads } | null>(null);
   useEffect(() => { if (chainReads.current?.source !== source) chainReads.current = null; }, [source]);
   const latestSource = useRef(source); latestSource.current = source;
   /** Selects the loop or the native tangent chain through an edge of the input body; a Shell opening takes the one face picked. */
@@ -95,15 +102,18 @@ export function useCadFeatureTopologyPick(command: CadFeatureTopologyPickCommand
     if (mode === 'face' || !readAdjacency || !readChain) { pick(hit, additive); return; }
     if (hit.bodyId !== source.bodyId || hit.pick.kind !== mode) { fail(new Error('Choose edges on the input body.')); return; }
     const ticket = ++request.current, stale = () => !owns() || latestSource.current !== source || job.current !== owner || request.current !== ticket;
-    if (chainReads.current?.source !== source) chainReads.current = { source, adjacency: new Map(), chains: new Map() };
+    if (chainReads.current?.source !== source) chainReads.current = { source, adjacency: new Map(), chains: new CadTangentChainReads() };
     const reads = chainReads.current, { inputToken, bodyId, result: { buildId } } = source;
+    let chainRead: Promise<CadTopologyTangentChain> | null = null;
     const readers = {
       adjacency: () => sharedCadTopologyRead(reads.adjacency, bodyId, () => readAdjacency(inputToken, { bodyId, expectedBuildId: buildId }, version, owner.abort.signal)),
-      tangentChain: (edgeKey: string) => sharedCadTopologyRead(reads.chains, edgeKey, () => readChain(inputToken, { bodyId, expectedBuildId: buildId, edgeKey }, version, owner.abort.signal)),
+      tangentChain: (edgeKey: string) => (chainRead = reads.chains.read(edgeKey, () => readChain(inputToken, { bodyId, expectedBuildId: buildId, edgeKey }, version, owner.abort.signal))),
     };
     void cadTopologyChainPicks(readers, hit.pick, gesture, faceKey).then(found => {
       if (stale() || !found) return;
-      take(bodyId, found.keys.map(key => ({ kind: found.kind, key })), additive ? 'union' : false, found.note);
+      // A chain the selection refuses is not kept: the next gesture reads it again.
+      try { take(bodyId, found.keys.map(key => ({ kind: found.kind, key })), additive ? 'union' : false, found.note); }
+      catch (cause) { if (chainRead) reads.chains.forget(chainRead); throw cause; }
     }).catch((cause: unknown) => { if (!stale()) fail(cause); });
   };
   const finish = async () => {

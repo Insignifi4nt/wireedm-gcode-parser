@@ -17,11 +17,11 @@ function deferred<T>() {
   const promise = new Promise<T>((accept, refuse) => { resolve = accept; reject = refuse; }); return { promise, resolve, reject };
 }
 const chainOf = (edgeKey: string, edges: readonly string[], native = true): CadTopologyTangentChain => ({ bodyId: 'pad', buildId: 'input-build', edgeKey, edges: [...edges], closed: false, native });
-async function mount() {
+async function mount(more: readonly string[] = []) {
   const document = createCadDocument('Owned input', 'owned-input');
   const source: CadFeatureInputSnapshot = { inputToken: 'input', documentId: document.id, version: 'v1', featureId: 'fillet', bodyId: 'pad', parameterValues: {}, document,
     result: { buildId: 'input-build', diagnostics: [], durationMs: 0, meshes: [{ featureId: 'pad', name: 'Pad', volume: 20,
-      positions: [], normals: [], indices: [], edges: [], faceGroups: [{ key: 'top', start: 0, count: 3 }], edgeGroups: [{ key: 'a', start: 0, count: 2 }, { key: 'b', start: 2, count: 2 }], bounds: { min: [0, 0, 0], max: [5, 4, 1] } }] } };
+      positions: [], normals: [], indices: [], edges: [], faceGroups: [{ key: 'top', start: 0, count: 3 }], edgeGroups: ['a', 'b', ...more].map((key, index) => ({ key, start: 2 * index, count: 2 })), bounds: { min: [0, 0, 0], max: [5, 4, 1] } }] } };
   const command: CadFeatureTopologyPickCommand = { kind: 'pick-topology', owner: 'form', expectedVersion: 'v1', label: 'Edges', purpose: 'fillet', request: { featureId: 'fillet', bodyId: 'pad' }, onSelect: vi.fn(), onCancel: vi.fn() };
   const result: CadTopologyResolvePicksResult = { purpose: 'fillet', bodyId: 'pad', buildId: 'input-build', selection: { expectedCount: 1, queries: [{ kind: 'edges', expectedCount: 1, predicates: [{ kind: 'line-endpoints', start: [0, 0, 0], end: [5, 0, 0] }] }] } };
   const resolution = deferred<CadTopologyResolvePicksResult>();
@@ -81,6 +81,23 @@ it('selects native tangent chains and adjacency loops, each read once for the in
   const previous = picker; await h.render(true, 'v2');
   await act(async () => previous.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'loop', false, 'top'));
   expect(picker.selection).toBeNull(); expect(h.operations.adjacency).toHaveBeenCalledTimes(2);
+});
+
+it('refuses a chain longer than a selection holds, or too long to add, without keeping it or changing the picks', async () => {
+  const more = Array.from({ length: 64 }, (_, index) => `e${index}`), h = await mount(more), keys = () => picker.selection?.picks.length;
+  // Edge a's chain runs on through the 64 other edges, one more than a selection holds; edge b's chain is two edges.
+  h.operations.tangentChain.mockImplementation(async (_token, request) => chainOf(request.edgeKey, request.edgeKey === 'a' ? ['a', ...more] : ['b', 'e63']));
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+  expect(picker.selection).toBeNull(); expect(picker.error).toContain('at most 64');
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'a' } }, 'tangent', false, null));
+  expect(h.operations.tangentChain).toHaveBeenCalledTimes(2);
+  // Added to 63 picks, edge b's chain would make 65: the picks stay, and the next chain on b reads again and, replacing them, is kept.
+  await act(async () => picker.set('pad', more.slice(0, 63).map(key => ({ kind: 'edge', key }))));
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', true, null));
+  expect(keys()).toBe(63); expect(picker.error).toContain('at most 64');
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', false, null));
+  await act(async () => picker.chain({ bodyId: 'pad', pick: { kind: 'edge', key: 'b' } }, 'tangent', false, null));
+  expect(keys()).toBe(2); expect(picker.error).toBeNull(); expect(h.operations.tangentChain).toHaveBeenCalledTimes(4);
 });
 
 it('drops a chain answered after a later pick, clear or chain, and its failure too', async () => {
