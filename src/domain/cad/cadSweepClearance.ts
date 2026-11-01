@@ -6,9 +6,10 @@ import { cadProfileToEntities } from './cadSketchGeometry';
 import { angleIsOnSweep, nextDown, nextUp } from '../path-intel/segments';
 import { classifyPathSegmentIntersection } from '../path-intel/intersections';
 import type { Bounds2, PathSegment, Point2 } from '../path-intel/types';
+import { CAD_PRECISION, cadRoundoff } from '../precision/cadPrecision';
 
-export const CAD_SWEEP_NATIVE_PRECISION = 1e-7;
-export const CAD_SWEEP_TOPOLOGY_TOLERANCE = 2e-7;
+export const CAD_SWEEP_NATIVE_PRECISION = CAD_PRECISION.kernelConfusionMm;
+export const CAD_SWEEP_TOPOLOGY_TOLERANCE = CAD_PRECISION.sweepTopologyMm;
 const roundingFactor = 64;
 const tau = Math.PI * 2;
 type Edge = CadOrderedCurveEntity;
@@ -33,7 +34,7 @@ function arc(center: Point2, radius: number, startAngle: number, sweepRadians: n
 }
 function onArc(edge: Extract<Edge, { type: 'arc' }>, angle: number, band = 0): boolean {
   return angleIsOnSweep(angle, edge.startAngle, edge.sweepRadians ?? edge.endAngle - edge.startAngle,
-    32 * Number.EPSILON * tau + band / edge.radius);
+    cadRoundoff(32, tau) + band / edge.radius);
 }
 function tangent(edge: Edge, end = false): readonly [number, number] {
   if (edge.type === 'line') {
@@ -145,17 +146,17 @@ export function resolveCadSweepClearance(curve: CadResolvedCurve, profileRadiusM
     const edgeScale = Math.max(1, sectionScale, Math.abs(curve.offset), worldScaleMm, Math.abs(edge.start.x), Math.abs(edge.start.y), Math.abs(edge.end.x), Math.abs(edge.end.y), profileRadiusMm,
       ...(edge.type === 'arc' ? [Math.abs(edge.center.x), Math.abs(edge.center.y), edge.radius] : []));
     scale = Math.max(scale, edgeScale);
-    accumulated += roundingFactor * Number.EPSILON * edgeScale;
+    accumulated += cadRoundoff(roundingFactor, edgeScale);
     if (index > 0) {
       const previous = curve.entities[index - 1]; const a = tangent(previous, true); const b = tangent(edge);
       const residual = Math.hypot(a[0] - b[0], a[1] - b[1]);
-      if (a[0] * b[0] + a[1] * b[1] <= 0 || residual > roundingFactor * Number.EPSILON) {
+      if (a[0] * b[0] + a[1] * b[1] <= 0 || residual > cadRoundoff(roundingFactor)) {
         throw new CadError('unsupported-sweep-corner', `Curve joint ${index} must have the same tangent direction. Sweep does not choose a sharp-corner transition.`);
       }
       accumulated += distance(previous.end, edge.start) + profileRadiusMm * residual;
     }
   }
-  const band = Math.max(CAD_SWEEP_TOPOLOGY_TOLERANCE, roundingFactor * Number.EPSILON * scale);
+  const band = Math.max(CAD_SWEEP_TOPOLOGY_TOLERANCE, cadRoundoff(roundingFactor, scale));
   if (!Number.isFinite(profileRadiusMm) || profileRadiusMm <= 0 || accumulated > CAD_SWEEP_NATIVE_PRECISION) {
     throw new CadError('unsupported-sweep-precision', 'The sweep cannot follow this curve precisely enough. Move the sketch and curve nearer the origin or simplify the curve.');
   }
@@ -171,7 +172,7 @@ export function resolveCadSweepClearance(curve: CadResolvedCurve, profileRadiusM
     if (index === 0) continue;
     const previous = curve.entities[index - 1]; const a = tangent(previous, true); const b = tangent(edge);
     const angularResidual = Math.hypot(a[0] - b[0], a[1] - b[1]);
-    if (a[0] * b[0] + a[1] * b[1] <= 0 || angularResidual > roundingFactor * Number.EPSILON || radius * angularResidual > band) {
+    if (a[0] * b[0] + a[1] * b[1] <= 0 || angularResidual > cadRoundoff(roundingFactor) || radius * angularResidual > band) {
       throw new CadError('unsupported-sweep-corner', `Curve joint ${index} must have the same tangent direction. Sweep does not choose a sharp-corner transition.`);
     }
   }

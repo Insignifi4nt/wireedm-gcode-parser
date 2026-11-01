@@ -6,6 +6,7 @@ import { cadSketchLineDirection, resolveCadSketchLinePair } from './cadSketchLin
 import { resolveCadSketchRadialEntity } from './cadSketchRadialRelations';
 import type { Point2 } from '@/domain/path-intel/types';
 import { CAD_SKETCH_RADIUS_PAIR_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 /** Exact entity ownership only; no source sorting, driver transfer or numeric healing. */
 export function resolveCadSketchRadiusPair(graph: CadSketchGraph, curveIds: readonly [string, string]) {
@@ -38,7 +39,7 @@ export function checkCadSketchEqualRelation(graph: CadSketchGraph, relation: Cad
       const curves = resolveCadSketchRadiusPair(graph, relation.curveIds), a = radialMeasurements(curves[0], points, parameters), b = radialMeasurements(curves[1], points, parameters);
       if (!a || !b) return [];
       const radii = [...a.radii, ...b.radii];
-      if (radii.some(radius => !Number.isFinite(radius) || radius <= 1e-7 || radius > 1e6))
+      if (radii.some(radius => !Number.isFinite(radius) || radius <= CAD_PRECISION.minimumLengthMm || radius > CAD_PRECISION.modelExtentMm))
         return [{ source, code: 'invalid-radius', message: 'Equal radii require supported nondegenerate circles or arcs.' }];
       residualMm = Math.max(...radii) - Math.min(...radii); operands = [...a.operands, ...b.operands];
     }

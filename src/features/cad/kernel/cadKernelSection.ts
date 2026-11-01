@@ -6,10 +6,11 @@ import { cadEntitiesToCam } from '../../../domain/cad/cadCam';
 import { cadKernelPlaneBasis } from './cadKernelPlane';
 import { cadKernelDisposeOwned, cadKernelEdges, cadKernelSolids } from './cadKernelShapes';
 import { assertCadSectionClosedEndpoints } from './cadKernelSectionEndpoints';
+import { CAD_PRECISION, cadRoundoff } from '../../../domain/precision/cadPrecision';
 
-const tolerance = 1e-7;
+const tolerance = CAD_PRECISION.kernelConfusionMm;
 const tau = 2 * Math.PI;
-const angularRoundoff = 64 * Number.EPSILON * tau;
+const angularRoundoff = cadRoundoff(64, tau);
 export function sectionCadKernelShape(shape: Shape3D, section: Pick<CadSectionResult, 'bodyId' | 'plane' | 'offset'>): CadSectionResult {
   const basis = cadKernelPlaneBasis(section.plane);
   const origin: SimplePoint = [basis.normal[0] * section.offset, basis.normal[1] * section.offset, basis.normal[2] * section.offset];

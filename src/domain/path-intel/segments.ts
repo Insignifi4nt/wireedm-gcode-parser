@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { DEFAULT_PATH_PLANNING_OPTIONS } from './types';
 import { exactQuadrantTrig, rotateCircularPoint } from './circularGeometry';
+import { cadRoundoff } from '../precision/cadPrecision';
 
 const FULL_TURN = Math.PI * 2;
 const ANGULAR_ULP_FACTOR = 32;
@@ -623,7 +624,7 @@ function angularDeltaIsStrictlyInterior(delta: number, sweepRadians: number) {
 
 function angularUlpTolerance(...angles: number[]) {
   const magnitude = Math.max(...angles.map((angle) => Math.abs(angle)));
-  return ANGULAR_ULP_FACTOR * Number.EPSILON * magnitude;
+  return cadRoundoff(ANGULAR_ULP_FACTOR, magnitude);
 }
 
 function pointFromExactArcStart(start: Point2, center: Point2, delta: number): Point2 {

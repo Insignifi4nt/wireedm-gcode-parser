@@ -4,6 +4,7 @@ import {
   GEOMETRY_TOLERANCE_MM, dot3, intersectSegmentTriangle, subtract3,
   type Segment3, type Triangle3
 } from './triangleIntersection';
+import { cadRoundoff } from '../../precision/cadPrecision';
 
 interface CollisionNode { readonly bounds: Bounds3; readonly mesh: MachineMesh; readonly first: number; readonly last: number; readonly children: readonly CollisionNode[] }
 export interface MachineCollisionIndex { readonly modelId: string; readonly roots: readonly CollisionNode[] }
@@ -112,7 +113,7 @@ export function checkMachineWireSweep(index: MachineCollisionIndex, sweep: WireS
     max: sweepBounds.max.map((value) => value + deviation) as unknown as Vec3 };
   const travelFraction = (point: Vec3) => {
     const offset = subtract3(point, sweep.from.start);
-    const fraction = determinant > Number.EPSILON * travelSquared * wireSquared
+    const fraction = determinant > cadRoundoff(1, travelSquared) * wireSquared
       ? (dot3(offset, travel) * wireSquared - dot3(offset, fromDirection) * travelWire) / determinant
       : travelSquared ? dot3(offset, travel) / travelSquared : 0;
     return Math.max(0, Math.min(1, fraction));

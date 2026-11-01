@@ -9,10 +9,11 @@ import {
   type CadResolvedFrame,
 } from './cadDatumPlanes';
 import type { CadNumericPoint2, CadNumericPoint3 } from './cadPlanes';
+import { CAD_PRECISION, cadRoundoff } from '../precision/cadPrecision';
 
 export const MIN_CAD_LOFT_SECTIONS = 2;
 export const MAX_CAD_LOFT_SECTIONS = 16;
-export const CAD_LOFT_NATIVE_PRECISION = 1e-7;
+export const CAD_LOFT_NATIVE_PRECISION = CAD_PRECISION.kernelConfusionMm;
 /** Preserve the existing principal-offset comparison and range policy. */
 export function cadLoftOffsetTolerance(offsets: readonly number[]): number {
   let scale = 1;
@@ -21,7 +22,7 @@ export function cadLoftOffsetTolerance(offsets: readonly number[]): number {
       throw new CadError('invalid-scalar', 'Loft offsets must be finite and within one billion millimetres.');
     scale = Math.max(scale, Math.abs(offset));
   }
-  return Math.max(CAD_LOFT_NATIVE_PRECISION, 8 * Number.EPSILON * scale);
+  return Math.max(CAD_LOFT_NATIVE_PRECISION, cadRoundoff(8, scale));
 }
 
 export interface CadResolvedLoftSection extends CadLoftSection {
@@ -125,7 +126,7 @@ function inspectSectionPair(first: CadLoftSection, second: CadLoftSection, canon
         'unsupported-datum-precision',
         'This loft placement exceeds the supported native precision. Reduce world distance, section dimensions or datum translation span.',
       );
-    const minimumGapMm = Math.max(CAD_LOFT_NATIVE_PRECISION, 8 * Number.EPSILON * Math.max(1, Math.abs(station))) + 2 * uncertainty;
+    const minimumGapMm = Math.max(CAD_LOFT_NATIVE_PRECISION, cadRoundoff(8, Math.max(1, Math.abs(station)))) + 2 * uncertainty;
     return Object.freeze({
       compatible: true,
       commonFrame: frame,
@@ -163,7 +164,7 @@ export function resolveCadLoftSectionPlacements(sections: readonly CadLoftSectio
   const stationScale = Math.max(1, ...placed.map((section) => Math.abs(section.stationMm)));
   const offsetTolerance =
     legacyPrincipalPlane === null
-      ? Math.max(CAD_LOFT_NATIVE_PRECISION, 8 * Number.EPSILON * stationScale) + 2 * placementUncertaintyMm
+      ? Math.max(CAD_LOFT_NATIVE_PRECISION, cadRoundoff(8, stationScale)) + 2 * placementUncertaintyMm
       : cadLoftOffsetTolerance(placed.map((section) => section.offset));
   let direction = 0;
   for (let index = 1; index < placed.length; index++) {

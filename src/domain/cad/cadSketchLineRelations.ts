@@ -3,6 +3,7 @@ import { CadError } from './cadError';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { CAD_SKETCH_LINE_PAIR_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 type Line = Extract<CadSketchGraphEntity, { kind: 'line' }>;
 
@@ -16,7 +17,7 @@ export function cadSketchLineDirection(line: Line, points: ReadonlyMap<string, P
   const start = points.get(line.startPointId), end = points.get(line.endPointId);
   if (!start || !end) return null;
   const x = end.x - start.x, y = end.y - start.y, length = Math.hypot(x, y);
-  if (!Number.isFinite(length) || length <= 1e-7)
+  if (!Number.isFinite(length) || length <= CAD_PRECISION.minimumLengthMm)
     throw new CadError('invalid-sketch-line-pair', 'Line relations require nondegenerate line directions.');
   return { x: x / length, y: y / length, length, start, end };
 }
@@ -40,7 +41,7 @@ export function checkCadSketchLineRelation(graph: CadSketchGraph, relation: CadS
     // unit direction. World-origin roundoff must never license a large angle.
     // This tightens the existing world-mm gate; neither native thresholds nor
     // the shorter line can widen it. Uncertain far-origin directions reject.
-    if (!Number.isFinite(q) || q > 1e-12 || residualMm > tolerance) return [{ source, code: 'relation-residual',
+    if (!Number.isFinite(q) || q > CAD_PRECISION.angularAccuracyRad || residualMm > tolerance) return [{ source, code: 'relation-residual',
       message: `Sketch lines do not satisfy their ${relation.kind} relation.`, ...(Number.isFinite(residualMm) ? { residualMm } : {}) }];
     return [];
   } catch (error) {

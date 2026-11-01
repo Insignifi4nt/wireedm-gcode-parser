@@ -8,6 +8,7 @@ import { cadSketchLineDirection } from './cadSketchLineRelations';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
 import { cadSketchVirtualPosition, isCadSketchVirtualAxisId } from './sketch-relations/cadSketchVirtualElements';
 import type { Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 type Line = Extract<CadSketchGraphEntity, { kind: 'line' }>;
 /** A line, arc or circle that Symmetric mirrors onto another of its kind. */
@@ -99,7 +100,7 @@ export function cadSketchMirrorPairs(curves: readonly [CadSketchMirroredCurve, C
     const x = 2 * (start.x + along * dx) - from.x - to.x, y = 2 * (start.y + along * dy) - from.y - to.y;
     return sum + x * x + y * y;
   }, 0);
-  return gap(crossed) < gap(straight) * (1 - 1e-9) ? crossed : straight;
+  return gap(crossed) < gap(straight) * (1 - CAD_PRECISION.mirrorPairingTieRelative) ? crossed : straight;
 }
 
 /** Source identities, never position/proximity, decide which curves mirror and about what; their point pairs follow from them. */

@@ -5,6 +5,7 @@ import type {
 } from '@/domain/execution-plan/executionPlan';
 import type { Point2 } from '@/domain/path-intel/types';
 import { circularRadialDistance, signedRadialAngle } from '@/domain/path-intel/circularGeometry';
+import { CAD_PRECISION, cadRoundoff, cadOutputFitting } from '@/domain/precision/cadPrecision';
 
 export interface ControllerMotionTrace {
   readonly motion: 'linear' | 'circular';
@@ -179,10 +180,9 @@ function sameMotionSequence(
     motion.rounding?.endX ?? 0, motion.rounding?.endY ?? 0,
     motion.rounding?.centerX ?? 0, motion.rounding?.centerY ?? 0
   ), coordinateQuantumMm);
-  const pointToleranceMm = Math.max(sourceToleranceMm, eventQuantum / Math.SQRT2 + Number.EPSILON);
-  const lengthToleranceMm = Math.max(sourceToleranceMm, eventQuantum * Math.SQRT2 + Number.EPSILON);
-  // Arc sweep compares rounded start, end, and center coordinates at both ends.
-  const arcSweepToleranceMm = Math.max(sourceToleranceMm, eventQuantum * 4 + Number.EPSILON);
+  // Output fitting widens point, length and arc sweep allowances to the post's rounding.
+  const { pointMm: pointToleranceMm, lengthMm: lengthToleranceMm, arcSweepMm: arcSweepToleranceMm } =
+    cadOutputFitting(sourceToleranceMm, eventQuantum);
   const expectedStart = event.kind === 'position' ? event.from : event.start;
   const expectedEnd = event.kind === 'position' ? event.to : event.end;
   if (
@@ -228,7 +228,7 @@ function sameMotionSequence(
       roundedPointAllowance(0, motion.rounding!.startX, motion.rounding!.startY, 0) +
       roundedPointAllowance(0, motion.rounding!.endX, motion.rounding!.endY, 0) +
       roundedPointAllowance(0, motion.rounding!.centerX, motion.rounding!.centerY, 0)
-    ), 0) + Number.EPSILON
+    ), 0) + CAD_PRECISION.outputRoundingGuardMm
     : arcSweepToleranceMm;
   return radius * Math.abs(expectedSweep - emittedSweep) <= sweepAllowanceMm;
 }
@@ -252,7 +252,7 @@ function sameLinearPath(
     ? sourceToleranceMm + motions.reduce((total, motion) => total + (
       Math.abs(directionX) * (motion.rounding!.startX + motion.rounding!.endX) +
       Math.abs(directionY) * (motion.rounding!.startY + motion.rounding!.endY)
-    ) / 2, 0) + Number.EPSILON
+    ) / 2, 0) + CAD_PRECISION.outputRoundingGuardMm
     : lengthToleranceMm;
   if (Math.abs(expectedLength - emittedLength) > projectedAllowance) return false;
   if (expectedLength === 0) {
@@ -264,9 +264,9 @@ function sameLinearPath(
     ));
   }
   // Positional tolerance permits rounding, but must not authorize backwards travel.
-  const roundoff = Number.EPSILON * Math.max(
+  const roundoff = cadRoundoff(8, Math.max(
     1, expectedLength, Math.abs(start.x), Math.abs(start.y), Math.abs(end.x), Math.abs(end.y)
-  ) * 8;
+  ));
   let previousProgress = -Infinity;
   for (const motion of motions) {
     for (const [point, quantumX, quantumY] of [
@@ -279,10 +279,10 @@ function sameLinearPath(
       const deviation = Math.abs(x * directionY - y * directionX);
       const deviationTolerance = quantumX === undefined || quantumY === undefined
         ? pointToleranceMm
-        : sourceToleranceMm + (Math.abs(directionY) * quantumX + Math.abs(directionX) * quantumY) / 2 + Number.EPSILON;
+        : sourceToleranceMm + (Math.abs(directionY) * quantumX + Math.abs(directionX) * quantumY) / 2 + CAD_PRECISION.outputRoundingGuardMm;
       const progressTolerance = quantumX === undefined || quantumY === undefined
         ? pointToleranceMm
-        : sourceToleranceMm + (Math.abs(directionX) * quantumX + Math.abs(directionY) * quantumY) / 2 + Number.EPSILON;
+        : sourceToleranceMm + (Math.abs(directionX) * quantumX + Math.abs(directionY) * quantumY) / 2 + CAD_PRECISION.outputRoundingGuardMm;
       if (
         !Number.isFinite(progress) || !Number.isFinite(deviation) ||
         deviation > deviationTolerance ||
@@ -315,7 +315,7 @@ function sameRoundedPoint(
   if (![first.x, first.y, second.x, second.y, quantumX, quantumY].every(Number.isFinite)) return false;
   const residualX = Math.max(0, Math.abs(first.x - second.x) - quantumX / 2);
   const residualY = Math.max(0, Math.abs(first.y - second.y) - quantumY / 2);
-  return Math.hypot(residualX, residualY) <= sourceToleranceMm + Number.EPSILON;
+  return Math.hypot(residualX, residualY) <= sourceToleranceMm + CAD_PRECISION.outputRoundingGuardMm;
 }
 
 function roundedPointAllowance(
@@ -326,7 +326,7 @@ function roundedPointAllowance(
 ) {
   return quantumX === undefined || quantumY === undefined
     ? fallbackToleranceMm
-    : sourceToleranceMm + Math.hypot(quantumX, quantumY) / 2 + Number.EPSILON;
+    : sourceToleranceMm + Math.hypot(quantumX, quantumY) / 2 + CAD_PRECISION.outputRoundingGuardMm;
 }
 
 function distance(first: Point2, second: Point2) {

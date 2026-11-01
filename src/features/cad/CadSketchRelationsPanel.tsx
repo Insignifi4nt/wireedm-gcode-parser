@@ -38,6 +38,7 @@ import { CAD_SKETCH_VIRTUAL_LABELS, isCadSketchVirtualId } from '@/domain/cad/sk
 import { cadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
 import { CAD_SKETCH_RELATION_ICONS } from './CadSketchRelationGlyphs';
 import './cad-sketch-profile.css';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 /** A row lights up its geometry, and the canvas glyphs of the relations it names. */
 type RowHighlight = CadSketchHighlight & { readonly relationIds?: readonly string[] };
@@ -245,7 +246,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
       if (!centers?.[0] || !centers[1]) return { relation: null, error: 'Choose two arcs or circles.' };
       const pair = [centers[0], centers[1]] as const, identity = resolveCadSketchPointIdentities(graph);
       const relation = identity(pair[0]) === identity(pair[1]) ? null : distanceForPair(graph, pair) ?? distanceRelation(graph, pair, cadDocument.parameters);
-      return relation && (relation.kind !== 'distance' || typeof relation.value !== 'number' || relation.value > 1e-7) ? { relation, error: null }
+      return relation && (relation.kind !== 'distance' || typeof relation.value !== 'number' || relation.value > CAD_PRECISION.minimumLengthMm) ? { relation, error: null }
         : { relation: null, error: 'These curves share a center. Use Concentric to keep them together.' };
     } catch (cause) { return { relation: null, error: userFacingMessage(cause, 'Unable to read this distance.') }; }
   });

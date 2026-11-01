@@ -5,9 +5,10 @@ import {
 } from './geometry';
 import { createReleasedPieceSnapshotSampler } from './releasedPieces';
 import type { SimulationDiagnostic, SimulationPieceSnapshot, SimulationPlan, SimulationStep, SimulationWarning } from './types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 const MAX_SCAN_SAMPLES = 100_000;
-const EPSILON = 1e-7;
+const EPSILON = CAD_PRECISION.simulationObstructionMm;
 interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
 interface BoundedPolygon { polygon: readonly Point2[]; bounds: Bounds }
 

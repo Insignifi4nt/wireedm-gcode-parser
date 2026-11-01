@@ -8,6 +8,7 @@ import { arcBounds, arcParameterAtPoint, createArcSegment, createLineSegment, di
 import { SpatialHash } from '@/domain/path-intel/spatialIndex';
 import type { OrientedSegmentRef, PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
+import { cadRoundoff } from '@/domain/precision/cadPrecision';
 
 export type CadSketchArrangementEvent =
   | { readonly kind: 'point'; readonly pointId: string }
@@ -232,7 +233,7 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
   const knot = (source: Source, parameter: number, node: Vertex): Vertex => {
     const existing = source.knots.find(item => {
       const difference = Math.abs(item.parameter - parameter);
-      return (source.segment.kind === 'circle' ? Math.min(difference, 1 - difference) : difference) <= 32 * Number.EPSILON
+      return (source.segment.kind === 'circle' ? Math.min(difference, 1 - difference) : difference) <= cadRoundoff(32)
         || distance(at(source.segment, item.parameter), at(source.segment, parameter)) <= cadPathClosureTolerance([node.point, item.vertex.point]);
     });
     if (existing) {
@@ -310,7 +311,7 @@ export function deriveCadSketchArrangement(graph: CadSketchGraph, parameters: Re
       if (left === right) continue;
       const delta = normalizeAngle(right.angle - left.angle);
       // Directions closer than the shared closure tolerance over the shorter reach are tangent at any sketch position.
-      if (Math.min(delta, turn - delta) <= Math.max(64 * Number.EPSILON, broadEpsilon / Math.min(left.reach, right.reach))) issue('ambiguous-tangency', [left.edge.source.entity.id, right.edge.source.entity.id], 'Tangent outgoing edges have no unambiguous angular order.');
+      if (Math.min(delta, turn - delta) <= Math.max(cadRoundoff(64), broadEpsilon / Math.min(left.reach, right.reach))) issue('ambiguous-tangency', [left.edge.source.entity.id, right.edge.source.entity.id], 'Tangent outgoing edges have no unambiguous angular order.');
     }
   }
   if (issues.length) return finish();

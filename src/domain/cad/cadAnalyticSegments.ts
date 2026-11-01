@@ -4,6 +4,7 @@ import { evaluateCadAngle, evaluateCadScalar } from './cadExpression';
 import type { DxfEntity, DxfPoint } from '@/domain/dxf/types';
 import { angleIsOnSweep, createArcSegment, createLineSegment, distance } from '@/domain/path-intel/segments';
 import type { PathSegment, Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION, cadClosureTolerance } from '@/domain/precision/cadPrecision';
 
 export type ResolvedCadPathSegment =
   | { readonly kind: 'line'; readonly start: readonly [number, number]; readonly end: readonly [number, number] }
@@ -23,7 +24,7 @@ export function cadAnalyticSegments(geometry: readonly ResolvedCadPathSegment[])
     const source = { sourceEntityIndex: index, sourceEntityType: segment.kind, layer: null, exact: true };
     const id = `boundary_${index}`;
     if (segment.kind === 'line') return createLineSegment({ id, source, start: { x: segment.start[0], y: segment.start[1] }, end: { x: segment.end[0], y: segment.end[1] } });
-    if (segment.radius <= 1e-7 || segment.radius > 1e6 || Math.abs(segment.sweep) > 360 || segment.sweep === 0) throw new CadError('invalid-profile', 'Path arcs need a positive radius and a nonzero sweep of at most one turn.');
+    if (segment.radius <= CAD_PRECISION.minimumLengthMm || segment.radius > CAD_PRECISION.modelExtentMm || Math.abs(segment.sweep) > 360 || segment.sweep === 0) throw new CadError('invalid-profile', 'Path arcs need a positive radius and a nonzero sweep of at most one turn.');
     const angle = segment.startAngle * Math.PI / 180; const sweep = segment.sweep * Math.PI / 180;
     const center = { x: segment.center[0], y: segment.center[1] };
     const at = (degrees: number, radians: number) => pointAtAngle(center, segment.radius, degrees, radians);
@@ -64,7 +65,7 @@ export function cadOrderedCurveEntities(segments: readonly ResolvedCadPathSegmen
 export function cadPathClosureTolerance(points: readonly DxfPoint[]): number {
   let scale = 1;
   for (const point of points) scale = Math.max(scale, Math.abs(point.x), Math.abs(point.y));
-  return Math.max(1e-12, 8 * Number.EPSILON * scale);
+  return cadClosureTolerance(scale);
 }
 
 function onSpan(segment: PathSegment, point: Point2, tolerance: number): boolean {

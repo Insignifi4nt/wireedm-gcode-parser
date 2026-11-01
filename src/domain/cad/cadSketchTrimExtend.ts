@@ -13,6 +13,7 @@ import { classifyLineRayPathSegmentIntersection, classifyParameterizedPathSegmen
 import { createArcSegment, createCircleSegment, createLineSegment, distance, pointOnArcAtParameter } from '@/domain/path-intel/segments';
 import type { ArcPathSegment, CirclePathSegment, LinePathSegment, PathSegment, Point2 } from '@/domain/path-intel/types';
 import { deepFreezeCadData } from './cadDeepFreeze';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 import { cadSketchAxisNormal, isCadSketchVirtualAxisId, type CadSketchVirtualAxisId } from './sketch-relations/cadSketchVirtualElements';
 
 const strict = { additionalProperties: false }, id = CadIdentifierSchema;
@@ -293,7 +294,7 @@ function trimRemovals(graph: CadSketchGraph, entity: SourceEntity, shape: TrimSh
   return { relationIds: removed.map(relation => relation.id), pointIds: [...orphans] };
 }
 function partition(segment: OpenSegment, point: Point2, t: number): readonly [OpenSegment, OpenSegment] {
-  const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, point, segment.end]));
+  const minimum = Math.max(CAD_PRECISION.minimumLengthMm, cadPathClosureTolerance([segment.start, point, segment.end]));
   if (distance(segment.start, point) <= minimum || distance(point, segment.end) <= minimum) throw precision();
   if (segment.kind === 'line') return [createLineSegment({ ...segment, end: point }), createLineSegment({ ...segment, start: point })];
   const first = createArcSegment({ ...segment, end: point, sweepRadians: undefined });
@@ -313,7 +314,7 @@ function partition(segment: OpenSegment, point: Point2, t: number): readonly [Op
 function circlePieces(circle: CirclePathSegment, previous: Event, next: Event): readonly [ArcPathSegment, ArcPathSegment] {
   const span = next.witness.parameter - previous.witness.parameter, sweep = (span > 0 ? span : 1 + span) * fullTurn;
   const tolerance = cadPathClosureTolerance([circle.center, previous.point, next.point]);
-  if (distance(previous.point, next.point) <= Math.max(1e-7, tolerance)) throw precision();
+  if (distance(previous.point, next.point) <= Math.max(CAD_PRECISION.minimumLengthMm, tolerance)) throw precision();
   const common = { id: circle.id, source: circle.source, center: circle.center, clockwise: false }, source = { ...common, radius: circle.radius };
   const removed = createArcSegment({ ...common, start: previous.point, end: next.point });
   const survivor = createArcSegment({ ...common, start: next.point, end: previous.point });
@@ -612,7 +613,7 @@ export function prepareCadSketchTrim({ graph: input, parameters, entityId, param
   if (!end) {
     const after = unique.findIndex(event => event.witness.parameter > pick), left = unique[after - 1], right = unique[after];
     bounds(left, right);
-    const minimum = Math.max(1e-7, cadPathClosureTolerance([segment.start, left.point, right.point, segment.end]));
+    const minimum = Math.max(CAD_PRECISION.minimumLengthMm, cadPathClosureTolerance([segment.start, left.point, right.point, segment.end]));
     if (distance(segment.start, left.point) <= minimum || distance(left.point, right.point) <= minimum || distance(right.point, segment.end) <= minimum) throw precision();
     const contacts: MiddleTrimContacts = {
       target: { kind: 'middle', entityId, parameter: pick, boundaries: [left.witness, right.witness], ...removals(trimRemovals(graph, entity, { kind: 'middle' }, [left.witness, right.witness])) },
@@ -757,7 +758,7 @@ export function prepareCadSketchExtend({ graph: input, parameters, entityId, end
   if (!event) throw new CadError('missing-sketch-extend-boundary', `No finite boundary${axes.length ? ' or named axis' : ''} intersects the unused circular support beyond this endpoint.`);
   assertEndpointRange(event.point, 'extend');
   const current = end === 'start' ? segment.start : segment.end, opposite = end === 'start' ? segment.end : segment.start;
-  const tolerance = cadPathClosureTolerance([segment.center, segment.start, segment.end, event.point]), minimum = Math.max(1e-7, tolerance);
+  const tolerance = cadPathClosureTolerance([segment.center, segment.start, segment.end, event.point]), minimum = Math.max(CAD_PRECISION.minimumLengthMm, tolerance);
   if (distance(current, event.point) <= minimum || distance(opposite, event.point) <= minimum) throw precision('extend');
   if (event.witness.endpointPointId !== undefined) {
     const joint = resolveCadSketchPointIdentities(graph), key = joint(event.witness.endpointPointId);
@@ -785,7 +786,7 @@ function prepareLineExtend(graph: CadSketchGraph, parameters: Readonly<Record<st
   if (!event) throw new CadError('missing-sketch-extend-boundary', `No finite boundary${axes.length ? ' or named axis' : ''} intersects this line beyond the selected endpoint.`);
   assertEndpointRange(event.point, 'extend');
   const original = end === 'start' ? segment.start : segment.end;
-  if (distance(original, event.point) <= Math.max(1e-7, cadPathClosureTolerance([segment.start, segment.end, event.point]))) throw precision('extend');
+  if (distance(original, event.point) <= Math.max(CAD_PRECISION.minimumLengthMm, cadPathClosureTolerance([segment.start, segment.end, event.point]))) throw precision('extend');
   const extended = createLineSegment({ ...segment, [end]: event.point });
   const added = createLineSegment({ ...segment, start: end === 'start' ? event.point : original, end: end === 'start' ? original : event.point });
   const result: CadSketchLineExtendPreparation = { target: { kind: 'line', entityId, end, boundary: event.witness }, added, extended,

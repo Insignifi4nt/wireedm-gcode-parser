@@ -5,6 +5,7 @@ import { cadKernelPlaneBasis } from './cadKernelPlane';
 import { cadKernelProfileDrawing, cadKernelSketchOnPlane } from './cadKernelSketch';
 import { cadKernelDisposeOwned } from './cadKernelShapes';
 import { cadKernelShapeTolerance as pocketShapeTolerance, cadKernelSolidEvidence as solidEvidence } from './cadKernelCutEvidence';
+import { CAD_PRECISION } from '../../../domain/precision/cadPrecision';
 
 export function prepareCadPocketExtent(target: Shape3D, inputs: CadResolvedPocketInputs): ReturnType<typeof resolveCadPocketExtent> {
   // A Boolean may omit an unresolved target component completely. Its absence
@@ -57,7 +58,7 @@ export function buildCadPocketCut(target: Shape3D, inputs: CadResolvedPocketInpu
       const piece = own(extrudePocketRegion(wires, extent.spanMm, basis.normal)); const regionEvidence = solidEvidence(piece, 'tool');
       // Refuse each unresolved region separately: a larger cutting region must
       // not hide a thin annulus that native Common may omit at its tolerance.
-      if (regionEvidence.volume <= Math.max(1e-9, 4 * regionEvidence.tolerance * regionEvidence.surfaceArea)) {
+      if (regionEvidence.volume <= Math.max(CAD_PRECISION.kernelMinimumVolumeMm3, 4 * regionEvidence.tolerance * regionEvidence.surfaceArea)) {
         throw new CadError('unsupported-pocket-removal', 'A cutting region is too thin to resolve at native precision. Enlarge its material width or revise its holes.');
       }
       if (tool) {

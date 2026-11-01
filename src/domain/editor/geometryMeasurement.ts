@@ -1,6 +1,7 @@
 import { nearestPointOnSegment } from '@/domain/path-editor/pathPointInference';
 import { angleIsOnSweep, distance, pointOnArcAtParameter, orientedSegmentStart, orientedSegmentEnd, pathBounds, pathCutLength, signedAreaOfPath } from '@/domain/path-intel/segments';
 import type { OrientedSegmentRef, PathSegment, Point2 } from '@/domain/path-intel/types';
+import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
 
 export type MeasurementSnapKind = 'endpoint' | 'midpoint' | 'center' | 'quadrant' | 'nearest';
 
@@ -119,7 +120,7 @@ export function measureProfile(refs: OrientedSegmentRef[], segments: readonly Pa
     parts.push({ start: orientedSegmentStart(segment, ref), end: orientedSegmentEnd(segment, ref) });
   }
   const connected = parts.every((part, index) =>
-    finitePoint(part.start) && finitePoint(part.end) && distance(part.end, parts[(index + 1) % parts.length].start) <= 1e-9
+    finitePoint(part.start) && finitePoint(part.end) && distance(part.end, parts[(index + 1) % parts.length].start) <= CAD_PRECISION.gcodePositionMm
   );
   const bounds = pathBounds(refs, byId);
   const length = pathCutLength(refs, byId);

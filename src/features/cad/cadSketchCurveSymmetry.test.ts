@@ -157,6 +157,11 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       .toEqual([['c1 c2', false, false], ['o o', true, false], ['s1 e2', false, true]]);
     // Lines apart can pair either way until the geometry says which.
     expect(cadSketchMirrorPairings(arcs(SCENES.lines), identity).map(pairing => pairing.map(pair => pair.pointIds.join(' ')))).toEqual([['a1 b1', 'a2 b2'], ['a1 b2', 'a2 b1']]);
+    // Lines that pair almost as near either way keep start with start unless crossing is nearer by more than the tie. B straddles the
+    // middle of A's image about V, its ends t above and below it, so crossing is nearer by 8t of 2(1 + t)² in summed squared gaps.
+    const tie = (t: number) => cadSketchMirrorPairs(arcs(SCENES.lines), { startPointId: '@origin', endPointId: '@v' }, identity,
+      new Map([['a1', { x: 1, y: 0 }], ['a2', { x: 1, y: 2 }], ['b1', { x: -1, y: 1 + t }], ['b2', { x: -1, y: 1 - t }]])).map(pair => pair.pointIds.join(' '));
+    expect([tie(0), tie(2e-10), tie(3e-10), tie(.25)]).toEqual([['a1 b1', 'a2 b2'], ['a1 b1', 'a2 b2'], ['a1 b2', 'a2 b1'], ['a1 b2', 'a2 b1']]);
   });
 
   it('lower each mirror as one constraint, one equation for each freedom it holds, a circle\'s radius among them', () => {

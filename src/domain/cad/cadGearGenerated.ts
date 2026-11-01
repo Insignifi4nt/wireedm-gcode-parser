@@ -3,6 +3,7 @@ import type { ResolvedCadPathSegment } from './cadAnalyticSegments';
 import { evaluateCadScalar } from './cadExpression';
 import { CadError } from './cadError';
 import type { CadScalar } from './cadDocument';
+import { CAD_PRECISION } from '../precision/cadPrecision';
 
 export const GENERATED_GEAR_NOTE = 'Full-depth rack-generated external spur gear. Cutter tip radius is derived from clearance and available rack tip width. Involute and trochoidal root curves are chorded within the specified tolerance; root and tip circles are exact. Tooth thinning applies to this gear only. This is nominal geometry, not a strength, load or gear-pair clearance certification.';
 
@@ -43,7 +44,7 @@ function resolveRackGeneratedGear(profile: CadGearProfile, parameters: Readonly<
   const gamma = (h + shift * Math.tan(a)) / R + Math.tan(a) - a;
   const t0 = Math.tan(a) + (shift + e * (1 - Math.sin(a)) - b) / (rb * Math.sin(a));
   const t1 = Math.sqrt((ra / rb) ** 2 - 1), tipHalf = gamma - t1 + Math.atan(t1);
-  if (t0 < -1e-10 || t0 >= t1 || 2 * ra * tipHalf < 0.2) throw new CadError('invalid-gear', 'Generated gear needs a non-undercut flank and tip thickness of at least 0.2 × module. Adjust teeth, shift or backlash.');
+  if (t0 < -CAD_PRECISION.gearParameterSlackRad || t0 >= t1 || 2 * ra * tipHalf < 0.2) throw new CadError('invalid-gear', 'Generated gear needs a non-undercut flank and tip thickness of at least 0.2 × module. Adjust teeth, shift or backlash.');
   const vc = e - b, uc = h + e / Math.cos(a) - vc * Math.tan(a), D = shift + vc;
   const phi0 = -uc / R, phi1 = Math.max(0, t0) - a - gamma;
   if (!(e > 0 && D < -0.05 && phi1 < phi0 && -phi0 < Math.PI / z)) throw new CadError('invalid-gear', 'Rack root transitions overlap or have unsupported cutter clearance. Adjust pressure angle, tooth thinning or profile shift.');
@@ -79,7 +80,7 @@ function resolveRackGeneratedGear(profile: CadGearProfile, parameters: Readonly<
       const tyMax = Amax * (1 + e * (3 * R * R * D * D / qMin ** 2.5 - 2 * D * R / qMin ** 1.5 + 1 / Math.sqrt(qMin)));
       const intervalBound = m * Math.hypot(Math.max(Math.abs(txMin), Math.abs(txMax)), tyMax);
       // Arithmetic reserve includes cancellation in signed interval endpoints.
-      second = Math.min(second, intervalBound + 1e-12 * m * (Math.abs(txMin) + Math.abs(txMax) + tyMax + R + 1));
+      second = Math.min(second, intervalBound + CAD_PRECISION.gearBoundReserveRelative * m * (Math.abs(txMin) + Math.abs(txMax) + tyMax + R + 1));
     }
     return second * (to - from) ** 2 / 8;
   }
@@ -109,7 +110,7 @@ function resolveRackGeneratedGear(profile: CadGearProfile, parameters: Readonly<
   const edgeCount = z * (2 * rootSteps + 2 * flankSteps + 2);
   if (edgeCount > 8192) throw new CadError('invalid-gear', `Generated gear needs ${edgeCount} edges, exceeding the 8192-edge budget. Increase curve tolerance or reduce module/tooth count.`);
   const join = root(phi1), start = flank(Math.max(0, t0));
-  if (Math.hypot(join[0] - start[0], join[1] - start[1]) > m * 1e-8) throw new CadError('invalid-gear', 'Rack envelope and involute do not meet within modeling precision.');
+  if (Math.hypot(join[0] - start[0], join[1] - start[1]) > m * CAD_PRECISION.gearJoinPerModule) throw new CadError('invalid-gear', 'Rack envelope and involute do not meet within modeling precision.');
   rootPoints[rootPoints.length - 1] = start;
   const flankPoints = flankParameters.map(flank);
   const segments: ResolvedCadPathSegment[] = [];
@@ -143,7 +144,7 @@ function certifiedFlankParameters(start: number, end: number, baseRadius: number
     const delta = to - from;
     const vectorBound = Math.sqrt(1 + to * to);
     const normalBound = delta < Math.PI / 2 ? Math.sin(delta) + to : vectorBound;
-    return baseRadius * Math.min(vectorBound, normalBound) * delta * delta / 8 * (1 + 1e-12);
+    return baseRadius * Math.min(vectorBound, normalBound) * delta * delta / 8 * (1 + CAD_PRECISION.gearBoundReserveRelative);
   };
   let from = start;
   while (from < end) {
