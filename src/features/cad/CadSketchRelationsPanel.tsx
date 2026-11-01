@@ -21,7 +21,6 @@ import { cadSketchLineAngleSectors, createCadSketchLineAngleRelation } from '@/d
 import { CadError } from '@/domain/cad/cadError';
 import { CadScalarEditContext, ScalarField, SelectField, type CadScalarValueDraft } from './CadFields';
 import type { CadSketchGraphSelection } from './cadSketchGraphInteraction';
-import { cadSketchDatumRelationLabel, type CadSketchDatum } from './cadSketchGraphSelection';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { cadPreviewMarks, useCadPreparedPreview, type CadPrepareEdits } from './useCadPreparedPreview';
 import type { CadSketchDiagnosisMarks } from './cadSketchDefinitionMarks';
@@ -34,7 +33,8 @@ import { cadSketchDistanceForPair as distanceForPair, cadSketchDrivingDimensionF
   cadSketchPointLineDistanceFor as pointLineDistanceFor, cadSketchRadialRelationForEntity as radialRelationForEntity, cadSketchReferenceDrivingLock as referenceDrivingLock,
   cadSketchRelationHasPointPair as samePair, cadSketchSameIdentityPair as sameIdentityPair } from './cadSketchDimensionCommands';
 import { cadSketchRelationHighlight, type CadSketchHighlight, type CadSketchHighlightStore } from './cadSketchDimensionSelection';
-import { cadSketchCurveCentres, isCadSketchConcentric } from './cadSketchRelationNames';
+import { cadSketchCurveCentres, cadSketchRelationAxis, isCadSketchConcentric } from './cadSketchRelationNames';
+import { CAD_SKETCH_VIRTUAL_LABELS, isCadSketchVirtualId } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import { cadSketchRelationGlyphKind } from './cadSketchRelationGlyphLayout';
 import { CAD_SKETCH_RELATION_ICONS } from './CadSketchRelationGlyphs';
 import './cad-sketch-profile.css';
@@ -44,7 +44,7 @@ type RowHighlight = CadSketchHighlight & { readonly relationIds?: readonly strin
 const entityPoints = (entity: CadSketchGraphEntity) => entity.kind === 'line' ? [entity.startPointId, entity.endPointId]
   : entity.kind === 'arc' ? [entity.centerPointId, entity.startPointId, entity.endPointId] : [entity.centerPointId];
 const relationLabels = {
-  'tangent-joint': 'Tangent', 'point-on-line': 'Point on line', 'point-on-curve': 'Point on curve', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', 'point-line-distance': 'Point to line distance', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
+  'tangent-joint': 'Tangent', tangent: 'Tangent', 'point-on-line': 'Point on line', 'point-on-curve': 'Point on curve', symmetric: 'Symmetric points', 'linear-pattern': 'Linear pattern', 'reference-dimension': 'Reference dimension', 'fixed-point': 'Fixed point', distance: 'Length', 'point-line-distance': 'Point to line distance', coincident: 'Coincident', midpoint: 'Midpoint', horizontal: 'Horizontal', vertical: 'Vertical', 'external-reference': 'Linked reference',
   parallel: 'Parallel', perpendicular: 'Perpendicular', collinear: 'Collinear', 'equal-length': 'Equal length', 'equal-radius': 'Equal radius', 'line-angle': 'Angle', 'fillet-corner': 'Fillet', 'chamfer-corner': 'Chamfer'
 } satisfies Record<Exclude<CadSketchGraphRelation['kind'], 'fixed-axis' | 'radial-size' | 'axis-distance'>, string>;
 // A coordinate held from an axis is a distance from that axis, named like a distance between parallel lines; at 0 the list names the axis it is on.
@@ -154,9 +154,7 @@ function radialDimension(graph: CadSketchGraph, entity: CadSketchGraphEntity, pa
 export type CadSketchRelationCommand = { readonly kind: 'inspect'; readonly relationId: string }
   | { readonly kind: 'relations' | 'length' | 'distance' | 'point-dimensions' | 'radial-size' | 'line-angle' | 'fillet' | 'chamfer' | 'move' }
   /** A point, or an arc or circle's center, held at a distance from a line; or two arcs or circles held at a center distance. */
-  | { readonly kind: 'point-line-distance' | 'center-distance' }
-  /** A point dimensioned from the sketch origin or an axis: signed X from the Y axis, Y from the X axis. */
-  | { readonly kind: 'datum-distance'; readonly datum: CadSketchDatum };
+  | { readonly kind: 'point-line-distance' | 'center-distance' };
 type GeometryDraft = { readonly kind: 'fillet'; readonly radius: CadScalar } | { readonly kind: 'chamfer'; readonly setbacks: readonly [CadScalar, CadScalar] }
   | { readonly kind: 'move'; readonly x: string; readonly y: string };
 
@@ -262,21 +260,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   });
   const [choosingAngle, setChoosingAngle] = useState(initialAngle?.choose ?? false);
   const latest = useRef({ document: cadDocument, sketch, graph }); latest.current = { document: cadDocument, sketch, graph };
-  // Reuses a coordinate the point, or a coincident alias, already keeps; a coordinate driven by an expression or a fixed point has its owner already.
-  const [datumDimensions] = useState<readonly Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }>[]>(() => {
-    if (initialCommand?.kind !== 'datum-distance' || singleton?.kind !== 'point') return [];
-    const point = graph.points.find(item => item.id === singleton.id), aliases = pointAliases(graph, singleton.id), ids = new Set(aliases.map(alias => alias.id));
-    if (!point || graph.relations.some(relation => relation.kind === 'fixed-point' && ids.has(relation.pointId))) return [];
-    const axes = initialCommand.datum === 'origin' ? ['x', 'y'] as const : initialCommand.datum === 'x-axis' ? ['y'] as const : ['x'] as const;
-    return axes.flatMap(axis => {
-      const existing = graph.relations.find((relation): relation is Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }> => relation.kind === 'fixed-axis' && ids.has(relation.pointId) && relation.axis === axis);
-      const index = axis === 'x' ? 0 : 1, value = point.position[index];
-      return existing ? [existing] : typeof value === 'number' && aliases.every(alias => typeof alias.position[index] === 'number')
-        ? [{ id: crypto.randomUUID(), kind: 'fixed-axis' as const, pointId: point.id, axis, value }] : [];
-    });
-  });
   const [initialDimension] = useState(() => {
-    if (initialCommand?.kind === 'datum-distance') return datumDimensions[0] ?? null;
     if (initialCommand?.kind === 'line-angle') return initialLineDistance?.relation ?? initialAngle?.relation ?? null;
     if (initialDistance) return initialDistance.relation;
     const entity = singleton?.kind === 'entity' ? graph.entities.find(entity => entity.id === singleton.id) : null;
@@ -285,7 +269,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     return pair ? distanceRelation(graph, pair, cadDocument.parameters) : null;
   });
   const [source, setSource] = useState(latest.current), [draft, setDraft] = useState<CadSketchGraph>(() => {
-    const added = [initialDimension, initialLineDistance?.parallel ?? null, ...datumDimensions.slice(1)].filter((relation): relation is CadSketchGraphRelation => relation !== null && !graph.relations.some(item => item.id === relation.id));
+    const added = [initialDimension, initialLineDistance?.parallel ?? null].filter((relation): relation is CadSketchGraphRelation => relation !== null && !graph.relations.some(item => item.id === relation.id));
     return added.length ? { ...graph, relations: [...graph.relations, ...added] } : graph;
   });
   const [geometryDraft, setGeometryDraft] = useState<GeometryDraft | null>(() => initialCommand?.kind === 'move' ? { kind: 'move', x: '0', y: '0' }
@@ -300,15 +284,14 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const [relationPending, setRelationPending] = useState<Readonly<Record<string, boolean>>>({});
   const [relationEdits, setRelationEdits] = useState<Readonly<Record<string, boolean>>>({});
   const [impliedParallelId, setImpliedParallelId] = useState(() => initialLineDistance?.parallel?.id ?? null);
-  const [error, setError] = useState<string | CadSketchConstraintFeedback | null>(initialAngle?.error ?? initialLineDistance?.error ?? initialDistance?.error
-    ?? (initialCommand?.kind === 'datum-distance' && !datumDimensions.length ? 'This point already has its position from a fixed point or an expression.' : null)), [resetVersion, setResetVersion] = useState(0);
+  const [error, setError] = useState<string | CadSketchConstraintFeedback | null>(initialAngle?.error ?? initialLineDistance?.error ?? initialDistance?.error ?? null), [resetVersion, setResetVersion] = useState(0);
   const [inspectedFailure, setInspectedFailure] = useState<{ feedback: CadSketchConstraintFeedback; subject: CadSketchConstraintFeedbackSubject } | null>(null);
   /** The full operand marks of the rejected Apply whose feedback `error` holds; any other error drops them. */
   const [appliedFailure, setAppliedFailure] = useState<{ feedback: CadSketchConstraintFeedback; marks: CadSketchDiagnosisMarks | null } | null>(null);
   const [activeRelationId, setActiveRelationId] = useState<string | null>(initialCommand?.kind === 'inspect' ? initialCommand.relationId : initialDimension?.id ?? null);
   // A dimension started from the toolbar or picked on the canvas is ready for typing: its first editable value takes focus, Enter applies and Escape resets.
   const [typedRelationId] = useState(() => initialCommand && initialCommand.kind !== 'relations' ? activeRelationId : null);
-  const dimensionOnly = dimensionRequested && (initialCommand?.kind === 'length' || initialCommand?.kind === 'distance' || initialCommand?.kind === 'point-dimensions' || initialCommand?.kind === 'datum-distance' || initialCommand?.kind === 'radial-size' || initialCommand?.kind === 'line-angle'
+  const dimensionOnly = dimensionRequested && (initialCommand?.kind === 'length' || initialCommand?.kind === 'distance' || initialCommand?.kind === 'point-dimensions' || initialCommand?.kind === 'radial-size' || initialCommand?.kind === 'line-angle'
     || initialCommand?.kind === 'point-line-distance' || initialCommand?.kind === 'center-distance');
   useLayoutEffect(() => {
     if (!typedRelationId) return;
@@ -364,17 +347,16 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   const dimensionPair = selectedEntity?.kind === 'line' ? [selectedEntity.startPointId, selectedEntity.endPointId] as const : pointPair;
   const draftIdentity = useMemo(() => resolveCadSketchPointIdentities(draft), [draft]);
   const draftCentres = useMemo(() => cadSketchCurveCentres(draft), [draft]);
-  const labelRelation = (relation: CadSketchGraphRelation) => initialCommand?.kind === 'datum-distance' && relation.kind === 'fixed-axis' && datumDimensions.some(item => item.id === relation.id)
-    ? initialCommand.datum === 'origin' ? `${relation.axis.toUpperCase()} from origin` : 'Distance'
-    : relation.kind === 'distance' && pointPair && sameIdentityPair(draftIdentity, relation.pointIds, pointPair) ? 'Distance'
+  // A distance from the origin is a point pair's distance, though the origin stays out of the selection the panel edits.
+  const labelRelation = (relation: CadSketchGraphRelation) => relation.kind === 'distance' && (pointPair && sameIdentityPair(draftIdentity, relation.pointIds, pointPair) || relation.pointIds.some(isCadSketchVirtualId)) ? 'Distance'
       : relation.kind === 'distance' && centerPair && sameIdentityPair(draftIdentity, relation.pointIds, centerPair) ? 'Center distance'
         : isCadSketchConcentric(draft, relation, draftCentres) ? 'Concentric' : relationLabel(relation);
   // A row draws the glyph its relation draws on the canvas.
   const relationIcon = (relation: CadSketchGraphRelation) => { const kind = cadSketchRelationGlyphKind(draft, relation, draftCentres); if (!kind) return null; const Icon = CAD_SKETCH_RELATION_ICONS[kind]; return <Icon size={12} />; };
   const relationRowHighlight = (relation: CadSketchGraphRelation): RowHighlight => ({ ...cadSketchRelationHighlight(draft, relation), relationIds: [relation.id] });
-  // A zero coordinate reads as the plane reference it holds the point on; its value editor is the distance from that reference, so another value
-  // turns it into a distance from the axis.
-  const listedRelationLabel = (relation: CadSketchGraphRelation) => datumDimensions.some(item => item.id === relation.id) ? null : cadSketchDatumRelationLabel(relation);
+  // A zero coordinate reads as the Coincident with the axis it holds the point on; its value editor is the distance from that axis, so
+  // another value turns it into a distance from the axis.
+  const listedRelationLabel = (relation: CadSketchGraphRelation) => { const axis = cadSketchRelationAxis(relation); return axis ? `Coincident with the ${CAD_SKETCH_VIRTUAL_LABELS[axis]}` : null; };
   const acceptedScalars = useMemo(() => {
     const values: Record<string, CadScalar> = {};
     if (originalEntity?.kind === 'circle') values.radius = originalEntity.radius;
@@ -386,9 +368,7 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
   }, [originalEntity, originalPoint, source.graph]);
   // A distance from an axis shows its size. A number on the negative side of the axis, as accepted, shows and takes its value with the sign
   // turned, so editing keeps the side and a negative entry crosses the axis, as with other signed distances; an expression is the coordinate.
-  // The coordinates offered from the origin stay signed, as X and Y from the origin.
   const axisSide = (relation: Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }>) => {
-    if (initialCommand?.kind === 'datum-distance' && initialCommand.datum === 'origin' && datumDimensions.some(item => item.id === relation.id)) return 1;
     const accepted = acceptedScalars[`${relation.id}/value`], index = relation.axis === 'x' ? 0 : 1;
     const position = typeof accepted === 'number' ? accepted : source.graph.points.find(point => point.id === relation.pointId)?.position[index];
     return typeof position === 'number' && position < 0 ? -1 : 1;
@@ -614,7 +594,10 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
     setRelationPending: setBindingPending, markRelationEdited, changeParameter };
   const subjectHighlight = (subject: CadSketchConstraintFeedbackSubject): RowHighlight => {
     const relation = subject.source.kind === 'relation' ? draft.relations.find(item => item.id === subject.source.id) : undefined;
-    return { pointIds: subject.pointIds, entityIds: subject.entityIds, datums: relation ? cadSketchRelationHighlight(draft, relation).datums : [], relationIds: relation ? [relation.id] : [] };
+    // The origin or the axis the relation holds its point on is lit beside the subject's own geometry.
+    const fixed = relation ? cadSketchRelationHighlight(draft, relation) : null;
+    return { pointIds: [...subject.pointIds, ...fixed?.pointIds.filter(isCadSketchVirtualId) ?? []], entityIds: [...subject.entityIds, ...fixed?.entityIds.filter(isCadSketchVirtualId) ?? []],
+      relationIds: relation ? [relation.id] : [] };
   };
   // A row that an edit removes or remounts gets no blur or pointer leave, so after every render the highlight follows its row:
   // it is drawn again from the current draft while the row is listed, and hidden once the row is gone or a remount took its focus.
@@ -759,8 +742,6 @@ function RelationsForm({ document: cadDocument, sketch, graph, selection, initia
           ? <details className="cad-sketch-relations-disclosure" open={Boolean(activeRelation)}><summary>Relations <span>{relations.length}</span></summary>{relationList}</details>
           : relationList)}
         {activeRelation && (activeRelation.kind === 'distance' || activeRelation.kind === 'point-line-distance' || activeRelation.kind === 'axis-distance' || activeRelation.kind === 'fixed-axis' || activeRelation.kind === 'line-angle') && <ScalarField fieldKey={`${activeRelation.id}/value`} label={labelRelation(activeRelation)} unit={activeRelation.kind === 'line-angle' ? 'deg' : 'mm'} value={sized(activeRelation, activeRelation.value)} parameters={parameters} onChange={value => changeRelation({ ...activeRelation, value: sized(activeRelation, value) })} />}
-        {datumDimensions.flatMap(dimension => draft.relations.find((relation): relation is Extract<CadSketchGraphRelation, { kind: 'fixed-axis' }> => relation.id === dimension.id && relation.kind === 'fixed-axis' && relation.id !== activeRelation?.id) ?? [])
-          .map(relation => <ScalarField key={relation.id} fieldKey={`${relation.id}/value`} label={labelRelation(relation)} unit="mm" value={sized(relation, relation.value)} parameters={parameters} onChange={value => changeRelation({ ...relation, value: sized(relation, value) })} />)}
         {activeRelation?.kind === 'reference-dimension' && <>
           {activeRelation.measurement.kind === 'radial-size' && <SelectField label="Dimension quantity" value={activeRelation.measurement.quantity}
             options={[{value:'radius',label:'Radius'},{value:'diameter',label:'Diameter'}]} onChange={quantity => {

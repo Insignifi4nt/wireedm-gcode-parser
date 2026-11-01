@@ -18,7 +18,7 @@ import { CadSketchRelationGlyphs, type CadSketchRelationGlyphFocus } from './Cad
 import type { CadSketchDimensionRelation } from './cadSketchGraphDimensionLayout';
 import { useCadEditSubmission, type CadEditCompletion } from './useCadEditSubmission';
 import { useCadContinuousPreview, type CadPrepareEdits } from './useCadPreparedPreview';
-import { cadSketchGeometryPickAllows, type CadSketchDatum, type CadSketchGeometryPick, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
+import { cadSketchGeometryPickAllows, type CadSketchGeometryPick, type CadSketchGraphPickFilter } from './cadSketchGraphSelection';
 import { cadSketchSnapTargetLabel, type CadSketchSnapCandidate } from './cadSketchGeometrySnaps';
 import { cadSketchLinearPatternLockReason } from '@/domain/cad/cadSketchLinearPattern';
 import { CadSketchSnapHint } from './CadSketchSnapHint';
@@ -31,7 +31,8 @@ export interface CadSketchGraphControls {
   readonly document: CadDocument;
   readonly selection: readonly CadSketchGraphSelection[];
   readonly relation?: CadSketchGraphRelation | null;
-  readonly inspection?: { readonly pointIds: readonly string[]; readonly entityIds: readonly string[]; readonly datums?: readonly CadSketchDatum[] } | null;
+  /** The points and edges an inspected relation names, the origin and the axes among them. */
+  readonly inspection?: { readonly pointIds: readonly string[]; readonly entityIds: readonly string[] } | null;
   readonly degreesOfFreedom?: number | null;
   /** What the latest accepted analysis proved fully defined; its colours may trail the shown version until the next result. */
   readonly definition?: CadSketchDefinitionMarks | null;
@@ -45,12 +46,10 @@ export interface CadSketchGraphControls {
   readonly placement?: { readonly anchor: SketchPoint | null; readonly target: SketchPoint | null; readonly angleDegrees: number };
   readonly patternInteraction?: import('./CadSketchLinearPatternEditor').CadSketchLinearPatternInteraction;
   onEditPattern?(relationId: string): void;
+  /** Selects a point or edge, the origin and the axes among them. */
   onSelect(selection: CadSketchGraphSelection | null, additive?: boolean): void;
-  /** Replaces the geometry selection; `additive` keeps the selected plane references, as a Shift box does. */
+  /** Replaces the geometry selection; `additive` keeps the selected origin and axes, which a box never takes, as a Shift box does. */
   onSelectSet?(selections: readonly CadSketchGraphSelection[], additive?: boolean): void;
-  /** Plane references in the plain selection, beside the sketch geometry; a command pick lists its own. */
-  readonly datumSelection?: readonly CadSketchDatum[];
-  onSelectDatum?(datum: CadSketchDatum, additive: boolean): void;
   /** Delete removes this selection; Delete on a focused point or edge passes `focused`, so the owner removes its selection and the element only while nothing is selected. */
   onDelete?(selection: CadSketchGraphSelection, focused?: true): void;
   onConfigureRelation?(relation: CadSketchDimensionRelation): void;
@@ -191,9 +190,9 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
   onPendingChange(pending: boolean): void; onError(message: string): void;
   filter?: CadSketchGraphPickFilter;
   pickAt?(event: { clientX: number; clientY: number }): CadSketchGraphSelection | null;
-  /** Whether a datum, profile grip or profile edge under the pointer keeps the pick from a dimension line or arrow. */
+  /** Whether the origin or an axis, a profile grip or a profile edge under the pointer keeps the pick from a dimension line or arrow. */
   coversDimensionLine?(event: GlyphEvent): boolean;
-  /** Whether sketch geometry, a datum, a profile grip or a profile edge under the pointer keeps the pick from a relation glyph. */
+  /** Whether sketch geometry, the origin or an axis, a profile grip or a profile edge under the pointer keeps the pick from a relation glyph. */
   coversRelationGlyph?(event: GlyphEvent): boolean;
   highlighted?: CadSketchGraphSelection | null;
   /** Width, in sketch units, of the dark under-stroke each edge gets over a plainly shown part; 0 draws none. */
@@ -505,7 +504,7 @@ export const CadSketchGraphLayer = memo(function CadSketchGraphLayer({ controls,
     }
   };
   return <g className={`cad-sketch-graph${interactive && !controls.geometryPick ? ' is-draggable' : ''}${intent && !submission.applying ? ' is-dragging' : ''}`} onKeyDown={event => { if (event.key === 'Escape' && (drag.current || intent || submission.applying)) { event.preventDefault(); event.stopPropagation(); cancel(); } }}>
-    {/* Relation glyphs lie lowest, beneath the dimension lines, points and edges, and leave a press over geometry, a datum, a grip or a profile edge to the canvas.
+    {/* Relation glyphs lie lowest, beneath the dimension lines, points and edges, and leave a press over geometry, the origin or an axis, a grip or a profile edge to the canvas.
         A drag or an applying edit turns the whole layer inert and keeps the tab stops, so neither renders a glyph row when it starts or ends. */}
     {controls.showRelations !== false && <CadSketchRelationGlyphs graph={displayed.graph} topology={(visual ?? prepared).graph} parameters={displayed.parameters} topologyParameters={(visual ?? prepared).parameters} center={center} mmPerPixel={scaleY}
       selectedIds={controls.dimensionSelection ?? NO_SKETCH_DIMENSION_IDS} inspectedRelationId={controls.relation?.id ?? null} focus={glyphFocus} limit={CAD_SKETCH_RELATION_GLYPH_LIMIT}

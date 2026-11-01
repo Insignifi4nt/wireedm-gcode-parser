@@ -58,6 +58,21 @@ function replaced(graph: CadSketchGraph, relation: CadSketchGraphRelation): CadS
   if (typeof r.pointId === 'string') { const next = other(points, [r.pointId]); return next ? { ...relation, pointId: next } as CadSketchGraphRelation : null; }
   return null;
 }
+// The origin and the H and V axes became operands, and the names that stood for them went: a coordinate held at 0 is the Coincident
+// that keeps its point on an axis, which it names, X and Y held at 0 together are one Coincident with the origin, and a point fixed at
+// 0, 0 is a fixed point like any other. A distance from an axis names it by its operand label. Recorded names that only these retired
+// names change are set apart here, by those names; every other recorded value is compared as it was recorded.
+const ON_AXIS: Readonly<Record<string, string>> = { 'On the X axis': 'H axis', 'On the Y axis': 'V axis' };
+const AXIS_LABEL: Readonly<Record<string, string>> = { 'X axis': 'H axis', 'Y axis': 'V axis' };
+function renamed(name: Outcome, labels: Outcome): readonly [Outcome, Outcome] {
+  if (typeof name === 'string' && Object.hasOwn(ON_AXIS, name) && Array.isArray(labels)) return ['Coincident', [...labels, ON_AXIS[name]]];
+  if (name === 'Distance' && Array.isArray(labels) && Object.hasOwn(AXIS_LABEL, labels.at(-1) as string)) return [name, [...labels.slice(0, -1), AXIS_LABEL[labels.at(-1) as string]]];
+  return name === 'Fixed at the origin' ? ['Fixed point', labels] : [name, labels];
+}
+function renamedGlyph(name: string | 0, label: string | 0): readonly [string | 0, string | 0] {
+  const target = name === 'At the origin' ? 'Origin' : name !== 0 && Object.hasOwn(ON_AXIS, name) ? ON_AXIS[name] : null;
+  return target === null ? [name, label] : ['Coincident', typeof label === 'string' ? label.replace(`${name}: `, 'Coincident: ') + ` and ${target}` : label];
+}
 function setAt(value: unknown, path: Path, next: string): unknown {
   if (!path.length) return next;
   const [head, ...rest] = path;
@@ -83,7 +98,8 @@ describe('sketch relation definitions against the recorded per-kind outputs', ()
     accepted().forEach((graph, graphIndex) => {
       const labels = createCadSketchRelationLabels(graph);
       graph.relations.forEach((relation, index) => {
-        const [entityIds, pointIds, scalars, name, operandLabels, description, glyphKind] = baseline.records[graphIndex].relations[index];
+        const [entityIds, pointIds, scalars, recordedName, recordedLabels, description, glyphKind] = baseline.records[graphIndex].relations[index];
+        const [name, operandLabels] = renamed(recordedName, recordedLabels);
         const where = `graph ${graphIndex} relation ${relation.id} (${relation.kind})`;
         expect(outcome(() => [...cadSketchRelationEntityIds(relation)]), where).toEqual(entityIds);
         expect(outcome(() => [...cadSketchRelationPointIds(graph, relation)]), where).toEqual(pointIds);
@@ -110,10 +126,12 @@ describe('sketch relation definitions against the recorded per-kind outputs', ()
       const record = baseline.records[graphIndex], labels = createCadSketchRelationLabels(graph);
       const names = new Map(graph.relations.map(relation => [relation.id, cadSketchRelationName(graph, relation, labels.centres)]));
       const descriptions = new Map(graph.relations.map(relation => [relation.id, cadSketchRelationDescription(graph, relation, labels)]));
-      const expected = 'throws' in record.glyphs ? record.glyphs : record.glyphs.map(([relationIds, operand, kind, name, label, index, count]) => ({
+      const expected = 'throws' in record.glyphs ? record.glyphs : record.glyphs.map(([relationIds, operand, kind, recordedName, recordedLabel, index, count]) => {
+        const [name, label] = renamedGlyph(recordedName, recordedLabel);
+        return {
         key: `${relationIds.join('+')}@${operand}`, relationIds, operand, kind,
-        name: name === 0 ? names.get(relationIds[0]) : name, label: label === 0 ? descriptions.get(relationIds[0]) : label, index, count
-      }));
+        name: name === 0 ? names.get(relationIds[0]) : name, label: label === 0 ? descriptions.get(relationIds[0]) : label, index, count };
+      });
       const actual = outcome(() => cadSketchRelationGlyphEntries(graph).map(({ key, relationIds, operand, kind, name, label, index, count }) => ({ key, relationIds: [...relationIds], operand, kind, name, label, index, count })));
       expect(actual, `graph ${graphIndex}`).toEqual(expected);
     });

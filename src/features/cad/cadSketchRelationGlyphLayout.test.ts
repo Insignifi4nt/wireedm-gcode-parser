@@ -60,7 +60,7 @@ describe('relation glyph layout', () => {
     expect(clockwise[1].anchor[0]).toBeCloseTo(-Math.SQRT1_2 * 10); expect(clockwise[1].anchor[1]).toBeCloseTo(-Math.SQRT1_2 * 10);
   });
 
-  it('marks a coordinate held at 0 as Coincident with its axis and X and Y at 0 on one point as one At the origin glyph, leaves a coordinate held away from 0 to its Distance dimension, and marks a fixed point Fixed', () => {
+  it('marks a coordinate held at 0 as Coincident with its axis and X and Y at 0 on one point as one Coincident with the origin, leaves a coordinate held away from 0 to its Distance dimension, and marks a fixed point Fixed', () => {
     const base = rectangle([{ id: 'x', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 }, { id: 'y', kind: 'fixed-axis', pointId: 'a', axis: 'y', value: '2 - 2' },
       { id: 'cx', kind: 'fixed-axis', pointId: 'c', axis: 'x', value: 40 }, { id: 'by', kind: 'fixed-axis', pointId: 'b', axis: 'y', value: 0 },
       { id: 'bx', kind: 'fixed-axis', pointId: 'b', axis: 'x', value: 40 }, { id: 'dx', kind: 'fixed-axis', pointId: 'd', axis: 'x', value: 'offset' },
@@ -68,7 +68,7 @@ describe('relation glyph layout', () => {
     const graph: CadSketchGraph = { ...base, points: [...base.points, { id: 'e', position: [10, 5] }] };
     // Point d's X follows a parameter, so it stays a dimension while the parameter is 0; point b has one coordinate on its axis and one away, so one mark.
     expect(layoutCadSketchRelationGlyphs(graph, { offset: 0 }).map(glyph => [glyph.relationIds, glyph.operand, glyph.kind, glyph.label])).toEqual([
-      [['x', 'y'], 'point:a', 'coincident', 'At the origin: Point 1'], [['by'], 'point:b', 'coincident', 'On the X axis: Point 2'], [['pin'], 'point:e', 'fix', 'Fixed point: Point 5']]);
+      [['x', 'y'], 'point:a', 'coincident', 'Coincident: Point 1 and Origin'], [['by'], 'point:b', 'coincident', 'Coincident: Point 2 and H axis'], [['pin'], 'point:e', 'fix', 'Fixed point: Point 5']]);
   });
 
   it('places point relations at their point, Symmetric on both points and its axis, and Tangent at the joint', () => {
@@ -107,12 +107,12 @@ describe('relation glyph layout', () => {
       [['join'], 'point:a', [10, -10]], [['fix'], 'point:a', [25, -10]], [['on'], 'point:a', [40, -10]]]);
   });
 
-  it('draws X and Y held at 0 on points that Coincident joins as one At the origin glyph that names both relations', () => {
+  it('draws X and Y held at 0 on points that Coincident joins as one Coincident with the origin that names both relations', () => {
     const base = rectangle([{ id: 'x', kind: 'fixed-axis', pointId: 'a', axis: 'x', value: 0 }, { id: 'join', kind: 'coincident', pointIds: ['aa', 'a'] },
       { id: 'y', kind: 'fixed-axis', pointId: 'aa', axis: 'y', value: 0 }]);
     const graph: CadSketchGraph = { ...base, points: [...base.points, { id: 'aa', position: [0, 0] }] };
     expect(layoutCadSketchRelationGlyphs(graph, {}).map(glyph => [glyph.relationIds, glyph.operand, glyph.kind, glyph.label])).toEqual([
-      [['x', 'y'], 'point:a', 'coincident', 'At the origin: Point 1'], [['join'], 'point:a', 'coincident', 'Coincident: Point 5 and Point 1']]);
+      [['x', 'y'], 'point:a', 'coincident', 'Coincident: Point 1 and Origin'], [['join'], 'point:a', 'coincident', 'Coincident: Point 5 and Point 1']]);
   });
 
   it('draws Horizontal or Vertical between points joined to a line\'s ends as one mark on that line, holding the line and both places', () => {

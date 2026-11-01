@@ -4,21 +4,20 @@ import { checkCadSketchGraph, parseCadSketchGraph, type CadSketchGraph, type Cad
 import { validateCadSketchGeometry } from './cadSketchGeometry';
 import { copyCadConstructionPoint, createCadThreePointArc, MAX_CAD_PATH_CONSTRUCTION_EDGES, type CadConstructionPoint } from './cadPathConstruction';
 import { evaluateCadScalar } from './cadExpression';
+import { CAD_SKETCH_ORIGIN_ID, cadSketchAxisNormal, type CadSketchVirtualId } from './sketch-relations/cadSketchVirtualElements';
 
-/** The sketch plane's origin and its axes, as references a fresh point can be placed on. */
-export type CadFreshSketchDatum = 'origin' | 'x-axis' | 'y-axis';
 export type CadFreshSketchPick =
   | { readonly kind: 'position'; readonly point: CadConstructionPoint }
   | { readonly kind: 'coincident'; readonly point: CadConstructionPoint; readonly sourcePointId: string; readonly relationId: string }
   | { readonly kind: 'on-line'; readonly point: CadConstructionPoint; readonly lineId: string; readonly relationId: string }
   /** Keeps the point on the full circle of an arc or circle. */
   | { readonly kind: 'on-curve'; readonly point: CadConstructionPoint; readonly curveId: string; readonly relationId: string }
-  /** Fixes the coordinates the reference sets to zero: both at the origin, Y on the X axis and X on the Y axis. */
-  | { readonly kind: 'datum'; readonly point: CadConstructionPoint; readonly datum: CadFreshSketchDatum; readonly relationIds: readonly string[] };
+  /** Holds the coordinates the origin or an axis sets to zero, the form the sketch stores a point on them in: both at the origin, Y on the H axis and X on the V axis. */
+  | { readonly kind: 'fixed'; readonly point: CadConstructionPoint; readonly targetId: CadSketchVirtualId; readonly relationIds: readonly string[] };
 
-/** The coordinates a point on a plane reference keeps at zero. */
-export function cadFreshSketchDatumAxes(datum: CadFreshSketchDatum): readonly ('x' | 'y')[] {
-  return datum === 'origin' ? ['x', 'y'] : datum === 'x-axis' ? ['y'] : ['x'];
+/** The coordinates a point on the origin or an axis keeps at zero. */
+export function cadFreshSketchFixedAxes(targetId: CadSketchVirtualId): readonly ('x' | 'y')[] {
+  return targetId === CAD_SKETCH_ORIGIN_ID ? ['x', 'y'] : [cadSketchAxisNormal(targetId)];
 }
 /** A horizontal or vertical relation a drawn line keeps between its own two endpoints. */
 export interface CadFreshSketchInference { readonly kind: 'horizontal' | 'vertical'; readonly relationId: string }
@@ -108,7 +107,7 @@ function sameAttachment(a: CadFreshSketchPick, b: CadFreshSketchPick): boolean {
     case 'coincident': return b.kind === 'coincident' && a.sourcePointId === b.sourcePointId;
     case 'on-line': return b.kind === 'on-line' && a.lineId === b.lineId;
     case 'on-curve': return b.kind === 'on-curve' && a.curveId === b.curveId;
-    case 'datum': return b.kind === 'datum' && a.datum === b.datum;
+    case 'fixed': return b.kind === 'fixed' && a.targetId === b.targetId;
   }
 }
 
@@ -208,8 +207,8 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
       throw new CadError('stale-fresh-sketch-point-reference', 'A picked line changed or no longer exists. Pick a position on it again.');
     if (pick.kind === 'on-curve' && !existing.entities.some(entity => entity.id === pick.curveId && (entity.kind === 'arc' || entity.kind === 'circle')))
       throw new CadError('stale-fresh-sketch-point-reference', 'A picked arc or circle changed or no longer exists. Pick a position on it again.');
-    if (pick.kind === 'datum' && (pick.relationIds.length !== cadFreshSketchDatumAxes(pick.datum).length
-      || cadFreshSketchDatumAxes(pick.datum).some(axis => point[axis === 'x' ? 0 : 1] !== 0)))
+    if (pick.kind === 'fixed' && (pick.relationIds.length !== cadFreshSketchFixedAxes(pick.targetId).length
+      || cadFreshSketchFixedAxes(pick.targetId).some(axis => point[axis === 'x' ? 0 : 1] !== 0)))
       throw new CadError('invalid-fresh-sketch-reference', 'A point placed on the origin or an axis must lie exactly on it.');
     return point;
   }
@@ -220,7 +219,7 @@ export function createCadFreshSketchDrawing({ drawing, construction, createId, e
         case 'coincident': return [{ id: pick.relationId, kind: 'coincident', pointIds: [pointId, pick.sourcePointId] }];
         case 'on-line': return [{ id: pick.relationId, kind: 'point-on-line', pointId, lineId: pick.lineId }];
         case 'on-curve': return [{ id: pick.relationId, kind: 'point-on-curve', pointId, curveId: pick.curveId }];
-        case 'datum': return cadFreshSketchDatumAxes(pick.datum).map((axis, index) => ({ id: pick.relationIds[index], kind: 'fixed-axis', pointId, axis, value: 0 }));
+        case 'fixed': return cadFreshSketchFixedAxes(pick.targetId).map((axis, index) => ({ id: pick.relationIds[index], kind: 'fixed-axis', pointId, axis, value: 0 }));
         case 'position': return [];
       }
     }), ...inferred];

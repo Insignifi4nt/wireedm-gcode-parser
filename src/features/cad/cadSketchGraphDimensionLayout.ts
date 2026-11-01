@@ -11,6 +11,7 @@ import { cadSketchLineAngleGeometry, resolveCadSketchAngleRays, type CadSketchLi
 import { cadSketchLineDirection } from '@/domain/cad/cadSketchLineRelations';
 import { cadSketchSignedPointLineDistance, resolveCadSketchPointLineDistanceOperands } from '@/domain/cad/cadSketchPointLineDistanceRelations';
 import type { Point2 } from '@/domain/path-intel/types';
+import { CadSketchPositions } from '@/domain/cad/sketch-relations/cadSketchVirtualElements';
 import type { SketchPoint } from './cadSketchInteraction';
 import { formatCadQuantity } from './cadDisplayQuantity';
 import { cadSketchAxisDistanceLine } from './cadSketchDimensionCommands';
@@ -567,7 +568,8 @@ interface Resolving {
 /** The numeric frame dimensions of `graph` resolve against, or null when it has no extent to draw them in. */
 function resolving(graph: CadSketchGraph, parameters: Readonly<Record<string, number>>): Resolving | null {
   const value = (scalar: CadScalar) => { try { return evaluateCadScalar(scalar, parameters); } catch { return NaN; } };
-  const points = new Map<string, Point2>();
+  // The origin and the axis samples resolve as points too, so distances and angles from them draw.
+  const points = new CadSketchPositions();
   for (const point of graph.points) {
     const x = value(point.position[0]), y = value(point.position[1]);
     if (Number.isFinite(x) && Number.isFinite(y)) points.set(point.id, { x, y });

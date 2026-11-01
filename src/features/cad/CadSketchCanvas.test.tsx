@@ -10,6 +10,11 @@ import { createCadDocument } from '@/domain/cad/cadSchema';
 import { applyCadEdits } from '@/domain/cad/cadOperations';
 import type { CadSketchGraphSelection } from './cadSketchGraphSelection';
 
+const H_AXIS = { kind: 'entity', id: '@h' } as const, V_AXIS = { kind: 'entity', id: '@v' } as const, ORIGIN = { kind: 'point', id: '@origin' } as const;
+type OnSelect = (selection: CadSketchGraphSelection | null, additive?: boolean) => void;
+/** Sends selections of the origin and the axes to `fixed` and the rest to `geometry`, so each is counted on its own. */
+const splitFixed = (geometry: OnSelect, fixed: OnSelect): OnSelect => (selection, additive) => selection?.id.startsWith('@') ? fixed(selection, additive) : geometry(selection, additive);
+
 const rasterize = vi.hoisted(() => vi.fn());
 vi.mock('@/features/editor/captureEditorPreview', () => ({ captureSvgPreview: rasterize }));
 let root: Root;
@@ -311,45 +316,45 @@ describe('graph spatial selection', () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
   it('selects the plane origin and axes anywhere along them in plain selection, after the geometry lying on them', async () => {
-    const h = await spatialFixture(), datum = vi.fn();
-    await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: datum, datumSelection: ['x-axis'] } });
+    const h = await spatialFixture(), fixed = vi.fn();
+    await h.show({ graphControls: { ...h.props().graphControls!, onSelect: splitFixed(h.selected, fixed), selection: [H_AXIS] } });
     const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
     const pixel = state.heightSpanMm / 500, click = async (x: number, y: number, shift = false) => { await h.pointer('pointerdown', x, y, shift); await h.pointer('pointerup', x, y, shift); };
     await click(0, 36 * pixel); await click(0, 36 * pixel, true);
     // Past the V arrow, behind the origin and beyond the line that lies on the H axis, the axes still answer.
     await click(0, 200 * pixel); await click(3 * pixel, -40 * pixel); await click(20, -2 * pixel, true);
-    expect(datum.mock.calls).toEqual([['y-axis', false], ['y-axis', true], ['y-axis', false], ['y-axis', false], ['x-axis', true]]);
+    expect(fixed.mock.calls).toEqual([[V_AXIS, false], [V_AXIS, true], [V_AXIS, false], [V_AXIS, false], [H_AXIS, true]]);
     // The line lying on the H axis and the point at the origin keep their own picks.
     await click(5, pixel); await click(pixel, 0);
     expect(h.selected.mock.calls).toEqual([[{ kind: 'entity', id: 'ab' }, false], [{ kind: 'point', id: 'a' }, false]]);
-    expect(datum).toHaveBeenCalledTimes(5); expect(h.edited).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-cad-sketch-datum="x-axis"]')?.getAttribute('aria-pressed')).toBe('true');
-    expect(container.querySelector('[data-cad-sketch-datum="y-axis"]')?.getAttribute('aria-pressed')).toBe('false');
+    expect(fixed).toHaveBeenCalledTimes(5); expect(h.edited).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-cad-sketch-fixed="@h"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(container.querySelector('[data-cad-sketch-fixed="@v"]')?.getAttribute('aria-pressed')).toBe('false');
   });
   it('treats the origin as a point and the axes as edges for the selection filter, and never boxes them', async () => {
-    const h = await spatialFixture(), datum = vi.fn(), role = (datum: string) => container.querySelector(`[data-cad-sketch-datum="${datum}"]`)?.getAttribute('role') ?? null;
-    await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
+    const h = await spatialFixture(), fixed = vi.fn(), role = (id: string) => container.querySelector(`[data-cad-sketch-fixed="${id}"]`)?.getAttribute('role') ?? null;
+    await h.show({ graphControls: { ...h.props().graphControls!, onSelect: splitFixed(h.selected, fixed) } });
     const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
     const pixel = state.heightSpanMm / 500, click = async (x: number, y: number) => { await h.pointer('pointerdown', x, y); await h.pointer('pointerup', x, y); };
     await act(async () => currentControls().setSketchPickFilter?.('points'));
-    expect([role('origin'), role('x-axis'), role('y-axis')]).toEqual(['button', null, null]);
+    expect([role('@origin'), role('@h'), role('@v')]).toEqual(['button', null, null]);
     await click(20, pixel);
     await act(async () => currentControls().setSketchPickFilter?.('edges'));
-    expect([role('origin'), role('x-axis'), role('y-axis')]).toEqual([null, 'button', 'button']);
-    await click(20, pixel); expect(datum.mock.calls).toEqual([['x-axis', false]]);
+    expect([role('@origin'), role('@h'), role('@v')]).toEqual([null, 'button', 'button']);
+    await click(20, pixel); expect(fixed.mock.calls).toEqual([[H_AXIS, false]]);
     // A box across the origin and both axes takes only the sketch geometry inside it.
     await act(async () => currentControls().setSketchPickFilter?.('auto'));
     await h.pointer('pointerdown', -40 * pixel, -40 * pixel); await h.pointer('pointermove', 12, 2); await h.pointer('pointerup', 12, 2);
     expect(h.selectedSet).toHaveBeenCalledExactlyOnceWith([{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }, { kind: 'entity', id: 'ab' }], false);
-    expect(datum).toHaveBeenCalledOnce();
+    expect(fixed).toHaveBeenCalledOnce();
   });
   it('selects the origin or an axis on release, so a press there that drags still boxes or pans', async () => {
-    const h = await spatialFixture(), datum = vi.fn();
-    await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
+    const h = await spatialFixture(), fixed = vi.fn();
+    await h.show({ graphControls: { ...h.props().graphControls!, onSelect: splitFixed(h.selected, fixed) } });
     const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
     const pixel = state.heightSpanMm / 500, everything = [{ kind: 'point', id: 'a' }, { kind: 'point', id: 'b' }, { kind: 'entity', id: 'ab' }];
     // Dragging from the H axis, and from the origin beside the point on it, boxes the geometry rather than taking the reference.
-    await h.pointer('pointerdown', -10, 0); expect(datum).not.toHaveBeenCalled();
+    await h.pointer('pointerdown', -10, 0); expect(fixed).not.toHaveBeenCalled();
     await h.pointer('pointermove', 12, -2); await h.pointer('pointerup', 12, -2);
     await h.pointer('pointerdown', -5 * pixel, 5 * pixel); await h.pointer('pointermove', 12, -2); await h.pointer('pointerup', 12, -2);
     expect(h.selectedSet.mock.calls).toEqual([[everything, false], [everything, false]]);
@@ -358,28 +363,28 @@ describe('graph spatial selection', () => {
     await h.pointer('pointerdown', -5 * pixel, 5 * pixel, true); await h.pointer('pointerup', -5 * pixel, 5 * pixel, true);
     await h.pointer('pointerdown', 0, -10); await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     await h.pointer('pointerup', 0, -10);
-    expect(datum.mock.calls).toEqual([['x-axis', false], ['origin', true]]); expect(h.selectedSet).toHaveBeenCalledTimes(2);
+    expect(fixed.mock.calls).toEqual([[H_AXIS, false], [ORIGIN, true]]); expect(h.selectedSet).toHaveBeenCalledTimes(2);
     expect(h.pending).toHaveBeenLastCalledWith(false);
     // The right button pans from an axis as it does anywhere else.
     await h.pointer('pointerdown', -10, 0, false, 7, 2); await h.pointer('pointermove', -10, 3 * state.heightSpanMm, false, 7, 2); await h.pointer('pointerup', -10, 3 * state.heightSpanMm, false, 7, 2);
-    expect(currentControls().getState()).not.toEqual(state); expect(datum).toHaveBeenCalledTimes(2);
+    expect(currentControls().getState()).not.toEqual(state); expect(fixed).toHaveBeenCalledTimes(2);
     // Trackpad navigation pans with the wheel, so its primary press on an axis behaves the same.
     await h.show({ navigationMode: 'trackpad' });
     const panned = currentControls().getState(); if (panned.mode === 'solid') throw new Error('Sketch state missing.');
     const along = panned.centerMm[0];
     await h.pointer('pointerdown', along, 0); await h.pointer('pointermove', along + 40 * pixel, 30 * pixel); await h.pointer('pointerup', along + 40 * pixel, 30 * pixel);
     await h.pointer('pointerdown', along, 0); await h.pointer('pointerup', along, 0);
-    expect(h.selectedSet).toHaveBeenCalledTimes(3); expect(datum).toHaveBeenLastCalledWith('x-axis', false); expect(datum).toHaveBeenCalledTimes(3);
+    expect(h.selectedSet).toHaveBeenCalledTimes(3); expect(fixed).toHaveBeenLastCalledWith(H_AXIS, false); expect(fixed).toHaveBeenCalledTimes(3);
   });
   it('keeps profile grips and drags where an axis crosses them, and takes the axis through a profile on a plain press', async () => {
-    const h = await spatialFixture(), datum = vi.fn(), selectProfile = vi.fn(), move = vi.fn(), translate = vi.fn();
+    const h = await spatialFixture(), fixed = vi.fn(), selectProfile = vi.fn(), move = vi.fn(), translate = vi.fn();
     const profile = { id: 'legacy', name: 'Legacy rectangle', construction: false, geometry: { kind: 'rectangle' as const, x: -30, y: -5, width: 10, height: 10, cornerRadius: 0 } };
     await h.show({ sketch: { ...h.feature, profiles: [profile] }, onSelectProfile: selectProfile, onMoveHandle: move, onTranslateProfile: translate,
-      graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
+      graphControls: { ...h.props().graphControls!, onSelect: splitFixed(h.selected, fixed) } });
     const click = () => act(async () => h.canvas.dispatchEvent(new MouseEvent('click', { button: 0, detail: 1, bubbles: true, clientX: 100, clientY: 100 })));
     // Inside the unselected rectangle the press takes the H axis, and its click does not select the profile.
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
-    expect(datum.mock.calls).toEqual([['x-axis', false]]); expect(selectProfile).not.toHaveBeenCalled();
+    expect(fixed.mock.calls).toEqual([[H_AXIS, false]]); expect(selectProfile).not.toHaveBeenCalled();
     // The right side grip sits on the axis and keeps its drag.
     await h.pointer('pointerdown', -20, 0); await h.pointer('pointermove', -10, 0); await h.pointer('pointerup', -10, 0);
     expect(move).toHaveBeenCalledOnce(); expect(move.mock.calls[0].slice(0, 2)).toEqual(['legacy', { kind: 'rectangle-side', index: 1 }]);
@@ -388,12 +393,12 @@ describe('graph spatial selection', () => {
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointermove', -25, 10); await h.pointer('pointerup', -25, 10);
     expect(translate).toHaveBeenCalledOnce(); expect(translate.mock.calls[0][0]).toBe('legacy');
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
-    expect(datum.mock.calls).toEqual([['x-axis', false], ['x-axis', false]]); expect(translate).toHaveBeenCalledOnce(); expect(move).toHaveBeenCalledOnce();
+    expect(fixed.mock.calls).toEqual([[H_AXIS, false], [H_AXIS, false]]); expect(translate).toHaveBeenCalledOnce(); expect(move).toHaveBeenCalledOnce();
   });
   it('drops a press on an axis, and its click, when the document, cancellation, lock, focus or canvas frame changes, or another contact lands, before release', async () => {
-    const h = await spatialFixture(), datum = vi.fn(), selectProfile = vi.fn();
+    const h = await spatialFixture(), fixed = vi.fn(), selectProfile = vi.fn();
     const profile = { id: 'legacy', name: 'Legacy rectangle', construction: false, geometry: { kind: 'rectangle' as const, x: -30, y: -5, width: 10, height: 10, cornerRadius: 0 } };
-    await h.show({ sketch: { ...h.feature, profiles: [profile] }, onSelectProfile: selectProfile, graphControls: { ...h.props().graphControls!, onSelectDatum: datum } });
+    await h.show({ sketch: { ...h.feature, profiles: [profile] }, onSelectProfile: selectProfile, graphControls: { ...h.props().graphControls!, onSelect: splitFixed(h.selected, fixed) } });
     // Inside the unselected rectangle a press on the H axis starts neither a box nor a profile drag, so only the press itself can go
     // stale. Its release and trailing click must neither select the rectangle nor clear the sketch selection; a cancellation or
     // Escape may clear it themselves.
@@ -423,36 +428,36 @@ describe('graph spatial selection', () => {
     // Sketch geometry stops a press from reaching the canvas, so a second touch on a point still abandons the held press.
     const point = container.querySelector('[data-cad-sketch-point="c"]'); if (!point) throw new Error('Point missing.');
     await interrupted(async () => { await h.pointer('pointerdown', 30, 20, false, 8, 0, point, {}, false); await h.pointer('pointerup', 30, 20, false, 8, 0, point, {}, false); });
-    expect(datum).not.toHaveBeenCalled(); expect(selectProfile).not.toHaveBeenCalled();
+    expect(fixed).not.toHaveBeenCalled(); expect(selectProfile).not.toHaveBeenCalled();
     await h.pointer('pointerdown', -25, 0); await h.pointer('pointerup', -25, 0); await click();
-    expect(datum).toHaveBeenCalledExactlyOnceWith('x-axis', false); expect(selectProfile).not.toHaveBeenCalled();
+    expect(fixed).toHaveBeenCalledExactlyOnceWith(H_AXIS, false); expect(selectProfile).not.toHaveBeenCalled();
     // A pen, primary for its own type, taps the V axis while a touch holds the H axis. The pen takes the V axis, and its click
     // must not consume the suppression the touch's trailing click needs, so that click neither clears the V axis nor selects
     // the rectangle.
-    datum.mockClear();
+    fixed.mockClear();
     await h.pointer('pointerdown', -25, 0, false, 9);
     await h.pointer('pointerdown', 0, 12, false, 10); await h.pointer('pointerup', 0, 12, false, 10); await click();
-    expect(datum).toHaveBeenCalledExactlyOnceWith('y-axis', false);
+    expect(fixed).toHaveBeenCalledExactlyOnceWith(V_AXIS, false);
     const kept = h.selected.mock.calls.length;
     await h.pointer('pointerup', -25, 0, false, 9); await click();
-    expect(h.selected).toHaveBeenCalledTimes(kept); expect(datum).toHaveBeenCalledOnce(); expect(selectProfile).not.toHaveBeenCalled();
+    expect(h.selected).toHaveBeenCalledTimes(kept); expect(fixed).toHaveBeenCalledOnce(); expect(selectProfile).not.toHaveBeenCalled();
     // Two presses abandoned before either lifts: the pen's press abandons the touch's, and Escape then abandons the pen's. Each
     // pointer's own click is still swallowed, whichever lifts first.
-    datum.mockClear();
+    fixed.mockClear();
     await h.pointer('pointerdown', -25, 0, false, 9); await h.pointer('pointerdown', 0, 12, false, 10);
     await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     const settled = h.selected.mock.calls.length;
     await h.pointer('pointerup', 0, 12, false, 10); await click();
     await h.pointer('pointerup', -25, 0, false, 9); await click();
-    expect(h.selected).toHaveBeenCalledTimes(settled); expect(datum).not.toHaveBeenCalled(); expect(selectProfile).not.toHaveBeenCalled();
+    expect(h.selected).toHaveBeenCalledTimes(settled); expect(fixed).not.toHaveBeenCalled(); expect(selectProfile).not.toHaveBeenCalled();
   });
-  it('clears a datum-only selection on Escape and drops panned-away datums from the keyboard order', async () => {
-    const h = await spatialFixture(), origin = () => container.querySelector('[data-cad-sketch-datum="origin"]');
-    await h.show({ graphControls: { ...h.props().graphControls!, onSelectDatum: vi.fn(), datumSelection: ['x-axis'] } });
+  it('clears a selection of only an axis on Escape and drops a panned-away origin from the keyboard order', async () => {
+    const h = await spatialFixture(), origin = () => container.querySelector('[data-cad-sketch-fixed="@origin"]');
+    await h.show({ graphControls: { ...h.props().graphControls!, selection: [H_AXIS] } });
     await act(async () => h.canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(h.selected).toHaveBeenCalledWith(null);
-    // Escape also clears it while a keyboard-selected datum holds focus.
-    await act(async () => container.querySelector('[data-cad-sketch-datum="x-axis"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
+    // Escape also clears it while the selected axis holds focus.
+    await act(async () => container.querySelector('[data-cad-sketch-fixed="@h"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(h.selected).toHaveBeenCalledTimes(2);
     expect(origin()?.getAttribute('tabindex')).toBe('0');
     const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
@@ -462,17 +467,17 @@ describe('graph spatial selection', () => {
     expect(origin()?.getAttribute('tabindex')).toBeNull(); expect(origin()?.getAttribute('aria-hidden')).toBe('true');
   });
   it('places a position pick exactly at the origin when its owner takes the origin and no eligible point is under the pointer', async () => {
-    const h = await spatialFixture(), position = vi.fn(), onPick = vi.fn(), onPickDatum = vi.fn(), onCancel = vi.fn();
+    const h = await spatialFixture(), position = vi.fn(), onPick = vi.fn(), onCancel = vi.fn();
     const state = currentControls().getState(); if (state.mode === 'solid') throw new Error('Sketch state missing.');
     const pixel = state.heightSpanMm / 500;
     await h.show({ graphControls: { ...h.props().graphControls!, positionPick: { label: 'Place anchor', onPick: position, onCancel },
-      geometryPick: { label: 'Place anchor', eligibleEntityIds: [], eligiblePointIds: ['b', 'c'], eligibleDatums: ['origin'], onPick, onPickDatum, onCancel } } });
-    expect(container.querySelector('[data-cad-sketch-datum="origin"]')?.getAttribute('aria-label')).toBe('Use origin');
+      geometryPick: { label: 'Place anchor', eligibleEntityIds: [], eligiblePointIds: ['b', 'c', '@origin'], onPick, onCancel } } });
+    expect(container.querySelector('[data-cad-sketch-fixed="@origin"]')?.getAttribute('aria-label')).toBe('Use the origin');
     await h.pointer('pointerdown', 2 * pixel, pixel); await h.pointer('pointerup', 2 * pixel, pixel);
-    expect(onPickDatum).toHaveBeenCalledExactlyOnceWith('origin'); expect(position).not.toHaveBeenCalled();
+    expect(onPick).toHaveBeenCalledExactlyOnceWith(ORIGIN); expect(position).not.toHaveBeenCalled();
     // Away from the origin, and along the axes, the pick stays a free position.
     await h.pointer('pointerdown', 20, 2 * pixel); await h.pointer('pointerup', 20, 2 * pixel);
-    expect(position).toHaveBeenCalledOnce(); expect(onPickDatum).toHaveBeenCalledOnce(); expect(onPick).not.toHaveBeenCalled();
+    expect(position).toHaveBeenCalledOnce(); expect(onPick).toHaveBeenCalledOnce();
   });
   it('borrows exact point picks before edges and disables geometry mutations while choosing a second operand', async () => {
     const h = await spatialFixture(), onPick = vi.fn(), onCancel = vi.fn();

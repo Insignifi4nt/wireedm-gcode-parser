@@ -9,6 +9,7 @@ import { resolveCadSketchReferenceDimension } from '../../cadSketchReferenceDime
 import { checkCadSketchHeldPoint, checkCadSketchPointDistance, checkCadSketchPointPair } from '../cadSketchRelationChecks';
 import { CAD_SKETCH_ANGLE_OPERANDS, CAD_SKETCH_POINT_LINE_DISTANCE_OPERANDS, CAD_SKETCH_RADIAL_OPERANDS } from '../cadSketchOperandSignatures';
 import type { CadSketchOperandSignature, CadSketchRelationDefinition } from '../cadSketchRelationTypes';
+import { cadSketchAxisOfNormal } from '../cadSketchVirtualElements';
 import { CAD_SKETCH_POINT_OPERANDS, CAD_SKETCH_POINT_PAIR_OPERANDS, LINE_SLOT, POINT_SLOT, ROUND_SLOT, sortedIds } from './kindParts';
 
 // Relations that hold a value: lengths, angles and sizes. Dimensions take their value from the person who places them, so none is
@@ -84,11 +85,11 @@ export const fixedAxis: CadSketchRelationDefinition<'fixed-axis'> = {
   scalars: value,
   key: relation => `fixed-axis ${relation.axis} ${relation.pointId}`,
   // A distance from an axis names the axis among its operands, as a distance between two lines names both. An X coordinate is a
-  // distance from the Y axis.
-  mentions: (relation, names) => [names.point(relation.pointId), relation.axis === 'x' ? 'Y axis' : 'X axis'],
+  // distance from the V axis.
+  mentions: (relation, names) => [names.point(relation.pointId), names.entity(cadSketchAxisOfNormal(relation.axis))],
   lower: (relation, context) => context.hold(relation.pointId, relation.axis === 'x' ? 0 : 1, context.value(relation.id, 'value')),
   check: (_, relation, points, parameters) => checkCadSketchHeldPoint(relation, points, point => ({ ...point, [relation.axis]: evaluateCadScalar(relation.value, parameters) })),
-  agent: { exposed: true, summary: 'A point keeps a set distance from the X or Y axis; at 0 it lies on that axis.',
+  agent: { exposed: true, summary: 'A point keeps a set distance from the H or V axis; at 0 it lies on that axis.',
     meaning: 'Keeps one point coordinate, X measured from the Y axis or Y from the X axis; the other can remain free. A value that is 0 whatever the parameters are keeps the point on that axis; any other value is a distance from the axis, on the side its sign gives.' }
 };
 
@@ -136,7 +137,7 @@ export const radialSize: CadSketchRelationDefinition<'radial-size'> = {
     meaning: 'Drives circle or arc size using the declared radius or diameter.' }
 };
 
-const REFERENCE_LINE_LENGTH = { slots: [LINE_SLOT] } as const satisfies CadSketchOperandSignature;
+const REFERENCE_LINE_LENGTH = { slots: [{ ...LINE_SLOT, needs: ['length'] }] } as const satisfies CadSketchOperandSignature;
 const REFERENCE_POINT_LINE = { slots: [POINT_SLOT, LINE_SLOT] } as const satisfies CadSketchOperandSignature;
 const REFERENCE_RADIAL = { slots: [ROUND_SLOT] } as const satisfies CadSketchOperandSignature;
 export const referenceDimension: CadSketchRelationDefinition<'reference-dimension'> = {

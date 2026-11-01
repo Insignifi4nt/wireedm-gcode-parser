@@ -4,6 +4,7 @@ import { resolveCadSketchPointIdentities } from './cadSketchGraphJoints';
 import { CAD_SKETCH_SYMMETRY_OPERANDS, resolveCadSketchOperands } from './sketch-relations/cadSketchOperandSignatures';
 import { cadSketchLineDirection } from './cadSketchLineRelations';
 import { cadSketchDriverTolerance } from './cadSketchPrecision';
+import { isCadSketchVirtualAxisId } from './sketch-relations/cadSketchVirtualElements';
 import type { Point2 } from '@/domain/path-intel/types';
 
 /** Source identities, never position/proximity, determine the pair and its axis. */
@@ -11,10 +12,14 @@ export function resolveCadSketchSymmetryOperands(graph: CadSketchGraph, relation
   const [first, second, line] = resolveCadSketchOperands(graph, CAD_SKETCH_SYMMETRY_OPERANDS, [...relation.pointIds, relation.lineId]) as readonly [CadSketchGraphPoint, CadSketchGraphPoint, Extract<CadSketchGraphEntity, { kind: 'line' }>];
   return assertCadSketchSymmetryIdentities(graph, first, second, line);
 }
-/** The two points and the axis line's ends are four identities: no two of them the same point or joined. */
+/**
+ * The two points and the axis line's ends are four identities: no two of them the same point or joined. An axis has no ends of its own,
+ * only the origin it starts at and a sample along it, so about an axis the two points are the identities.
+ */
 export function assertCadSketchSymmetryIdentities(graph: CadSketchGraph, first: CadSketchGraphPoint, second: CadSketchGraphPoint, line: Extract<CadSketchGraphEntity, { kind: 'line' }>) {
   const identity = resolveCadSketchPointIdentities(graph);
-  if (new Set([first.id, second.id, line.startPointId, line.endPointId].map(identity)).size !== 4)
+  const ids = [first.id, second.id, ...isCadSketchVirtualAxisId(line.id) ? [] : [line.startPointId, line.endPointId]];
+  if (new Set(ids.map(identity)).size !== ids.length)
     throw new CadError('invalid-sketch-symmetry', 'Symmetric points and axis endpoints need four distinct declared identities.');
   return { points: [first, second] as const, line };
 }
