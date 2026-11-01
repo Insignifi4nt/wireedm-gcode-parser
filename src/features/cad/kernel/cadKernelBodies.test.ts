@@ -2,10 +2,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import initOpenCascade from 'replicad-opencascadejs';
-import { Compound, getOC, setOC, type Shape3D } from 'replicad';
+import { cast, Compound, getOC, makeBox, setOC, type Shape3D } from 'replicad';
 import type { CadDocument, CadFeature, CadMesh } from '../../../domain/cad/cadDocument';
 import { createCadDocument, parseCadDocument } from '../../../domain/cad/cadSchema';
-import { cadBodyLineage, resolveCadBodyRef, type CadBodyIssue, type CadBodyKey, type CadBodyRefResolution, type CadBodyState } from '../../../domain/cad/cadBodies';
+import { cadBodyLineage, cadBodyParts, resolveCadBodyRef, type CadBodyIssue, type CadBodyKey, type CadBodyRefResolution, type CadBodyState } from '../../../domain/cad/cadBodies';
+import { createCadKernelFaceSources } from './cadKernelBodyPieces';
 import { cadKernelBuilders } from './cadKernelBuilders';
 import { buildCadKernelModel, type CadKernelModel } from './cadKernelModel';
 import { isCadKernelReply } from './cadKernelProtocol';
@@ -121,7 +122,8 @@ function sameShapes(a: readonly (readonly number[])[], b: readonly (readonly num
 }
 /**
  * Checks that two builds of one history, whose Booleans listed solids in opposite orders, agree: the same bodies, solid counts and issues,
- * every key certain in one build certain in the other and naming the same solid, and an ambiguous key standing for the same solids.
+ * every key either build lists resolving the same way in both, a certain key naming the same solid and an ambiguous key standing for the
+ * same solids.
  * Returns whether the order changed the solid of some ambiguous key, as it should somewhere for the check to mean anything.
  */
 function agreeInEitherOrder(normal: Bodies, reordered: Bodies, label: string): boolean {
@@ -132,11 +134,8 @@ function agreeInEitherOrder(normal: Bodies, reordered: Bodies, label: string): b
   let renumbered = false;
   for (const key of new Set([normal, reordered].flatMap(built => built.bodies.flatMap(body => [body.key, ...body.pieces ?? [], ...body.ambiguous?.flat() ?? []])))) {
     const [a, b] = [resolveIn(normal, key), resolveIn(reordered, key)];
-    if (a.status === 'missing' || b.status === 'missing') {
-      expect([a.status, b.status], `${label}: ${key} is certain in one solid order and missing in the other`).not.toContain('resolved');
-      continue;
-    }
-    expect(a.status, `${label}: ${key} is certain in one solid order only`).toBe(b.status);
+    expect(a.status, `${label}: ${key} resolves as ${a.status} in one solid order and ${b.status} in the other`).toBe(b.status);
+    if (a.status === 'missing' || b.status === 'missing') continue;
     expect(sameShapes(shapesFor(normal, a), shapesFor(reordered, b)), `${label}: ${key} stands for other solids in the other solid order`).toBe(true);
     if (a.status === 'ambiguous' && a.body.pieces?.includes(key as CadBodyKey) && b.body.pieces?.includes(key as CadBodyKey))
       renumbered ||= !sameShape(shapesFor(normal, { status: 'resolved', body: a.body, part: key as CadBodyKey })[0], shapesFor(reordered, { status: 'resolved', body: b.body, part: key as CadBodyKey })[0]);
@@ -341,6 +340,43 @@ describe('kernel body parts are inherited only when continuity is certain', () =
     }
   });
 
+
+  it('never traces a face two solids of a source share, which goes to whichever the kernel lists first', () => {
+    const oc = getOC(), builder = new oc.BRepAlgoAPI_BuilderAlgo(), args = new oc.NCollection_List_TopoDS_Shape();
+    const left = makeBox([0, 0, 0], [10, 10, 10]), right = makeBox([10, 0, 0], [20, 10, 10]), slab = makeBox([8, -1, -1], [12, 11, 11]);
+    args.Append(left.wrapped); args.Append(right.wrapped); builder.SetArguments(args); builder.Build();
+    const raw = builder.Shape(), joined = cast(raw) as Shape3D;
+    raw.delete(); builder.delete(); args.delete();
+    // The boxes share their face at x = 10, and each piece of the slab across it keeps that face and no other.
+    const result = cadKernelBuilders.common(joined, slab), faces = createCadKernelFaceSources();
+    try {
+      faces.add(joined);
+      const traced = faces.trace(result);
+      expect(traced).toEqual([[], []]);
+      for (const rows of [traced, [...traced].reverse()]) {
+        const facts = { solids: 2, removesMaterial: true, sources: [{ kind: 'target' as const }], provenance: () => rows };
+        expect(cadBodyParts({ featureId: 'keep', previous: { key: 'imported' as CadBodyKey }, beforeSolids: 2, facts }))
+          .toMatchObject({ pieces: ['imported/split(0)', 'imported/split(1)'], ambiguous: [['imported/split(0)', 'imported/split(1)']] });
+      }
+    } finally { faces.dispose(); for (const shape of [left, right, joined, slab, result]) cadKernelDisposeShape(shape); }
+  });
+
+  it('keeps an ambiguous key a later cut splits while another member\'s solid could be the one it named', () => {
+    // Filleting every edge leaves the two halves keeping no face, so the kernel\'s order numbers them; the last cut splits the right half.
+    const features = [...box, ...slot('split', 18, 'box'), { ...base('round'), kind: 'fillet', targetId: 'split', radius: 1 } as CadFeature, ...slot('more', 30, 'round')];
+    const normal = built(features, bodiesOf), reordered = reversingSolids(() => built(features, bodiesOf));
+    agreeInEitherOrder(normal, reordered, 'split round more');
+    // The order decides which key the cut splits, so no key is a piece in both orders.
+    const splitFrom = (result: Bodies) => result.bodies[0].pieces!.find(piece => piece.startsWith('round/split(') && piece.indexOf('/', 6) > 0)?.slice(0, 14);
+    expect(new Set([splitFrom(normal), splitFrom(reordered)])).toEqual(new Set(['round/split(0)', 'round/split(1)']));
+    for (const result of [normal, reordered]) {
+      const pieces = [...result.bodies[0].pieces!].sort();
+      for (const key of ['round/split(0)', 'round/split(1)', 'round/split(0)/split(0)', 'round/split(1)/split(1)']) {
+        const resolution = resolveIn(result, key);
+        expect(resolution.status === 'ambiguous' && [...resolution.candidates].sort(), key).toEqual(pieces);
+      }
+    }
+  });
 
   it('reports a pattern copy a later cut removes as lost, so references to it resolve as missing', () => {
     built([...box, row('box', 2, 50), sketch('trim_sketch', rect(45, -5, 50, 30)), pad('trim', 'trim_sketch', 30, 'cut', 'row')], model => {

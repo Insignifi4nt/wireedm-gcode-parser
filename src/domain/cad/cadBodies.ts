@@ -162,7 +162,8 @@ export function cadBodyFeatureId(state: Pick<CadBodyState, 'createdBy' | 'modifi
  * only their count, so its length is bounded by the body key's.
  * - `ambiguous-body-parts`: after `featureId`, no build ties `pieces` of `body` to one solid each with certainty. References to them
  *   resolve as ambiguous. Each ambiguous key is listed by the issue of the feature that made it ambiguous: a later key that is ambiguous
- *   only because it descends from one extends that issue, so the same uncertainty is reported once.
+ *   only because it descends from one extends that issue, so the same uncertainty is reported once, until the issue lists
+ *   `MAX_CAD_BODY_LIST` keys; past that, the later feature lists the rest in an issue of its own.
  * - `lost-body-parts`: `featureId` removed `pieces` of `body`, or merged them into another solid. References to them resolve as missing.
  * - `untracked-body-parts`: after `featureId`, `body` has more parts than the lineage tracks, so it keeps none from then on.
  * - `more-body-issues`: the issues from `featureId` on did not fit in the list; the message gives how many were left out.
@@ -310,14 +311,19 @@ interface Placed { readonly solid: number; readonly rank: number; readonly sourc
 interface Descent { readonly origin: CadBodyKey; readonly via: number }
 
 /**
- * The entries of an ordered list whose order the kernel decides, one group for each source: ranks order solids only when the faces they
- * decide by lie in the same solid of a source, since faces of different solids rank in the order the kernel lists those solids, and solids
- * keeping no face come in the kernel's order.
+ * The entries of an ordered list whose order the kernel decides: ranks order solids only when the faces they decide by lie in the same
+ * solid of a source, since faces of different solids rank in the order the kernel lists those solids, and solids keeping no face come in
+ * the kernel's order. So each source's entries form a group unless they all decide by one solid, and then entries of equal rank, which the
+ * kernel's order breaks, still do.
  */
 function unsettled(list: readonly Placed[]): readonly (readonly Placed[])[] {
-  const bySource = new Map<number, Placed[]>();
-  for (const entry of list) { const same = bySource.get(entry.source); if (same) same.push(entry); else bySource.set(entry.source, [entry]); }
-  return [...bySource.values()].filter(same => same.length > 1 && !same.every(entry => entry.from >= 0 && entry.from === same[0].from));
+  const group = (entries: readonly Placed[], by: (entry: Placed) => number) => {
+    const groups = new Map<number, Placed[]>();
+    for (const entry of entries) { const same = groups.get(by(entry)); if (same) same.push(entry); else groups.set(by(entry), [entry]); }
+    return [...groups.values()].filter(same => same.length > 1);
+  };
+  return group(list, entry => entry.source).flatMap(same => same.every(entry => entry.from >= 0 && entry.from === same[0].from)
+    ? group(same, entry => entry.rank) : [same]);
 }
 
 /**
@@ -340,13 +346,14 @@ function unsettled(list: readonly Placed[]): readonly (readonly Placed[])[] {
  *   it, or which piece no solid continues it is: those keys and it are ambiguous together.
  * A key continued by one solid stays; continued by several, each is `key/split(q)`, q by the rank of the first face it keeps, then the
  * solids keeping none. Fresh keys are `feature/split(k)`: solids continuing the tool by rank, merges by rank, then solids keeping no face.
- * Ranks order only solids whose first faces lie in the same solid of a source: solids ordered by faces of different solids of one source,
- * as a whole body's several solids are, or by the kernel's order, are ambiguous when there are two or more of them, never ordered by where
- * they lie. A piece no solid continues or merges is lost, unless pieces can't be identified.
+ * Ranks order only solids whose first faces lie in the same solid of a source and differ: solids ordered by faces of different solids of
+ * one source, as a whole body's several solids are, by equal ranks or by the kernel's order are ambiguous when there are two or more of
+ * them, never ordered by where they lie. A piece no solid continues or merges is lost, unless pieces can't be identified.
  *
  * Ambiguity carries in groups: the keys that descend from one group through one source form a group, so the copies of one pattern
  * occurrence are never confused with another's. A group's earlier pieces that no solid continues stay in it, as keys that can't be found,
- * while any solid descends from the group through the target, and are lost once none does.
+ * while any solid descends from the group through the target, and are lost once none does. So do earlier pieces continued under other
+ * keys, since the kernel's order picked which member's key each solid continued, unless every earlier piece of the group was.
  */
 export function cadBodyParts(input: {
   readonly featureId: string;
@@ -463,12 +470,16 @@ export function cadBodyParts(input: {
       if (!groupOf.has(piece)) inherited.push([piece, origin]);
     }
   });
-  const now = new Set(pieces);
+  const now = new Set(pieces), was = new Set(before);
+  const renamed = (earlier: CadBodyKey) => continuedFrom.has(earlier) && !now.has(earlier);
   previous.ambiguous?.forEach((group, g) => {
-    const home = descent.get(`${g} 0`);
+    const home = descent.get(`${g} 0`), members = group.filter(earlier => was.has(earlier));
+    // A piece continued under other keys leaves its old key missing, as every split piece's does. But which member's key a solid continues
+    // follows the kernel's order, so a member continued under other keys may have been the key of another member's solid, kept unchanged or
+    // gone: it stays in its group unless every member that was a piece before was continued under other keys.
+    const split = members.length > 0 && members.every(renamed);
     for (const earlier of group) {
-      // A piece continued under another key leaves its old key missing, as every split piece's does.
-      if (now.has(earlier) || continuedFrom.has(earlier)) continue;
+      if (now.has(earlier) || (split && renamed(earlier))) continue;
       if (home) home.push(earlier); else if (!unidentified.has(earlier)) lost.push(earlier);
     }
   });
@@ -713,22 +724,48 @@ export type CadBodyRefResolution =
 
 /**
  * Resolves `ref` against `lineage` as it stands before the referring feature. A whole body's key resolves to it, and a piece's to that
- * part. An ambiguous key resolves as ambiguous, with the pieces of its group as candidates, or as missing once none is left. Anything
- * else is missing: a lost piece, a split piece's old key, a part of an untracked body, or a consumed body or one of its parts.
+ * part. An ambiguous key resolves as ambiguous, with the pieces of its group as candidates, or as missing once none is left. So does a
+ * key no body lists whose nearest listed ancestor is ambiguous, when another member of that ancestor's group has a descendant by the same
+ * steps: another kernel order would have given that descendant the key. Anything else is missing: a lost piece, a split piece's old key,
+ * a part of an untracked body, or a consumed body or one of its parts.
  */
 export function resolveCadBodyRef(ref: CadBodyRef, lineage: Pick<CadBodyLineage, 'get' | 'bodies' | 'consumed'>): CadBodyRefResolution {
   const whole = lineage.get(ref.key);
   if (whole) return { status: 'resolved', body: whole };
-  for (const body of lineage.bodies()) {
-    const group = body.ambiguous?.find(keys => keys.includes(ref.key));
-    if (group) {
-      const pieces = new Set(body.pieces), candidates = group.filter(part => pieces.has(part));
-      if (candidates.length) return { status: 'ambiguous', body, candidates };
-    }
+  const bodies = lineage.bodies(), among = (body: CadBodyState, group: readonly CadBodyKey[]): CadBodyRefResolution | undefined => {
+    const pieces = new Set(body.pieces), candidates = group.filter(part => pieces.has(part));
+    return candidates.length ? { status: 'ambiguous', body, candidates } : undefined;
+  };
+  for (const body of bodies) {
+    const group = body.ambiguous?.find(keys => keys.includes(ref.key)), ambiguous = group && among(body, group);
+    if (ambiguous) return ambiguous;
     if (body.pieces?.includes(ref.key)) return { status: 'resolved', body, part: ref.key };
   }
-  const gone = lineage.consumed().find(body => body.key === ref.key || body.pieces?.includes(ref.key));
+  for (const body of bodies) {
+    const group = twinGroup(body, ref.key), ambiguous = group && among(body, group);
+    if (ambiguous) return ambiguous;
+  }
+  const gone = lineage.consumed().find(body => body.key === ref.key || body.pieces?.includes(ref.key) || body.ambiguous?.some(group => group.includes(ref.key))
+    || twinGroup(body, ref.key));
   return gone?.consumedBy !== undefined ? { status: 'missing', consumedBy: gone.consumedBy } : { status: 'missing' };
+}
+
+/**
+ * The group of the key `body` lists in the place of `key`, which it does not list: when the nearest ancestor of `key` that it lists is
+ * ambiguous, the first other member of the ancestor's group with a descendant by the steps that lead from the ancestor to `key`.
+ */
+function twinGroup(body: CadBodyState, key: CadBodyKey): readonly CadBodyKey[] | undefined {
+  if (!body.ambiguous) return undefined;
+  const groups = new Map<string, readonly CadBodyKey[]>();
+  for (const group of body.ambiguous) for (const part of group) groups.set(part, group);
+  for (let end = key.lastIndexOf('/'); end > 0; end = key.lastIndexOf('/', end - 1)) {
+    const ancestor = key.slice(0, end), group = groups.get(ancestor);
+    if (!group) { if (ancestor === body.key || body.pieces?.includes(ancestor as CadBodyKey)) return undefined; continue; }
+    const steps = key.slice(end);
+    for (const member of group) { const twin = member === ancestor ? undefined : groups.get(member + steps); if (twin) return twin; }
+    return undefined;
+  }
+  return undefined;
 }
 
 /** What a body is for in a setup: the part made, the stock it is cut from, a fixture holding it, or reference geometry. */

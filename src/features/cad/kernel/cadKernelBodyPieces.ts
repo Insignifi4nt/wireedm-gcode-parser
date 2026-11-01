@@ -6,7 +6,8 @@ import { cadKernelDisposeShape, cadKernelSolids } from './cadKernelShapes';
 /**
  * The faces of the shapes one feature combined, source by source, so that each solid of its result can be traced to every source solid
  * it keeps a face of unchanged: the same native face, wherever its orientation. A face's rank is its place in its source's face order,
- * from 1, and a face two sources share belongs to the first. Solids are numbered as `cadKernelSolids` lists them, which is how
+ * from 1. A face that two solids of a source, or two sources, share proves neither, since which of them it would be given to follows the
+ * order they are listed in, so it is never traced. Solids are numbered as `cadKernelSolids` lists them, which is how
  * `CadMesh.faceSolids` numbers them; a copy made by moving a clone lists its solids and faces in its original's order. The record holds
  * native handles to the faces, so a source may be released once added. Adding and tracing cost O(faces).
  */
@@ -21,8 +22,8 @@ export interface CadKernelFaceSources {
 export function createCadKernelFaceSources(): CadKernelFaceSources {
   const oc = getOC(), face = oc.TopAbs_ShapeEnum.TopAbs_FACE, any = oc.TopAbs_ShapeEnum.TopAbs_SHAPE;
   const faces = new oc.NCollection_IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher();
-  // By face index, from 1: its source, the solid of the source it bounds and its rank there.
-  const sourceOf = [-1], solidOf = [-1], rankOf = [0];
+  // By face index, from 1: its source, the solid of the source it bounds, or UNBOUND or SHARED, and its rank there.
+  const UNBOUND = -1, SHARED = -2, sourceOf = [-1], solidOf = [UNBOUND], rankOf = [0];
   let sources = 0;
   function visit(shape: TopoDS_Shape, each: (element: TopoDS_Shape) => void) {
     const explorer = new oc.TopExp_Explorer(shape, face, any);
@@ -35,13 +36,14 @@ export function createCadKernelFaceSources(): CadKernelFaceSources {
       const source = sources++;
       let rank = 0;
       visit(shape.wrapped, element => {
-        if (faces.Add(element) === sourceOf.length) { sourceOf.push(source); solidOf.push(-1); rankOf.push(++rank); }
+        const id = faces.Add(element);
+        if (id === sourceOf.length) { sourceOf.push(source); solidOf.push(UNBOUND); rankOf.push(++rank); } else if (sourceOf[id] !== source) solidOf[id] = SHARED;
       });
       const solids = cadKernelSolids(shape);
       try {
         for (const [number, solid] of solids.entries()) visit(solid.wrapped, element => {
           const id = faces.FindIndex(element);
-          if (id && sourceOf[id] === source && solidOf[id] < 0) solidOf[id] = number;
+          if (id && sourceOf[id] === source && solidOf[id] !== SHARED) solidOf[id] = solidOf[id] === UNBOUND || solidOf[id] === number ? number : SHARED;
         });
       } finally { for (const solid of solids) cadKernelDisposeShape(solid); }
     },
