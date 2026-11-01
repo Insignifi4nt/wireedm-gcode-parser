@@ -4,8 +4,9 @@ import { cadSketchSolverStageClock, type CadSketchSolverStageObserver } from '..
 import type { CadSketchSolveDiagnostics, CadSketchSolveInput, CadSketchSolveResult } from '../cadSketchSolverTypes';
 import { compileCadSketchEquations, type CadSketchCompiledSketch } from '../../../../domain/cad/sketch-solver/compileCadSketchEquations';
 import { applyCadSketchEquationSolution, cadSketchEquationResidual, type CadSketchEquationModel } from '../../../../domain/cad/sketch-solver/cadSketchEquationModel';
-import { cadSketchEquationDefinition, cadSketchEquationDiagnostics } from './cadSketchNativeProtocol';
+import { cadSketchEquationDefinition, cadSketchEquationDiagnostics, type CadSketchNativeOptions } from './cadSketchNativeProtocol';
 import type { CadSketchNativeDiagnosis, CadSketchNativeSolution, CadSketchNativeSolver } from './cadSketchNativeSolver';
+import { CAD_SKETCH_START_COMBINATIONS, cadSketchFailingComponents, cadSketchStartCombinations, cadSketchStartComponents } from './cadSketchNativeStartSearch';
 import { CAD_PRECISION, cadRoundoff } from '../../../../domain/precision/cadPrecision';
 
 /**
@@ -70,32 +71,71 @@ export function attemptCadSketchNativeSolve(input: CadSketchSolveInput, solver: 
     const options = { analyseDefinition: input.analyseDefinition === true && !input.drag };
     const solution = solver.solve(model, options);
     clock.next('mapping');
-    const attempt = settle(input, model, solution, check);
-    if (attempt.result.kind === 'solved' || input.drag) return attempt;
-    // A relation that offers several starts, as a mirror does its other directions and pairings, ordered least moved first, tries each
-    // after the first in turn, one relation at a time. Only an answer at its most certain replaces the first.
-    for (const { relationId, count } of model.startChoices) for (let index = 1; index < count; index++) {
-      let other: CadSketchCompiledSketch;
-      try { other = clock.during('parseCompile', () => compileCadSketchEquations({ ...input, startChoices: { [relationId]: index } })); } catch { continue; }
-      const retried = settle(input, other, clock.during('nativeCall', () => solver.solve(other, options)), check);
-      if (retried.result.kind === 'solved' && !retried.reason) return retried;
-    }
+    const first = settle(input, model, solution, check);
+    if (first.result.kind === 'solved' || input.drag) return first;
+    // Relations that offer several starts, as mirrors do their other directions and pairings, try others (see `searchStarts`).
+    const searched = searchStarts(input, { model, solution, attempt: first }, solver, options, check, clock);
+    if (searched.attempt.result.kind === 'solved' && !searched.attempt.reason) return searched.attempt;
+    const { model: best, attempt } = searched;
     // A point held on a curve that starts on its center has no radial direction to move along, and an arc centre that starts along the
     // line it is held square to has no side to turn to, so a failed solve tries again from starts one radius out, then from starts
     // turned square. Only an answer at its most certain replaces it.
-    for (const values of [...centerStarts(model), ...squareStarts(model)]) {
-      const seeded = { ...model, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded, options)), check);
+    for (const values of [...centerStarts(best), ...squareStarts(best)]) {
+      const seeded = { ...best, values }, retried = settle(input, seeded, clock.during('nativeCall', () => solver.solve(seeded, options)), check);
       if (retried.result.kind === 'solved' && !retried.reason) return retried;
     }
     // A relation the lowering found no solve can meet, such as a mirror that held points and directions leave no line, conflicts with
     // what keeps them, where the solve itself named nothing: a solve can still meet such relations by collapsing the curves.
     const { result } = attempt;
-    if (model.unmet.length && result.kind === 'rejected' && result.reason !== 'conflicting' && result.reason !== 'redundant') {
-      const conflictingIds = input.graph.relations.map(relation => relation.id).filter(id => model.unmet.some(unmet => unmet.relationId === id || unmet.relationIds.includes(id)));
+    if (best.unmet.length && result.kind === 'rejected' && result.reason !== 'conflicting' && result.reason !== 'redundant') {
+      const conflictingIds = input.graph.relations.map(relation => relation.id).filter(id => best.unmet.some(unmet => unmet.relationId === id || unmet.relationIds.includes(id)));
       return answer({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.', diagnostics: { ...noDiagnostics('failed'), conflictingIds } });
     }
     return attempt;
   } finally { clock.stop(); }
+}
+
+/** A compiled sketch, native's solution of it and the attempt it settled to. */
+interface Tried { readonly model: CadSketchCompiledSketch; readonly solution: CadSketchNativeSolution; readonly attempt: CadSketchNativeAttempt }
+
+/**
+ * After a failed solve that is not a drag, the starts its relations offer, searched one connected component at a time (see
+ * `cadSketchStartComponents`), in the order of their first relation id; a solve too large for the solver tries none. Only a component
+ * that the failure names (see `cadSketchFailingComponents`) is searched, through its combinations least moved first, up to
+ * `CAD_SKETCH_START_COMBINATIONS`, with every component already searched kept at the combination it settled on and the others at their
+ * first. A combination after which the component no longer fails is kept, and the search moves to the next component. So disjoint
+ * mirrors cost the sum of their starts, not the product: at most one compile and solve for each combination after the first. Where the
+ * failure names no component, every component is searched alike but none is kept, and so is a solution that moved fixed values or
+ * left the coordinate range, whose graph cannot be checked. The first answer at its most certain is returned; otherwise the last kept
+ * combination's model and attempt, or the first ones where none was kept.
+ */
+function searchStarts(input: CadSketchSolveInput, first: Tried, solver: CadSketchNativeSolver, options: CadSketchNativeOptions, check: Check,
+  clock: ReturnType<typeof cadSketchSolverStageClock>): Pick<Tried, 'model' | 'attempt'> {
+  const components = cadSketchStartComponents(first.model);
+  if (!components.length || first.solution.status === 'too-large') return first;
+  const failing = (tried: Omit<Tried, 'attempt'>) => {
+    let graph: CadSketchGraph | undefined;
+    try { graph = applyCadSketchEquationSolution(input.graph, tried.model, tried.solution.values); } catch { return undefined; }
+    return graph ? cadSketchFailingComponents(input.graph, tried.model, tried.solution, check(graph, input.parameters), components) : undefined;
+  };
+  const named = failing(first), every = !named?.size;
+  let chosen: Readonly<Record<string, number>> = {}, best: Pick<Tried, 'model' | 'attempt'> = first;
+  for (const [at, component] of components.entries()) {
+    if (named?.size && !named.has(at)) continue;
+    for (const combination of cadSketchStartCombinations(component, CAD_SKETCH_START_COMBINATIONS).slice(1)) {
+      const startChoices = { ...chosen, ...combination };
+      let model: CadSketchCompiledSketch;
+      try { model = clock.during('parseCompile', () => compileCadSketchEquations({ ...input, startChoices })); } catch { continue; }
+      // Another relation's start can leave a later one in the component fewer starts to offer; a start it no longer offers is skipped.
+      if (Object.entries(combination).some(([relationId, index]) => index > 0 && !model.startChoices.some(choice => choice.relationId === relationId && index < choice.costs.length))) continue;
+      const solution = clock.during('nativeCall', () => solver.solve(model, options)), attempt = settle(input, model, solution, check);
+      if (attempt.result.kind === 'solved' && !attempt.reason) return { model, attempt };
+      if (every) continue;
+      const still = failing({ model, solution });
+      if (still && !still.has(at)) { chosen = startChoices; best = { model, attempt }; break; }
+    }
+  }
+  return best;
 }
 
 function settle(input: CadSketchSolveInput, model: CadSketchEquationModel, solution: CadSketchNativeSolution, check: Check): CadSketchNativeAttempt {

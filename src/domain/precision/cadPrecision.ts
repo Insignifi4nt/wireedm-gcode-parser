@@ -34,7 +34,8 @@ const roles = {
    * Two lines mirrored about a line pair their ends crossed, start with end, only when that leaves their summed squared gaps to each
    * other's mirror images smaller than pairing start with start by more than this fraction; nearer ties keep start with start. Two
    * starts of a curve mirror whose summed squared movements differ by at most this fraction of the larger tie too, and the one that
-   * turns the mirror counter-clockwise more goes first, then start with start.
+   * turns the mirror counter-clockwise more goes first, then start with start. So do two combinations of the starts of mirrors whose
+   * parameters connect, by their summed movements, and the one that keeps the earlier relation's earlier start goes first.
    */
   mirrorPairingTieRelative: 1e-9,
   /** Cross product of two line directions, in square millimetres, at or below which legacy profile checks treat lines as parallel. */

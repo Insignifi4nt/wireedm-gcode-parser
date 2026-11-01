@@ -105,15 +105,14 @@ type CurveSymmetry = Extract<CadSketchRelationOf<'symmetric'>, { readonly curveI
  * `yields`), so what the curves' own structure, fixed values or other relations already keep of it, such as the second arc's radius
  * or two level lines' level ends, is solved but never reported as redundant. Two lines lower to four equations, arcs to six and
  * circles to three, fewer where they share points; arcs remove one freedom fewer than their equations, as the second arc's radius follows.
- * Which way two lines pair, and where the solve sets out, `startCadSketchMirror` decides; each pair is recorded, so a mirror lowered
- * later about the same line keeps it.
+ * Which way two lines pair, and where the solve sets out, `startCadSketchMirror` decides, planning every curve Symmetric of the sketch
+ * together in relation-id order, so pairs that point Symmetrics and earlier mirrors keep about the same line are kept.
  */
 function lowerCurveSymmetry(relation: CurveSymmetry, context: CadSketchLoweringContext) {
   const { curves, line } = resolveCadSketchCurveSymmetryOperands(context.graph, relation), identity = (pointId: string) => context.identity(pointId);
   context.direct(line.startPointId, line.endPointId, 'A symmetry axis has no numeric endpoints.');
   const support = context.support(line), ends = new Set(isCadSketchVirtualAxisId(line.id) ? [] : [line.startPointId, line.endPointId].map(identity));
-  for (const { pointIds: [p, q], self } of startCadSketchMirror(curves, line, context)) {
-    context.paired(line.id, p, q);
+  for (const { pointIds: [p, q], self } of startCadSketchMirror(relation, context)) {
     if (self) { if (!ends.has(identity(p))) context.onSupport(p, support); continue; }
     const operands = [...context.point(p), ...context.point(q), ...support];
     context.emit('symmetric-midpoint', operands); context.emit('symmetric-perpendicular', operands);
@@ -156,7 +155,6 @@ export const symmetric: CadSketchRelationDefinition<'symmetric'> = {
     context.direct(line.startPointId, line.endPointId, 'A symmetry axis has no numeric endpoints.');
     const operands = [...context.point(relation.pointIds[0]), ...context.point(relation.pointIds[1]), ...context.support(line)];
     context.together(() => { context.emit('symmetric-midpoint', operands); context.emit('symmetric-perpendicular', operands); });
-    context.paired(line.id, relation.pointIds[0], relation.pointIds[1]);
   },
   check: (graph, relation, points, parameters) => checkCadSketchSymmetricRelation(graph, relation, points, parameters),
   meaningOf: relation => isCadSketchCurveSymmetry(relation) ? 'Keeps two lines, two arcs or two circles reflected about the infinite supporting line of the named axis, '

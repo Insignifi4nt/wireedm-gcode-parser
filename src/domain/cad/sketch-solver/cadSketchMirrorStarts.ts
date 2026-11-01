@@ -1,13 +1,15 @@
 import type { Point2 } from '@/domain/path-intel/types';
 import { CAD_PRECISION } from '@/domain/precision/cadPrecision';
-import type { CadSketchGraphEntity } from '../cadSketchGraph';
+import type { CadSketchGraphEntity, CadSketchSymmetricCurvesRelation } from '../cadSketchGraph';
 import { cadSketchLineDirection } from '../cadSketchLineRelations';
 import { cadSketchDriverTolerance } from '../cadSketchPrecision';
-import { cadSketchMirrorImage, cadSketchMirrorPairings, cadSketchPointsReflect, type CadSketchMirroredCurve, type CadSketchMirrorPair } from '../cadSketchSymmetryRelations';
+import { cadSketchMirrorImage, cadSketchMirrorPairings, cadSketchPointsReflect, isCadSketchCurveSymmetry, resolveCadSketchCurveSymmetryOperands,
+  type CadSketchMirroredCurve, type CadSketchMirrorPair } from '../cadSketchSymmetryRelations';
 import { isCadSketchVirtualAxisId } from '../sketch-relations/cadSketchVirtualElements';
 import type { CadSketchLoweringContext, CadSketchPointHold } from './cadSketchLoweringContext';
 
-// Where a Symmetric of two curves starts its solve, and which way it pairs their points: a few candidate starts, tried least moved first.
+// Where each Symmetric of two curves starts its solve, and which way it pairs their points: a few candidate starts, tried least moved
+// first, planned once for the whole sketch in relation-id order.
 
 type Line = Extract<CadSketchGraphEntity, { kind: 'line' }>;
 type Axis = NonNullable<ReturnType<typeof cadSketchLineDirection>>;
@@ -19,11 +21,32 @@ interface Candidate {
   readonly cost: number;
   readonly seeds: ReadonlyMap<string, readonly [string, Point2]>;
 }
-/** A pairing that the relations already lowered leave open, with its place among the pairings the curves can take. */
+/** A pairing that the pairs already planned leave open, with its place among the pairings the curves can take. */
 interface Pairing { readonly pairs: readonly CadSketchMirrorPair[]; readonly index: number }
+/**
+ * One curve Symmetric planned: its pairs, where it starts points by identity, the movement of each start where it offers more than one,
+ * and the relations that keep what refuses it where no solve can meet it. A relation that cannot be planned keeps its error.
+ */
+interface Planned {
+  readonly pairs: readonly CadSketchMirrorPair[];
+  readonly seeds: Map<string, readonly [string, Point2]>;
+  readonly costs: readonly number[];
+  readonly unmet?: readonly string[];
+}
+type Plan = ReadonlyMap<string, Planned | { readonly error: unknown }>;
+/** The plan of each lowering, made when its first curve Symmetric lowers. */
+const plans = new WeakMap<CadSketchLoweringContext, Plan>();
 
-/** An angle wrapped into a quarter turn either way, as directions are modulo a half turn. */
-const wrap = (angle: number) => ((angle + Math.PI / 2) % Math.PI + Math.PI) % Math.PI - Math.PI / 2;
+/**
+ * An angle wrapped into a quarter turn either way, as directions are modulo a half turn. A quarter turn clockwise within the angular
+ * accuracy counts as counter-clockwise, so roundoff never flips which way a quarter turn goes.
+ */
+const wrap = (angle: number) => {
+  const wrapped = ((angle + Math.PI / 2) % Math.PI + Math.PI) % Math.PI - Math.PI / 2;
+  return wrapped < CAD_PRECISION.angularAccuracyRad - Math.PI / 2 ? wrapped + Math.PI : wrapped;
+};
+/** Whether two movements, in square millimetres, tie: they differ by at most `mirrorPairingTieRelative` of the larger. */
+const tied = (first: number, second: number) => Math.abs(first - second) <= CAD_PRECISION.mirrorPairingTieRelative * Math.max(first, second);
 const angleOf = (axis: Axis) => Math.atan2(axis.y, axis.x);
 const through = (point: Point2, angle: number): Axis => {
   const x = Math.cos(angle), y = Math.sin(angle);
@@ -38,10 +61,62 @@ const onAxis = (point: Point2, axis: Axis) => cadSketchPointsReflect(point, poin
 const fits = (place: Point2, hold: CadSketchPointHold) => !apart(place, holding(place, hold));
 
 /**
- * The point pairs a Symmetric of two curves lowers, after starting the solve where it sets out. Pairs that relations lowered before it
- * keep about the same line, point Symmetrics or another curve Symmetric, are kept: only a pairing that keeps them is taken, and only
- * where none does are all considered. Where the pairing nearest the mirror images already holds, nothing starts anywhere else, so a
- * drag or a re-solve of a kept mirror does no more. Otherwise the candidates are each pairing on each mirror line it can take:
+ * The point pairs a Symmetric of two curves lowers, after starting the solve where it sets out and recording the starts it offers and
+ * whether no solve can meet it (see `planMirror`). Every curve Symmetric of the sketch is planned together when the first lowers, in
+ * relation-id order, so neither its pairs nor where it starts points depend on the order the sketch stores its relations: each keeps
+ * the pairs of every point Symmetric and of the curve Symmetrics before it in that order, and where two start one point, the one whose
+ * id sorts last starts it.
+ */
+export function startCadSketchMirror(relation: CadSketchSymmetricCurvesRelation, context: CadSketchLoweringContext): readonly CadSketchMirrorPair[] {
+  let plan = plans.get(context);
+  if (!plan) plans.set(context, plan = planMirrors(context));
+  const planned = plan.get(relation.id);
+  if (!planned) throw new Error(`Symmetric "${relation.id}" is not in its sketch.`);
+  if ('error' in planned) throw planned.error;
+  context.choose(planned.costs);
+  for (const [pointId, place] of planned.seeds.values()) context.start(pointId, place);
+  if (planned.unmet) context.unmet(planned.unmet);
+  return planned.pairs;
+}
+
+/**
+ * Each curve Symmetric's plan, by relation id, in relation-id order: the pairs of every point Symmetric about a line, read in id order
+ * too, are kept by each, and so are the pairs of each curve Symmetric planned before it. A relation that cannot be planned keeps its
+ * error, which it throws when it lowers, so a sketch is refused for the first relation in graph order that cannot lower.
+ */
+function planMirrors(context: CadSketchLoweringContext): Plan {
+  const partners = new Map<string, Map<string, string>>(), plan = new Map<string, Planned | { readonly error: unknown }>(), owners = new Map<string, string>();
+  const pair = (lineId: string, firstPointId: string, secondPointId: string) => {
+    let about = partners.get(lineId);
+    if (!about) partners.set(lineId, about = new Map());
+    const [first, second] = [context.identity(firstPointId), context.identity(secondPointId)];
+    about.set(first, second); about.set(second, first);
+  };
+  const mirrors: CadSketchSymmetricCurvesRelation[] = [];
+  for (const relation of [...context.graph.relations].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0)) {
+    if (relation.kind !== 'symmetric') continue;
+    if (isCadSketchCurveSymmetry(relation)) mirrors.push(relation);
+    // A point Symmetric whose points cannot be read refuses the sketch itself when it lowers.
+    else try { pair(relation.lineId, relation.pointIds[0], relation.pointIds[1]); } catch { /* It pairs nothing. */ }
+  }
+  for (const relation of mirrors) {
+    try {
+      const { curves, line } = resolveCadSketchCurveSymmetryOperands(context.graph, relation);
+      const planned = planMirror(relation.id, curves, line, partners.get(line.id) ?? new Map(), context);
+      plan.set(relation.id, planned);
+      for (const { pointIds: [p, q] } of planned.pairs) pair(line.id, p, q);
+      for (const key of planned.seeds.keys()) owners.set(key, relation.id);
+    } catch (error) { plan.set(relation.id, { error }); }
+  }
+  for (const [id, planned] of plan) if (!('error' in planned)) for (const key of [...planned.seeds.keys()]) if (owners.get(key) !== id) planned.seeds.delete(key);
+  return plan;
+}
+
+/**
+ * One Symmetric of two curves planned: the point pairs it lowers and where it starts the solve. Pairs that `partners` keep about the
+ * same line are kept: only a pairing that keeps them is taken, and only where none does are all considered. Where the pairing nearest
+ * the mirror images already holds, nothing starts anywhere else, so a drag or a re-solve of a kept mirror does no more. Otherwise the
+ * candidates are each pairing on each mirror line it can take:
  * - a mirror line that is an axis, or whose ends are both held, stays where it is;
  * - a free one lies on the perpendicular bisector of a pair held at two places, in a direction the lines' relations allow it where
  *   they force one (see `directions`);
@@ -50,22 +125,26 @@ const fits = (place: Point2, hold: CadSketchPointHold) => !apart(place, holding(
  * Each candidate puts the second point of each pair at the first's image, or the first at the second's where what holds the second
  * refuses that, or both where the holds of each leave them only together; a point both curves share goes onto the mirror. A free mirror
  * line keeps its length and the sense of its ends. A candidate that would move a held coordinate, or leave a held point off the mirror,
- * is dropped. The rest are ordered by the summed squared movement of every point they start, least first; within
- * `CAD_PRECISION.mirrorPairingTieRelative` of each other, the one that turns the mirror counter-clockwise more, then start with start.
- * The relation solves from the first (see `CadSketchLoweringContext.choose`), and a failed solve tries the others in turn. Where
- * none survives, the nearest pairing starts about the mirror where it is, as the solve would refuse every candidate anyway; and where
- * the candidates were every line the mirror could take, no solve can meet it, so the relations that keep what refused them are
+ * is dropped. The rest are ordered by the summed squared movement of every point they start, least first, a point moved by no more
+ * than the driver tolerance counting as unmoved; where two tie (see `tied`), the one that turns the mirror counter-clockwise more,
+ * then start with start. The relation solves from the first unless a retry asks for another (see
+ * `CadSketchLoweringContext.startChoice`), and a failed solve tries the others. Where none survives, the nearest pairing starts about
+ * the mirror where it is, moving the second point of a pair unless it is held, as the solve would refuse every candidate anyway; and
+ * where the candidates were every line the mirror could take, no solve can meet it, so the relations that keep what refused them are
  * recorded (see `CadSketchLoweringContext.unmet`) for a solve that names nothing, as one that collapses the curves does not.
  */
-export function startCadSketchMirror(curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCurve], line: Line, context: CadSketchLoweringContext): readonly CadSketchMirrorPair[] {
+function planMirror(relationId: string, curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCurve], line: Line, partners: ReadonlyMap<string, string>,
+  context: CadSketchLoweringContext): Planned {
   const identity = (pointId: string) => context.identity(pointId), position = (pointId: string) => {
     const place = context.starts.get(pointId);
     if (!place) throw new Error(`Sketch point "${pointId}" has no position to mirror from.`);
     return place;
   };
-  const now = cadSketchLineDirection(line, context.starts)!, pairings = kept(cadSketchMirrorPairings(curves, identity), context.partners(line.id), identity);
+  const now = cadSketchLineDirection(line, context.starts);
+  if (!now) throw new Error('A symmetry axis has no numeric endpoints.');
+  const pairings = kept(cadSketchMirrorPairings(curves, identity), partners, identity);
   const nearest = pairings.reduce((best, item) => gap(item.pairs, now, position) < gap(best.pairs, now, position) * (1 - CAD_PRECISION.mirrorPairingTieRelative) ? item : best);
-  if (nearest.pairs.every(({ pointIds: [p, q] }) => cadSketchPointsReflect(position(p), position(q), now))) return nearest.pairs;
+  if (nearest.pairs.every(({ pointIds: [p, q] }) => cadSketchPointsReflect(position(p), position(q), now))) return { pairs: nearest.pairs, seeds: new Map(), costs: [] };
 
   const axis = isCadSketchVirtualAxisId(line.id), ends = axis ? [] : [line.startPointId, line.endPointId];
   const free = !axis && !ends.every(end => full(context.held(end))), endIds = new Set(ends.map(identity));
@@ -81,18 +160,19 @@ export function startCadSketchMirror(curves: readonly [CadSketchMirroredCurve, C
     }
   }
   if (!candidates.length) {
-    if (every) context.unmet(blockers(curves, line, allowed !== undefined, context));
+    const seeds = new Map<string, readonly [string, Point2]>();
     for (const { pointIds: [p, q], self } of nearest.pairs) {
-      const from = position(p), to = position(q);
-      if (!self && !cadSketchPointsReflect(from, to, now) && !context.start(q, cadSketchMirrorImage(from, now))) context.start(p, cadSketchMirrorImage(to, now));
+      const from = position(p), to = position(q), [ph, qh] = [context.held(p), context.held(q)];
+      if (self || cadSketchPointsReflect(from, to, now)) continue;
+      if (!full(qh)) seeds.set(identity(q), [q, holding(cadSketchMirrorImage(from, now), qh)]);
+      else if (!full(ph)) seeds.set(identity(p), [p, holding(cadSketchMirrorImage(to, now), ph)]);
     }
-    return nearest.pairs;
+    return { pairs: nearest.pairs, seeds, costs: [], ...every ? { unmet: blockers(curves, line, allowed !== undefined, context) } : {} };
   }
-  candidates.sort((first, second) => Math.abs(first.cost - second.cost) > CAD_PRECISION.mirrorPairingTieRelative * Math.max(first.cost, second.cost) ? first.cost - second.cost
+  candidates.sort((first, second) => !tied(first.cost, second.cost) ? first.cost - second.cost
     : Math.abs(first.turn - second.turn) > CAD_PRECISION.angularAccuracyRad ? second.turn - first.turn : first.pairing - second.pairing);
-  const chosen = candidates[context.choose(candidates.length)];
-  for (const [pointId, place] of chosen.seeds.values()) context.start(pointId, place);
-  return chosen.pairs;
+  const chosen = candidates[context.startChoice(relationId, candidates.length)];
+  return { pairs: chosen.pairs, seeds: new Map(chosen.seeds), costs: candidates.map(item => item.cost) };
 }
 
 /** The pairings that keep every pair the partners hold, by identity; all of them where none does, which the solve then refuses. */
@@ -200,12 +280,13 @@ function blockers(curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCur
 function candidate(curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCurve], pairing: Pairing, axis: Axis, moved: Line | undefined, fixed: boolean,
   endIds: ReadonlySet<string>, context: CadSketchLoweringContext, now: Axis): Candidate | undefined {
   const at = (pointId: string) => context.starts.get(pointId)!, seeds = new Map<string, readonly [string, Point2]>(), settled = new Map<string, Point2>();
+  const turn = moved ? wrap(angleOf(axis) - angleOf(now)) : 0;
   const put = (pointId: string, place: Point2) => {
     const from = at(pointId);
     if (place.x !== from.x || place.y !== from.y) seeds.set(context.identity(pointId), [pointId, place]);
   };
   if (moved) {
-    const ends = placeMirror(moved, axis, context);
+    const ends = placeMirror(moved, axis, angleOf(now) + turn, context);
     if (!ends) return undefined;
     put(moved.startPointId, ends[0]); put(moved.endPointId, ends[1]);
   }
@@ -231,18 +312,19 @@ function candidate(curves: readonly [CadSketchMirroredCurve, CadSketchMirroredCu
     if (!apart(from, to) || angle !== undefined && !onAxis(to, through(from, angle))) return undefined;
   }
   let cost = 0;
-  for (const [pointId, place] of seeds.values()) { const from = at(pointId); cost += (place.x - from.x) ** 2 + (place.y - from.y) ** 2; }
-  return { pairs: pairing.pairs, pairing: pairing.index, turn: moved ? wrap(angleOf(axis) - angleOf(now)) : 0, cost, seeds };
+  for (const [pointId, place] of seeds.values()) { const from = at(pointId); if (apart(from, place)) cost += (place.x - from.x) ** 2 + (place.y - from.y) ** 2; }
+  return { pairs: pairing.pairs, pairing: pairing.index, turn, cost, seeds };
 }
 
 /**
  * A free mirror line's ends on the axis's line: about the foot of its middle, at its length, its start still before its end along
- * the axis's sense where they ran that way; an end held in both coordinates where it is, one held in one coordinate where that meets
- * the line, and a free end at the line's length from a held one. Undefined where a hold misses the line or leaves no length.
+ * `turned`, the direction from its start toward its end turned as the candidate turns it; an end held in both coordinates where it is,
+ * one held in one coordinate where that meets the line, and a free end at the line's length from a held one. Undefined where a hold
+ * misses the line or leaves no length.
  */
-function placeMirror(line: Line, axis: Axis, context: CadSketchLoweringContext): readonly [Point2, Point2] | undefined {
+function placeMirror(line: Line, axis: Axis, turned: number, context: CadSketchLoweringContext): readonly [Point2, Point2] | undefined {
   const start = context.starts.get(line.startPointId)!, end = context.starts.get(line.endPointId)!, length = Math.hypot(end.x - start.x, end.y - start.y);
-  const sense = (end.x - start.x) * axis.x + (end.y - start.y) * axis.y >= 0 ? 1 : -1, [vx, vy] = [sense * axis.x, sense * axis.y];
+  const sense = Math.cos(turned) * axis.x + Math.sin(turned) * axis.y >= 0 ? 1 : -1, [vx, vy] = [sense * axis.x, sense * axis.y];
   const middle = foot({ x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }, axis), [hs, he] = [context.held(line.startPointId), context.held(line.endPointId)];
   let from = onto({ x: middle.x - vx * length / 2, y: middle.y - vy * length / 2 }, hs, axis), to = onto({ x: middle.x + vx * length / 2, y: middle.y + vy * length / 2 }, he, axis);
   const [startHeld, endHeld] = [hs.x !== undefined || hs.y !== undefined, he.x !== undefined || he.y !== undefined];

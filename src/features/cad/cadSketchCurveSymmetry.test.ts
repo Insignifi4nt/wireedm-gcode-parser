@@ -13,6 +13,7 @@ import { compileCadSketchEquations } from '@/domain/cad/sketch-solver/compileCad
 import { cadSketchConstraintChoices, cadSketchConstraintStep } from './cadSketchConstraintTool';
 import { loadCadSketchTestNativeSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
 import { attemptCadSketchNativeSolve } from './sketch-solver/native/cadSketchNativeAttempt';
+import { CAD_SKETCH_START_COMBINATIONS, cadSketchStartCombinations, cadSketchStartComponents } from './sketch-solver/native/cadSketchNativeStartSearch';
 
 // Two lines, two arcs or two circles mirrored about a line or an axis, end to end: what a selection offers and the Constrain tool
 // stores, how the ends pair, the equations the relation lowers to, where the native solver puts the geometry and the freedom it leaves,
@@ -105,6 +106,29 @@ const choice = (graph: CadSketchGraph, ids: readonly string[], tool = 'symmetric
 const failure = (run: () => unknown) => { try { run(); } catch (error) { return error instanceof Error ? error.message : String(error); } throw new Error('Expected a failure.'); };
 const positions = (graph: CadSketchGraph) => new Map(graph.points.map(point => [point.id, { x: Number(point.position[0]), y: Number(point.position[1]) }]));
 const permutations = <T>(items: readonly T[]): T[][] => items.length < 2 ? [[...items]] : items.flatMap((item, index) => permutations(items.filter((_, at) => at !== index)).map(rest => [item, ...rest]));
+/** Each relation that offers several starts, with how many, as the sketch compiles. */
+const offered = (graph: CadSketchGraph) => compileCadSketchEquations({ graph, parameters: {} }).startChoices.map(({ relationId, costs }) => [relationId, costs.length]);
+/**
+ * Lines sharing an end that Fix holds, kept parallel and mirrored about a free construction line, which solve only from the mirror's
+ * second start, with every id ending in `suffix` and every place moved `dx` along X. Solved, A stays, B folds out to (8, -12.5) and the
+ * mirror lies square to A.
+ */
+const folding = (suffix = '', dx = 0) => {
+  const id = (name: string) => name + suffix;
+  return {
+    points: Object.entries({ a1: [9.5, -5], a2: [11, 2.5], b1: [-.5, 17], b2: [-8.5, 14], m1: [1, -60], m2: [2, 60] }).map(([name, [x, y]]) => ({ id: id(name), position: [x + dx, y] })),
+    entities: [line(id('A'), id('a1'), id('a2')), line(id('B'), id('b1'), id('b2')), { ...line(id('mirror'), id('m1'), id('m2')), construction: true }],
+    relations: [{ id: id('p'), kind: 'parallel', lineIds: [id('A'), id('B')] }, { id: id('fix'), kind: 'fixed-point', pointId: id('a1'), position: [9.5 + dx, -5] },
+      { id: id('shared'), kind: 'coincident', pointIds: [id('a1'), id('b1')] }, { id: id('mirrored'), kind: 'symmetric', curveIds: [id('A'), id('B')], lineId: id('mirror') }]
+  };
+};
+/** Expects the sketch `folding(suffix, dx)` draws solved: A where it was, B folded out beyond the shared end and the mirror square to A. */
+const expectFolded = (graph: CadSketchGraph, suffix = '', dx = 0) => {
+  const at = positions(graph), [m1, m2] = [at.get(`m1${suffix}`)!, at.get(`m2${suffix}`)!];
+  for (const [id, [x, y]] of [['a1', [9.5, -5]], ['a2', [11, 2.5]], ['b1', [9.5, -5]], ['b2', [8, -12.5]]] as const)
+    expect(Math.hypot(at.get(id + suffix)!.x - x - dx, at.get(id + suffix)!.y - y), id + suffix).toBeLessThan(1e-7);
+  expect(Math.abs((m2.x - m1.x) * 1.5 + (m2.y - m1.y) * 7.5) / Math.hypot(m2.x - m1.x, m2.y - m1.y), `mirror${suffix}`).toBeLessThan(1e-7);
+};
 
 describe('lines, arcs and circles mirrored about a line or an axis', () => {
   it('offer and store two lines, two arcs or two circles as one Symmetric, in any pick order, about an axis, a construction line or a line', () => {
@@ -365,6 +389,53 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     }
   });
 
+  it('turn a free mirror a quarter turn counter-clockwise where both ways tie, however little noise tilts it', async () => {
+    // Level A from (0, 1) to (2, 1) and level B from (0, 1) to (-2, 1) mirror only about a plumb line through their shared end, a quarter
+    // turn either way from a free construction line drawn level from (-2, 0) to (2, 0). Tilted 1e-14 rad either way, within the angular
+    // accuracy, it still turns counter-clockwise from the level drawing's starts: A and B stay, and the mirror turns about its middle to
+    // run up from (0, -2) to (0, 2).
+    const solver = await loadCadSketchTestNativeSolver();
+    for (const tilt of [-1e-14, 0, 1e-14]) {
+      const [c, s] = [Math.cos(tilt), Math.sin(tilt)];
+      const graph = parseCadSketchGraph({
+        points: Object.entries({ a1: [0, 1], a2: [2, 1], b1: [0, 1], b2: [-2, 1], m1: [-2 * c, -2 * s], m2: [2 * c, 2 * s] }).map(([id, position]) => ({ id, position })),
+        entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }],
+        relations: [{ id: 'ha', kind: 'horizontal', pointIds: ['a1', 'a2'] }, { id: 'hb', kind: 'horizontal', pointIds: ['b1', 'b2'] }, mirrored('construction')] });
+      const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
+      if (result.kind !== 'solved') throw new Error(`tilted ${tilt}: ${result.message}`);
+      expect(result.diagnostics, `tilted ${tilt}`).toMatchObject({ degreesOfFreedom: 6, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      const at = positions(result.graph);
+      for (const [id, [x, y]] of [['a1', [0, 1]], ['a2', [2, 1]], ['b1', [0, 1]], ['b2', [-2, 1]], ['m1', [0, -2]], ['m2', [0, 2]]] as const)
+        expect(Math.hypot(at.get(id)!.x - x, at.get(id)!.y - y), `tilted ${tilt}: ${id}`).toBeLessThan(1e-7);
+    }
+  });
+
+  it('start and solve two mirrors that would both start one curve alike, whatever order the sketch stores its points, edges and relations in', async () => {
+    // Level A and oblique C each mirror onto upright B about one free line drawn on V, so both would start B. The mirror whose id sorts
+    // last starts it whatever the order, so every stored order compiles the same starts, point by point, and solves to one answer.
+    const solver = await loadCadSketchTestNativeSolver();
+    const points = Object.entries({ a1: [10, 5], a2: [25, 5], b1: [5, 10], b2: [5, 25], c1: [30, 7], c2: [12, 15], m1: [0, -60], m2: [0, 60] }).map(([id, position]) => ({ id, position }));
+    const entities = [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), line('C', 'c1', 'c2'), line('mirror', 'm1', 'm2')];
+    const relations = [{ id: 'ab', kind: 'symmetric', curveIds: ['A', 'B'], lineId: 'mirror' }, { id: 'cb', kind: 'symmetric', curveIds: ['C', 'B'], lineId: 'mirror' }];
+    const started = (graph: CadSketchGraph) => {
+      const { values, pointParameters } = compileCadSketchEquations({ graph, parameters: {} });
+      return Object.fromEntries([...pointParameters].map(([id, index]) => [id, [values[index], values[index + 1]]]).sort(([first], [second]) => first < second ? -1 : 1));
+    };
+    let first: { readonly starts: ReturnType<typeof started>; readonly at: ReturnType<typeof positions> } | undefined;
+    for (const order of permutations(relations)) for (const reversed of [false, true]) {
+      const where = `${order.map(relation => relation.id).join(', ')}${reversed ? ', points and edges reversed' : ''}`;
+      const graph = parseCadSketchGraph({ points: reversed ? [...points].reverse() : points, entities: reversed ? [...entities].reverse() : entities, relations: order });
+      const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
+      if (result.kind !== 'solved') throw new Error(`${where}: ${result.message}`);
+      expect(result.diagnostics, where).toMatchObject({ degreesOfFreedom: 8, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
+      const starts = started(graph), at = positions(result.graph);
+      first ??= { starts, at };
+      expect(starts, where).toEqual(first.starts);
+      for (const [id, place] of first.at) expect(Math.hypot(at.get(id)!.x - place.x, at.get(id)!.y - place.y), `${where}: ${id}`).toBeLessThan(1e-9);
+    }
+  });
+
   it('keep the pairs relations already mirror about the line, fit the mirror to held ends, and turn it about an end held through Coincident', async () => {
     // The review's three sketches, about a free construction line drawn near V. A point Symmetric already mirrors a1 onto b1, so the
     // curves' mirror keeps that pairing; one mirroring a1 onto b2 instead, stored anyway as a file may, turns B over to keep it; and
@@ -385,7 +456,7 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     const apart = { a1: [10, 5], a2: [25, 5], b1: [-10, 5], b2: [-10, 20] } as const, above = { a1: [-5, 20], a2: [5, 20], b1: [0, -5], b2: [0, 5] } as const;
     const plumb = { m1: [0, -60], m2: [0, 60] } as const;
     const solved = (graph: CadSketchGraph, where: string, freedom: number, starts?: number) => {
-      if (starts !== undefined) expect(compileCadSketchEquations({ graph, parameters: {} }).startChoices, where).toEqual([{ relationId: 'mirrored', count: starts }]);
+      if (starts !== undefined) expect(offered(graph), where).toEqual([['mirrored', starts]]);
       solves = 0;
       const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
       if (result.kind !== 'solved') throw new Error(`${where}: ${result.message}`);
@@ -423,20 +494,56 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     const native = await loadCadSketchTestNativeSolver();
     let solves = 0;
     const solver = { ...native, solve: (...args: Parameters<typeof native.solve>) => { solves++; return native.solve(...args); } };
-    const graph = parseCadSketchGraph({
-      points: Object.entries({ a1: [9.5, -5], a2: [11, 2.5], b1: [-.5, 17], b2: [-8.5, 14], m1: [1, -60], m2: [2, 60] }).map(([id, position]) => ({ id, position })),
-      entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }],
-      relations: [{ id: 'p', kind: 'parallel', lineIds: ['A', 'B'] }, { id: 'fix', kind: 'fixed-point', pointId: 'a1', position: [9.5, -5] },
-        { id: 'shared', kind: 'coincident', pointIds: ['a1', 'b1'] }, mirrored('construction')] });
-    expect(compileCadSketchEquations({ graph, parameters: {} }).startChoices).toEqual([{ relationId: 'mirrored', count: 2 }]);
+    const graph = parseCadSketchGraph(folding());
+    expect(offered(graph)).toEqual([['mirrored', 2]]);
     const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
     if (result.kind !== 'solved') throw new Error(result.message);
     expect(solves).toBe(2);
     expect(result.diagnostics).toMatchObject({ degreesOfFreedom: 4, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
-    const at = positions(result.graph), [m1, m2] = [at.get('m1')!, at.get('m2')!];
-    for (const [id, [x, y]] of [['a1', [9.5, -5]], ['a2', [11, 2.5]], ['b1', [9.5, -5]], ['b2', [8, -12.5]]] as const) expect(Math.hypot(at.get(id)!.x - x, at.get(id)!.y - y), id).toBeLessThan(1e-7);
-    expect(Math.abs((m2.x - m1.x) * 1.5 + (m2.y - m1.y) * 7.5) / Math.hypot(m2.x - m1.x, m2.y - m1.y)).toBeLessThan(1e-7);
+    expectFolded(result.graph);
     expect(checkCadSketchGraph(result.graph, {})).toEqual([]);
+  });
+
+  it('keep each mirror\'s start that solved while the next start of another is tried, and search mirrors whose parameters connect together', async () => {
+    // Two copies of the folding sketch 100 mm apart each solve only from their mirror's second start. Apart, each copy is a component of
+    // its own: the first solve fails in both, the second keeps the first copy's second start, and the third adds the second copy's, so
+    // three native solves, the sum of their starts and not the product. Retrying one mirror never resets the other's. Parallel between
+    // the two mirrors joins the copies into one component, whose combinations are tried least moved first: both first starts, then one
+    // second start and the other, then both, which solves on the fourth solve with each copy as it solves alone.
+    const native = await loadCadSketchTestNativeSolver();
+    let solves = 0;
+    const solver = { ...native, solve: (...args: Parameters<typeof native.solve>) => { solves++; return native.solve(...args); } };
+    const [first, second] = [folding(), folding('2', 100)];
+    const apart = { points: [...first.points, ...second.points], entities: [...first.entities, ...second.entities], relations: [...first.relations, ...second.relations] };
+    const cases = [
+      ['apart', apart, [['mirrored'], ['mirrored2']], 3, 8],
+      ['with parallel mirrors', { ...apart, relations: [{ id: 'kept', kind: 'parallel', lineIds: ['mirror', 'mirror2'] }, ...apart.relations] }, [['mirrored', 'mirrored2']], 4, 7]
+    ] as const;
+    for (const [where, raw, grouped, count, freedom] of cases) {
+      const graph = parseCadSketchGraph(raw);
+      expect(offered(graph), where).toEqual([['mirrored', 2], ['mirrored2', 2]]);
+      expect(cadSketchStartComponents(compileCadSketchEquations({ graph, parameters: {} })).map(({ choices }) => choices.map(choice => choice.relationId)), where).toEqual(grouped);
+      solves = 0;
+      const { result } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
+      if (result.kind !== 'solved') throw new Error(`${where}: ${result.message}`);
+      expect(solves, where).toBe(count);
+      expect(result.diagnostics, where).toMatchObject({ degreesOfFreedom: freedom, conflictingIds: [], redundantIds: [], partiallyRedundantIds: [] });
+      expectFolded(result.graph);
+      expectFolded(result.graph, '2', 100);
+      expect(checkCadSketchGraph(result.graph, {}), where).toEqual([]);
+    }
+  });
+
+  it('try a component\'s start combinations least moved first, ties by the first relation\'s order, up to the cap', () => {
+    const component = (...costs: readonly (readonly number[])[]) => ({ choices: costs.map((list, at) => ({ relationId: `r${at}`, costs: list })) });
+    const order = (combinations: readonly Readonly<Record<string, number>>[]) => combinations.map(combination => Object.values(combination).join(''));
+    expect(order(cadSketchStartCombinations(component([0, 1, 5], [0, 2]), CAD_SKETCH_START_COMBINATIONS))).toEqual(['00', '10', '01', '11', '20', '21']);
+    // Equal sums, and sums within the tie tolerance of each other, go to the combination that keeps the earlier relation's start.
+    expect(order(cadSketchStartCombinations(component([3, 4], [3, 4 * (1 + 1e-12)]), CAD_SKETCH_START_COMBINATIONS))).toEqual(['00', '01', '10', '11']);
+    const capped = cadSketchStartCombinations(component([0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3]), CAD_SKETCH_START_COMBINATIONS);
+    expect(capped).toHaveLength(CAD_SKETCH_START_COMBINATIONS);
+    expect(order(capped).slice(0, 4)).toEqual(['000', '001', '010', '100']);
+    expect(new Set(order(capped)).size).toBe(CAD_SKETCH_START_COMBINATIONS);
   });
 
   it('mirror about a free line from held points without moving them, or refuse naming what holds them, alike for Fix, expressions, Coincident and fixed distances', async () => {
@@ -523,7 +630,7 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
       points: Object.entries({ a1: [10, 5], a2: [25, 5], b1: [-10, 5], b2: [-10, 20], m1: [.5, -60], m2: [-.5, 60] }).map(([id, position]) => ({ id, position })),
       entities: [line('A', 'a1', 'a2'), line('B', 'b1', 'b2'), { ...line('mirror', 'm1', 'm2'), construction: true }],
       relations: [{ id: 'h', kind: 'horizontal', pointIds: ['a1', 'a2'] }, { id: 'v', kind: 'vertical', pointIds: ['b1', 'b2'] }, mirrored('construction')] });
-    expect(compileCadSketchEquations({ graph: stored, parameters: {} }).startChoices).toEqual([{ relationId: 'mirrored', count: 4 }]);
+    expect(offered(stored)).toEqual([['mirrored', 4]]);
     const first = attemptCadSketchNativeSolve({ graph: stored, parameters: {}, analyseDefinition: true }, solver).result;
     if (first.kind !== 'solved') throw new Error(first.message);
     const at = positions(first.graph);

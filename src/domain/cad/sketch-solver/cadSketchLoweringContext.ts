@@ -21,8 +21,11 @@ export interface CadSketchSquareHold { readonly pivot: CadSketchPointParameters;
 
 /** The coordinates of a point that stay put whatever is solved, with the values they stay at; a coordinate left out can move. */
 export interface CadSketchPointHold { readonly x?: number; readonly y?: number }
-/** A relation that offers `count` starts to solve from, of which a failed solve tries each after the first in turn. */
-export interface CadSketchStartChoice { readonly relationId: string; readonly count: number }
+/**
+ * A relation that offers more than one start to solve from, ordered first to last, with how far each moves the sketch, in square
+ * millimetres: a failed solve tries the others (see `attemptCadSketchNativeSolve`).
+ */
+export interface CadSketchStartChoice { readonly relationId: string; readonly costs: readonly number[] }
 /** A relation that no solve can meet, whatever moves, and the other relations that keep what refuses it. */
 export interface CadSketchUnmet { readonly relationId: string; readonly relationIds: readonly string[] }
 
@@ -93,20 +96,18 @@ export interface CadSketchLoweringContext {
    * Fix, a fixed X or Y distance, a point on the H or V axis, and the origin and the axes' sample ends.
    */
   held(pointId: string): CadSketchPointHold;
+  /** Which of `count` starts a relation sets out from, ordered first to last by that relation: 0 unless a retry asks for another. */
+  startChoice(relationId: string, count: number): number;
   /**
-   * Which of `count` starts the current relation sets out from, ordered first to last by the relation: 0 unless a retry asks for
-   * another. A relation that offers more than one is retried from each in turn when the solve from its first fails.
+   * Records that the current relation offers one start for each movement in `costs`, ordered first to last, of which a failed solve
+   * tries others, and returns the one it sets out from (see `startChoice`). One start or none records nothing.
    */
-  choose(count: number): number;
+  choose(costs: readonly number[]): number;
   /**
    * Records that no solve can meet the current relation, whatever moves, as what `relationIds` keep refuses it: a solve that fails
    * without naming relations names these instead.
    */
   unmet(relationIds: readonly string[]): void;
-  /** Records that the current relation mirrors two points onto each other about a line, so a mirror lowered later about it keeps the pair. */
-  paired(lineId: string, firstPointId: string, secondPointId: string): void;
-  /** The Coincident identities the relations lowered so far mirror onto each other about a line, each pair both ways. */
-  partners(lineId: string): ReadonlyMap<string, string>;
   /** How the relations and fixed ends that keep line directions force a mirror line for two lines, as the shared planner reads them. */
   mirrorTurn(firstLineId: string, secondLineId: string, mirrorId: string): CadSketchMirrorTurn | undefined;
   /** The direction, modulo a half turn, that value-free relations and fixed ends keep a line or axis in, as the shared planner reads it. */
@@ -231,10 +232,10 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   readonly startChoices: CadSketchStartChoice[] = [];
   /** The relations no solve can meet, in the order they were lowered. */
   readonly unmetRelations: CadSketchUnmet[] = [];
-  /** The point pairs relations mirror about each line, by identity, in the order they were lowered. */
-  private readonly mirrored: { readonly lineId: string; readonly first: string; readonly second: string }[] = [];
   private members: Map<string, string[]> | undefined;
   private readonly holds = new Map<string, CadSketchPointHold>();
+  /** The relations in id order, which holds are read in, so the order the graph stores them never decides one. */
+  private byId: readonly CadSketchGraphRelation[] | undefined;
   private tags = 0;
   private sharedTag: number | undefined;
   /** The relation lowering now yields: each equation is a constraint of its own, marked as yielding. */
@@ -277,11 +278,11 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     const definition = cadSketchRelationDefinition(relation);
     this.relation = relation; this.sourceId = relation.id; this.yielding = definition.yields?.(relation as never) === true;
     const equations = this.equations.length, radialHolds = this.radialHolds.length, squareHolds = this.squareHolds.length, seeds = this.seeds.length, tags = this.tags, made = this.made.length;
-    const choices = this.startChoices.length, unmet = this.unmetRelations.length, mirrored = this.mirrored.length;
+    const choices = this.startChoices.length, unmet = this.unmetRelations.length;
     try { definition.lower(relation, this); }
     catch (error) {
       this.restore(equations, radialHolds, squareHolds, seeds, tags, made);
-      this.startChoices.length = choices; this.unmetRelations.length = unmet; this.mirrored.length = mirrored;
+      this.startChoices.length = choices; this.unmetRelations.length = unmet;
       throw error;
     }
     finally { this.yielding = false; }
@@ -431,7 +432,8 @@ export class CadSketchLowering implements CadSketchLoweringContext {
       if (this.fixed[index]) x ??= at.x;
       if (this.fixed[index + 1]) y ??= at.y;
     }
-    for (const relation of this.graph.relations) {
+    this.byId ??= [...this.graph.relations].sort((first, second) => first.id < second.id ? -1 : first.id > second.id ? 1 : 0);
+    for (const relation of this.byId) {
       if (relation.kind === 'point-on-line' && this.identity(relation.pointId) === root) {
         if (relation.lineId === CAD_SKETCH_H_AXIS_ID) y ??= 0;
         else if (relation.lineId === CAD_SKETCH_V_AXIS_ID) x ??= 0;
@@ -447,22 +449,17 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     this.holds.set(root, hold);
     return hold;
   }
-  choose(count: number): number {
-    if (count < 2) return 0;
-    this.startChoices.push({ relationId: this.sourceId, count });
-    const index = this.chosen[this.sourceId] ?? 0;
+  startChoice(relationId: string, count: number): number {
+    const index = this.chosen[relationId] ?? 0;
     return Number.isInteger(index) && index >= 0 && index < count ? index : 0;
+  }
+  choose(costs: readonly number[]): number {
+    if (costs.length < 2) return 0;
+    this.startChoices.push({ relationId: this.sourceId, costs });
+    return this.startChoice(this.sourceId, costs.length);
   }
   unmet(relationIds: readonly string[]) {
     this.unmetRelations.push({ relationId: this.sourceId, relationIds });
-  }
-  paired(lineId: string, firstPointId: string, secondPointId: string) {
-    this.mirrored.push({ lineId, first: this.identity(firstPointId), second: this.identity(secondPointId) });
-  }
-  partners(lineId: string): ReadonlyMap<string, string> {
-    const partners = new Map<string, string>();
-    for (const { lineId: about, first, second } of this.mirrored) if (about === lineId) { partners.set(first, second); partners.set(second, first); }
-    return partners;
   }
   mirrorTurn(firstLineId: string, secondLineId: string, mirrorId: string): CadSketchMirrorTurn | undefined {
     return cadSketchRelationPlanner(this.graph).mirrorTurn(firstLineId, secondLineId, mirrorId);

@@ -6,7 +6,7 @@ import type { CadSketchEquationModel } from './cadSketchEquationModel';
 import { CadSketchLowering, type CadSketchRadialHold, type CadSketchSquareHold, type CadSketchStartChoice, type CadSketchUnmet } from './cadSketchLoweringContext';
 
 /**
- * What a sketch compiles from: its graph, the parameters its expressions read, a drag target if any, and the start a relation that
+ * What a sketch compiles from: its graph, the parameters its expressions read, a drag target if any, and the start each relation that
  * offers several sets out from, by relation id, where a retry asks for one other than its first.
  */
 export interface CadSketchEquationInput {
@@ -21,7 +21,10 @@ export interface CadSketchCompiledSketch extends CadSketchEquationModel {
   readonly radialHolds: readonly CadSketchRadialHold[];
   /** Then the arms that start along the support they are held square to, from starts square to it. */
   readonly squareHolds: readonly CadSketchSquareHold[];
-  /** The relations that offer more than one start, such as a mirror's other directions or pairings, which a failed solve tries in turn. */
+  /**
+   * The relations that offer more than one start, such as a mirror's other directions or pairings, with each start's movement, in
+   * the order they lower: a failed solve searches them by the connected component of their parameters (see `cadSketchStartComponents`).
+   */
   readonly startChoices: readonly CadSketchStartChoice[];
   /** The relations no solve can meet, which a failed solve that names no relations names instead. */
   readonly unmet: readonly CadSketchUnmet[];
