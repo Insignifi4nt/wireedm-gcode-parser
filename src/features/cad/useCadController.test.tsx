@@ -38,11 +38,14 @@ vi.mock('./kernel/cadKernelClient', () => ({ createCadKernelClient: createClient
 const sketchSolver = vi.hoisted(() => ({ solve: vi.fn(), dispose: vi.fn() }));
 const createSketchClient = vi.hoisted(() => vi.fn());
 vi.mock('./sketch-solver/cadSketchSolverClient', () => ({ createCadSketchSolverClient: createSketchClient }));
+// Counts how often edit preparation looks for solve warnings, and stands in for what it finds.
+const shrinkWarnings = vi.hoisted(() => vi.fn());
+vi.mock('./cadSketchShrinkWarnings', () => ({ cadSketchShrinkWarnings: shrinkWarnings }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); createClient.mockReset().mockReturnValue(kernel);
-  createSketchClient.mockReset().mockReturnValue(sketchSolver); sketchSolver.solve.mockReset(); });
+  createSketchClient.mockReset().mockReturnValue(sketchSolver); sketchSolver.solve.mockReset(); shrinkWarnings.mockReset().mockReturnValue([]); });
 afterEach(() => { act(() => root?.unmount()); container?.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function deferred<T>() {
@@ -77,7 +80,7 @@ function largeGroupedParameterDocument() {
   });
   return { document, names, groups };
 }
-async function harness(withGeometry = false, allowHandoff = false) {
+async function harness(withGeometry = false, allowHandoff = false, showStatusToast?: (message: string, type?: 'success' | 'error' | 'warning' | 'info') => void) {
   let workbench: ConnectedWorkbenchCatalog | null = await openWorkbench('cad-controller-a');
   const session = new CadSession(withGeometry ? parseCadDocument({ ...createCadDocument('Part', 'cad_part'), features: [{
     id: 'sketch', kind: 'sketch', name: 'Profile', plane: 'XY', offset: 0, suppressed: false,
@@ -91,7 +94,7 @@ async function harness(withGeometry = false, allowHandoff = false) {
         if (!allowHandoff) throw new Error('Unexpected CAM handoff');
         if (!workbench) throw new Error('Workbench disconnected');
         const result = await action(workbench); workbench = result.workbench; return result.value;
-      }
+      }, ...showStatusToast ? { showStatusToast } : {}
     }, session, open, setOpen, () => null);
     return null;
   }
@@ -137,6 +140,42 @@ function inspectedSolve(input: CadSketchSolveInput): CadSketchSolveResult {
     conflictingIds: [], redundantIds: [], partiallyRedundantIds: [], issues: [], ...input.analyseDefinition ? { definition: {
       definedPointIds: input.graph.points.map(point => point.id), underDefinedPointIds: [], definedEntityIds: input.graph.entities.map(entity => entity.id), underDefinedEntityIds: [] } } : {} } };
 }
+
+describe('sketch solve warnings', () => {
+  const warning = { code: 'mirror-shrank', relationId: 'length', curves: [{ entityId: 'edge', beforeMm: 20, afterMm: 1e-5 }],
+    message: 'Symmetric shrank Line 1 from 20.000 mm to 0.00001 mm. Check the mirror and its relations.' } as const;
+  const length = (value: number | string): CadEdit[] => [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: { id: 'length', kind: 'distance', pointIds: ['a', 'b'], value } }];
+  it('shows an accepted edit\'s solve warnings as warning toasts naming the sketch, gives them to the edit tool, and shows none for a refused edit', async () => {
+    const toast = vi.fn(), h = await harness(false, false, toast); await act(async () => h.session.replace(inspectedSketchDocument()));
+    sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+    shrinkWarnings.mockReturnValue([warning]);
+    const tool = cadSiteTools(h.cad).find(entry => entry.name === 'cad_edit_document');
+    if (!tool) throw new Error('Missing document edit tool');
+    expect(await tool.execute({ expectedVersion: h.session.getSnapshot().version, edits: length(20) })).toMatchObject({ ok: true,
+      data: { sketchWarnings: { items: [{ ...warning, sketchId: 'sketch', sketchName: 'Line' }], count: 1, omittedCount: 0 } } });
+    expect(toast).toHaveBeenCalledExactlyOnceWith(`Line: ${warning.message}`, 'warning');
+    sketchSolver.solve.mockImplementation(async () => ({ kind: 'rejected', reason: 'conflicting', message: 'Sketch constraints conflict.',
+      diagnostics: { status: 'failed', degreesOfFreedom: null, conflictingIds: ['length'], redundantIds: [], partiallyRedundantIds: [], issues: [] } }));
+    expect(await tool.execute({ expectedVersion: h.session.getSnapshot().version, edits: length(' span ') })).toMatchObject({ ok: false });
+    expect(toast).toHaveBeenCalledOnce();
+  });
+
+  it('looks for solve warnings only once an edit is committed, never while one is previewed', async () => {
+    // Every preview, for a feature editor, a feature's inputs or a sketch draft, prepares through the controller's one preview path.
+    const toast = vi.fn(), h = await harness(false, false, toast); await act(async () => h.session.replace(inspectedSketchDocument()));
+    sketchSolver.solve.mockImplementation(async (input: CadSketchSolveInput) => inspectedSolve(input));
+    shrinkWarnings.mockReturnValue([warning]);
+    await act(async () => { await h.cad().preparePreviewEdits(length(20), new AbortController().signal); });
+    expect(sketchSolver.solve).toHaveBeenCalledOnce();
+    expect(shrinkWarnings).not.toHaveBeenCalled(); expect(toast).not.toHaveBeenCalled();
+    const { parameters } = h.session.getSnapshot().document;
+    await act(async () => { await h.cad().edit(length(20)); });
+    expect(sketchSolver.solve).toHaveBeenCalledTimes(2);
+    expect(shrinkWarnings).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ relations: expect.arrayContaining([expect.objectContaining({ id: 'length', value: 20 })]) }),
+      expect.anything(), parameters);
+    expect(toast).toHaveBeenCalledExactlyOnceWith(`Line: ${warning.message}`, 'warning');
+  });
+});
 
 describe('accepted sketch constraint inspection guards', () => {
   it('shares immutable accepted source across pages without editing, saving or adding history', async () => {

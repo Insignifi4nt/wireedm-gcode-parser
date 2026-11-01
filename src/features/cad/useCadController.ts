@@ -26,12 +26,13 @@ import { createCadFeaturePreviewCoordinator, type CadFeaturePreviewState } from 
 import { CadSketchRegionReadTargetSchema, type CadSketchRegionReadTarget, type CadSketchRegionInspectionInput, type CadSketchRegionProposal } from '@/domain/cad/cadSketchRegionInspection';
 import { Value } from '@sinclair/typebox/value';
 import { isCadImportData } from '@/domain/cad/cadImportData';
-import { needsCadSketchPreparation, prepareCadEdits } from './cadEditPreparation';
+import { needsCadSketchPreparation, prepareCadEdits, type CadSketchEditWarning } from './cadEditPreparation';
 import type { CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
 import type { CadSketchConstraintInspection } from './cadSketchConstraintInspection';
 import { useCadSketchEditing } from './useCadSketchEditing';
 
-type App = Pick<ReturnType<typeof useWorkbenchAppController>, 'connectedWorkbench' | 'workbenchInteractionLocked' | 'runAgentWorkbenchOperation'>;
+type App = Pick<ReturnType<typeof useWorkbenchAppController>, 'connectedWorkbench' | 'workbenchInteractionLocked' | 'runAgentWorkbenchOperation'>
+  & Partial<Pick<ReturnType<typeof useWorkbenchAppController>, 'showStatusToast'>>;
 type Kernel = ReturnType<typeof import('./kernel/cadKernelClient').createCadKernelClient>;
 export function downloadCadBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -86,7 +87,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
   const buildAbort = useRef<AbortController | null>(null);
   const boundAdapter = useRef(app.connectedWorkbench?.adapter);
   const sketchEditing = useCadSketchEditing({ session, storage: app.connectedWorkbench?.adapter ?? null, open,
-    locked: storageBusy || app.workbenchInteractionLocked, prepare: prepareDocument, inspect: readSketchConstraintInspection,
+    locked: storageBusy || app.workbenchInteractionLocked, prepare: prepareDocument, prepareCommit, warn: showSketchWarnings, inspect: readSketchConstraintInspection,
     commit: (edits, version, signal) => edit(edits, version, false, signal) });
   const featurePreviewCoordinator = useOwnedDisposable(() => createCadFeaturePreviewCoordinator({
     assertCurrent(expectedVersion) {
@@ -94,8 +95,7 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       return { document: session.getSnapshot().document, storage: workbench.adapter };
     },
     createKernel: async () => (await import('./kernel/cadKernelClient')).createCadKernelClient(),
-    prepare: async (document, edits, signal) => needsCadSketchPreparation(document, edits)
-      ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits),
+    prepare: prepareDocument,
     onChange: setFeaturePreview
   }), session);
   useLayoutEffect(() => { featurePreviewCoordinator.invalidate(); }, [featurePreviewCoordinator, snapshot.version, app.connectedWorkbench?.adapter, open, app.workbenchInteractionLocked, storageBusy]);
@@ -128,9 +128,19 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
     void pending.catch(() => { if (sketchSolver.current === pending) sketchSolver.current = null; });
     return pending;
   }
+  /** Prepares a previewed batch: every preview goes through here, and none looks for solve warnings. */
   async function prepareDocument(document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) {
     return needsCadSketchPreparation(document, edits)
       ? (await prepareCadEdits(document, edits, await getSketchSolver(), signal)).document : applyCadEdits(document, edits);
+  }
+  /** As `prepareDocument`, with warnings about its solves, for an edit that is committed rather than previewed. */
+  async function prepareCommit(document: CadDocument, edits: readonly CadEdit[], signal?: AbortSignal) {
+    return needsCadSketchPreparation(document, edits)
+      ? prepareCadEdits(document, edits, await getSketchSolver(), signal, { warnings: true }) : { document: applyCadEdits(document, edits), sketchWarnings: [] };
+  }
+  /** Shows each warning of an accepted edit's solves as a status toast that names its sketch. */
+  function showSketchWarnings(warnings: readonly CadSketchEditWarning[]) {
+    for (const warning of warnings) current.current.app.showStatusToast?.(`${warning.sketchName}: ${warning.message}`, 'warning');
   }
   async function readSketchConstraintInspection(source: CadDocument, sketchId: string, signal?: AbortSignal) {
     let inspection = constraintInspections.current.get(source)?.get(sketchId);
@@ -249,7 +259,8 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       throw new ToolError('STALE_STATE', 'The CAD workspace changed while preparing this preview.');
     return candidate;
   }, [session, snapshot.version]);
-  function edit(edits: readonly CadEdit[], expectedVersion?: string, fromAgent = false, signal?: AbortSignal) {
+  /** Applies a batch as one undo step. Once it is accepted, the warnings its solves gave are shown and passed to `warned`. */
+  function edit(edits: readonly CadEdit[], expectedVersion?: string, fromAgent = false, signal?: AbortSignal, warned?: (warnings: readonly CadSketchEditWarning[]) => void) {
     signal?.throwIfAborted();
     editable(expectedVersion, fromAgent); setErrorMessage(null);
     validateCadEditBatch(edits);
@@ -261,11 +272,14 @@ export function useCadController(app: App, session: CadSession, open: boolean, s
       const combined = signal ? AbortSignal.any([signal, owner.signal]) : owner.signal;
       session.setWorkflowOpen(true, 'preparation');
       const solver = getSketchSolver();
-      return session.editPrepared(expectedVersion ?? source.version, async (document, signal) =>
-        (await prepareCadEdits(document, captured, await solver, signal)).document, combined, () => {
+      let warnings: readonly CadSketchEditWarning[] = [];
+      return session.editPrepared(expectedVersion ?? source.version, async (document, signal) => {
+        const prepared = await prepareCadEdits(document, captured, await solver, signal, { warnings: true });
+        warnings = prepared.sketchWarnings; return prepared.document;
+      }, combined, () => {
         if (!current.current.open || current.current.app.connectedWorkbench !== workbench || current.current.app.workbenchInteractionLocked)
           throw new ToolError('STALE_STATE', 'The CAD workspace changed while the sketch was being solved.');
-      }).finally(() => {
+      }).then(accepted => { showSketchWarnings(warnings); warned?.(warnings); return accepted; }).finally(() => {
         if (preparing.current === owner) { preparing.current = null; session.setWorkflowOpen(false, 'preparation'); }
       });
     }

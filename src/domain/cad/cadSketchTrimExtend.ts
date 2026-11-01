@@ -232,7 +232,9 @@ type TrimShape = { readonly kind: 'delete' } | { readonly kind: 'end'; readonly 
 /** The points a relation names directly, rather than through the entities it names. */
 function relationPointOperands(relation: CadSketchGraphRelation): readonly string[] {
   switch (relation.kind) {
-    case 'coincident': case 'horizontal': case 'vertical': case 'distance': case 'axis-distance': case 'symmetric': return relation.pointIds;
+    case 'coincident': case 'horizontal': case 'vertical': case 'distance': case 'axis-distance': return relation.pointIds;
+    // Mirrored curves name their points through the curves.
+    case 'symmetric': return 'pointIds' in relation ? relation.pointIds : [];
     case 'fixed-point': case 'fixed-axis': case 'midpoint': case 'point-on-line': case 'point-on-curve': case 'point-line-distance': case 'fillet-corner': case 'chamfer-corner': return [relation.pointId];
     case 'reference-dimension': return relation.measurement.kind === 'point-distance' ? relation.measurement.pointIds
       : relation.measurement.kind === 'point-line-distance' ? [relation.measurement.pointId] : [];
@@ -271,6 +273,8 @@ function trimRemovals(graph: CadSketchGraph, entity: SourceEntity, shape: TrimSh
   const removed = graph.relations.filter(relation => {
     const named = namesEntity(relation, entity.id);
     if (named && (relation.kind === 'point-on-line' || relation.kind === 'point-on-curve' || relation.kind === 'point-line-distance') && cutKeys.has(identity(relation.pointId))) return true;
+    // A mirror of curves pairs their ends, which any trim of one of them moves, and a trimmed circle is an arc, so it leaves with the trim.
+    if (relation.kind === 'symmetric' && 'curveIds' in relation && relation.curveIds.includes(entity.id)) return true;
     if (shape.kind === 'delete') {
       if (named) return true;
       if (ownAxis(relation) && 'pointIds' in relation && !graph.entities.some(other => other.id !== entity.id && other.kind !== 'circle' && sameEndpointPair(other, relation.pointIds))) return true;

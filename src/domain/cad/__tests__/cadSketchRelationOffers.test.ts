@@ -93,7 +93,10 @@ describe('sketch relation offers', () => {
   it('pair the first of several lines with each later one', () => {
     const graph = sketch([{ id: 'kept', kind: 'parallel', lineIds: ['cd', 'ab'] }]);
     const offers = cadSketchRelationOffers(graph, [edge('ab'), edge('bc'), edge('cd')]);
-    expect(kinds(offers)).toEqual(['horizontal', 'vertical', 'parallel', 'perpendicular', 'collinear', 'equal-length']);
+    // Three lines also mirror the first two about the last; here bc ends at c, an end of cd, which only mirrors onto itself.
+    expect(kinds(offers)).toEqual(['horizontal', 'vertical', 'parallel', 'perpendicular', 'collinear', 'symmetric', 'equal-length']);
+    expect(find(offers, 'symmetric')).toMatchObject({ state: 'blocked', operands: [[edge('ab'), edge('bc'), edge('cd')]],
+      reason: 'A point at an end of the axis line can only mirror onto itself, so both curves need to share it.' });
     expect(find(offers, 'parallel')).toEqual({ kind: 'parallel', state: 'available', operands: [[edge('ab'), edge('bc')]],
       relations: [{ kind: 'parallel', lineIds: ['ab', 'bc'] }], relationIds: ['kept'] });
     expect(find(offers, 'equal-length').relations).toEqual([{ kind: 'equal-length', lineIds: ['ab', 'bc'] }, { kind: 'equal-length', lineIds: ['ab', 'cd'] }]);
@@ -162,9 +165,9 @@ describe('sketch relation offers', () => {
       expect(find(cadSketchRelationOffers(graph, selection), 'coincident')).toEqual({ kind: 'coincident', state: 'blocked', reason: 'These already share a center.',
         operands: [selection], relations: [], relationIds: [] });
     }
-    const mirror = 'Symmetric points and axis endpoints need four distinct declared identities.';
-    for (const selection of [[point('o2'), edge('c2'), edge('axis')], [edge('c3'), edge('axis'), point('o2')], [edge('c2'), edge('c3'), edge('axis')]]) {
-      expect(find(cadSketchRelationOffers(graph, selection), 'symmetric'), selection.map(pick => pick.id).join(' ')).toMatchObject({ state: 'blocked', reason: mirror, relations: [], relationIds: [] });
+    const mirror = 'Symmetric points and axis endpoints need four distinct declared identities.', shared = 'These circles share a center, so they cannot mirror each other.';
+    for (const [selection, reason] of [[[point('o2'), edge('c2'), edge('axis')], mirror], [[edge('c3'), edge('axis'), point('o2')], mirror], [[edge('c2'), edge('c3'), edge('axis')], shared]] as const) {
+      expect(find(cadSketchRelationOffers(graph, selection), 'symmetric'), selection.map(pick => pick.id).join(' ')).toMatchObject({ state: 'blocked', reason, relations: [], relationIds: [] });
     }
     // Two distinct places still name the relations that hold them, and only those.
     expect(find(cadSketchRelationOffers(graph, [point('o2'), point('m')]), 'coincident')).toMatchObject({ state: 'applied', relationIds: ['r'] });

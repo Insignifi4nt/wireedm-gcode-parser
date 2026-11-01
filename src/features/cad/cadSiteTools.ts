@@ -18,6 +18,7 @@ import { jsonByteLength, summarizeDiagnostic } from '@/features/webmcp/diagnosti
 import { CadSessionError } from './cadSession';
 import { CadPluginPackageSchema, fingerprintCadPluginPackage } from '@/domain/cad/plugins/cadPlugins';
 import type { CadController } from './useCadController';
+import type { CadSketchEditWarning } from './cadEditPreparation';
 import { CadToolDocumentEnvelope, CadToolEditDefinitions, CadToolEditEnvelope, CadToolPluginPackageEnvelope, CadToolSketchEnvelope, CadToolSketchConstraintsQuerySchema } from './cadToolSchemas';
 import { pageCadSketchConstraints, summarizeCadSketchConstraintAnalysis } from './cadSketchConstraintInspection';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
@@ -350,7 +351,10 @@ export function cadSiteTools(getController: () => CadController) {
       return { version: input.expectedVersion, feature };
     }),
     tool('cad_edit_document', 'Apply typed edits atomically to the CAD draft: parameters, sketch grips/dimensions/translations, independent profile copies, preceding-sketch construction references, rename, reorder or cascade deletion. copy-sketch-profile creates a new editable numeric graph sketch from one actual accepted profile; source data stays exact. One undo step; no save. Call cad_describe_edits(kind) for fields, cad_describe_features for complete add/update definitions; execution stays strict. Rejects invalid geometry, references, stale versions and active workflows. No code execution.', object({ ...version, edits: Type.Array(CadEditSchema, { minItems: 1, maxItems: 128 }) }), async (cad, input, signal) => {
-      await cad.edit(input.edits, input.expectedVersion, true, signal); return context(cad);
+      let warnings: readonly CadSketchEditWarning[] = [];
+      await cad.edit(input.edits, input.expectedVersion, true, signal, found => { warnings = found; });
+      // At most eight warnings, as other edit diagnostics are listed, with how many there were.
+      return { ...context(cad), ...(warnings.length ? { sketchWarnings: { items: warnings.slice(0, 8), count: warnings.length, omittedCount: Math.max(0, warnings.length - 8) } } : {}) };
     }, false, object({ ...version, edits: Type.Array(CadToolEditEnvelope, { minItems: 1, maxItems: 128 }) })),
     tool('cad_describe_edits', 'Discover CAD edit fields without opening or changing a draft. No kind returns a catalog; kind returns its strict contract. Add/update features and plugin packages use their separate complete discovery tools. Execution always validates full definitions.', object({ kind: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })) }), (_cad, input) => {
       if (!input.kind) return { items: CadToolEditDefinitions.map(schema => ({ kind: schema.properties.kind.const, description: schema.description ?? null })) };

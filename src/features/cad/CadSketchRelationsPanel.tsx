@@ -51,7 +51,7 @@ const relationLabels = {
 // A coordinate held from an axis is a distance from that axis, named like a distance between parallel lines; at 0 the list names the axis it is on.
 const relationLabel = (relation: CadSketchGraphRelation): string => relation.kind === 'fixed-axis' ? 'Distance'
   : relation.kind === 'axis-distance' ? relation.axis === 'x' ? 'Horizontal distance' : 'Vertical distance'
-    : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relationLabels[relation.kind];
+    : relation.kind === 'radial-size' ? relation.quantity === 'radius' ? 'Radius' : 'Diameter' : relation.kind === 'symmetric' && 'curveIds' in relation ? 'Symmetric curves' : relationLabels[relation.kind];
 /** The point and its declared coincident aliases. */
 const pointAliases = (graph: CadSketchGraph, pointId: string) => {
   const identity = resolveCadSketchPointIdentities(graph), own = identity(pointId);

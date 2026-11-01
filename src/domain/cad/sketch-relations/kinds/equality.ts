@@ -12,7 +12,9 @@ export const equalLength: CadSketchRelationDefinition<'equal-length'> = {
   operands: relation => relation.lineIds,
   withOperands: (relation, [first, second]) => ({ ...relation, lineIds: [first, second] }),
   key: relation => `equal-length ${sortedIds(relation.lineIds)}`,
-  offers: [{ signature: chainedPair({ ...LINE_SLOT, needs: ['length'] }), plan: (planner, [a, b]) => planner.equal(planner.entity(a.id)!, planner.entity(b.id)!) }],
+  // A line with an arc or circle is refused: a line has a length and an arc or circle a radius.
+  offers: [{ signature: chainedPair({ ...LINE_SLOT, needs: ['length'] }), plan: (planner, [a, b]) => planner.equal(planner.entity(a.id)!, planner.entity(b.id)!) },
+    { signature: { slots: [{ ...LINE_SLOT, needs: ['length'] }, ROUND_SLOT] }, plan: (planner, [line, curve]) => planner.equal(planner.entity(line.id)!, planner.entity(curve.id)!) }],
   lower: (relation, context) => {
     const [a, b] = directedLinePair(context, relation.lineIds);
     context.emit('equal-length', [...context.support(a), ...context.support(b)]);

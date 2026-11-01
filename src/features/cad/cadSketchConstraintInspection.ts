@@ -8,7 +8,7 @@ import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } fro
 import { cadSketchLinearPatternForSelection, cadSketchLinearPatternInstances } from '@/domain/cad/cadSketchLinearPattern';
 import { cadSketchExternalReferenceComponents } from '@/domain/cad/cadSketchExternalReferences';
 import { cadSketchRelationEntityIds, cadSketchRelationPointIds } from '@/domain/cad/cadSketchGraphReferences';
-import { cadSketchRelationDefinition } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
+import { cadSketchRelationDefinition, cadSketchRelationMeaning } from '@/domain/cad/sketch-relations/cadSketchRelationRegistry';
 import { page } from '@/features/webmcp/siteTools';
 import { summarizeMessage, summarizeDiagnostic } from '@/features/webmcp/diagnosticSummaries';
 import type { CadSketchSolveDiagnostics, CadSketchSolveResult, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
@@ -133,7 +133,7 @@ export function pageCadSketchConstraints(inspection: CadSketchConstraintInspecti
     });
     return rows;
   };
-  return page(graph?.relations ?? [], input, source => ({ source, meaning: cadSketchRelationDefinition(source).agent.meaning, diagnostics: diagnosticState(source.id),
+  return page(graph?.relations ?? [], input, source => ({ source, meaning: cadSketchRelationMeaning(source), diagnostics: diagnosticState(source.id),
     points: graph ? cadSketchRelationPointIds(graph, source).map(point) : [],
     ...(cadSketchRelationEntityIds(source).length ? { entityIds: cadSketchRelationEntityIds(source) } : {}),
     ...(source.kind === 'linear-pattern' ? { pattern: { seed: source.seed, count: source.count, direction: source.direction,

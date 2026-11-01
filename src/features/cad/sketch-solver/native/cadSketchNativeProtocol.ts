@@ -35,14 +35,18 @@ export const CAD_SKETCH_EQUATION_REDUNDANT = 1, CAD_SKETCH_EQUATION_CONFLICTING 
  * Source identities of the constraints that equation `labels` make conflicting, redundant or
  * partially redundant (redundant through some but not all of its equations), each in compiled
  * order and listed once, as the PlaneGCS runtime reported them. A source whose constraints are
- * labelled apart, as a fixed point's two axes, is only conflicting when any of them conflicts.
+ * labelled apart, as a fixed point's two axes, is only conflicting when any of them conflicts. The equations of a relation that
+ * yields are read together first: where every one is redundant, the relation adds nothing and is redundant as a whole, as any other
+ * would be; otherwise those that are only repeat what other relations keep, so they are not, and only a conflict through them counts.
  */
 export function cadSketchEquationDiagnostics(model: CadSketchEquationModel, labels: readonly number[]) {
-  const conflicting = new Set<string>(), redundant = new Set<string>(), partiallyRedundant = new Set<string>();
+  const conflicting = new Set<string>(), redundant = new Set<string>(), partiallyRedundant = new Set<string>(), adding = new Set<string>();
+  model.equations.forEach((equation, index) => { if (equation.yields && !(labels[index] & CAD_SKETCH_EQUATION_REDUNDANT)) adding.add(equation.sourceId); });
   for (let start = 0; start < model.equations.length;) {
     let end = start + 1;
     while (end < model.equations.length && model.equations[end].tag === model.equations[start].tag) end++;
-    const bits = labels.slice(start, end), sourceId = model.equations[start].sourceId;
+    const sourceId = model.equations[start].sourceId;
+    const bits = labels.slice(start, end).map((bit, index) => model.equations[start + index].yields && adding.has(sourceId) ? bit & ~CAD_SKETCH_EQUATION_REDUNDANT : bit);
     if (bits.some(bit => bit & CAD_SKETCH_EQUATION_CONFLICTING)) conflicting.add(sourceId);
     else if (bits.every(bit => bit & CAD_SKETCH_EQUATION_REDUNDANT)) redundant.add(sourceId);
     else if (bits.some(bit => bit & CAD_SKETCH_EQUATION_REDUNDANT)) partiallyRedundant.add(sourceId);

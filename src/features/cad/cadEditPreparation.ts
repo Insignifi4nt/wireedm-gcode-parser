@@ -4,6 +4,7 @@ import { evaluateCadScalar } from '@/domain/cad/cadExpression';
 import { cadEditsOnlyPlaceDimensions, placeCadSketchDimensions, reduceCadEditIntents, validateCadEditBatch, type CadEdit } from '@/domain/cad/cadOperations';
 import { hasValidCadSketchGeometry, parseCadDocument } from '@/domain/cad/cadSchema';
 import type { CadSketchSolveDiagnostics, CadSketchSolverClient } from './sketch-solver/cadSketchSolverTypes';
+import { cadSketchShrinkWarnings, type CadSketchShrinkWarning } from './cadSketchShrinkWarnings';
 import { CadSketchPreparationError } from './cadSketchConstraintFeedback';
 import { Value } from '@sinclair/typebox/value';
 import { cadFeatureInputs } from '@/domain/cad/cadFeatureInputs';
@@ -57,17 +58,25 @@ function withoutReferenceDimensions(document: CadDocument): CadDocument {
     ? { ...feature, graph: { ...feature.graph, relations: feature.graph.relations.filter(relation => relation.kind !== 'reference-dimension') } } : feature) };
 }
 
-/** Reduce intent, solve numeric copies, then validate the whole part before a session can commit it. */
-export async function prepareCadEdits(document: CadDocument, edits: readonly CadEdit[], solver: Pick<CadSketchSolverClient, 'solve'>, signal?: AbortSignal) {
+/** A warning about one of a committed batch's solves, with the sketch it solved. */
+export interface CadSketchEditWarning extends CadSketchShrinkWarning { readonly sketchId: string; readonly sketchName: string }
+
+/**
+ * Reduce intent, solve numeric copies, then validate the whole part before a session can commit it. With `options.warnings`, for a batch
+ * that is committed, `sketchWarnings` lists in solve order the warnings about every solve of the batch that is not a drag, a later solve
+ * of the same sketch included (see `cadSketchShrinkWarnings`); otherwise, as for a preview, it is empty and nothing looks for them.
+ */
+export async function prepareCadEdits(document: CadDocument, edits: readonly CadEdit[], solver: Pick<CadSketchSolverClient, 'solve'>, signal?: AbortSignal,
+  options: { readonly warnings?: boolean } = {}) {
   validateCadEditBatch(edits);
   const captured = structuredClone(edits);
   let candidate = parseCadDocument(document);
   // A batch that only moves dimensions keeps every solution and certificate as it is.
   const placed = placeCadSketchDimensions(candidate, captured);
-  if (placed) return { document: placed, sketchDiagnostics: [] };
+  if (placed) return { document: placed, sketchDiagnostics: [], sketchWarnings: [] };
   // The last document whose sketches all hold a solution: the parsed original, then each completed solve.
   let accepted = candidate;
-  const diagnostics = new Map<string, CadSketchSolveDiagnostics>();
+  const diagnostics = new Map<string, CadSketchSolveDiagnostics>(), warnings: CadSketchEditWarning[] = [];
   async function solve(drag?: { sketchId: string; pointId: string; position: readonly [number, number] }, exact?: { sketchId: string; error: () => CadError }) {
     const target = candidate, features: CadFeature[] = [], previous = new Map<string, CadFeature>();
     const end = exact ? target.features.findIndex(feature => feature.id === exact.sketchId) : -1;
@@ -102,6 +111,7 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
       assertCadSketchExternalReferences({ sketch: solved, parameters: target.parameters, previous });
       if (!cadSketchSolutionMatchesInput(input, result.graph)) throw exact?.error() ?? new CadError('invalid-sketch-solution', 'The sketch solution changed source records or fixed geometry.');
       features.push(solved);
+      if (options.warnings && !input.drag) for (const warning of cadSketchShrinkWarnings(input.graph, result.graph, input.parameters)) warnings.push({ ...warning, sketchId: feature.id, sketchName: feature.name });
       if (exact) {
         if (index === end && !Value.Equal(features, target.features.slice(0, end + 1))) throw exact.error();
         if (index > end) {
@@ -195,5 +205,5 @@ export async function prepareCadEdits(document: CadDocument, edits: readonly Cad
   }
   await flush();
   signal?.throwIfAborted();
-  return { document: parseCadDocument(candidate), sketchDiagnostics: [...diagnostics].map(([sketchId, diagnostics]) => ({ sketchId, diagnostics })) };
+  return { document: parseCadDocument(candidate), sketchDiagnostics: [...diagnostics].map(([sketchId, diagnostics]) => ({ sketchId, diagnostics })), sketchWarnings: warnings };
 }

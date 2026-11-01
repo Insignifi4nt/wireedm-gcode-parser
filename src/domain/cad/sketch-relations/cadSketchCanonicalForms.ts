@@ -52,7 +52,8 @@ export function cadSketchCanonicalForm(graph: CadSketchGraph, relation: CadSketc
       return hold([relation.pointId], [across], left ? relation.value : negated(relation.value), relation.lineId);
     }
     case 'symmetric': {
-      // Only the origin mirrors the origin about an axis through it.
+      // Only the origin mirrors the origin about an axis through it. Mirrored curves are stored, so none is the origin or an axis.
+      if (!('pointIds' in relation)) return null;
       const pair = besides(relation.pointIds, isOrigin);
       return pair && isCadSketchVirtualAxisId(relation.lineId) ? hold([pair[0]], ['x', 'y'], 0, CAD_SKETCH_ORIGIN_ID) : null;
     }
