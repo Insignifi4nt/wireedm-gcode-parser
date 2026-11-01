@@ -779,6 +779,37 @@ describe('lines, arcs and circles mirrored about a line or an axis', () => {
     expect(dragged.sketchWarnings).toEqual([]);
   });
 
+  it('warn of mirrored arcs a distance between their ends shrinks, as it sets only the chord, but not of arcs a radius leg sizes', async () => {
+    // Quarter arcs of radius 1000 mirrored about V, A's radius legs kept Horizontal and Vertical. A chord of 0.0099 mm between A's ends
+    // shrinks both radii to 0.0099/√2 mm, far below the fraction, yet sizes neither arc, so a committed solve warns; the same radius
+    // dimensioned from A's centre to its start sets it, and nothing warns.
+    const solver = await loadCadSketchTestNativeSolver();
+    const quarters = (sizing: Record<string, unknown>) => parseCadSketchGraph({
+      points: [{ id: 'c1', position: [1500, 0] }, { id: 's1', position: [2500, 0] }, { id: 'e1', position: [1500, 1000] },
+        { id: 'c2', position: [-1500, 0] }, { id: 's2', position: [-1500, 1000] }, { id: 'e2', position: [-2500, 0] }],
+      entities: [arc('A', 'c1', 's1', 'e1', 'ccw'), arc('B', 'c2', 's2', 'e2', 'ccw')],
+      relations: [{ id: 'leg', kind: 'horizontal', pointIds: ['c1', 's1'] }, { id: 'rise', kind: 'vertical', pointIds: ['c1', 'e1'] }, sizing, mirrored('@v')] });
+    const radii = (graph: CadSketchGraph) => ['A', 'B'].map(id => {
+      const curve = graph.entities.find(entity => entity.id === id)!, at = positions(graph);
+      if (curve.kind !== 'arc') throw new Error('Expected an arc.');
+      return Math.hypot(at.get(curve.startPointId)!.x - at.get(curve.centerPointId)!.x, at.get(curve.startPointId)!.y - at.get(curve.centerPointId)!.y);
+    });
+    const radius = 0.0099 / Math.SQRT2;
+    const chorded = quarters({ id: 'chord', kind: 'distance', pointIds: ['s1', 'e1'], value: 0.0099 });
+    const chord = attemptCadSketchNativeSolve({ graph: chorded, parameters: {}, analyseDefinition: true }, solver).result;
+    if (chord.kind !== 'solved') throw new Error(chord.message);
+    expect(checkCadSketchGraph(chord.graph, {})).toEqual([]);
+    for (const size of radii(chord.graph)) expect(Math.abs(size - radius)).toBeLessThan(1e-9);
+    expect(cadSketchShrinkWarnings(chorded, chord.graph, {})).toEqual([{ code: 'mirror-shrank', relationId: 'mirrored', curves: [
+      { entityId: 'A', beforeMm: expect.closeTo(1000, 9), afterMm: expect.closeTo(radius, 9) }, { entityId: 'B', beforeMm: expect.closeTo(1000, 9), afterMm: expect.closeTo(radius, 9) }],
+      message: 'Symmetric shrank the radius of Arc 1 from 1000.000 mm to 0.007 mm and the radius of Arc 2 from 1000.000 mm to 0.007 mm. Check the mirror and its relations.' }]);
+    const legged = quarters({ id: 'reach', kind: 'distance', pointIds: ['c1', 's1'], value: radius });
+    const leg = attemptCadSketchNativeSolve({ graph: legged, parameters: {}, analyseDefinition: true }, solver).result;
+    if (leg.kind !== 'solved') throw new Error(leg.message);
+    for (const size of radii(leg.graph)) expect(Math.abs(size - radius)).toBeLessThan(1e-9);
+    expect(cadSketchShrinkWarnings(legged, leg.graph, {})).toEqual([]);
+  });
+
   it('keep the start search\'s answer over a later retry that shrinks the same curves, as it keeps the first shrunk answer', async () => {
     // The reviewer's sketch (see `shrinking`) beside a circle of radius 1 held at the origin, with a point held on it starting 4e-13 mm
     // above its centre. Every start shrinks A2 and B2 alike; the first solve and the start search move the point straight up to (0, 1),
