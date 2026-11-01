@@ -40,7 +40,7 @@ export function compileCadSketchEquations(input: CadSketchEquationInput): CadSke
     radiusParameters.set(entity.id, values.length);
     values.push(scalar(entity.radius)); fixed.push(typeof entity.radius === 'string' || owned.circleIds.has(entity.id));
   }
-  const lowering = new CadSketchLowering(graph, input.parameters, pointParameters, radiusParameters, numericPoints, values.length);
+  const lowering = new CadSketchLowering(graph, input.parameters, pointParameters, radiusParameters, numericPoints, fixed);
   for (const entity of graph.entities) lowering.structure(entity);
   for (const relation of graph.relations) lowering.lower(relation);
   // The origin's and the axes' fixed values where an equation keeps them, and the free radius an arc's relation makes, follow every

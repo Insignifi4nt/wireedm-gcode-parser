@@ -14,7 +14,8 @@ import { applyCadEdits } from '@/domain/cad/cadOperations';
 import { prepareCadEdits } from './cadEditPreparation';
 import { cadSketchConstraintStep, type CadSketchConstraintTool } from './cadSketchConstraintTool';
 import { cadSketchDimensionRelationsAt, planCadSketchDimension, type CadSketchAvailableDimension, type CadSketchDimensionForm } from './cadSketchDimensionPlacement';
-import { createCadSketchTestSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
+import { createCadSketchTestSolver, loadCadSketchTestNativeSolver } from './sketch-solver/__tests__/cadSketchTestSolver';
+import { attemptCadSketchNativeSolve } from './sketch-solver/native/cadSketchNativeAttempt';
 
 // Every relation that can name the origin or an axis, end to end: what the selection offers, what the tool or the Dimension tool
 // stores, what the lowering emits for it and where the native solver puts the geometry.
@@ -73,7 +74,7 @@ function lowered(document: CadDocument, ids: readonly string[]) {
 function lowerAlone(relation: CadSketchGraphRelation) {
   const graph = parseCadSketchGraph(rawGraph()), model = compileCadSketchEquations({ graph, parameters: {} });
   const points = new CadSketchPositions(graph.points.map(point => [point.id, { x: Number(point.position[0]), y: Number(point.position[1]) }]));
-  const context = new CadSketchLowering(graph, {}, model.pointParameters, model.radiusParameters, points, model.values.length);
+  const context = new CadSketchLowering(graph, {}, model.pointParameters, model.radiusParameters, points, model.fixed);
   context.lower(relation);
   const param = (id: string, axis: 0 | 1) => model.pointParameters.get(id)! + axis;
   return { equations: context.equations.map(({ kind, operands, value }) => ({ kind, operands, value })), fixedValues: context.made.map(made => made.value), param, own: model.values.length };
@@ -257,12 +258,77 @@ describe('relations with the origin and the H and V axes, end to end', () => {
       expect(bow?.kind === 'circle' ? Number(bow.radius) : Math.hypot(-17 - centre.x, -2 - centre.y)).toBeCloseTo(3.25, 9);
     }
     // Below the axis an arc's radius is a free parameter of the relation's own, starting at the arc's radius of 5 and held to the span from
-    // its centre to its start, and the centre's y is that radius negated, with the origin's y as a fixed parameter: one relation's two rows.
+    // its centre to its start, and the centre's y is that radius negated, with the origin's y as a fixed parameter. The two rows are two
+    // constraints of the relation, so a dependence through them blames its one-row constraint, as the mirror's single row is blamed.
     const source = held(below, 'arc', [touch]), model = compileCadSketchEquations({ graph: graphOf(source), parameters: source.parameters });
     const c = model.pointParameters.get('c')!, s = model.pointParameters.get('s')!, rows = model.equations.filter(equation => equation.sourceId === 'touch');
     expect(rows.map(({ kind, operands }) => ({ kind, operands }))).toEqual([{ kind: 'distance-to-parameter', operands: [c, c + 1, s, s + 1, 6] }, { kind: 'midpoint', operands: [c + 1, 6, 7] }]);
-    expect(new Set(rows.map(row => row.tag)).size).toBe(1);
+    expect(new Set(rows.map(row => row.tag)).size).toBe(2);
     expect([model.values.slice(6), model.fixed.slice(6)]).toEqual([[5, 0], [false, true]]);
+  });
+
+  it('makes an arc fixed by its expressions tangent below H or left of V, and keeps it tangent when a parameter moves it on its side', async () => {
+    // A CCW arc of radius r centred r below the origin, from (0.6r, -0.2r) to (-0.6r, -0.2r), touches H at the origin; swapped about y = x
+    // it runs CW left of V and touches V there. Nothing in it can move, so Tangent is one constant, as its mirror above the axis is. A free
+    // radius held to that fixed span was held twice, which made the arc's own equation redundant.
+    const fixedArc = (axis: '@h' | '@v', relations: readonly unknown[] = []) => {
+      const point = (along: string, across: string) => axis === '@h' ? [along, across] : [across, along];
+      return sketchOf([{ id: 'c', position: point('0', '-r') }, { id: 's', position: point('0.6*r', '-0.2*r') }, { id: 'e', position: point('-0.6*r', '-0.2*r') }],
+        [{ id: 'bow', kind: 'arc', construction: false, centerPointId: 'c', startPointId: 's', endPointId: 'e', direction: axis === '@h' ? 'ccw' : 'cw' }], relations, { r: 5 });
+    };
+    for (const axis of ['@h', '@v'] as const) {
+      const touch = { id: 'touch', kind: 'tangent', curveIds: ['bow', axis] } as const;
+      const made = (await prepareCadEdits(fixedArc(axis), [{ kind: 'set-sketch-relation', sketchId: 'sketch', relation: touch }], runtime)).document;
+      expect(graphOf(made).relations.map(relation => relation.id)).toEqual(['touch']);
+      const moved = (await prepareCadEdits(fixedArc(axis, [touch]), [{ kind: 'set-parameter', name: 'r', value: 6 }], runtime)).document;
+      expect(moved.parameters).toEqual({ r: 6 });
+      // One row, the span at minus the centre's coordinate across the axis, and no parameter beyond the points'.
+      const model = compileCadSketchEquations({ graph: graphOf(moved), parameters: moved.parameters }), c = model.pointParameters.get('c')!, s = model.pointParameters.get('s')!;
+      expect(model.equations.filter(equation => equation.sourceId === 'touch').map(({ kind, operands, value }) => ({ kind, operands, value })))
+        .toEqual([{ kind: 'distance', operands: [c, c + 1, s, s + 1], value: 6 }]);
+      expect(model.values).toHaveLength(6);
+    }
+  });
+
+  it('gives a curve below H or left of V the freedom, redundancy and conflicts of its mirror, whichever of its points are fixed or held', async () => {
+    // An arc centred at (2, 5) through (5, 9) and (-2, 8), and a circle of radius 5 at (2, 5), touch H from above; swapped about y = x they
+    // touch V from the right. Each is solved with every choice of coordinates fixed by expressions and of points held by Fix (the centre
+    // also one farther out, where it conflicts), with a fixed or a free circle radius, alone or beside a free line, and so is its mirror
+    // across that axis, which lowers through the negated size. The answers agree in everything but the positions.
+    const solver = await loadCadSketchTestNativeSolver();
+    type Place = readonly [number, number];
+    const AT: Readonly<Record<string, Place>> = { c: [2, 5], far: [2, 6], s: [5, 9], e: [-2, 8], p: [30, 31], q: [41, 36] };
+    const solve = (axis: '@h' | '@v', below: boolean, curve: 'arc' | 'circle', expressions: number, held: number, line: boolean, radius: boolean, far: boolean) => {
+      const place = (id: string): Place => { const [x, y] = AT[id], [u, v] = axis === '@h' ? [x, y] : [y, x]; return axis === '@h' ? [u, below ? -v : v] : [below ? -u : u, v]; };
+      const ids = curve === 'arc' ? ['c', 's', 'e'] : ['c'];
+      const graph = parseCadSketchGraph({
+        points: [...ids.map((id, i) => ({ id, position: place(id).map((value, axis) => expressions & 1 << 2 * i + axis ? String(value) : value) })),
+          ...line ? ['p', 'q'].map(id => ({ id, position: place(id) })) : []],
+        entities: [curve === 'arc'
+          ? { id: 'bow', kind: 'arc', construction: false, centerPointId: 'c', startPointId: 's', endPointId: 'e', direction: (axis === '@v') !== below ? 'cw' : 'ccw' }
+          : { id: 'bow', kind: 'circle', construction: false, centerPointId: 'c', radius: radius ? '5' : 5 },
+          ...line ? [{ id: 'free', kind: 'line', construction: false, startPointId: 'p', endPointId: 'q' }] : []],
+        relations: [...ids.flatMap((id, i) => held & 1 << i ? [{ id: `fix-${id}`, kind: 'fixed-point', pointId: id, position: place(far && id === 'c' ? 'far' : id) }] : []),
+          { id: 'touch', kind: 'tangent', curveIds: ['bow', axis] }] });
+      const { result, reason } = attemptCadSketchNativeSolve({ graph, parameters: {}, analyseDefinition: true }, solver);
+      return { reason, ...result.kind === 'solved' ? { kind: result.kind } : { kind: result.reason, message: result.message }, diagnostics: result.diagnostics };
+    };
+    const seen = { arc: new Set<string>(), circle: new Set<string>() };
+    let pairs = 0;
+    for (const axis of ['@h', '@v'] as const) for (const curve of ['arc', 'circle'] as const) {
+      const points = curve === 'arc' ? 3 : 1;
+      for (let expressions = 0; expressions < 1 << 2 * points; expressions++) for (let held = 0; held < 1 << points; held++) {
+        // Fix holds only points that no expression fixes.
+        if (Array.from({ length: points }, (_, i) => i).some(i => held & 1 << i && expressions & 3 << 2 * i)) continue;
+        for (const line of [false, true]) for (const radius of curve === 'circle' ? [false, true] : [false]) for (const far of held & 1 ? [false, true] : [false]) {
+          const mirror = solve(axis, false, curve, expressions, held, line, radius, far);
+          expect(solve(axis, true, curve, expressions, held, line, radius, far), JSON.stringify({ axis, curve, expressions, held, line, radius, far })).toEqual(mirror);
+          seen[curve].add(mirror.kind); pairs++;
+        }
+      }
+    }
+    expect(pairs).toBe(648);
+    expect(seen).toEqual({ arc: new Set(['solved', 'redundant', 'conflicting']), circle: new Set(['solved', 'redundant', 'conflicting']) });
   });
 
   it('solves a curve whose centre starts on the axis it is made tangent to, on the positive side', async () => {
@@ -358,7 +424,7 @@ describe('what the origin and the axes cannot take', () => {
 
   it('refuses through the lowering what an axis cannot give', () => {
     const graph = parseCadSketchGraph(rawGraph()), model = compileCadSketchEquations({ graph, parameters: {} });
-    const context = new CadSketchLowering(graph, {}, model.pointParameters, model.radiusParameters, new Map(), model.values.length);
+    const context = new CadSketchLowering(graph, {}, model.pointParameters, model.radiusParameters, new Map(), model.fixed);
     for (const [run, capability] of [[() => context.centre(context.edge('@h')), 'centre'], [() => context.size(context.edge('@v')), 'size']] as const) {
       expect(failure(run)).toBeInstanceOf(CadSketchLoweringRefusal);
       expect(failure(run)).toMatchObject({ code: 'unlowerable-sketch-operand', operandId: capability === 'centre' ? '@h' : '@v', capability });

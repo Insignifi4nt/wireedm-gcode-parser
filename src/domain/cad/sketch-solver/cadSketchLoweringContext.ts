@@ -2,7 +2,7 @@ import { CadError } from '../cadError';
 import { evaluateCadScalar } from '../cadExpression';
 import type { CadSketchGraph, CadSketchGraphEntity, CadSketchGraphRelation } from '../cadSketchGraph';
 import type { CadSketchEdge } from '../sketch-relations/cadSketchRelationTypes';
-import { cadSketchVirtualAxis, type CadSketchVirtualAxis } from '../sketch-relations/cadSketchVirtualElements';
+import { CAD_SKETCH_ORIGIN_ID, cadSketchVirtualAxis, type CadSketchVirtualAxis } from '../sketch-relations/cadSketchVirtualElements';
 import { cadSketchLineDirection } from '../cadSketchLineRelations';
 import type { Point2 } from '../../path-intel/types';
 import { cadSketchRelationDefinition } from '../sketch-relations/cadSketchRelationRegistry';
@@ -85,10 +85,14 @@ export interface CadSketchLoweringContext {
   /** A size is `value`. */
   sized(size: CadSketchSizeParameters, value: number): void;
   /**
-   * An arc's or circle's radius as one parameter: a circle's own, or for an arc a free one this relation makes, starting at the arc's
-   * radius and held equal to the span from its centre to its start. Lower inside `together`, so that hold is part of the relation.
+   * An arc's or circle's size is minus a point's coordinate along one axis (0 for X, 1 for Y), the mirror of a size equal to that
+   * coordinate, with the same unknowns and dependences. A circle's own radius is held there. For an arc, this relation makes a free radius,
+   * starting at the arc's radius, held to the span from its centre to its start and held there, as two constraints: the radius is in both
+   * or neither of any dependence, so the later one-row constraint is blamed, as the mirror's single row is. Where nothing in that span or
+   * coordinate can move it makes none, so the relation adds no unknown and is one constant, as its mirror is: the span held at minus the
+   * coordinate's value.
    */
-  radius(edge: CadSketchEdge): number;
+  negatedSize(edge: CadSketchEdge, pointId: string, axis: 0 | 1): void;
 }
 
 // What each kind of edge gives the lowering. Only these tables name edge kinds; a relation's lowering asks for capabilities.
@@ -185,17 +189,25 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   private entities: Map<string, CadSketchGraphEntity> | undefined;
   private relations: Map<string, CadSketchGraphRelation> | undefined;
   /**
-   * The values made after the `parameterCount` parameters, in the order they were made: the fixed values the origin and the axes
+   * The values made after the point and radius parameters, in the order they were made: the fixed values the origin and the axes
    * became, and the free radius an arc's relation makes.
    */
   readonly made: { readonly value: number; readonly fixed: boolean }[] = [];
   /** The parameter each fixed value of the origin or an axis became, by its sentinel. */
   private readonly sentinels = new Map<number, number>();
 
-  /** `numericPoints` gives the origin and the axes' sample ends too, as `CadSketchPositions` does. */
+  /** How many point and radius parameters there are; made values follow them. */
+  private readonly parameterCount: number;
+
+  /**
+   * `numericPoints` gives the origin and the axes' sample ends too, as `CadSketchPositions` does. `fixed` says, for each point and
+   * radius parameter, whether it is fixed.
+   */
   constructor(readonly graph: CadSketchGraph, private readonly parameters: Readonly<Record<string, number>>,
     private readonly pointParameters: ReadonlyMap<string, number>, readonly radiusParameters: ReadonlyMap<string, number>,
-    private readonly numericPoints: ReadonlyMap<string, Point2>, private readonly parameterCount: number) {}
+    private readonly numericPoints: ReadonlyMap<string, Point2>, private readonly fixed: readonly boolean[]) {
+    this.parameterCount = fixed.length;
+  }
 
   /**
    * Lowers one relation through its definition, whole or not at all: a relation whose lowering throws, a refusal or any other error,
@@ -290,12 +302,12 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     if (operands.some(operand => operand < 0)) {
       const specialized = SPECIALIZATIONS[kind]?.(operands, value);
       if (specialized) [kind, operands, value] = specialized;
-      operands = operands.map(operand => operand < 0 ? this.fixed(operand) : operand);
+      operands = operands.map(operand => operand < 0 ? this.sentinelParameter(operand) : operand);
     }
     this.equations.push({ kind, operands, value, sourceId: this.sourceId, tag: this.sharedTag ?? this.tags++ });
   }
   /** The parameter a fixed value of the origin or an axis became, made the first time an equation keeps it. */
-  private fixed(sentinel: number): number {
+  private sentinelParameter(sentinel: number): number {
     let index = this.sentinels.get(sentinel);
     if (index === undefined) { index = this.parameterCount + this.made.length; this.made.push({ value: fixedValue(sentinel), fixed: true }); this.sentinels.set(sentinel, index); }
     return index;
@@ -324,7 +336,7 @@ export class CadSketchLowering implements CadSketchLoweringContext {
   }
   /** The parameters a point's coordinates are, the origin's as the fixed parameters its values became. */
   private parametersOf([x, y]: CadSketchPointParameters): CadSketchPointParameters {
-    return [x < 0 ? this.fixed(x) : x, y < 0 ? this.fixed(y) : y];
+    return [x < 0 ? this.sentinelParameter(x) : x, y < 0 ? this.sentinelParameter(y) : y];
   }
   /** Two spans give an equal-length equation, a span and a parameter a distance to it, and two parameters a difference. */
   equalSizes(first: CadSketchSizeParameters, second: CadSketchSizeParameters) {
@@ -337,14 +349,21 @@ export class CadSketchLowering implements CadSketchLoweringContext {
     if (size.kind === 'span') this.emit('distance', size.span, value);
     else this.emit('value', [size.index], value);
   }
-  radius(edge: CadSketchEdge): number {
-    const size = this.size(edge);
-    if (size.kind === 'parameter') return size.index;
-    const ends = capability(RADII, edge)?.(this, edge), [centre, start] = ends ? ends.map(id => this.numericPoints.get(id)) : [];
-    if (!centre || !start) throw new CadSketchLoweringRefusal(edge.id, 'size');
-    const index = this.parameterCount + this.made.length;
+  negatedSize(edge: CadSketchEdge, pointId: string, axis: 0 | 1) {
+    const size = this.size(edge), coordinate = this.point(pointId)[axis], zero = this.point(CAD_SKETCH_ORIGIN_ID)[axis];
+    if (size.kind === 'parameter') return this.emit('midpoint', [coordinate, size.index, zero]);
+    const at = this.numericPoints.get(pointId), ends = capability(RADII, edge)?.(this, edge);
+    const [centre, start] = ends ? ends.map(id => this.numericPoints.get(id)) : [];
+    if (!at || !centre || !start) throw new CadSketchLoweringRefusal(edge.id, 'size');
+    // A free radius between parameters that cannot move would be held twice, a dependence its mirror does not have.
+    if ([...size.span, coordinate].every(index => this.isFixed(index))) return this.sized(size, -(axis ? at.y : at.x));
+    const radius = this.parameterCount + this.made.length;
     this.made.push({ value: Math.hypot(start.x - centre.x, start.y - centre.y), fixed: false });
-    this.equalSizes(size, { kind: 'parameter', index });
-    return index;
+    this.equalSizes(size, { kind: 'parameter', index: radius });
+    this.emit('midpoint', [coordinate, radius, zero]);
+  }
+  /** Whether a parameter cannot move: a fixed point or radius parameter, a value the origin or an axis became, or a made fixed one. */
+  private isFixed(index: number): boolean {
+    return index < 0 || (index < this.parameterCount ? this.fixed[index] : this.made[index - this.parameterCount]?.fixed) === true;
   }
 }

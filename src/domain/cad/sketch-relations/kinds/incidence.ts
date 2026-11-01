@@ -10,7 +10,7 @@ import { CAD_SKETCH_MIDPOINT_OPERANDS, CAD_SKETCH_POINT_ON_CURVE_OPERANDS, CAD_S
 import { evaluateCadScalar } from '../../cadExpression';
 import { cadSketchDriverTolerance } from '../../cadSketchPrecision';
 import type { CadSketchRelationDefinition } from '../cadSketchRelationTypes';
-import { CAD_SKETCH_ORIGIN_ID, cadSketchAxisNormal, type CadSketchVirtualAxisId } from '../cadSketchVirtualElements';
+import { cadSketchAxisNormal, type CadSketchVirtualAxisId } from '../cadSketchVirtualElements';
 import { CAD_SKETCH_POINT_PAIR_OPERANDS, LINE_SLOT, POINT_SLOT, ROUND_SLOT, chainedPair, sortedIds } from './kindParts';
 
 // Points that lie on, or in a set place on, other geometry. Their parse checks resolve exact identities: proximity never stands in for one.
@@ -163,12 +163,12 @@ export const tangent: CadSketchRelationDefinition<'tangent'> = {
   offers: [{ signature: { slots: [ROUND_SLOT, { role: 'Axis', accepts: ['axis'] }] }, plan: (planner, [curve, axis]) => planner.tangent(planner.entity(curve.id)!, planner.entity(axis.id)!) }],
   // Signed, on the side the centre starts on, so the curve never crosses the axis to touch it from the other side, and a centre that
   // starts on the axis has a regular equation there. At or above 0 across the axis, the centre's coordinate across it is the size.
-  // Below, the radius is that coordinate negated: a circle's own radius, or a free one an arc's relation makes, held to its span.
+  // Below, the size is that coordinate negated, the mirror of the form above, with the same unknowns and dependences (see `negatedSize`).
   lower: (relation, context) => {
     const curve = context.edge(relation.curveIds[0]), centre = context.centre(curve);
     const axis = cadSketchAxisNormal(relation.curveIds[1] as CadSketchVirtualAxisId) === 'y' ? 1 : 0, across = context.point(centre)[axis];
     if (context.side(centre, axis) > 0) context.equalSizes(context.size(curve), { kind: 'parameter', index: across });
-    else context.together(() => { const radius = context.radius(curve); context.emit('midpoint', [across, radius, context.point(CAD_SKETCH_ORIGIN_ID)[axis]]); });
+    else context.negatedSize(curve, centre, axis);
   },
   check: (graph, relation, points, parameters) => {
     const source = { kind: 'relation', id: relation.id } as const;
